@@ -344,7 +344,11 @@ module KeycloakSdk
     # 표준 `:net_http` 어댑터의 설정 블록 — 커넥션을 짓기 직전 그 `Net::HTTP` 인스턴스의 싱글턴에 `BoundedTransport` 를
     # prepend 한다. 프록시 인자·연결 조립은 어댑터가 그대로 하고(원판 `net_http_connection`), 프록시·keep-alive 경로는
     # `http_framing_pins_spec` 이 고정한다.
+    # ⚠️ `ignore_eof = false` — net-http 0.10 의 기본(true)은 `Content-Length` 보다 짧게 끝난 본문(서버가 중간에 닫았다)을
+    # 오류 없이 그 조각으로 돌려준다. 그러면 다 오지 않은 응답이 「끝까지 왔지만 못 읽는 응답」(AuthError)으로 읽혔다(독립
+    # 레그 실측 — token_response_class_spec 의 「closed mid-body」). false 면 EOFError 로 실패해 TransportError 다.
     BOUND_CONNECTION = lambda do |http|
+      http.ignore_eof = false
       http.singleton_class.prepend(BoundedTransport)
     end
     private_constant :BoundedReads, :ConnectFraming, :ReadDeadline, :BoundedTransport, :BOUND_CONNECTION
@@ -461,14 +465,17 @@ module KeycloakSdk
   # 끝까지 온 토큰·introspection 응답의 해석(등록부 token-response-class-divergent · 판정 2026-11-10) — 세 그랜트 ·
   # `ClientCredentialsTokenProvider`(admin 의 자기 그랜트) · introspection 이 `Http.read_capped` 로 읽은 응답에 건다.
   #
-  # `read_capped` 가 돌려준 응답은 **끝까지 왔다** — 다 오지 않은 응답(네트워크 실패 · 타임아웃 · 1 MiB 상한 초과 · 깨진 틀)은
-  # 거기서 이미 TransportError 다. 그러니 여기서 못 읽는 것은 IdP 가 낸 쓸 수 없는 답이다:
+  # `read_capped` 가 돌려준 응답은 **끝까지 왔다** — 다 오지 않은 응답(네트워크 실패 · 타임아웃 · 1 MiB 상한 초과 · 깨진 틀 ·
+  # `Content-Length` 보다 짧게 끊긴 본문 — 그것은 `BOUND_CONNECTION` 의 `ignore_eof = false` 덕이다)은 거기서 이미
+  # TransportError 다. 그러니 여기서 못 읽는 것은 IdP 가 낸 쓸 수 없는 답이다:
   #   · 2xx 본문이 JSON 규칙(`Http.decode_json` — JSON 콘텐츠 타입만)으로 해석되지 않거나 해석한 문자열이 UTF-8 이
   #     아니면(RFC 8259 §8.1 — `Http.utf8?` 의 까닭) `AuthError`(`… response is not valid JSON` · `… is not valid UTF-8`).
   #     전에는 `Faraday::ParsingError` 가 경계에서 TransportError 였다.
   #   · 오류 상태의 본문이 그러면 날 바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의
   #     OAuth 코드는 쓰지 않는다).
-  # 선언된 charset 은 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). logout 은 본문을 쓰지 않아 이 규칙
+  # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). ⚠️ 단 Faraday 의 json
+  # 미들웨어가 그보다 먼저 돈다 — utf-16 · utf-32 같은 charset 을 선언하면 거기서 `Encoding::CompatibilityError` 로 실패해
+  # 이 규칙에 닿지 않는다(기존부터, 독립 레그가 짚음 — 등록부 후보). logout 은 본문을 쓰지 않아 이 규칙
   # 밖이다(`Http.decode_json(…, check_utf8: false)`).
   # ⚠️ 해석 실패는 `RedactedCause` 로만 단다 — `Faraday::ParsingError#inspect` 는 요청(클라이언트 시크릿)까지 찍는다. 메시지는
   # 상수 문장이다(본문을 싣지 않는다). ⚠️ 공개 API 를 늘리지 않으려고 `Http` 의 모듈 함수가 아니라 비공개 상수다.

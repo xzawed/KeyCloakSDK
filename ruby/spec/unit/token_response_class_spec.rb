@@ -62,6 +62,9 @@ module TokenResponseClassSpec
       "409 conflict" => [409, JSON_TYPE, '{"error":"conflict"}'],
       "cap one byte past 1 MiB" => [200, JSON_TYPE, OK_TOKEN, CAP + 1 - OK_TOKEN.bytesize],
       "truncated mid-body" => [200, JSON_TYPE, OK_TOKEN, 0, OK_TOKEN.bytesize / 2],
+      # 서버가 `Content-Length` 의 절반에서 연결을 닫는다 — net-http 0.10 의 기본 `ignore_eof: true` 는 그 절반을 성공처럼
+      # 돌려줬다(독립 레그가 찾음: 그 본문이 「JSON 아님」 AuthError 였다). 다 오지 않은 응답이다.
+      "closed mid-body" => [200, JSON_TYPE, OK_TOKEN, 0, OK_TOKEN.bytesize / 2, true],
       "connection refused" => :refused
     }.freeze
 
@@ -84,6 +87,7 @@ module TokenResponseClassSpec
       "r10 200 unknown charset" => [200, ODD_CHARSET, OK_INTROSPECTION],
       "cap one byte past 1 MiB" => [200, JSON_TYPE, OK_INTROSPECTION, CAP + 1 - OK_INTROSPECTION.bytesize],
       "truncated mid-body" => [200, JSON_TYPE, OK_INTROSPECTION, 0, OK_INTROSPECTION.bytesize / 2],
+      "closed mid-body" => [200, JSON_TYPE, OK_INTROSPECTION, 0, OK_INTROSPECTION.bytesize / 2, true],
       "connection refused" => :refused
     }.freeze
   end
@@ -96,6 +100,7 @@ module TokenResponseClassSpec
     GRANT = "client-credentials token request failed"
     TIMED_OUT = /\Atoken endpoint transport error: Net::ReadTimeout/
     REFUSED = /\Atoken endpoint transport error: Failed to open TCP connection/
+    CUT = /end of file reached/
     NO_ACTIVE = [AUTH, "introspection response has no boolean active", nil].freeze
 
     S1 = {
@@ -115,6 +120,7 @@ module TokenResponseClassSpec
       "409 conflict" => [AUTH, "#{CC}: conflict (HTTP 409)", "conflict"],
       "cap one byte past 1 MiB" => [TRANSPORT, "token response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, TIMED_OUT, nil],
+      "closed mid-body" => [TRANSPORT, CUT, nil],
       "connection refused" => [TRANSPORT, REFUSED, nil]
     }.freeze
 
@@ -135,6 +141,7 @@ module TokenResponseClassSpec
       "409 conflict" => [AUTH, "#{GRANT}: HTTP 409", "conflict"],
       "cap one byte past 1 MiB" => [TRANSPORT, "token response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, TIMED_OUT, nil],
+      "closed mid-body" => [TRANSPORT, CUT, nil],
       "connection refused" => [TRANSPORT, REFUSED, nil]
     }.freeze
 
@@ -160,6 +167,7 @@ module TokenResponseClassSpec
       "r10 200 unknown charset" => [:ok, [true, "svc"]],
       "cap one byte past 1 MiB" => [TRANSPORT, "introspection response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, /\Aintrospection transport error: Net::ReadTimeout/, nil],
+      "closed mid-body" => [TRANSPORT, CUT, nil],
       "connection refused" => [TRANSPORT, /\Aintrospection transport error: Failed to open TCP connection/, nil]
     }.freeze
 
@@ -222,8 +230,8 @@ module TokenResponseClassSpec
     return attempt(nil) { yield config(closed_url) } if answer == :refused
 
     server = BodyServer.new(framing: :length)
-    status, type, body, pad, stop = answer
-    server.route(path) { [status, { "Content-Type" => type }, body, pad || 0, stop] }
+    status, type, body, pad, stop, close = answer
+    server.route(path) { [status, { "Content-Type" => type }, body, pad || 0, stop, close] }
     server.route(USER) { |r| [200, {}, { id: "u1", authorization: r.headers["authorization"] }.to_json, 0] }
     cfg = stop ? config(server.url, read_timeout: TRUNCATED_READ_TIMEOUT) : config(server.url)
     attempt(server) { yield cfg }
