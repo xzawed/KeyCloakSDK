@@ -13,7 +13,6 @@ import com.nimbusds.jwt.SignedJWT;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.TokenValidationException;
 import java.nio.charset.StandardCharsets;
-import java.text.ParseException;
 import java.time.Duration;
 import java.util.Date;
 import java.util.Set;
@@ -40,7 +39,11 @@ class JwksUnreadableKeyTest {
         Arguments.of("EC P-192", "{\"kty\":\"EC\",\"crv\":\"P-192\",\"x\":\"AAECAwQFBgcICQoLDA0ODxAREhMUFRYX\","
             + "\"y\":\"GBkaGxwdHh8gISIjJCUmJygpKissLS4v\",\"kid\":\"p192\",\"use\":\"sig\"}"),
         Arguments.of("RSA without n", "{\"kty\":\"RSA\",\"e\":\"AQAB\",\"kid\":\"missingn\",\"use\":\"sig\"}"),
-        Arguments.of("not a JWK", "\"not-a-jwk\""));
+        Arguments.of("not a JWK", "\"not-a-jwk\""),
+        // JWK.parse 가 ParseException 이 아니라 NPE 를 던지는 원소(OtherPrimesInfo 의 requireNonNull) — RuntimeException 을
+        // 잡지 않으면 그 NPE 가 리트리버 밖으로 샌다(main 이 그랬다 · PR #1001 레그).
+        Arguments.of("RSA with an empty oth entry",
+            "{\"kty\":\"RSA\",\"n\":\"AQAB\",\"e\":\"AQAB\",\"kid\":\"oth\",\"oth\":[{}]}"));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -48,8 +51,9 @@ class JwksUnreadableKeyTest {
   void keyItCannotRead_isSkippedNotTheWholeSet(String name, String bad) throws Exception {
     RSAKey k1 = new RSAKeyGenerator(2048).keyID("k1").generate();
     String set = "{\"keys\":[" + bad + "," + k1.toPublicJWK().toJSONString() + "]}";
-    // 전제 — Nimbus 자신은 이 키셋을 통째로 거부한다(아니면 이 칸은 아무것도 재지 않는다).
-    assertThrows(ParseException.class, () -> JWKSet.parse(set), name + " 가 든 키셋을 Nimbus 가 읽는다");
+    // 전제 — Nimbus 자신은 이 키셋을 통째로 읽지 못한다(아니면 이 칸은 아무것도 재지 않는다). 던지는 것은 대개
+    // ParseException 이지만 oth 칸은 NPE 다.
+    assertThrows(Exception.class, () -> JWKSet.parse(set), name + " 가 든 키셋을 Nimbus 가 읽는다");
 
     AtomicReference<byte[]> body = new AtomicReference<>(set.getBytes(StandardCharsets.UTF_8));
     com.sun.net.httpserver.HttpServer s = serve(body, new AtomicInteger());
@@ -65,12 +69,23 @@ class JwksUnreadableKeyTest {
     }
   }
 
+  static Stream<Arguments> unusableOnly() {
+    return Stream.of(
+        Arguments.of("Nimbus 도 못 읽는 원소만", unreadable().map(a -> (String) a.get()[1])
+            .reduce((a, b) -> a + "," + b).map(keys -> "{\"keys\":[" + keys + "]}").orElseThrow()),
+        // ⚠️ Nimbus 가 **스스로 건너뛰는** 원소만 — 그대로 넘기면 Nimbus 는 빈 집합을 파싱해 좋은 캐시를 덮는다. 위 칸만으로는
+        // 「조회 실패로 던짐」과 「응답을 Nimbus 에 돌려줌」을 가르지 못했다(PR #1001 레그의 변이가 둘 다 통과했다).
+        Arguments.of("모르는 kty 만", "{\"keys\":[{\"kty\":\"XYZ\",\"kid\":\"future\"}]}"));
+  }
+
   /**
    * 대조 — 쓸 수 있는 원소가 하나도 없는 키셋은 빈 키셋처럼 조회 실패이고 좋은 캐시를 덮지 않는다. 건너뛰기가 「다 건너뛰고 빈
-   * 키셋을 올림」으로 새면 마지막 두 단언이 운다. ⚠️ 재조회 단언이 전제다(JwksEmptyKeysetTest 와 같은 이유).
+   * 키셋을 올림」이나 「Nimbus 에 그대로 넘김」으로 새면 마지막 두 단언이 운다. ⚠️ 재조회 단언이 전제다(JwksEmptyKeysetTest 와
+   * 같은 이유).
    */
-  @Test
-  void onlyUnreadableKeys_isRefusedAndDoesNotPoisonGoodCache() throws Exception {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unusableOnly")
+  void onlyUnreadableKeys_isRefusedAndDoesNotPoisonGoodCache(String name, String unusable) throws Exception {
     RSAKey k1 = new RSAKeyGenerator(2048).keyID("k1").generate();
     RSAKey k2 = new RSAKeyGenerator(2048).keyID("k2").generate();
     AtomicInteger hits = new AtomicInteger();
@@ -86,19 +101,43 @@ class JwksUnreadableKeyTest {
       v.validate(good);
       int before = hits.get();
 
-      String unreadableOnly = unreadable().map(a -> (String) a.get()[1])
-          .reduce((a, b) -> a + "," + b).map(keys -> "{\"keys\":[" + keys + "]}").orElseThrow();
-      body.set(unreadableOnly.getBytes(StandardCharsets.UTF_8));
+      body.set(unusable.getBytes(StandardCharsets.UTF_8));
       assertThrows(TokenValidationException.class, () -> v.validate(token(md, k2, "user-1")));
       assertTrue(hits.get() > before,
           "미해결 kid 가 재조회를 일으키지 않으면 못 읽는 키셋을 본 적이 없다 — 이 테스트는 공허하다");
 
-      assertEquals("user-1", v.validate(good).getSubject(), "못 읽는 키만 있는 200 이 좋은 캐시를 덮었다");
+      assertEquals("user-1", v.validate(good).getSubject(), name + " 200 이 좋은 캐시를 덮었다");
       assertEquals("user-2", v.validate(token(md, k1, "user-2")).getSubject(),
-          "못 읽는 키만 있는 200 뒤 같은 키로 새로 서명한 토큰도 통과해야 한다");
+          name + " 200 뒤 같은 키로 새로 서명한 토큰도 통과해야 한다");
     } finally {
       s.stop(0);
     }
+  }
+
+  /** 전부 읽히면 응답을 그대로 넘긴다(재직렬화하지 않는다) · 하나라도 빠지면 읽힌 키만 담은 새 응답이다. */
+  @Test
+  void usableKeysOnly_passesAFullyReadableResponseThroughUntouched() throws Exception {
+    RSAKey k1 = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String good = k1.toPublicJWK().toJSONString();
+    com.nimbusds.jose.util.Resource all =
+        new com.nimbusds.jose.util.Resource("{\"keys\":[" + good + "]}", "application/json");
+    assertSame(all, NoRedirectResourceRetriever.usableKeysOnly(all), "전부 읽히는 응답을 새로 만들었다");
+
+    com.nimbusds.jose.util.Resource mixed =
+        new com.nimbusds.jose.util.Resource("{\"keys\":[\"not-a-jwk\"," + good + "]}", "application/json");
+    com.nimbusds.jose.util.Resource filtered = NoRedirectResourceRetriever.usableKeysOnly(mixed);
+    assertNotSame(mixed, filtered);
+    assertEquals(java.util.List.of("k1"),
+        JWKSet.parse(filtered.getContent()).getKeys().stream().map(k -> k.getKeyID()).toList());
+    assertEquals("application/json", filtered.getContentType());
+  }
+
+  /** 기형 문서는 지금처럼 Nimbus 가 판정한다 — 본문 {@code null} 도(전에는 NPE 가 리트리버 밖으로 샜다). */
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"null", "not json", "{}", "{\"keys\":{}}", "[]"})
+  void usableKeysOnly_leavesAMalformedDocumentToNimbus(String body) throws Exception {
+    com.nimbusds.jose.util.Resource res = new com.nimbusds.jose.util.Resource(body, "application/json");
+    assertSame(res, NoRedirectResourceRetriever.usableKeysOnly(res));
   }
 
   private static com.sun.net.httpserver.HttpServer serve(AtomicReference<byte[]> body, AtomicInteger hits)

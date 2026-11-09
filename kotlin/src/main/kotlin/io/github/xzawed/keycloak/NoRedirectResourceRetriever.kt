@@ -136,7 +136,8 @@ internal class NoRedirectResourceRetriever(
         fun usableKeysOnly(res: Resource): Resource {
             val keys =
                 try {
-                    JSONObjectUtils.getJSONArray(JSONObjectUtils.parse(res.content), "keys")
+                    val json = JSONObjectUtils.parse(res.content) ?: return res // 본문 `null` — 기형 문서다
+                    JSONObjectUtils.getJSONArray(json, "keys")
                 } catch (_: java.text.ParseException) {
                     return res
                 } ?: return res
@@ -153,7 +154,10 @@ internal class NoRedirectResourceRetriever(
             return if (usable.size == keys.size) res else Resource(JWKSet(usable).toString(false), res.contentType)
         }
 
-        /** 원소 하나 — 객체가 아니거나 Nimbus 가 읽지 못하면 null(그 원소 하나의 문제다). */
+        /**
+         * 원소 하나 — 객체가 아니거나 Nimbus 가 읽지 못하면 null(그 원소 하나의 문제다). ⚠️ `RuntimeException` 도 잡는다 — 빈
+         * `oth` 항목을 단 RSA 원소에서 `JWK.parse` 는 `ParseException` 이 아니라 NPE 를 던진다(`OtherPrimesInfo` 의 `requireNonNull`).
+         */
         private fun parseOrNull(key: Any?): JWK? {
             val map = key as? Map<*, *> ?: return null
             return try {

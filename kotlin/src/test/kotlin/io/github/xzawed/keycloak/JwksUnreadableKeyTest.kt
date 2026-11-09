@@ -6,6 +6,7 @@ import com.nimbusds.jose.crypto.RSASSASigner
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
+import com.nimbusds.jose.util.Resource
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
 import com.sun.net.httpserver.HttpServer
@@ -13,9 +14,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
-import java.text.ParseException
 import java.time.Duration
 import java.util.Date
 import java.util.concurrent.atomic.AtomicInteger
@@ -23,6 +24,8 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -42,8 +45,9 @@ internal class JwksUnreadableKeyTest {
         runBlocking {
             val k1 = RSAKeyGenerator(2048).keyID("k1").generate()
             val set = "{\"keys\":[$bad,${k1.toPublicJWK().toJSONString()}]}"
-            // 전제 — Nimbus 자신은 이 키셋을 통째로 거부한다(아니면 이 칸은 아무것도 재지 않는다).
-            assertFailsWith<ParseException>("$name 가 든 키셋을 Nimbus 가 읽는다") { JWKSet.parse(set) }
+            // 전제 — Nimbus 자신은 이 키셋을 통째로 읽지 못한다(아니면 이 칸은 아무것도 재지 않는다). 던지는 것은 대개
+            // ParseException 이지만 oth 칸은 NPE 다.
+            assertFailsWith<Exception>("$name 가 든 키셋을 Nimbus 가 읽는다") { JWKSet.parse(set) }
 
             val server = serve(AtomicReference(set.toByteArray(StandardCharsets.UTF_8)), AtomicInteger())
             try {
@@ -63,10 +67,15 @@ internal class JwksUnreadableKeyTest {
 
     /**
      * 대조 — 쓸 수 있는 원소가 하나도 없는 키셋은 빈 키셋처럼 조회 실패이고 좋은 캐시를 덮지 않는다. 건너뛰기가 「다 건너뛰고 빈
-     * 키셋을 올림」으로 새면 마지막 두 단언이 운다. ⚠️ 재조회 단언이 전제다(JwksEmptyKeysetTest 와 같은 이유).
+     * 키셋을 올림」이나 「Nimbus 에 그대로 넘김」으로 새면 마지막 두 단언이 운다. ⚠️ 재조회 단언이 전제다(JwksEmptyKeysetTest 와
+     * 같은 이유). ⚠️ 「모르는 kty 만」 칸이 둘째 변이를 가른다 — Nimbus 는 그 원소를 스스로 건너뛰어 빈 집합을 파싱한다.
      */
-    @Test
-    fun onlyUnreadableKeysIsRefusedAndDoesNotPoisonGoodCache(): Unit =
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("unusableOnly")
+    fun onlyUnreadableKeysIsRefusedAndDoesNotPoisonGoodCache(
+        name: String,
+        unusable: String,
+    ): Unit =
         runBlocking {
             val k1 = RSAKeyGenerator(2048).keyID("k1").generate()
             val k2 = RSAKeyGenerator(2048).keyID("k2").generate()
@@ -82,24 +91,50 @@ internal class JwksUnreadableKeyTest {
                 validator.validate(good)
                 val before = hits.get()
 
-                val unreadableOnly = "{\"keys\":[${UNREADABLE.joinToString(",") { it.second }}]}"
-                body.set(unreadableOnly.toByteArray(StandardCharsets.UTF_8))
+                body.set(unusable.toByteArray(StandardCharsets.UTF_8))
                 assertFailsWith<TokenValidationException> { validator.validate(token(endpoints, k2, "user-1")) }
                 assertTrue(
                     hits.get() > before,
                     "미해결 kid 가 재조회를 일으키지 않으면 못 읽는 키셋을 본 적이 없다 — 이 테스트는 공허하다",
                 )
 
-                assertEquals("user-1", validator.validate(good).subject, "못 읽는 키만 있는 200 이 좋은 캐시를 덮었다")
+                assertEquals("user-1", validator.validate(good).subject, "$name 200 이 좋은 캐시를 덮었다")
                 assertEquals(
                     "user-2",
                     validator.validate(token(endpoints, k1, "user-2")).subject,
-                    "못 읽는 키만 있는 200 뒤 같은 키로 새로 서명한 토큰도 통과해야 한다",
+                    "$name 200 뒤 같은 키로 새로 서명한 토큰도 통과해야 한다",
                 )
             } finally {
                 server.stop(0)
             }
         }
+
+    /** 전부 읽히면 응답을 그대로 넘긴다(재직렬화하지 않는다) · 하나라도 빠지면 읽힌 키만 담은 새 응답이다. */
+    @Test
+    fun usableKeysOnlyPassesAFullyReadableResponseThroughUntouched() {
+        val good =
+            RSAKeyGenerator(2048)
+                .keyID("k1")
+                .generate()
+                .toPublicJWK()
+                .toJSONString()
+        val all = Resource("{\"keys\":[$good]}", "application/json")
+        assertSame(all, NoRedirectResourceRetriever.usableKeysOnly(all), "전부 읽히는 응답을 새로 만들었다")
+
+        val mixed = Resource("{\"keys\":[\"not-a-jwk\",$good]}", "application/json")
+        val filtered = NoRedirectResourceRetriever.usableKeysOnly(mixed)
+        assertNotSame(mixed, filtered)
+        assertEquals(listOf("k1"), JWKSet.parse(filtered.content).keys.map { it.keyID })
+        assertEquals("application/json", filtered.contentType)
+    }
+
+    /** 기형 문서는 지금처럼 Nimbus 가 판정한다 — 본문 `null` 도(전에는 NPE 가 리트리버 밖으로 샜다). */
+    @ParameterizedTest
+    @ValueSource(strings = ["null", "not json", "{}", "{\"keys\":{}}", "[]"])
+    fun usableKeysOnlyLeavesAMalformedDocumentToNimbus(body: String) {
+        val res = Resource(body, "application/json")
+        assertSame(res, NoRedirectResourceRetriever.usableKeysOnly(res))
+    }
 
     private fun serve(
         body: AtomicReference<ByteArray>,
@@ -153,9 +188,21 @@ internal class JwksUnreadableKeyTest {
                     "\"y\":\"GBkaGxwdHh8gISIjJCUmJygpKissLS4v\",\"kid\":\"p192\",\"use\":\"sig\"}",
                 "RSA without n" to "{\"kty\":\"RSA\",\"e\":\"AQAB\",\"kid\":\"missingn\",\"use\":\"sig\"}",
                 "not a JWK" to "\"not-a-jwk\"",
+                // JWK.parse 가 ParseException 이 아니라 NPE 를 던지는 원소(OtherPrimesInfo 의 requireNonNull) — RuntimeException
+                // 을 잡지 않으면 그 NPE 가 리트리버 밖으로 샌다(main 이 그랬다 · PR #1001 레그).
+                "RSA with an empty oth entry" to
+                    "{\"kty\":\"RSA\",\"n\":\"AQAB\",\"e\":\"AQAB\",\"kid\":\"oth\",\"oth\":[{}]}",
             )
 
         @JvmStatic
         fun unreadable(): List<Arguments> = UNREADABLE.map { (name, bad) -> Arguments.of(name, bad) }
+
+        @JvmStatic
+        fun unusableOnly(): List<Arguments> =
+            listOf(
+                Arguments.of("Nimbus 도 못 읽는 원소만", "{\"keys\":[${UNREADABLE.joinToString(",") { it.second }}]}"),
+                // ⚠️ Nimbus 가 **스스로 건너뛰는** 원소만 — 그대로 넘기면 Nimbus 는 빈 집합을 파싱해 좋은 캐시를 덮는다.
+                Arguments.of("모르는 kty 만", "{\"keys\":[{\"kty\":\"XYZ\",\"kid\":\"future\"}]}"),
+            )
     }
 }

@@ -74,7 +74,11 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
   static Resource usableKeysOnly(Resource res) throws IOException {
     List<Object> keys;
     try {
-      keys = JSONObjectUtils.getJSONArray(JSONObjectUtils.parse(res.getContent()), "keys");
+      Map<String, Object> json = JSONObjectUtils.parse(res.getContent());
+      if (json == null) { // 본문 `null` — 기형 문서다
+        return res;
+      }
+      keys = JSONObjectUtils.getJSONArray(json, "keys");
     } catch (java.text.ParseException e) {
       return res;
     }
@@ -95,7 +99,11 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
     return usable.size() == keys.size() ? res : new Resource(new JWKSet(usable).toString(false), res.getContentType());
   }
 
-  /** 원소 하나 — 객체가 아니거나 Nimbus 가 읽지 못하면 null(그 원소 하나의 문제다). */
+  /**
+   * 원소 하나 — 객체가 아니거나 Nimbus 가 읽지 못하면 null(그 원소 하나의 문제다). ⚠️ {@code RuntimeException} 도 잡는다 —
+   * 빈 {@code oth} 항목을 단 RSA 원소에서 {@code JWK.parse} 는 {@code ParseException} 이 아니라 NPE 를 던진다({@code
+   * OtherPrimesInfo} 의 {@code requireNonNull}).
+   */
   private static JWK parseOrNull(Object key) {
     if (!(key instanceof Map<?, ?> map)) {
       return null;
