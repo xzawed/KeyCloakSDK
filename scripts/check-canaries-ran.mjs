@@ -79,17 +79,17 @@ export function parseArgs(argv) {
 
 // ─── 1. 카나리아 목록 — 가드의 표 함수를 실행한다 ─────────────────────────────────────────────────────
 const sq = (s) => `'${s.replace(/'/g, `'\\''`)}'`
-function extractScript(axes) {
-  const fns = [...new Set(axes.flatMap((a) => (a.file ? [a.file, a.rows] : [a.rows])))]
-  const lines = [
-    'set -eu',
-    'G="$1"; L="$2"',
-    `for fn in ${fns.join(' ')}; do`,
-    '  def="$(sed -n "/^$fn() {/,/^}/p" "$G")"',
-    '  if [ -z "$def" ]; then printf "NOFN\\t%s\\n" "$fn"; exit 3; fi',
-    '  eval "$def"',
-    'done',
-  ]
+// 가드에서 표 함수 정의를 떼어 낸다 — `sed -n '/^이름() {/,/^}/p'` 와 같은 범위(줄 머리 정의 ~ 그 뒤 첫 줄 머리 `}`).
+export function fnDef(text, fn) {
+  const lines = text.split(/\r?\n/)
+  const start = lines.findIndex((l) => l.startsWith(`${fn}() {`))
+  if (start < 0) return null
+  const end = lines.findIndex((l, i) => i > start && l.startsWith('}'))
+  return end < 0 ? null : lines.slice(start, end + 1).join('\n')
+}
+// 실행할 스크립트 — 표 함수 정의 + 행을 찍는 줄. 경로는 셸에 넘기지 않는다(정의는 여기서 떼어 stdin 으로 준다).
+function extractScript(defs, axes) {
+  const lines = ['set -eu', 'L="$1"', ...defs]
   for (const a of axes) {
     const ax = sq(a.axis)
     if (a.shape === 'file|canary')
@@ -123,10 +123,14 @@ export function canaries(root, lang, axes = AXES) {
       `가드에서 \`sd_canary_ok "$ROOT/…\` 를 부르는 자리가 ${sites} 인데 이 검사가 아는 축은 ${axes.length} 다 — ` +
         '새 카나리아 축이면 AXES 에 그 표 함수를 더하라(안 그러면 그 축은 실행 여부를 아무도 안 본다)',
     )
-  const r = spawnSync('sh', ['-c', extractScript(axes), 'sh', guard, lang], { encoding: 'utf8' })
+  const defs = []
+  for (const fn of new Set(axes.flatMap((a) => (a.file ? [a.file, a.rows] : [a.rows])))) {
+    const d = fnDef(text, fn)
+    if (d === null) throw new Unreadable(`가드에 표 함수 \`${fn}() {\` 가 없다 — 이름이나 모양(줄 머리 정의 · 줄 머리 \`}\`)이 바뀌었나?`)
+    defs.push(d)
+  }
+  const r = spawnSync('sh', ['-s', '--', lang], { input: extractScript(defs, axes), encoding: 'utf8' })
   if (r.error) throw new Unreadable(`sh 를 못 띄웠다: ${r.error.message}`)
-  const nofn = /^NOFN\t(.+)$/m.exec(r.stdout)
-  if (nofn) throw new Unreadable(`가드에 표 함수 \`${nofn[1]}() {\` 가 없다 — 이름이나 모양(줄 머리 정의 · 줄 머리 \`}\`)이 바뀌었나?`)
   if (r.status !== 0) throw new Unreadable(`표 함수를 실행하다 실패했다(rc ${r.status}): ${r.stderr.trim()}`)
   const out = []
   for (const line of r.stdout.split('\n')) {
@@ -342,8 +346,32 @@ function attrs(s) {
   for (const m of s.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) o[m[1]] = decodeXml(m[2] ?? m[3])
   return o
 }
-// CDATA·주석 안의 글자는 마크업이 아니다 — 시험 출력(system-out)에 `<skipped/>` 같은 글자가 실리면 통과한 항목을 건너뛴 것으로 읽는다.
-const stripXmlNoise = (x) => x.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').replace(/<!--[\s\S]*?-->/g, '')
+// CDATA·주석 안의 글자는 마크업이 아니다 — 시험 출력(system-out)에 `<skipped/>` 같은 글자가 실리면 통과한 항목을 건너뛴
+// 것으로 읽는다. 앞에서부터 한 번 훑으며 그 구간을 통째로 건너뛴다(치환을 되풀이하지 않는다 — 지운 뒤에 새 `<!--` 가 생기지
+// 않는다). 닫히지 않은 구간은 끝까지 버린다.
+export function stripXmlNoise(x) {
+  const OPEN = [['<![CDATA[', ']]>'], ['<!--', '-->']]
+  let out = ''
+  let i = 0
+  for (;;) {
+    let k = -1
+    let open = ''
+    let close = ''
+    for (const [o, c] of OPEN) {
+      const j = x.indexOf(o, i)
+      if (j >= 0 && (k < 0 || j < k)) {
+        k = j
+        open = o
+        close = c
+      }
+    }
+    if (k < 0) return out + x.slice(i)
+    out += x.slice(i, k)
+    const end = x.indexOf(close, k + open.length)
+    if (end < 0) return out
+    i = end + close.length
+  }
+}
 
 export const PARSE = {
   junit(text) {
