@@ -78,11 +78,16 @@ module KeycloakSdk
   IntrospectionResult = Data.define(:active, :username, :client_id, :claims) do
     # A body that is not an object is an SDK error — an array broke through the boundary as a TypeError, and a string
     # became a result whose `claims` was a string.
+    # ⚠️ `active` 는 RFC 7662 §2.2 의 REQUIRED 인 JSON boolean 이다 — 없거나(null 포함) 다른 타입이면 「비활성」이 아니라
+    # 깨진 응답이라 AuthError 다(등록부 token-response-class-divergent D3). 1.4.1 까지는 `== true` 로 읽어 그것을 비활성으로
+    # 돌려줬다(fail-closed 였지만 IdP 의 고장이 「토큰이 비활성」으로 보였다). 메시지는 상수 문장이다(클레임을 싣지 않는다).
     def self.from_response(body)
       raise AuthError, "introspection response is not a JSON object" unless body.is_a?(Hash)
 
-      new(active: body["active"] == true, username: body["username"],
-          client_id: body["client_id"], claims: body)
+      active = body["active"]
+      raise AuthError, "introspection response has no boolean active" unless [true, false].include?(active)
+
+      new(active: active, username: body["username"], client_id: body["client_id"], claims: body)
     end
 
     def active?

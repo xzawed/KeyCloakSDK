@@ -121,6 +121,28 @@ RSpec.describe KeycloakSdk do
       expect(r.active?).to be(true)
       expect(r.username).to eq("u")
     end
+
+    it "reads a JSON false as an inactive token" do
+      r = described_class.from_response({ "active" => false })
+      expect([r.active, r.active?]).to eq([false, false])
+    end
+
+    # RFC 7662 §2.2 — `active` 는 REQUIRED 인 JSON boolean 이다. 없거나 다른 타입이면 「비활성」이 아니라 깨진 응답이다
+    # (등록부 token-response-class-divergent D3 — 1.4.1 까지는 `== true` 로 읽어 전부 비활성이었다).
+    [nil, "false", "true", 1, 0, [], {}].each do |bad|
+      it "rejects an active of #{bad.inspect} with AuthError, quoting no claim" do
+        body = { "active" => bad, "username" => "IR-CANARY-USER" }
+        expect { described_class.from_response(body) }
+          .to raise_error(KeycloakSdk::AuthError, "introspection response has no boolean active") { |e|
+            expect(e.full_message).not_to include("IR-CANARY")
+          }
+      end
+    end
+
+    it "rejects a response with no active member with AuthError" do
+      expect { described_class.from_response({ "username" => "u" }) }
+        .to raise_error(KeycloakSdk::AuthError, "introspection response has no boolean active")
+    end
   end
 
   describe KeycloakSdk::AuthorizationRequest do

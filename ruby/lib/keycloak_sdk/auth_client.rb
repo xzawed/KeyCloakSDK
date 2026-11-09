@@ -70,11 +70,12 @@ module KeycloakSdk
       client_credentials_token.access_token
     end
 
+    # 끝까지 왔지만 못 읽는 응답은 AuthError 다(`TokenResponse` — 2xx 는 거기서, 오류 상태는 아래 상태 검사가).
     def introspect(token)
       form = form!("introspection", token: token, client_id: @config.client_id, client_secret: @config.client_secret)
-      resp = Http.decode_json(Http.read_capped(@http, :post, @endpoints.introspection,
-                                               body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES,
-                                               what: "introspection"))
+      resp = TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.introspection,
+                                                   body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES,
+                                                   what: "introspection"), what: "introspection")
       raise AuthError, "introspection failed: HTTP #{resp.status}" unless resp.success?
 
       IntrospectionResult.from_response(resp.body)
@@ -90,6 +91,9 @@ module KeycloakSdk
     # JSON but is not is a TransportError, as now. No UTF-8 check is applied (`check_utf8: false`) — no value is used,
     # so there is nothing to protect, and with the check a 400 would turn from AuthError into TransportError depending
     # on the bytes of the error body (u2 in hostile_token_response_spec). Parsing comes before the status check.
+    # ⚠️ This is not the token · introspection rule (`TokenResponse`, where a response that arrived but cannot be read
+    # is an AuthError): the 2026-11-10 decision of registry token-response-class-divergent covers those two endpoints
+    # only, so logout's classes stay as they were (d1 · d2 · e4 in hostile_token_response_spec).
     def logout(refresh_token:)
       form = form!("logout", client_id: @config.client_id, client_secret: @config.client_secret,
                              refresh_token: refresh_token)
@@ -151,14 +155,15 @@ module KeycloakSdk
 
     # 그랜트를 SDK 커넥션으로 보낸다 — 클라이언트 인증은 rack-oauth2 의 기본(`:basic`)과 같은 모양(id·secret 을
     # 각각 form-url-encode 한 뒤 base64)이고, 빈 값은 rack-oauth2 의 `Util.compact_hash` 처럼 보내지 않는다.
-    # 본문은 `TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다.
+    # 본문은 `TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다. 못 읽는 2xx 는 `TokenResponse` 의 AuthError 이고(`rescue Error`
+    # 가 그대로 올린다), 못 읽는 오류 본문은 날 바이트로 남아 `oauth_token` 이 상태로 판정한다.
     def post_grant(operation, params)
       form = form!(operation, **params).reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) }
       pair = [@config.client_id, @config.client_secret].map { |v| URI.encode_www_form_component(v) }.join(":")
       basic = { "Authorization" => "Basic #{Base64.strict_encode64(pair)}" }
-      Http.decode_json(Http.read_capped(@http, :post, @endpoints.token,
-                                        body: form, headers: basic,
-                                        max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"))
+      TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.token,
+                                            body: form, headers: basic,
+                                            max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"), what: "token")
     end
 
     # rack-oauth2 의 응답 규칙(`Client#handle_response` — 2.3.0 client.rb:205-240)을 SDK 가 읽은 본문에 그대로 건다:

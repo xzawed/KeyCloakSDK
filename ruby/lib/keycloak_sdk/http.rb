@@ -427,8 +427,9 @@ module KeycloakSdk
     # ⚠️ A string in the parsed value that is invalid UTF-8 is a parse failure (Faraday::ParsingError ←
     # JSON::ParserError — the same shape json 3 raises for an unpaired surrogate escape). It is not rewritten — such
     # a value turns into a raw exception as it passes through the SDK.
-    # `check_utf8: false` is for the call that uses none of the parsed value (logout) — only the middleware's verdict
-    # remains.
+    # `check_utf8: false` leaves only the middleware's verdict — logout (it uses none of the parsed value) and
+    # `TokenResponse` (it judges the strings itself, so that a 2xx it cannot read is an AuthError, not this
+    # ParsingError).
     def decode_json(resp, check_utf8: true)
       JSON_RESPONSE.on_complete(resp.env)
       return resp if !check_utf8 || utf8?(resp.body)
@@ -456,4 +457,44 @@ module KeycloakSdk
       end
     end
   end
+
+  # 끝까지 온 토큰·introspection 응답의 해석(등록부 token-response-class-divergent · 판정 2026-11-10) — 세 그랜트 ·
+  # `ClientCredentialsTokenProvider`(admin 의 자기 그랜트) · introspection 이 `Http.read_capped` 로 읽은 응답에 건다.
+  #
+  # `read_capped` 가 돌려준 응답은 **끝까지 왔다** — 다 오지 않은 응답(네트워크 실패 · 타임아웃 · 1 MiB 상한 초과 · 깨진 틀)은
+  # 거기서 이미 TransportError 다. 그러니 여기서 못 읽는 것은 IdP 가 낸 쓸 수 없는 답이다:
+  #   · 2xx 본문이 JSON 규칙(`Http.decode_json` — JSON 콘텐츠 타입만)으로 해석되지 않거나 해석한 문자열이 UTF-8 이
+  #     아니면(RFC 8259 §8.1 — `Http.utf8?` 의 까닭) `AuthError`(`… response is not valid JSON` · `… is not valid UTF-8`).
+  #     전에는 `Faraday::ParsingError` 가 경계에서 TransportError 였다.
+  #   · 오류 상태의 본문이 그러면 날 바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의
+  #     OAuth 코드는 쓰지 않는다).
+  # 선언된 charset 은 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). logout 은 본문을 쓰지 않아 이 규칙
+  # 밖이다(`Http.decode_json(…, check_utf8: false)`).
+  # ⚠️ 해석 실패는 `RedactedCause` 로만 단다 — `Faraday::ParsingError#inspect` 는 요청(클라이언트 시크릿)까지 찍는다. 메시지는
+  # 상수 문장이다(본문을 싣지 않는다). ⚠️ 공개 API 를 늘리지 않으려고 `Http` 의 모듈 함수가 아니라 비공개 상수다.
+  module TokenResponse
+    module_function
+
+    def decode(resp, what:)
+      raw = resp.body
+      reason, lower = unreadable(resp)
+      return resp unless reason
+
+      unless resp.success?
+        resp.env.body = raw
+        return resp
+      end
+
+      raise AuthError, "#{what} response is not valid #{reason}", cause: lower && RedactedCause.new(lower)
+    end
+
+    # 못 읽는 까닭 — nil(읽힌다) · ["JSON", 해석 실패] · ["UTF-8", nil].
+    def unreadable(resp)
+      Http.decode_json(resp, check_utf8: false)
+      Http.utf8?(resp.body) ? nil : ["UTF-8", nil]
+    rescue Faraday::ParsingError => e
+      ["JSON", e]
+    end
+  end
+  private_constant :TokenResponse
 end

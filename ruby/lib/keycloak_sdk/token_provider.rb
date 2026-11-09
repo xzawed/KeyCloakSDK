@@ -74,13 +74,16 @@ module KeycloakSdk
     private
 
     # 본문은 `Http::TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다 — 넘으면 `TransportError` 이고 admin 요청은 나가지 않는다.
+    # 끝까지 왔지만 못 읽는 응답은 `AuthError` 다(`TokenResponse` — 2xx 는 거기서, 오류 상태는 아래 상태 검사가) — admin 의
+    # 자기 그랜트가 auth 레인과 같은 계급을 받는 자리다(D4).
     def request_token
-      resp = Http.decode_json(Http.read_capped(@http, :post, @token_url,
-                                               body: { grant_type: "client_credentials",
-                                                       client_id: @config.client_id,
-                                                       client_secret: @config.client_secret,
-                                                       scope: @config.scopes.join(" ") },
-                                               max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"))
+      resp = TokenResponse.decode(Http.read_capped(@http, :post, @token_url,
+                                                   body: { grant_type: "client_credentials",
+                                                           client_id: @config.client_id,
+                                                           client_secret: @config.client_secret,
+                                                           scope: @config.scopes.join(" ") },
+                                                   max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"),
+                                  what: "token")
       unless resp.success?
         oauth = resp.body.is_a?(Hash) ? resp.body["error"] : nil
         raise AuthError.new("client-credentials token request failed: HTTP #{resp.status}", oauth_error: oauth)
