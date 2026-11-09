@@ -31,6 +31,7 @@ from keycloak_sdk.exceptions import (
 )
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
+from tests.unit.conftest import UNREADABLE_JWKS
 
 
 class _FakeClock:
@@ -767,6 +768,43 @@ async def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception(ajwks
 
     with pytest.raises(TokenValidationError):
         await client.validate(token)
+
+
+async def test_jwks_key_it_cannot_read_is_skipped_not_the_whole_set(ajwks, unreadable_jwk):
+    """sync 미러와 같은 계약 — 못 읽는 키 하나가 키셋 전체를 버리면 안 된다(RFC 7517 §5 · 등록부
+    jwks-unsupported-key-rejects-set). 못 읽는 키를 **앞**에 둔다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+    ajwks.return_value = {"keys": [unreadable_jwk, key.as_dict(private=False)]}
+    client = _client(MagicMock(), config=config)
+
+    assert (await client.validate(token)).subject
+
+
+async def test_jwks_with_only_keys_it_cannot_read_is_refused_and_keeps_the_cached_set(ajwks):
+    """sync 미러와 같은 대조 — 쓸 수 있는 키가 없는 키셋은 `TokenValidationError` 이고
+    캐시를 덮지 않는다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    good = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+    unknown = _signed_token(
+        RSAKey.generate_key(2048, {"kid": "kZ", "use": "sig"}),
+        issuer=endpoints.issuer,
+        audience=config.client_id,
+    )
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(MagicMock(), config=config)
+    await client.validate(good)
+
+    ajwks.return_value = {"keys": list(UNREADABLE_JWKS.values())}
+    with pytest.raises(TokenValidationError, match="no usable keys"):
+        await client.validate(unknown)
+    assert ajwks.await_count == 2  # 강제 재조회가 정말 일어났다
+
+    assert (await client.validate(good)).subject  # 신뢰 키 캐시가 그대로다
 
 
 # ⚠️ 콜드 캐시 + IdP 장애 축 — sync 미러와 **대칭으로** 둔다. 이 저장소는 「sync 에만 있는

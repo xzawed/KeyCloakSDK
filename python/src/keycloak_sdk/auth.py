@@ -15,16 +15,17 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 from urllib.parse import urlencode
 
-from joserfc.jwk import KeySet, KeySetSerialization
+from joserfc.jwk import KeySet
 from keycloak import KeycloakOpenID
 
 from ._internal.backoff import JwksFailureBackoff
 from ._internal.frames import scrub_frames
 from ._internal.jwks_cache import JwksKeyCache
 from ._internal.jwks_fetch import fetch_jwks
+from ._internal.jwks_keys import import_usable_keys
 from ._internal.jwt import JwtValidator, check_token_size
 from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
@@ -326,22 +327,12 @@ class AuthClient:
             try:
                 certs = self._fetch_jwks()
                 # 상류 `certs()` 와 달리 이 경로는 바이트 상한을 건다(`_internal/jwks_fetch.py`).
-                # 반환 모양은 같다 — realm JWKS 엔드포인트(RFC 7517)는 `{"keys": [...]}` 이고
-                # 그것이 joserfc 가 받는 모양이다.
+                # 반환 모양은 같다 — realm JWKS 엔드포인트(RFC 7517)는 `{"keys": [...]}` 다.
                 # ⚠️ 파싱은 `_wrap`이 덮지 않는다 — `_wrap`은 전송 오류용이고 여기는 **응답
-                # 내용**이 문제인 경우다. base64url이 아닌 modulus 같은 기형 JWKS에서 joserfc는
-                # joserfc 타입도 아닌 `binascii.Error`(stdlib)를 던지며, 그대로 두면
-                # `keycloak_sdk.exceptions`를 잡는 소비자가 **아무것도 잡지 못한다**(§4 위반).
-                # IdP가 기형 JWKS를 주는 것은 가정이 아니다 — 프록시 오구성·부분 배포·중간자가
-                # 모두 이 모양이 된다.
-                try:
-                    # ⚠️ 타입을 적어 둔다 — joserfc 1.8.0 에서 `import_key_set` 반환이
-                    # `Any` 라 mypy strict 가 `return key_set` 을 막았다(1.7.2 는 `KeySet`).
-                    key_set: KeySet = KeySet.import_key_set(cast(KeySetSerialization, certs))
-                except Exception as exc:
-                    raise TokenValidationError(
-                        f"malformed JWKS from the identity provider: {exc}"
-                    ) from exc
+                # 내용**이 문제인 경우다. 키를 하나씩 읽어 못 읽는 키는 건너뛰고, 기형·빈 키셋은
+                # SDK 타입으로 거부한다(`_internal/jwks_keys.py`). IdP가 기형 JWKS를 주는 것은
+                # 가정이 아니다 — 프록시 오구성·부분 배포·중간자가 모두 이 모양이 된다.
+                key_set = import_usable_keys(certs)
             except Exception:
                 self._jwks_backoff.record_failure()
                 raise

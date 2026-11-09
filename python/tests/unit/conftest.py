@@ -25,6 +25,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from joserfc.jwk import JWKRegistry
 
 CLIENT_SECRET = "s3cret-must-not-leak"
 REFRESH_TOKEN = "refresh-must-not-leak"
@@ -222,6 +223,40 @@ def ajwks(monkeypatch: pytest.MonkeyPatch) -> Any:
     stub = AsyncMock(return_value={"keys": []})
     monkeypatch.setattr("keycloak_sdk.aio.auth.afetch_jwks", stub)
     return stub
+
+
+#: joserfc 가 키 하나로도 못 읽는 JWK 모양 — 등록부 `jwks-unsupported-key-rejects-set` 의
+#: 다섯 모양 중 이 둘(실측 joserfc 1.7.2 · 1.8.0). 값은 서명에 쓰지 않는다 — 거부되는 것은
+#: 곡선과 kty 다.
+UNREADABLE_JWKS: dict[str, dict[str, str]] = {
+    "EC P-192": {
+        "kty": "EC",
+        "crv": "P-192",
+        "x": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYX",
+        "y": "GBkaGxwdHh8gISIjJCUmJygpKissLS4v",
+        "kid": "p192",
+        "use": "sig",
+    },
+    "unknown kty": {"kty": "XYZ", "kid": "xyz", "use": "sig"},
+}
+
+
+def joserfc_reads(data: dict[str, str]) -> bool:
+    """joserfc 가 그 JWK 하나를 읽는가."""
+    try:
+        JWKRegistry.import_key(data)
+    except Exception:
+        return False
+    return True
+
+
+@pytest.fixture(params=sorted(UNREADABLE_JWKS))
+def unreadable_jwk(request: pytest.FixtureRequest) -> dict[str, str]:
+    """못 읽는 키 하나. ⚠️ 전제부터 잰다 — joserfc 가 그 키를 읽게 되면 이 픽스처를 쓰는
+    테스트는 아무것도 재지 않으므로 여기서 실패한다."""
+    data = UNREADABLE_JWKS[request.param]
+    assert not joserfc_reads(data), f"joserfc 가 {request.param} 를 읽는다 — 못 읽는 키가 아니다"
+    return data
 
 
 @dataclass
