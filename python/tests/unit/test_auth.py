@@ -1031,9 +1031,9 @@ def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception(jwks):
 def test_jwks_key_it_cannot_read_is_skipped_not_the_whole_set(jwks, unreadable_jwk):
     """⚠️ 못 읽는 키 하나가 키셋 전체를 버리면 안 된다(RFC 7517 §5 — 이해 못 하는 kty ·
     범위 밖 값의 키는 무시한다). joserfc 의 `import_key_set` 은 1.7.x 에서 그런 키 하나로
-    키셋 전체를 거부하고, 1.8.0 도 모르는 kty 만 건너뛴다 — 곡선이 범위 밖인 키(P-192)는
-    날것의 `KeyError` 로 전체가 실패해 같은 키셋의 정상 키로 서명한 토큰까지 거부됐다
-    (등록부 jwks-unsupported-key-rejects-set). 못 읽는 키를 **앞**에 둔다.
+    키셋 전체를 거부하고, 1.8.0 도 `InvalidKeyTypeError` 만 건너뛴다 — 곡선이 범위 밖인 키
+    (P-192) · 기형/빠진 멤버 하나로 전체가 실패해 같은 키셋의 정상 키로 서명한 토큰까지
+    거부됐다(등록부 jwks-unsupported-key-rejects-set). 못 읽는 키를 **앞**에 둔다.
     """
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     config = _config()

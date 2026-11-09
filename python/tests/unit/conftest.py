@@ -225,10 +225,12 @@ def ajwks(monkeypatch: pytest.MonkeyPatch) -> Any:
     return stub
 
 
-#: joserfc 가 키 하나로도 못 읽는 JWK 모양 — 등록부 `jwks-unsupported-key-rejects-set` 의
-#: 다섯 모양 중 이 둘(실측 joserfc 1.7.2 · 1.8.0). 값은 서명에 쓰지 않는다 — 거부되는 것은
-#: 곡선과 kty 다.
-UNREADABLE_JWKS: dict[str, dict[str, str]] = {
+#: joserfc 가 키 하나로도 못 읽는 JWK 모양(등록부 `jwks-unsupported-key-rejects-set` · 실측
+#: joserfc 1.7.2 · 1.8.0 둘 다). ⚠️ 던지는 예외가 일부러 갈린다 — KeyError ·
+#: InvalidKeyTypeError · TypeError · MissingKeyTypeError · binascii.Error ·
+#: KeyParameterError · ValueError. 「어떤 예외든 그 키 하나의 문제」를 좁히면(예: joserfc
+#: 오류만 잡기) 날것의 예외가 소비자에게 샌다(§4).
+UNREADABLE_JWKS: dict[str, dict[str, object]] = {
     "EC P-192": {
         "kty": "EC",
         "crv": "P-192",
@@ -238,10 +240,15 @@ UNREADABLE_JWKS: dict[str, dict[str, str]] = {
         "use": "sig",
     },
     "unknown kty": {"kty": "XYZ", "kid": "xyz", "use": "sig"},
+    "kty not a string": {"kty": ["RSA"], "kid": "listkty"},
+    "no kty": {"kid": "nokty"},
+    "RSA n not base64": {"kty": "RSA", "kid": "badn", "n": "!!!", "e": "AQAB"},
+    "RSA without e": {"kty": "RSA", "kid": "noe", "n": "AQAB"},
+    "RSA e out of range": {"kty": "RSA", "kid": "eaa", "n": "AQAB", "e": "AA"},
 }
 
 
-def joserfc_reads(data: dict[str, str]) -> bool:
+def joserfc_reads(data: dict[str, object]) -> bool:
     """joserfc 가 그 JWK 하나를 읽는가."""
     try:
         JWKRegistry.import_key(data)
@@ -251,7 +258,7 @@ def joserfc_reads(data: dict[str, str]) -> bool:
 
 
 @pytest.fixture(params=sorted(UNREADABLE_JWKS))
-def unreadable_jwk(request: pytest.FixtureRequest) -> dict[str, str]:
+def unreadable_jwk(request: pytest.FixtureRequest) -> dict[str, object]:
     """못 읽는 키 하나. ⚠️ 전제부터 잰다 — joserfc 가 그 키를 읽게 되면 이 픽스처를 쓰는
     테스트는 아무것도 재지 않으므로 여기서 실패한다."""
     data = UNREADABLE_JWKS[request.param]
