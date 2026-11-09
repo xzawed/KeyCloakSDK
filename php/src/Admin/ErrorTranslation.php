@@ -62,8 +62,11 @@ final class ErrorTranslation
     /** OAuth 오류 응답은 작다 — 이보다 긴 본문에서는 코드를 찾지 않는다(적대적 IdP 의 큰 본문을 통째로 디코드하지 않는다). */
     private const MAX_ERROR_BODY = 8192;
 
-    /** fschmtt(lcobucci)가 부여의 access token 을 JWT 로 풀지 못했다 — Keycloak 의 access token 은 늘 JWT 다. */
-    private const GRANT_NOT_A_JWT = 'admin token request failed: the access token is not a JWT';
+    /**
+     * fschmtt(lcobucci)가 부여의 토큰을 JWT 로 풀지 못했다 — 안전망이다. 부여 응답 미들웨어(`BearerToken::grantMiddleware`)가 같은
+     * 파서로 먼저 풀어 거부하므로 fschmtt 0.44 에서는 닿지 않는다. 어느 토큰인지 모르므로 메시지는 그것을 가리키지 않는다.
+     */
+    private const GRANT_NOT_A_JWT = 'admin token request failed: a token in the token response cannot be read as a JWT';
 
     /**
      * ⚠️ `$fn` is a closure that captures the representation being sent (password, client secret) — it is an argument of
@@ -121,8 +124,9 @@ final class ErrorTranslation
         } catch (KeycloakException $e) {
             throw $e;   // 우리 자신의 SDK 예외 — 재래핑하지 않는다.
         } catch (JwtException $e) {
-            // fschmtt 는 부여가 준 access token(과 refresh token)을 lcobucci 로 JWT 로 푼다 — lcobucci 는 거기서만 쓰이므로 이 예외는
-            // 끝까지 온 부여 응답이 쓸 수 없다는 뜻이다(auth 계급). ⚠️ 메시지는 우리가 만든다 — lcobucci 의 문구는 감사하지 않았다.
+            // fschmtt 는 부여가 준 access token(과 참인 refresh token)을 lcobucci 로 JWT 로 푼다 — lcobucci 는 거기서만 쓰이므로 이
+            // 예외는 끝까지 온 부여 응답이 쓸 수 없다는 뜻이다(auth 계급). 미들웨어가 먼저 걸러 fschmtt 0.44 에서는 닿지 않는 안전망이다
+            // (`GRANT_NOT_A_JWT`). ⚠️ 메시지는 우리가 만든다 — lcobucci 의 문구는 감사하지 않았다.
             throw new KeycloakAuthError(self::GRANT_NOT_A_JWT, previous: SanitizedCause::of($e));
         } catch (\Throwable $e) {
             // fschmtt SerializerException(역직렬화 실패)·토큰 응답 파싱 실패(JsonException·lcobucci 예외·TypeError) 및 그 밖의

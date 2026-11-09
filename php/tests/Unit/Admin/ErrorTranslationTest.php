@@ -10,6 +10,8 @@ use Fschmtt\Keycloak\Exception\BuilderException;
 use Fschmtt\Keycloak\Exception\SerializerException;
 use GuzzleHttp\Exception\{ClientException, ConnectException, RequestException, ServerException};
 use GuzzleHttp\Psr7\{FnStream, Request, Response};
+use Lcobucci\JWT\Encoding\CannotDecodeContent;
+use Lcobucci\JWT\Token\InvalidTokenStructure;
 use Xzawed\Keycloak\Admin\ErrorTranslation;
 use Xzawed\Keycloak\Exception\{KeycloakNotFoundError, KeycloakConflictError, KeycloakForbiddenError, KeycloakAdminError, KeycloakAuthError, KeycloakConfigError, KeycloakTransportError, SanitizedCause};
 
@@ -21,6 +23,7 @@ final class ErrorTranslationTest extends TestCase
 {
     private const TOKEN_URL = 'http://kc.test/realms/r/protocol/openid-connect/token';
     private const ADMIN_URL = 'http://kc.test/admin/realms/r/users/u1';
+    private const GRANT_NOT_A_JWT = 'admin token request failed: a token in the token response cannot be read as a JWT';
 
     private function clientEx(int $status): ClientException
     {
@@ -221,6 +224,10 @@ final class ErrorTranslationTest extends TestCase
             // 분류 밖 예외의 메시지는 옮기지 않는다 — 감사하지 않은 라이브러리(fschmtt·lcobucci·json_decode)의 메시지다.
             'unclassified Throwable' => [new \RuntimeException('ETmsg00-quoted-token'), KeycloakAdminError::class, 'admin request failed unexpectedly'],
             'TypeError' => [new \TypeError('Parser::parse(): Argument #1 must be of type string, array given'), KeycloakAdminError::class, 'admin request failed unexpectedly'],
+            // fschmtt 가 부여의 토큰을 lcobucci 로 풀다 실패한 안전망 — 부여 미들웨어가 같은 파서로 먼저 거르므로 실제 스택에서는 닿지
+            // 않는다(그 칸은 `AdminBearerGrammarTest`). lcobucci 의 예외 계열 전부여야 한다 — 하나만 잡으면 나머지가 그물로 샌다.
+            'lcobucci InvalidTokenStructure' => [InvalidTokenStructure::missingOrNotEnoughSeparators(), KeycloakAuthError::class, self::GRANT_NOT_A_JWT],
+            'lcobucci CannotDecodeContent' => [CannotDecodeContent::invalidBase64String(), KeycloakAuthError::class, self::GRANT_NOT_A_JWT],
         ];
     }
 
