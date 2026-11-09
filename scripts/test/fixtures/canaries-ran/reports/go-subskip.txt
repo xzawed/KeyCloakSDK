@@ -1,0 +1,11 @@
+=== RUN   TestNonceValidation
+=== RUN   TestNonceValidation/mismatch
+    auth_test.go:6: probe
+--- PASS: TestNonceValidation (0.00s)
+    --- SKIP: TestNonceValidation/mismatch (0.00s)
+=== RUN   TestDefaultReprMasks
+--- PASS: TestDefaultReprMasks (0.00s)
+=== RUN   TestSlogMasks
+--- PASS: TestSlogMasks (0.01s)
+PASS
+ok  	example.com/x	0.102s

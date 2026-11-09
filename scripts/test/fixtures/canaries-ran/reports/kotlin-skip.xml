@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.x.AuthTest" tests="2" skipped="1" failures="0" errors="0" timestamp="2026-11-09T08:00:00.000Z" hostname="h" time="0.05">
+  <properties/>
+  <testcase name="rejects mismatched nonce()" classname="io.x.AuthTest" time="0.05"/>
+  <testcase name="AuthorizationRequest toString masks codeVerifier()" classname="io.x.AuthTest" time="0.0">
+    <skipped/>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

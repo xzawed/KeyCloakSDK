@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="0" errors="0" time="0.1">
+    <testsuite name="test/unit/auth.test.ts" timestamp="2026-11-09T08:00:00.000Z" hostname="h" tests="1" failures="0" errors="0" skipped="0" time="0.01">
+        <testcase classname="test/unit/auth.test.ts" name="AuthClient &gt; nonce 가 틀리면 거부한다(이 설정에서 검사가 돈다)" time="0.01">
+        </testcase>
+    </testsuite>
+    <testsuite name="test/unit/tokens.test.ts" timestamp="2026-11-09T08:00:00.000Z" hostname="h" tests="2" failures="0" errors="0" skipped="0" time="0.002">
+        <testcase classname="test/unit/tokens.test.ts" name="TokenSet &gt; access_token 이 비문자열이면 throw: number" time="0.001">
+        </testcase>
+        <testcase classname="test/unit/tokens.test.ts" name="TokenSet &gt; access_token 이 비문자열이면 throw: null" time="0.001">
+        </testcase>
+    </testsuite>
+</testsuites>

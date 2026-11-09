@@ -253,8 +253,11 @@ sd_code_lines() { grep -vE '^[[:space:]]*(//|#|\*|/\*|--)' "$1" 2>/dev/null || t
 # (`url.searchParams.set('nonce'` · `oauth2.SetAuthURLParam("nonce"`). 경계를 걸면 앞의 `.` 때문에
 # 0 이 되어 required 체크가 정당한 코드를 막는다(실측: node 둘 · go 하나가 0 이었다).
 # 값은 `ENVIRON` 으로 넘긴다 — `awk -v` 는 `\"` 를 이스케이프로 먹는다(ruby 훅 `code_verifier=\"***\"`).
-# ⚠️ 잔여(줄 단위라 못 본다): 다음 줄의 skip 표지(`#[ignore]`·`@Disabled`·skip 데코레이터) ·
-# `/* … */` 안쪽의 맨 줄 · 꼬리 주석 속 훅 사본. 훅은 구조 확인이고 동작은 카나리아의 테스트가 본다.
+# ⚠️ 잔여(줄 단위라 못 본다): `/* … */` 안쪽의 맨 줄 · 꼬리 주석 속 훅 사본. 훅은 구조 확인이고 동작은
+# 카나리아의 테스트가 본다. 카나리아에 단 skip 표지(`#[ignore]`·`@Disabled`·skip 데코레이터)와 레인 명령의 필터는
+# 이 가드가 아니라 레인의 `scripts/check-canaries-ran.mjs` 가 그 실행의 시험 보고서로 본다 — ⚠️ 그 검사는 아래
+# 카나리아 표 함수(`sd_*_canary` · `sd_mask*_test` · `sd_token_type_anchor`)를 **그대로 실행한다**: 줄 머리 `이름() {` ·
+# 줄 머리 `}` 모양을 지키고, 새 카나리아 축은 그 AXES 에 더한다(카나리아를 세는 호출 자리 수가 다르면 판정 불가).
 sd_code_count_raw() { sd_code_lines "$1" | grep -cF -- "$2" || true; }
 sd_code_count() {
   sd_code_lines "$1" | SD_NEEDLE="$2" awk '

@@ -1,0 +1,6 @@
+=== RUN   TestCommentOnly
+--- PASS: TestCommentOnly (0.00s)
+=== RUN   TestReceiverSubtests
+--- PASS: TestReceiverSubtests (0.00s)
+PASS
+ok  	example.com/x	0.010s

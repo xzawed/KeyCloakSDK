@@ -169,6 +169,12 @@ jobs:
         # 레인의 비-required 단계다(그 레인의 `paths:` 뒤라 이 가드만 고친 PR 에서는 돌지 않는다 — 그래서 여기서 판정을 잰다).
         run: sh scripts/test/test-check-hp-attest.sh
 
+      - name: 보안 카나리아 실행 대조 가드 자가테스트(FAIL 사유마다 1 · 못 읽으면 2 · 픽스처만)
+        # 아홉 레인이 단위 테스트 단계 뒤에 돌리는 `check-canaries-ran.mjs`(보안 기본값 가드의 행위 카나리아가 그 실행의
+        # 시험 보고서에서 돌아 통과했는가)의 자가테스트다. required 안에 두어도 안전한 이유는 바로 위와 같다 — 커밋된
+        # 픽스처(`scripts/test/fixtures/canaries-ran/`)만 읽는다. 실제 대조는 레인의 비-required 단계다.
+        run: sh scripts/test/test-check-canaries-ran.sh
+
       - name: 적대 경로 행렬 attest 배선 — 레인마다 조건 없는 attest 단계 · 공용 파일 paths(FAIL 1 · 못 읽으면 2)
         # attest 는 레인 단계가 돌 때만 증명한다 — 그 단계를 지우거나 조건·실패 무시 키로 무르거나, 행렬의 W1 이
         # 읽는 `scripts/test/test-security-defaults.sh` 만 바꾼 PR 이 레인을 만들지 않으면 아무것도 안 울었다. 워크플로

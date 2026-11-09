@@ -4,9 +4,9 @@ on:
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — go-ci · python-ci · node-ci · rust-ci 와 같다).
   push:
     branches: [main]
-    paths: ['php/**', '.github/workflows/php-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['php/**', '.github/workflows/php-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
   pull_request:
-    paths: ['php/**', '.github/workflows/php-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['php/**', '.github/workflows/php-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -40,7 +40,10 @@ jobs:
       - run: vendor/bin/phpstan analyse
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff --allow-risky=yes
       # attest — 적대 경로 행렬은 마지막 단언 뒤에만 $HP_ATTEST_DIR/php.json 을 쓴다(근거: ci.yml 의 같은 단계).
-      - run: vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml
+      # junit 보고서는 아래 카나리아 단계가 읽는다.
+      - run: |
+          mkdir -p "$RUNNER_TEMP/canaries"
+          vendor/bin/phpunit --testsuite unit --coverage-clover clover.xml --log-junit "$RUNNER_TEMP/canaries/php.xml"
         env:
           HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
@@ -50,6 +53,10 @@ jobs:
           HP_ATTEST_DIR: ${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: ${{ github.run_id }}.${{ github.run_attempt }}.${{ github.job }}.${{ strategy.job-index }}
         run: node scripts/check-hp-attest.mjs "$HP_ATTEST_DIR" --nonce "$HP_ATTEST_NONCE" --lang php
+      # 보안 카나리아가 이 실행에서 돌아 통과했는가(근거: ci.yml 의 같은 단계).
+      - name: 보안 카나리아 — 이 실행에서 돌아 통과했는가(scripts/check-canaries-ran.mjs)
+        working-directory: .
+        run: node scripts/check-canaries-ran.mjs --lang php --report "$RUNNER_TEMP/canaries/php.xml"
       # 커버리지 게이트: 로직 라인 ≥90%(경계는 phpunit.xml source exclude — AuthClient/Admin/KeycloakClient)
       - name: coverage gate
         # ⚠️ fail-open 금지: statements가 0이면(clover 리포트가 비었거나 생성 실패) 커버리지를
