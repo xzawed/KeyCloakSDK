@@ -54,6 +54,50 @@ export function responseTooLarge(error: unknown): ResponseTooLargeError | undefi
 }
 
 /**
+ * The signal of a 2xx token or introspection body that is not UTF-8 (RFC 8259 §8.1) — the response arrived but cannot
+ * be used, so the boundary (`auth.ts`) reports it as `KeycloakAuthError` (registry `token-response-class-divergent`,
+ * decision D1). oauth4webapi reads the body with `response.json()`, whose decoder turns a byte that is not UTF-8 into
+ * U+FFFD without an error — the grants and introspection returned a token or a claim the IdP never sent as a success
+ * (measured 2026-11-10).
+ */
+export class ResponseNotUtf8Error extends Error {
+  constructor(kind: string) {
+    super(`${kind} is not valid UTF-8`)
+    this.name = 'ResponseNotUtf8Error'
+  }
+}
+
+/** Finds the UTF-8 signal in the cause chain — `undefined` if there is none. */
+export function responseNotUtf8(error: unknown): ResponseNotUtf8Error | undefined {
+  let link: unknown = error
+  for (let depth = 0; depth < 8 && link instanceof Error; depth += 1) {
+    if (link instanceof ResponseNotUtf8Error) return link
+    link = link.cause
+  }
+  return undefined
+}
+
+/**
+ * Whose 2xx body must be UTF-8 — the token and introspection responses. Discovery and logout keep what they had: an
+ * error status is judged by its status, and logout reads no body.
+ */
+function utf8Kind(url: string): string | undefined {
+  const path = new URL(url).pathname.replace(/\/+$/, '')
+  if (path.endsWith('/token/introspect')) return 'introspection response'
+  if (path.endsWith('/token')) return 'token response'
+  return undefined
+}
+
+function isUtf8(body: Uint8Array): boolean {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(body)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Reads the body up to `cap` bytes only — past that it cancels the stream and throws {@link ResponseTooLargeError}.
  *
  * ⚠️ **It reads with a BYOB reader** — we decide the length requested, so the read stops at exactly cap+1 bytes
@@ -146,6 +190,8 @@ export async function fetchTokenEndpointBounded(
   const response = await fetch(url, init)
   if (response.body === null || response.status < 200 || response.status > 599) return response
   const body = await readCapped(response.body, TOKEN_RESPONSE_MAX_BYTES)
+  const kind = response.status < 300 ? utf8Kind(url) : undefined
+  if (kind !== undefined && !isUtf8(body)) throw new ResponseNotUtf8Error(kind)
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
