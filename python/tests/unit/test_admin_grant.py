@@ -34,6 +34,7 @@ import pytest
 from keycloak import KeycloakAdmin
 
 from keycloak_sdk import KeycloakClient, KeycloakConfig
+from keycloak_sdk._internal.admin_grant import _achecked, _checked
 from keycloak_sdk.admin import AdminClient
 from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.aio.admin import AsyncAdminClient
@@ -385,3 +386,24 @@ def test_construction_is_refused_when_a_grant_method_is_missing(lane: str, name:
     # 이름만으로는 넷이 서로를 포함한다(`token` ⊂ `a_token`) — 빠진 바로 그 자리를 말해야 한다.
     with pytest.raises(KeycloakConfigError, match=rf"keycloak_openid\.{name}\b"):
         _ADMIN_CLIENTS[lane](_CONFIG, admin=admin)
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_sdk_error_inside_the_grant_passes_through_unchanged(lane: str) -> None:
+    """그랜트 래퍼는 python-keycloak 의 실패만 auth 판정으로 옮긴다 — 그 안에서 난 SDK 자신의 예외
+    (세션 무장 거부 등)는 같은 객체 그대로 지난다(`admin_grant._unusable` 가 `None`)."""
+    own = KeycloakConfigError("refused to arm the session")
+
+    def grant(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise own
+
+    async def agrant(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise own
+
+    with pytest.raises(KeycloakConfigError) as excinfo:
+        if lane == "sync":
+            _checked(grant)()
+        else:
+            await _achecked(agrant)()
+
+    assert excinfo.value is own

@@ -93,8 +93,8 @@ def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
     """`exc` 가 이 SDK 의 응답 본문 거부(`token_cap.py`)를 감싼 python-keycloak 실패면, 같은
     메시지의 SDK 오류를 **새로** 만든다 — 아니면 `None`. 상한을 넘은 본문(`incomplete`)은
     다 읽지 않은 응답이라 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
-    token-response-class-divergent · 1.0.7 까지는 `KeycloakAuthError`), 받은 머리만으로 쓸 수
-    없는 응답의 거부(두 번 압축 — 본문을 읽기 전)는 `KeycloakAuthError`.
+    token-response-class-divergent · 1.0.7 까지는 `KeycloakAuthError`), 끝까지 온 응답을 쓸 수
+    없다는 거부(두 번 압축 — 본문을 읽기 전 · 2xx 본문이 UTF-8 아님)는 `KeycloakAuthError`.
 
     ⚠️ 그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 무엇이든
     `KeycloakConnectionError("Can't connect to server")` 로 감싼다. 그대로 두면 상한에 걸린 응답이
@@ -108,12 +108,16 @@ def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
     return KeycloakAuthError(str(signal))
 
 
-def auth_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError:
+def auth_failure(
+    exc: BaseException, *, carry_code: bool = True
+) -> KeycloakAuthError | KeycloakTransportError:
     """auth 경계의 분류 — HTTP 응답을 받았으면 `KeycloakAuthError`, 못 받았으면 전송 오류.
 
     응답을 받았지만 python-keycloak 이 쓸 수 없다고 던진 실패(`TypeError` 등)도 응답을 받은
     쪽이다 — `TokenSet.from_response` 가 쓸 수 없는 토큰 JSON 을 `KeycloakAuthError` 로 내는 것과
-    같은 자리다. 응답 본문이 상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`)."""
+    같은 자리다. 응답 본문이 상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`).
+    `carry_code` 가 거짓이면 오류 본문의 OAuth 코드를 메시지에도 `error` 에도 싣지 않는다
+    (`grant_failure`)."""
     refused = refused_body(exc)
     if refused is not None:
         return refused
@@ -122,7 +126,30 @@ def auth_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
         if status is None:
             # 응답을 못 받았다 — 실을 본문이 없으므로 상류 메시지(연결 실패 사유)를 그대로 둔다.
             return KeycloakTransportError(str(exc))
-        code = oauth_error(exc)
+        code = oauth_error(exc) if carry_code else None
         shown = f" ({code})" if code is not None and _OAUTH_ERROR_CODE.fullmatch(code) else ""
         return KeycloakAuthError(f"Keycloak request failed: HTTP {status}{shown}", error=code)
+    return unusable_response(exc)
+
+
+def unusable_response(exc: BaseException) -> KeycloakAuthError:
+    """응답은 받았는데 python-keycloak 이 그것을 쓸 수 없다고 던진 실패(본문을 인용한
+    `TypeError` 등) — 타입 이름만 싣는다. auth 경계와 admin 자체 그랜트(`admin_grant.py`)가
+    함께 쓴다."""
     return KeycloakAuthError(f"Keycloak returned an unusable response ({type(exc).__name__})")
+
+
+def grant_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError:
+    """admin **자체** 토큰 그랜트의 실패 — auth 레인과 같은 판정이다(`auth_failure` · 등록부
+    token-response-class-divergent D4). 끝까지 온 응답이면 상태가 무엇이든
+    `KeycloakAuthError` 다 — 예전에는 그 상태로 admin 형을 골라 토큰 엔드포인트의 404 가
+    `KeycloakNotFoundError` 였고, 토큰을 받지 못한 `users.delete` 가 admin 요청 0 번에
+    「이미 없음」으로 읽혔다(실측 2026-11-10 · go #952 와 같은 위험).
+
+    ⚠️ 하나만 다르다 — 오류 본문의 OAuth 코드를 싣지 않는다. 그랜트의 폼에는 `client_secret`
+    (갱신이면 refresh token 도)이 실려 있고 IdP 는 그것을 오류 본문의 `error` 자리에도 되울릴 수
+    있다 — 코드 모양 검사로는 막지 못한다(소문자뿐인 비밀은 코드 모양이다 — `mysecret` 을
+    되울린 400 이 메시지 · `args` · `error` 에 실렸다, 독립 레그 실측). admin 은 `vars(e)` 까지
+    깨끗해야 하고(등록부 secret-echo-form-encoded-rescan · `tests/unit/test_admin_grant_echo.py`),
+    1.0.7 까지도 그랜트 실패에 본문을 싣지 않았다."""
+    return auth_failure(exc, carry_code=False)

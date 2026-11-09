@@ -34,7 +34,7 @@ from keycloak.connection import ConnectionManager
 from keycloak_sdk.admin import AdminClient
 from keycloak_sdk.aio.admin import AsyncAdminClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakConfigError
+from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakConfigError
 from tests.unit.conftest import CLIENT_SECRET, Trap
 
 from .test_admin_grant import (
@@ -377,13 +377,14 @@ def test_a_replaced_connection_still_refuses_redirects(trap: Trap) -> None:
     client = AdminClient(_trap_cfg(trap))
     client.raw.connection = _trap_connection(trap)
     try:
-        with pytest.raises(KeycloakAdminError) as exc_info:
+        # 첫 요청은 그랜트다 — 따라가지 않은 307 은 auth 레인과 같은 판정(D4).
+        with pytest.raises(KeycloakAuthError) as exc_info:
             client.users.search()
     finally:
         client.close()  # 갈아 끼운 연결의 두 세션 — 그것이 요청을 보냈다
 
     assert trap.hits == [], "갈아 끼운 연결이 리다이렉트를 따라갔다"
-    assert exc_info.value.status_code == 307
+    assert str(exc_info.value) == "Keycloak request failed: HTTP 307"
 
 
 def test_a_replaced_token_grant_session_still_refuses_redirects(trap: Trap) -> None:
@@ -406,13 +407,13 @@ def test_a_replaced_token_grant_session_still_refuses_redirects(trap: Trap) -> N
         base_url=trap.idp_url, timeout=5
     )
     try:
-        with pytest.raises(KeycloakAdminError) as exc_info:
+        with pytest.raises(KeycloakAuthError) as exc_info:
             client.users.search()
     finally:
         client.close()
 
     assert trap.hits == [], "갈아 끼운 그랜트 세션이 client_secret 을 리다이렉트 대상에 넘겼다"
-    assert exc_info.value.status_code == 307
+    assert str(exc_info.value) == "Keycloak request failed: HTTP 307"
 
 
 def _trap_cfg(trap: Trap) -> KeycloakConfig:

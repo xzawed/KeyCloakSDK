@@ -18,7 +18,7 @@ from keycloak.exceptions import KeycloakError
 
 from .._internal.admin_body import no_body
 from .._internal.admin_grant import is_grant_failure
-from .._internal.lower import is_lower_failure, refused_body, summarize
+from .._internal.lower import grant_failure, is_lower_failure, refused_body, summarize
 from ..exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
@@ -46,13 +46,12 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     `UnicodeDecodeError` 를 냈다(실측: 0xFF · UTF-8 로 인코딩한 서로게이트 ED A0 80, sync·aio).
     풀 수 없는 바이트는 버리지도 바꾸지도 않고 `\\xff` 처럼 이스케이프로 남긴다.
 
-    ⚠️ admin **자체 토큰 그랜트**의 실패(`_internal/admin_grant.py` 의 `is_grant_failure`)면 본문을
-    옮기지 않는다 — `keycloak_error` 는 `None` 이고 타입·메시지·`status_code` 는 그대로다. 그 본문은
-    토큰 엔드포인트의 것이라 그랜트가 보낸 `client_secret`·refresh token 을 되울릴 수 있다. admin
-    REST 응답의 오류(리소스의 401 포함)는 예전처럼 본문을 싣는다.
+    ⚠️ admin **자체 토큰 그랜트**의 실패는 여기 오지 않는다 — `admin_failure` 가 auth 레인과
+    같은 판정으로 먼저 가른다(`grant_failure`). 여기 오는 것은 admin REST 응답의 오류(리소스의
+    401 포함)이고 본문을 싣는다.
     """
     status = getattr(exc, "response_code", None)
-    body = None if is_grant_failure(exc) else getattr(exc, "response_body", None)
+    body = getattr(exc, "response_body", None)
     body_str: str | None
     if isinstance(body, (bytes, bytearray)):
         body_str = body.decode("utf-8", "backslashreplace")
@@ -74,15 +73,18 @@ def admin_failure(
 ) -> KeycloakAdminError | KeycloakTransportError | KeycloakAuthError:
     """`is_lower_failure` 인 실패의 분류.
 
-    `KeycloakError` 는 `translate` 그대로다. 그 밖의 python-keycloak 실패(응답 모양이 틀려 그
-    안에서 난 `TypeError`·`KeyError` — admin 토큰 그랜트의 응답이 JSON 객체가 아니거나 `expires_in`
-    을 못 쓸 때도 여기다)는 HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로
-    새어 본문을 인용했다. ⚠️ 그랜트 응답의 `access_token` 을 못 쓰는 것은 여기가 아니다 — 세터에
-    닿기 전에 `_internal/admin_grant.py` 가 auth 레인과 같은 `KeycloakAuthError` 로 거부한다
-    (`refused_grant`). 그랜트 응답 본문이 상한을 넘은 것은 auth 레인과 같은
-    `KeycloakTransportError` 다(`refused_body` — 그 그랜트는 admin REST 요청보다 먼저라 REST
-    요청은 나가지 않는다).
+    admin **자체 토큰 그랜트**의 실패(`_internal/admin_grant.py` 가 표시한 것)는 auth 레인과
+    같은 판정이다(`grant_failure` — 끝까지 온 응답이면 `KeycloakAuthError`, 상한 초과·연결
+    실패는 `KeycloakTransportError`). 그랜트 응답을 python-keycloak 이 못 쓴 실패와
+    `access_token`·`expires_in` 을 못 쓰는 응답은 여기 오기 전에 그 모듈이 같은 판정의
+    `KeycloakAuthError` 로 거부한다(`refused_grant`).
+
+    그 밖의 `KeycloakError`(admin REST 응답)는 `translate` 그대로다. python-keycloak 이 admin
+    REST 응답을 못 쓴 실패(`TypeError`·`KeyError`)는 HTTP 상태가 없으므로 이 경계의 규칙대로
+    전송 쪽이다. 예전에는 raw 로 새어 본문을 인용했다.
     """
+    if is_grant_failure(exc):
+        return grant_failure(exc)
     refused = refused_body(exc)
     if refused is not None:
         return refused

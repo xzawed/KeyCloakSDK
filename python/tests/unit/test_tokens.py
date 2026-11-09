@@ -108,10 +108,20 @@ def test_introspection_maps_fields() -> None:
     assert result == IntrospectionResult(active=True, username="svc", client_id="app")
 
 
-@pytest.mark.parametrize("data", [{}, {"active": None}, {"active": False, "username": None}])
-def test_absent_or_null_active_is_inactive(data: dict[str, object]) -> None:
-    """예전과 같다 — 없거나 null 이면 비활성(fail-closed)."""
-    assert _introspection_result(data) == IntrospectionResult(False, None, None)
+def test_false_active_is_inactive() -> None:
+    assert _introspection_result({"active": False, "username": None}) == IntrospectionResult(
+        False, None, None
+    )
+
+
+@pytest.mark.parametrize("data", [{}, {"active": None}, {"username": "svc"}])
+def test_absent_or_null_active_is_rejected(data: dict[str, object]) -> None:
+    """RFC 7662 §2.2 — `active` 는 REQUIRED 다. 1.0.7 까지는 비활성으로 읽어 깨진 응답이 정상
+    「비활성」 뒤에 숨었다(등록부 token-response-class-divergent D3)."""
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        _introspection_result(data)
+
+    assert str(excinfo.value) == "introspection response has no active"
 
 
 @pytest.mark.parametrize("bad", ["false", "true", 1, 0, [], {"v": True}])

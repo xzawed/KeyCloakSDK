@@ -39,7 +39,6 @@ import pytest
 from joserfc.jwk import KeySet, RSAKey
 
 from keycloak_sdk import (
-    KeycloakAdminError,
     KeycloakAuthError,
     KeycloakClient,
     KeycloakConfig,
@@ -110,8 +109,9 @@ LOGOUT = "logout"
 ADMIN = "admin grant"
 ALL_CALLS = frozenset({CC, EXCHANGE, EXCHANGE_NONCE, REFRESH_CALL, INTROSPECT, LOGOUT, ADMIN})
 #: 200 이지만 쓸 수 없는 토큰 JSON — 토큰을 파싱하는 호출과 admin 그랜트가 실패한다. introspect 는
-#: `active` 없는 객체를 비활성으로 읽고(정상), logout 은 204 가 아니라 실패한다.
-_BAD_TOKEN_JSON = ALL_CALLS - {INTROSPECT}
+#: `active` 가 없어 실패하고(RFC 7662 REQUIRED — 1.0.7 까지는 비활성으로 읽었다), logout 은 204 가
+#: 아니라 실패한다.
+_BAD_TOKEN_JSON = ALL_CALLS
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ VARIANTS: dict[str, _Variant] = {
     # (a) id_token 이 JWT 가 아니다 — nonce 를 준 교환만 id_token 을 검증한다.
     "a id_token 이 JWT 가 아님": _Variant(
         lambda _: _json(200, {**_TOKENS, "id_token": ID_TOKEN, "expires_in": 300}),
-        frozenset({EXCHANGE_NONCE, LOGOUT}),
+        frozenset({EXCHANGE_NONCE, LOGOUT, INTROSPECT}),  # introspect: `active` 가 없다
     ),
     # (b) access_token 이 문자열이 아니고 refresh_token 이 카나리아다.
     "b access_token 이 문자열 아님": _Variant(
@@ -467,9 +467,11 @@ def test_failures_are_sdk_types_with_no_lower_exception_reachable(
     measured: tuple[_Idp, list[_Outcome]],
 ) -> None:
     """§4 — 실패는 SDK 타입이고, 사슬(억제된 `__context__` 까지)에 python-keycloak 원본이 없다.
-    분류는 레인 규칙대로다: auth 는 `KeycloakAuthError`, admin 은 admin 계층 또는 전송 오류 — 단
-    admin 그랜트 응답의 `access_token` 을 못 쓰면 같은 변형의 auth 레인(client_credentials)과 같은
-    타입·메시지다."""
+    분류는 레인 규칙대로다: auth 는 `KeycloakAuthError`, admin 의 자체 그랜트는 같은 변형의 auth
+    레인(client_credentials)과 같은 타입이다(등록부 token-response-class-divergent D4 — 1.0.7
+    까지는 admin 계층 또는 전송 오류). 그랜트 응답의 `access_token` 을 못 쓰면 메시지도 같다 —
+    다른 칸은 먼저 걸리는 필드가 다를 수 있다(auth 레인은 `token_type` 을, admin 세터는
+    `expires_in` 을 본다)."""
     _, outcomes = measured
     failed = [o for o in outcomes if o.error is not None]
     assert failed, "실패가 없다 — 흐름이 공허하다"
@@ -480,13 +482,13 @@ def test_failures_are_sdk_types_with_no_lower_exception_reachable(
     problems = []
     for o in failed:
         assert o.error is not None
-        if o.call == ADMIN and _unusable_access_token(o.variant):
+        if o.call == ADMIN:
             ref = auth_lane[(o.facade, o.variant)]
-            if ref is None or (type(o.error), str(o.error)) != (type(ref), str(ref)):
+            same = ref is not None and type(o.error) is type(ref)
+            if same and _unusable_access_token(o.variant):
+                same = str(o.error) == str(ref)
+            if not same:
                 problems.append(f"{_where(o)}: auth 레인과 다르다 — {o.error!r} ≠ {ref!r}")
-        elif o.call == ADMIN:
-            if not isinstance(o.error, (KeycloakAdminError, KeycloakTransportError)):
-                problems.append(f"{_where(o)}: admin 계층이 아니다 — {type(o.error)}")
         elif not isinstance(o.error, KeycloakAuthError):
             problems.append(f"{_where(o)}: KeycloakAuthError 가 아니다 — {type(o.error)}")
         status = VARIANTS[o.variant].respond("")[0]
@@ -530,10 +532,12 @@ LINE = "HX7q2w9e-status-line-canary"
 #: (`BadStatusLine('XYZ …')`·h11 `illegal header line`) — 예전에는 `from exc` 사슬로 찍혔다.
 _RAW = {
     "상태 줄이 HTTP 가 아님": (f"XYZ {LINE}\r\n\r\n".encode(), {"sync", "aio"}),
+    # 본문은 정상 introspection 응답이다 — `{}` 였는데 `active` 없음이 이제 거부라(D3) 흐름이
+    # 본문 탓에 바뀌지 않게 했다. 이 칸이 재는 것은 헤더 줄이다.
     "헤더 줄에 콜론이 없음": (
         (
-            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n"
-            f"X-Echo {LINE}\r\n\r\n{{}}"
+            "HTTP/1.1 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n"
+            f"X-Echo {LINE}\r\n\r\n" + '{"active":false}'
         ).encode(),
         {"aio"},
     ),

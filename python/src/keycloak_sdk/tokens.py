@@ -111,13 +111,14 @@ def _introspection_result(data: dict[str, Any]) -> IntrospectionResult:
     """introspect 응답 → `IntrospectionResult`. sync·aio 미러가 같이 쓴다(RFC 7662).
 
     ⚠️ `active` 는 JSON boolean 만 받는다 — 예전 `bool(...)` 은 문자열 `"false"` 를 **활성**으로
-    읽었다(fail-open, 실측 2026-09-26). 없거나 null 이면 비활성이다(예전과 같다). `username`·
-    `client_id` 는 str|None 이다 — 객체 모양은 기본 dataclass repr 이 그 안의 토큰을 찍었다(Grok
-    레그가 찾음). 거부 메시지에는 필드 이름만 싣는다."""
+    읽었다(fail-open, 실측 2026-09-26). 없거나 null 이어도 거부한다 — RFC 7662 §2.2 의
+    REQUIRED 라 깨진 응답이지 「비활성」이 아니다(등록부 token-response-class-divergent D3 ·
+    1.0.7 까지는 비활성). `username`·`client_id` 는 str|None 이다 — 객체 모양은 기본 dataclass
+    repr 이 그 안의 토큰을 찍었다(Grok 레그가 찾음). 거부 메시지에는 필드 이름만 싣는다."""
     what = "introspection response"
     active = data.get("active")
     if active is None:
-        active = False
+        raise KeycloakAuthError(f"{what} has no active")
     if not isinstance(active, bool):
         raise KeycloakAuthError(f"{what} has an invalid active")
     return IntrospectionResult(
