@@ -81,6 +81,8 @@ final class HostilePathMatrixTest extends TestCase
     private const UNDETERMINED_EXEMPT = [
         'Token\\TokenSet::fromArray' => '정적 파서 — 인자(배열)만 받고 HTTP 클라이언트를 쥐지 않아 요청을 낼 수 없다. '
             . '합성 인자 `[]` 는 access_token 이 없어 계약상 거부된다(TokenSetTest::testMissingAccessTokenIsRejected).',
+        'Token\\IntrospectionResult::fromArray' => '정적 파서 — Token\\TokenSet::fromArray 와 같은 부류(요청을 낼 수 없다). 합성 인자 `[]` 는 '
+            . 'REQUIRED 인 boolean active 가 없어 계약상 거부된다(IntrospectionResultTest::testAResponseWithoutABooleanActiveIsRefused).',
         'Admin\\RenamableRoles::updateByName' => 'RolesResource::update 안에서 만들어 곧바로 버린다 — 소비자가 쥘 수 없어 걷기가 안 닿는다'
             . '(FacadeDumpTest::EXEMPT 와 같은 이유). 그 경로는 행 Admin\\RolesResource::update 가 TOKEN_GRANT 로 잰다.',
         'Internal\\PkceKeycloakProvider::getResponse' => 'league 가 토큰 요청을 보내는 자리(상한 싱크를 단다) — AuthClient 의 private 프로퍼티로만 '

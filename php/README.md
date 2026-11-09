@@ -88,7 +88,7 @@ Two scope limits worth knowing. The JWKS cache and its rate limit are per-`JwksS
 
 ## Upgrading from `1.0.0`
 
-**No public API was removed or changed incompatibly since `1.0.0`.** On every build CI compares the API with the previous release (see [Versioning and support](https://github.com/xzawed/KeyCloakSDK/blob/main/php/README.md#versioning-and-support)). What changed is **behaviour**, which that comparison cannot see. Below are the changes from `1.1.0` to `1.5.2` that code written against `1.0.0` can notice without being edited, collected from the release notes and the source diff between the tags (the [changelog](https://github.com/xzawed/KeyCloakSDK/blob/main/CHANGELOG.md) has the measurements). Each item names the release that brought it, so on a later `1.x` you can skip the ones at or below your version.
+**No public API was removed or changed incompatibly since `1.0.0`.** On every build CI compares the API with the previous release (see [Versioning and support](https://github.com/xzawed/KeyCloakSDK/blob/main/php/README.md#versioning-and-support)). What changed is **behaviour**, which that comparison cannot see. Below are the changes since `1.1.0` that code written against `1.0.0` can notice without being edited, collected from the release notes and the source diff between the tags (the [changelog](https://github.com/xzawed/KeyCloakSDK/blob/main/CHANGELOG.md) has the measurements). Each item names the release that brought it — *after `1.5.2`* means not released yet — so on a later `1.x` you can skip the ones at or below your version.
 
 **Return values**
 
@@ -102,7 +102,6 @@ Two scope limits worth knowing. The JWKS cache and its rate limit are per-`JwksS
 - `exchangeCode()` with a nonce reports an invalid `id_token` as `KeycloakAuthError` (`authorization code exchange failed: invalid id_token: …`) whose `getPrevious()` is the `TokenValidationError` — as it did in `1.0.0`, and also for the over-long token that `1.5.0` refuses. The `1.5.0` release notes said `TokenValidationError`; that was wrong.
 - `admin()->raw()`: a failure before the server version is detected surfaces as the admin library's `VersionDetectionException` (`1.4.1`).
 - A failed admin token request — an HTTP error of any status, or a 2xx that is not a usable token response (not JSON, invalid UTF-8, no string `access_token`, an access token that is not a JWT) — throws `KeycloakAuthError`, not `KeycloakAdminError` or one of its subclasses (after `1.5.2`). The status stays in the message and a code-shaped OAuth `error` in `oauthError`. A token-endpoint `404` used to be `KeycloakNotFoundError`, so a `delete()` whose token request failed looked as if the resource was already gone, without any admin request; `403` and `409` had the same shape. Catch `KeycloakAuthError` around admin calls too.
-- `introspect()` throws `KeycloakAuthError` for a response whose `active` is missing or not a boolean (RFC 7662 §2.2, after `1.5.2`). A missing `active` used to read as inactive and a string such as `"yes"` as active. Do not treat the exception as "allow".
 
 **Exception messages and `oauthError`**
 
@@ -116,6 +115,7 @@ Two scope limits worth knowing. The JWKS cache and its rate limit are per-`JwksS
 - `KeycloakConfig`: a connect or read timeout that is `<= 0` or not finite, and a negative `clockSkew`, throw `KeycloakConfigError` (`1.1.0`). `0` used to mean no timeout at all.
 - `TokenSet::fromArray()` and `ClientCredentialsTokenProvider` refuse a token response whose `access_token` is empty or not a string with `KeycloakAuthError`, and `new TokenSet(accessToken: '')` throws (`1.1.0`). The provider already refused a missing one.
 - The admin lane refuses an access token that is not an RFC 6750 `b64token` — with `KeycloakAdminError` (no status) in `1.5.1` and `1.5.2`, with `KeycloakAuthError` after `1.5.2`. The standalone `ClientCredentialsTokenProvider` strips leading and trailing whitespace and otherwise throws `KeycloakAuthError` (`1.5.1`).
+- `IntrospectionResult::fromArray()`, and so `introspect()`, refuse a response whose `active` is missing or not a JSON boolean with `KeycloakAuthError` (RFC 7662 §2.2, after `1.5.2`). A missing `active` used to read as inactive, and anything else was cast — the string `"false"` and the number `1` read as **active**. Do not treat the exception as "allow".
 - `validate()` and `validateIdToken()` refuse a token longer than `JwtValidator::JWT_MAX_BYTES` (256,000 bytes) with `TokenValidationError`, before splitting or decoding it (`1.5.0`).
 - The nonce path of `exchangeCode()` checks the `id_token`'s `aud` against `clientId` rather than `expectedAudience` (`1.3.0`).
 
