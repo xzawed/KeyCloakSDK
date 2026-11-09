@@ -35,6 +35,10 @@ decode_content=False)`·aio `aiter_raw`)을 받아 여기서 풀고, 그렇게 �
 머리만으로 쓸 수 없는 응답(두 번 압축 — 본문을 읽기 전에 거부)은 `KeycloakAuthError` 다. 신호는
 python-keycloak 의 프레임(보낼 폼, 곧 `client_secret`)을 지나왔으므로 원인으로 달지 않는다.
 
+**2xx 토큰·introspection 본문은 UTF-8 이어야 한다**(`_strict_utf8`) — 다 읽은 본문을
+여기서 보는 자리가 이 모듈뿐이라 같이 둔다. 거부는 받은 머리만으로 쓸 수 없는 응답과 같은
+신호(`KeycloakAuthError`)다.
+
 ⚠️ **admin REST 세션에는 걸지 않는다** — 사용자 목록은 정당하게 크다(그 세션의 오류
 본문 상한과 쓰지 않는 본문은 `admin_body.py` 가 맡는다). admin 은 자체 그랜트의
 세션(중첩 `KeycloakOpenID`)에만 걸고, 그 설치는 `admin_guard.py` 가 요청마다 다시 본다.
@@ -86,8 +90,8 @@ _Ended = Callable[[], bool]
 
 class ResponseRefused(Exception):
     """세션이 응답 본문을 거부했다 — 경계가 같은 메시지의 SDK 오류로 바꾸는 신호. `incomplete` 면
-    본문을 다 읽지 않았다(상한 초과 → `KeycloakTransportError`), 아니면 받은 머리만으로 쓸 수
-    없는 응답이다(두 번 압축 — 본문을 읽기 전 → `KeycloakAuthError`)."""
+    본문을 다 읽지 않았다(상한 초과 → `KeycloakTransportError`), 아니면 끝까지 온 응답을 쓸 수
+    없다(두 번 압축 — 본문을 읽기 전 · 2xx 본문이 UTF-8 아님 → `KeycloakAuthError`)."""
 
     def __init__(self, message: str, *, incomplete: bool = False) -> None:
         super().__init__(message)
@@ -108,6 +112,34 @@ def _kind(path: str) -> str:
 
 def _too_large(kind: str) -> ResponseRefused:
     return ResponseRefused(f"{kind} exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes", incomplete=True)
+
+
+#: 본문이 JSON 이라 UTF-8 이어야 하는 응답 — logout 은 상태만 본다.
+_JSON_KINDS = ("token response", "introspection response")
+
+
+def _strict_utf8(status: int, kind: str, body: bytes) -> None:
+    """2xx 토큰·introspection 본문은 UTF-8 이어야 한다(RFC 8259 §8.1) — 아니면 받은 응답을
+    쓸 수 없다는 거부다(`KeycloakAuthError` · 등록부 token-response-class-divergent D1).
+
+    ⚠️ sync 는 requests 가 `application/json` 을 `errors="replace"` 로 풀어 잘못된 바이트를
+    U+FFFD 로 바꾸고 **받아들였다** — IdP 가 내지 않은 토큰·바뀐 클레임이다(실측 2026-11-10:
+    introspection 의 username 바이트 `s FF FE vc` 가 `'s\\ufffd\\ufffdvc'` 로 성공). aio 는
+    httpx 가 엄격히 풀어 python-keycloak 의 `TypeError` 였다 — 두 미러가 여기서 같은 거부를
+    낸다. 오류 응답(4xx·5xx)의 본문은 보지 않는다(판정은 상태가 한다). 선언된 charset 도 보지
+    않는다 — RFC 8259 §11, application/json 에는 효과가 없다."""
+    if not 200 <= status < 300 or kind not in _JSON_KINDS:
+        return
+    try:
+        body.decode("utf-8")
+    except UnicodeDecodeError:
+        readable = False
+    else:
+        readable = True
+    # ⚠️ 거부는 `except` **밖**이다 — 안에서 던지면 본문을 쥔 `UnicodeDecodeError` 가
+    # `__context__` 로 매달린다.
+    if not readable:
+        raise ResponseRefused(f"{kind} is not valid UTF-8")
 
 
 def _keep(body: bytearray, inflate: _Inflate, data: bytes, kind: str) -> None:
@@ -137,10 +169,12 @@ def capped_send(send: _SyncSend) -> _SyncSend:
         if kwargs.get("stream"):
             return send(request, **kwargs)
         request.headers["Accept-Encoding"] = _ACCEPT_ENCODING
+        kind = _kind(request.path_url)
         with exchange(seconds(kwargs.get("timeout")), _WIRE_BUDGET) as (check, _lift):
             response = send(request, **{**kwargs, "stream": True})
             try:
-                body = _read(response, _kind(request.path_url), check)
+                body = _read(response, kind, check)
+                _strict_utf8(response.status_code, kind, body)
             except BaseException:
                 response.close()  # 남은 본문을 읽지 않고 연결째 버린다
                 raise
@@ -223,8 +257,10 @@ def acapped_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.Re
 
         async def exchange() -> httpx.Response:
             response = await send(request, stream=True, **kwargs)
+            kind = _kind(request.url.path)
             try:
-                body = await _aread(response, _kind(request.url.path))
+                body = await _aread(response, kind)
+                _strict_utf8(response.status_code, kind, body)
             except BaseException:
                 await response.aclose()
                 raise

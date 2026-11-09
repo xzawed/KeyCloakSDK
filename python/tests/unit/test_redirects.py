@@ -20,7 +20,6 @@ from keycloak_sdk.admin import AdminClient
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
 from keycloak_sdk.exceptions import (
-    KeycloakAdminError,
     KeycloakAuthError,
     KeycloakConfigError,
     KeycloakTransportError,
@@ -238,13 +237,15 @@ def test_admin_refuses_redirects_on_both_of_its_sessions(trap: Trap) -> None:
 
     client = AdminClient(_config(trap))
     try:
-        with pytest.raises(KeycloakAdminError) as exc_info:
+        # 첫 요청은 토큰 그랜트다 — 따라가지 않은 307 은 끝까지 온 응답이라 auth 레인과 같은
+        # 판정(D4).
+        with pytest.raises(KeycloakAuthError) as exc_info:
             client.users.search()
     finally:
         client.close()
 
     assert trap.hits == [], "SDK admin이 리다이렉트 대상으로 요청을 보냈다"
-    assert exc_info.value.status_code == 307
+    assert str(exc_info.value) == "Keycloak request failed: HTTP 307"
 
 
 def test_admin_rest_session_leaks_bearer_on_a_same_origin_redirect(trap: Trap) -> None:
@@ -266,7 +267,7 @@ def test_admin_rest_session_leaks_bearer_on_a_same_origin_redirect(trap: Trap) -
 
     client = AdminClient(_config(trap))
     try:
-        with pytest.raises(KeycloakAdminError):
+        with pytest.raises(KeycloakAuthError):  # 그랜트의 307 이 먼저다(위 시험과 같다)
             client.users.search()
     finally:
         client.close()

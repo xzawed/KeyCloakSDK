@@ -93,8 +93,8 @@ def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
     """`exc` 가 이 SDK 의 응답 본문 거부(`token_cap.py`)를 감싼 python-keycloak 실패면, 같은
     메시지의 SDK 오류를 **새로** 만든다 — 아니면 `None`. 상한을 넘은 본문(`incomplete`)은
     다 읽지 않은 응답이라 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
-    token-response-class-divergent · 1.0.7 까지는 `KeycloakAuthError`), 받은 머리만으로 쓸 수
-    없는 응답의 거부(두 번 압축 — 본문을 읽기 전)는 `KeycloakAuthError`.
+    token-response-class-divergent · 1.0.7 까지는 `KeycloakAuthError`), 끝까지 온 응답을 쓸 수
+    없다는 거부(두 번 압축 — 본문을 읽기 전 · 2xx 본문이 UTF-8 아님)는 `KeycloakAuthError`.
 
     ⚠️ 그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 무엇이든
     `KeycloakConnectionError("Can't connect to server")` 로 감싼다. 그대로 두면 상한에 걸린 응답이
@@ -125,4 +125,32 @@ def auth_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
         code = oauth_error(exc)
         shown = f" ({code})" if code is not None and _OAUTH_ERROR_CODE.fullmatch(code) else ""
         return KeycloakAuthError(f"Keycloak request failed: HTTP {status}{shown}", error=code)
+    return unusable_response(exc)
+
+
+def unusable_response(exc: BaseException) -> KeycloakAuthError:
+    """응답은 받았는데 python-keycloak 이 그것을 쓸 수 없다고 던진 실패(본문을 인용한
+    `TypeError` 등) — 타입 이름만 싣는다. auth 경계와 admin 자체 그랜트(`admin_grant.py`)가
+    함께 쓴다."""
     return KeycloakAuthError(f"Keycloak returned an unusable response ({type(exc).__name__})")
+
+
+def grant_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError:
+    """admin **자체** 토큰 그랜트의 실패 — auth 레인과 같은 판정이다(`auth_failure` · 등록부
+    token-response-class-divergent D4). 끝까지 온 응답이면 상태가 무엇이든
+    `KeycloakAuthError` 다 — 예전에는 그 상태로 admin 형을 골라 토큰 엔드포인트의 404 가
+    `KeycloakNotFoundError` 였고, 토큰을 받지 못한 `users.delete` 가 admin 요청 0 번에
+    「이미 없음」으로 읽혔다(실측 2026-11-10 · go #952 와 같은 위험).
+
+    ⚠️ 하나만 다르다 — `error` 는 코드 모양일 때만 싣는다. 그랜트의 폼에는 `client_secret`
+    (갱신이면 refresh token 도)이 실려 있고 IdP 는 그것을 오류 본문의 `error` 자리에도
+    되울릴 수 있다 — admin 은 `vars(e)` 까지 깨끗해야 한다(등록부
+    secret-echo-form-encoded-rescan · `tests/unit/test_admin_grant_echo.py`)."""
+    verdict = auth_failure(exc)
+    if isinstance(verdict, KeycloakAuthError) and not _shaped(verdict.error):
+        return KeycloakAuthError(str(verdict))
+    return verdict
+
+
+def _shaped(error: str | None) -> bool:
+    return error is None or _OAUTH_ERROR_CODE.fullmatch(error) is not None

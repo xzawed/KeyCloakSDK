@@ -22,7 +22,7 @@ from keycloak.connection import ConnectionManager
 from keycloak_sdk._internal.lower import LowerLibraryError
 from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.config import KeycloakConfig
-from keycloak_sdk.exceptions import KeycloakAdminError, KeycloakAuthError, KeycloakTransportError
+from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakTransportError
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet
 
 CAP = 1_048_576
@@ -160,10 +160,7 @@ async def test_an_error_status_is_held_to_the_same_cap(
     error = excinfo.value
     if refused:
         _assert_refused(lane, token_idp, error)
-    elif lane == "admin":
-        assert type(error) is KeycloakAdminError, repr(error)
-        assert (error.status_code, error.keycloak_error) == (400, None)
-    else:
+    else:  # admin 그랜트의 실패도 auth 레인과 같은 판정이다(D4)
         assert type(error) is KeycloakAuthError, repr(error)
         assert str(error) == "Keycloak request failed: HTTP 400 (invalid_grant)"
 
