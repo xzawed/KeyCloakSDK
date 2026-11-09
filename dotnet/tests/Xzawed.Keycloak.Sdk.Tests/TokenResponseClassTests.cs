@@ -366,6 +366,56 @@ public sealed class TokenResponseClassTests
         Assert.Equal(sent, idp.AdminRequests().Count);
     }
 
+    // ── the wrapper is invisible to System.Net.Http's telemetry ─────────────────────────────────────────────────────
+
+    /// <summary>Each token and introspection request is one request to System.Net.Http's telemetry, as it was before these
+    /// requests went through the SDK's wrapper (<c>TokenEndpointInvoker</c>). Measured on the first cut of the wrapper — a plain
+    /// <see cref="HttpMessageInvoker"/> around a handler: <c>HttpMessageInvoker.SendAsync</c> logs <c>RequestStart</c> for a
+    /// request no <see cref="HttpClient"/> has sent yet, and the client then logs its own — 6 for these 3 requests.</summary>
+    [Fact]
+    public async Task A_token_or_introspection_request_is_one_request_to_the_telemetry()
+    {
+        using var idp = new ScriptedIdp((_, path) => path switch
+        {
+            $"{Oidc}/token" => A(200, Json, GoodToken),
+            $"{Oidc}/token/introspect" => A(200, Json, GoodIntrospection),
+            _ => A(404, Json, "{}"),
+        });
+        using var starts = new RequestStarts(new Uri(idp.Url).Port);
+        using var kc = Facade(idp.Url);
+
+        await kc.Auth.ClientCredentialsTokenAsync();
+        await kc.Auth.RefreshAsync("rt-sent");
+        await kc.Auth.IntrospectAsync("tok-sent");
+
+        Assert.Equal(3, starts.Count);
+    }
+
+    /// <summary>Counts System.Net.Http's <c>RequestStart</c> events for one port — the fake IdP's, so requests other tests send
+    /// meanwhile are not counted.</summary>
+    private sealed class RequestStarts : System.Diagnostics.Tracing.EventListener
+    {
+        private readonly int _port;
+        private int _count;
+
+        public RequestStarts(int port) => _port = port;
+
+        public int Count => Volatile.Read(ref _count);
+
+        protected override void OnEventSourceCreated(System.Diagnostics.Tracing.EventSource eventSource)
+        {
+            if (eventSource.Name == "System.Net.Http")
+                EnableEvents(eventSource, System.Diagnostics.Tracing.EventLevel.Informational);
+        }
+
+        protected override void OnEventWritten(System.Diagnostics.Tracing.EventWrittenEventArgs eventData)
+        {
+            // RequestStart(scheme, host, port, pathAndQuery, …)
+            if (eventData.EventName == "RequestStart" && eventData.Payload is { Count: > 2 } payload && payload[2] is int port && port == _port)
+                Interlocked.Increment(ref _count);
+        }
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     private static KeycloakClient Facade(string url) =>

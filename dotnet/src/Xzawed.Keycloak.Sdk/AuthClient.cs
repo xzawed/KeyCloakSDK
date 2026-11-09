@@ -29,7 +29,7 @@ public sealed class AuthClient : ITokenSource
     private readonly OidcEndpoints _ep;
     private readonly JwtValidator _validator;
     private readonly HttpClient _http;
-    private readonly HttpMessageInvoker _tokenEndpoint;   // every token and introspection request — TokenResponseHandler
+    private readonly TokenEndpointInvoker _tokenEndpoint;   // every token and introspection request goes out through it
 
     /// <param name="cfg">Normalized configuration.</param>
     /// <param name="ep">The realm's endpoints.</param>
@@ -42,7 +42,7 @@ public sealed class AuthClient : ITokenSource
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;
-        _tokenEndpoint = new HttpMessageInvoker(new TokenResponseHandler(http));
+        _tokenEndpoint = new TokenEndpointInvoker(http);
     }
 
     /// <summary>Starts a PKCE (S256) authorization-code flow. Synchronous — no network.</summary>
@@ -330,7 +330,7 @@ public sealed class AuthClient : ITokenSource
                 // handler's 64 KiB, which .NET reports with the same code (measured), so the message names neither alone.
                 throw new KeycloakTransportException($"{failureMessage}: response exceeds a size limit", tooLarge);
             case ResponseErrorType.Exception:
-                // Duende 가 응답을 예외로 냈다 — 끝까지 온 응답(HttpResponse 있음 · TokenResponseHandler 가 보장한다)을 못 썼으면
+                // Duende 가 응답을 예외로 냈다 — 끝까지 온 응답(HttpResponse 있음 · TokenEndpointInvoker 가 보장한다)을 못 썼으면
                 // 인증 실패, 오지 않았으면(연결거부 · DNS · TLS · 끊긴 본문 · 깨진 틀) 전송 실패다(판정 2026-11-10 — 예전에는 둘 다
                 // 전송 실패였다). 도착한 응답의 사슬은 메시지를 전부 뺀다 — JSON 파서는 본문을 인용한다(TokenResponseVerdict.Unread).
                 throw TokenResponseVerdict.Unread(resp, failureMessage, transportMessage);
