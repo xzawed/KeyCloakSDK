@@ -213,6 +213,10 @@ class CappedResponseSenderTest {
       }
       reply.set(new Reply(status, concat(utf8("{\"access_token\":\"ab\"}"), new byte[] {(byte) 0xE2, (byte) 0x82})));
       expectNotUtf8(status + " 끝에서 잘린 열", wrong);
+      // 디코더의 4 KiB 버퍼를 넘긴 뒤의 잘못된 바이트 — 첫 버퍼만 재는 검사(넘침에서 멈춤)가 놓친다(독립 레그의 변이)
+      reply.set(new Reply(status, concat(utf8("{\"access_token\":\"" + "é".repeat(5_000)), new byte[] {(byte) 0xFF},
+          utf8("\"}"))));
+      expectNotUtf8(status + " 4 KiB 버퍼 뒤", wrong);
     }
     List<Reply> same = List.of(
         new Reply(200, utf8("{\"username\":\"sévc 😀\"}")),

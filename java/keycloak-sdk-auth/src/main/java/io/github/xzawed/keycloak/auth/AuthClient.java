@@ -391,13 +391,13 @@ public class AuthClient {
   static final int MAX_DESCRIPTION_CHARS = 4096;
 
   /**
-   * 오류 응답의 사유 — IdP 의 error_description({@link #describe} 가 가린 것), 없으면 그 응답의 HTTP 상태. Nimbus {@code ErrorObject}
-   * 는 JSON 이 아닌 오류 본문(503·400 HTML)과 {@code error} 만 있는 본문에 설명을 두지 않아 메시지가 「… failed: null」 이었다
-   * ({@code TokenResponseClassTest}). 상태는 응답을 인용하지 않는다.
+   * 오류 응답의 사유 — IdP 의 error_description({@link #describe} 가 가린 것), 없거나 비었으면(공백뿐 포함) 그 응답의 HTTP 상태.
+   * Nimbus {@code ErrorObject} 는 JSON 이 아닌 오류 본문(503·400 HTML)과 {@code error} 만 있는 본문에 설명을 두지 않아 메시지가
+   * 「… failed: null」 이었고, 빈 설명은 「… failed: 」 였다({@code TokenResponseClassTest}). 상태는 응답을 인용하지 않는다.
    */
   static String reason(ErrorObject err, HTTPRequest sent, char[] clientSecret) {
     String described = describe(err.getDescription(), sent, clientSecret);
-    return described != null ? described : "HTTP " + err.getHTTPStatusCode();
+    return described != null && !described.isBlank() ? described : "HTTP " + err.getHTTPStatusCode();
   }
 
   static String describe(String description, HTTPRequest sent, char[] clientSecret) {

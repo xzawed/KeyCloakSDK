@@ -16,6 +16,12 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 /**
@@ -77,6 +83,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   /** {@link #JUDGE_ENTITY} 와 함께 다는 그 응답의 상태 — ReaderInterceptor 는 상태를 모른다({@link Unusable} 이 싣는다). */
   static final String STATUS = TokenResponseGuard.class.getName() + ".status";
   static final String REJECTED = "token endpoint response carries no usable access_token";
+  /** 2xx 본문이 엄격한 UTF-8 이 아니다({@link #isUtf8}) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다. */
+  static final String NOT_UTF8 = "token endpoint response is not valid UTF-8";
   /** 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다). */
   static final String UNBOUND = "token endpoint response does not bind as a token response";
   /** 본문이 상한을 넘을 때의 거부(2xx · 오류 상태 모두) — 다 읽지 않은 응답이라 전송 실패다. 응답을 인용하지 않는다. */
@@ -130,8 +138,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   }
 
   /**
-   * 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(전송 실패), 쓸 수 없으면 {@link Unusable}, 통과하면
-   * 읽은 바이트를 그대로 넘긴다.
+   * 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(전송 실패), UTF-8 이 아니거나 쓸 수 없으면
+   * {@link Unusable}, 통과하면 읽은 바이트를 그대로 넘긴다.
    */
   private static ByteArrayInputStream usableOrReject(InputStream in, Object exchange, int status) throws IOException {
     byte[] body = in == null ? new byte[0] : capPlusOne(in);
@@ -139,11 +147,36 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       release(in, exchange);
       throw new IOException(TOO_LARGE);
     }
+    if (!isUtf8(body)) {
+      release(in, exchange);
+      throw new Unusable(status, NOT_UTF8, null);
+    }
     if (!carriesUsableAccessToken(body)) {
       release(in, exchange);
       throw new Unusable(status, REJECTED, null);
     }
     return new ByteArrayInputStream(body);
+  }
+
+  /**
+   * 엄격한 UTF-8 인가 — auth 레인 {@code CappedResponseSender.isUtf8} 의 쌍둥이다(두 모듈은 서로를 모르고 — §4 — core 에 두면 공개
+   * API 가 된다). ⚠️ Jackson 의 바이트 파서는 겹침 꼴({@code C1 81} → {@code A})을 받아들인다 — 이 검사 없이는 auth 레인이 거부하는
+   * 본문으로 admin 이 {@code Bearer goodA} 를 보냈다(독립 레그 실측 · {@code TokenResponseClassTest} S5). 잘못된 바이트를 대체하지
+   * 않고 보고하는 디코더로 입력의 끝까지 잰다 — 고정 4 KiB 버퍼를 비우며 넘칠 때마다 잇는다(넘침에서 멈추면 첫 4096 글자 뒤를 보지
+   * 않는다 — {@code TokenResponseGuardTest}). 끝을 알리고 디코딩하므로 잘린 마지막 열도 보고된다. BOM 은 유효한 바이트다.
+   */
+  static boolean isUtf8(byte[] body) {
+    CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT);
+    ByteBuffer in = ByteBuffer.wrap(body);
+    CharBuffer out = CharBuffer.allocate(4096);
+    CoderResult result;
+    do {
+      out.clear(); // 넘침 — 디코딩한 글자는 쓰지 않는다
+      result = decoder.decode(in, out, true);
+    } while (result.isOverflow());
+    return !result.isError();
   }
 
   /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 넘긴다(판정은 하지 않는다). */

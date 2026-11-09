@@ -299,13 +299,13 @@ public class AuthClient internal constructor(
         return toTokenSet(resp.toSuccessResponse().tokens, issuedAt)
     }
 
-    // 오류 응답의 사유 — IdP 의 error_description([maskSent] 가 가린 것), 없으면 그 응답의 HTTP 상태. Nimbus `ErrorObject` 는 JSON 이
-    // 아닌 오류 본문(503·400 HTML)과 `error` 만 있는 본문에 설명을 두지 않아 메시지가 「… failed: null」 이었다(`TokenResponseClassTest`).
-    // 상태는 응답을 인용하지 않는다. Java `AuthClient.reason` 동형.
+    // 오류 응답의 사유 — IdP 의 error_description([maskSent] 가 가린 것), 없거나 비었으면(공백뿐 포함) 그 응답의 HTTP 상태. Nimbus
+    // `ErrorObject` 는 JSON 이 아닌 오류 본문(503·400 HTML)과 `error` 만 있는 본문에 설명을 두지 않아 메시지가 「… failed: null」 이었고,
+    // 빈 설명은 「… failed: 」 였다(`TokenResponseClassTest`). 상태는 응답을 인용하지 않는다. Java `AuthClient.reason` 동형.
     private fun reason(
         err: ErrorObject,
         sent: List<String?>,
-    ): String = maskSent(err.description, sent) ?: "HTTP ${err.httpStatusCode}"
+    ): String = maskSent(err.description, sent)?.takeUnless { it.isBlank() } ?: "HTTP ${err.httpStatusCode}"
 
     // SDK 가 이 요청에 실어 보낸 비밀 — 클라이언트 시크릿, 그것을 담은 Basic 자격, 호출자의 grant 값. 오류 응답의
     // error_description 이 이것을 되울리면 [maskSent] 가 가린다(사유 문구 자체는 남는다). ⚠️ 값이 전송에서 바뀐 꼴(폼 인코딩 —

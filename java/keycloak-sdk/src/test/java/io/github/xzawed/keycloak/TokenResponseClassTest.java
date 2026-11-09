@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
@@ -108,9 +109,22 @@ class TokenResponseClassTest {
 
   /** access_token 안에 잘못된 UTF-8 이 든 200 토큰 응답. */
   private static Reply tokenWithInvalidUtf8() {
-    return typed(200, "application/json", concat(utf8("{\"access_token\":\"ok"), INVALID,
+    return tokenWith("ok", INVALID);
+  }
+
+  /** access_token 이 {@code head} 다음 {@code bad} 바이트를 품은 200 토큰 응답. */
+  private static Reply tokenWith(String head, byte[] bad) {
+    return typed(200, "application/json", concat(utf8("{\"access_token\":\"" + head), bad,
         utf8("vc\",\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}")));
   }
+
+  /**
+   * 잘못된 UTF-8 의 두 꼴 더 — 겹침 꼴({@code C1 81} = 'A' 를 두 바이트로 — Jackson 의 바이트 파서는 받아들여 admin 이 {@code Bearer
+   * goodA} 를 보냈다, 독립 레그 실측)과 디코더의 4 KiB 버퍼를 넘긴 뒤의 잘못된 바이트(첫 4096 글자만 재는 검사가 놓친다).
+   */
+  private static final Map<String, Reply> MORE_INVALID_UTF8 = Map.of(
+      "겹침 꼴", tokenWith("good", new byte[] {(byte) 0xC1, (byte) 0x81}),
+      "4096 글자 뒤", tokenWith("a".repeat(5_000), INVALID));
 
   /** username 안에 잘못된 UTF-8 이 든 200 introspection 응답. */
   private static Reply introspectionWithInvalidUtf8() {
@@ -293,6 +307,10 @@ class TokenResponseClassTest {
         {"code exchange", EX, "Authorization code exchange failed: " + notUtf8}}) {
       tokens(tokenWithInvalidUtf8());
       expect((String) row[0] + " 200 잘못된 UTF-8", call((Call) row[1]), KeycloakAuthException.class, (String) row[2], wrong);
+      for (Map.Entry<String, Reply> more : MORE_INVALID_UTF8.entrySet()) {
+        tokens(more.getValue());
+        expect(row[0] + " 200 " + more.getKey(), call((Call) row[1]), KeycloakAuthException.class, (String) row[2], wrong);
+      }
     }
     introspectReply = introspectionWithInvalidUtf8();
     expect("IN 200 잘못된 UTF-8", call(IN), KeycloakAuthException.class,
@@ -319,11 +337,16 @@ class TokenResponseClassTest {
       introspectReply = html;
       expect("IN " + status + " HTML", call(IN), KeycloakAuthException.class, "Introspection failed: HTTP " + status, wrong);
     }
-    tokens(json(400, "{\"error\":\"invalid_grant\"}"));
-    Outcome codeOnly = call(RF);
-    expect("refresh 400 error 만", codeOnly, KeycloakAuthException.class, "Token refresh failed: HTTP 400", wrong);
-    if (codeOnly.thrown() instanceof KeycloakAuthException e && !"invalid_grant".equals(e.getError())) {
-      wrong.add("refresh 400 error 만: OAuth 오류 코드를 잃었다 — " + e.getError());
+    // error 만 · 빈 설명 · 공백뿐인 설명 — 셋 다 「… failed: 」 가 아니라 상태다(빈 설명은 「Token refresh failed: 」 였다)
+    for (String body : new String[] {"{\"error\":\"invalid_grant\"}",
+        "{\"error\":\"invalid_grant\",\"error_description\":\"\"}",
+        "{\"error\":\"invalid_grant\",\"error_description\":\"  \"}"}) {
+      tokens(json(400, body));
+      Outcome codeOnly = call(RF);
+      expect("refresh 400 " + body, codeOnly, KeycloakAuthException.class, "Token refresh failed: HTTP 400", wrong);
+      if (codeOnly.thrown() instanceof KeycloakAuthException e && !"invalid_grant".equals(e.getError())) {
+        wrong.add("refresh 400 " + body + ": OAuth 오류 코드를 잃었다 — " + e.getError());
+      }
     }
     assertNone(wrong);
   }
@@ -385,6 +408,8 @@ class TokenResponseClassTest {
             json(200, "{\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_token\":\"" + RT_CANARY + "\"}"), 200},
         new Object[] {"400 HTML", typed(400, "text/html", utf8("<html>400 " + SECRET + "</html>")), 400},
         new Object[] {"200 잘못된 UTF-8", tokenWithInvalidUtf8(), 200},
+        new Object[] {"200 겹침 꼴", MORE_INVALID_UTF8.get("겹침 꼴"), 200},
+        new Object[] {"200 4096 글자 뒤 잘못된 UTF-8", MORE_INVALID_UTF8.get("4096 글자 뒤"), 200},
         new Object[] {"200 JSON expires_in 숫자 아님",
             json(200, "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":\"soon\",\"refresh_token\":\""
                 + RT_CANARY + "\"}"), 200},

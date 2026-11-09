@@ -218,9 +218,11 @@ internal class CappedResponseSenderTest {
             )
         for (code in listOf(200, 201, 299)) {
             status = code
+            // 마지막 줄 — 디코더의 4 KiB 버퍼를 넘긴 뒤의 잘못된 바이트(첫 버퍼만 재는 검사 — 넘침에서 멈춤 — 가 놓친다, 독립 레그의 변이)
             val bodies =
                 malformed.map { "{\"access_token\":\"a".toByteArray() + it + "b\"}".toByteArray() } +
-                    listOf("{\"access_token\":\"ab\"}".toByteArray() + byteArrayOf(0xE2.toByte(), 0x82.toByte()))
+                    listOf("{\"access_token\":\"ab\"}".toByteArray() + byteArrayOf(0xE2.toByte(), 0x82.toByte())) +
+                    listOf("{\"access_token\":\"${"é".repeat(5_000)}".toByteArray() + byteArrayOf(0xFF.toByte()) + "\"}".toByteArray())
             for (bad in bodies) {
                 body = bad
                 val e = runCatching { request().send(CappedResponseSender("token response", strict = true)) }.exceptionOrNull()

@@ -85,6 +85,43 @@ class TokenResponseGuardTest {
     assertFalse(usable("{\"access_token\":12345}".getBytes(StandardCharsets.UTF_16BE)));
   }
 
+  private static byte[] bytes(String head, byte[] bad, String tail) {
+    byte[] h = head.getBytes(StandardCharsets.UTF_8);
+    byte[] t = tail.getBytes(StandardCharsets.UTF_8);
+    byte[] out = Arrays.copyOf(h, h.length + bad.length + t.length);
+    System.arraycopy(bad, 0, out, h.length, bad.length);
+    System.arraycopy(t, 0, out, h.length + bad.length, t.length);
+    return out;
+  }
+
+  /**
+   * {@link TokenResponseGuard#isUtf8} — 잘못된 꼴(이음 바이트 아님 · UTF-8 에 없는 바이트 · 겹침 꼴 둘 · 서로게이트 · U+10FFFF 너머)은
+   * 앞에 한 글자가 있든 디코더의 4 KiB 버퍼를 넘긴 5,000 글자가 있든 거짓이고(첫 버퍼만 재는 검사는 뒤의 것을 놓친다), 끝에서 잘린 열도
+   * 거짓이다. 유효한 꼴(비 ASCII · 4 바이트 · BOM · 여러 버퍼 · 빈 본문)은 참이다. auth 레인의 쌍둥이와 같은 표다.
+   */
+  @Test void isUtf8_reportsAMalformedByteAnywhereInTheBody() {
+    List<String> wrong = new ArrayList<>();
+    byte[][] malformed = {
+        {(byte) 0xC3, (byte) 0x28}, {(byte) 0xFF, (byte) 0xFE}, {(byte) 0xC0, (byte) 0xAF}, {(byte) 0xC1, (byte) 0x81},
+        {(byte) 0xED, (byte) 0xA0, (byte) 0x80}, {(byte) 0xF4, (byte) 0x90, (byte) 0x80, (byte) 0x80}};
+    for (byte[] bad : malformed) {
+      for (String head : new String[] {"a", "é".repeat(5_000)}) {
+        if (TokenResponseGuard.isUtf8(bytes("{\"access_token\":\"" + head, bad, "\"}"))) {
+          wrong.add("받아들였다: " + head.length() + " 글자 뒤 " + Arrays.toString(bad));
+        }
+      }
+    }
+    if (TokenResponseGuard.isUtf8(bytes("{\"a\":\"b\"}", new byte[] {(byte) 0xE2, (byte) 0x82}, ""))) {
+      wrong.add("받아들였다: 끝에서 잘린 열");
+    }
+    for (byte[] ok : List.of("{\"username\":\"sévc 😀\"}".getBytes(StandardCharsets.UTF_8),
+        bytes("", new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}, "{}"),
+        ("\"" + "é".repeat(5_000) + "\"").getBytes(StandardCharsets.UTF_8), new byte[0])) {
+      if (!TokenResponseGuard.isUtf8(ok)) wrong.add("거부했다: " + ok.length + " bytes");
+    }
+    assertTrue(wrong.isEmpty(), () -> String.join("\n", wrong));
+  }
+
   // ───────────── 범위 — 어느 응답을 보는가 ─────────────
 
   private static ClientRequestContext request(String method, String uri) {

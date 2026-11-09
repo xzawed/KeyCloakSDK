@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
 import io.github.xzawed.keycloak.ResponseTooLargeException
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
+import io.github.xzawed.keycloak.isUtf8
 import io.github.xzawed.keycloak.readWithinCap
 import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
@@ -129,6 +130,9 @@ internal class TokenResponseGuard :
         internal val STATUS: String = TokenResponseGuard::class.java.name + ".status"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
 
+        // 2xx 본문이 엄격한 UTF-8 이 아니다([isUtf8] — auth 레인과 같은 함수) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다.
+        internal const val NOT_UTF8 = "token endpoint response is not valid UTF-8"
+
         // 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다).
         internal const val UNBOUND = "token endpoint response does not bind as a token response"
 
@@ -136,8 +140,10 @@ internal class TokenResponseGuard :
         private const val ACCESS_TOKEN = "access_token"
         private val JSON = JsonFactory()
 
-        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(다 읽지 않았다 — 전송 실패), 쓸 수 없으면
-        // [UnusableTokenResponse], 통과하면 읽은 바이트를 그대로 넘긴다.
+        // 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(다 읽지 않았다 — 전송 실패), UTF-8 이 아니거나 쓸
+        // 수 없으면 [UnusableTokenResponse], 통과하면 읽은 바이트를 그대로 넘긴다. ⚠️ UTF-8 검사가 먼저다 — Jackson 의 바이트 파서는
+        // 겹침 꼴(`C1 81` → `A`)을 받아들여, 그것 없이는 auth 레인이 거부하는 본문으로 admin 이 `Bearer goodA` 를 보냈다(독립 레그 실측 ·
+        // `TokenResponseClassTest` S5 · Java 동형).
         private fun usableOrReject(
             input: InputStream?,
             exchange: Any?,
@@ -147,6 +153,10 @@ internal class TokenResponseGuard :
             if (body == null) {
                 release(input, exchange)
                 throw ResponseTooLargeException("token response")
+            }
+            if (!isUtf8(body)) {
+                release(input, exchange)
+                throw UnusableTokenResponse(status, NOT_UTF8, null)
             }
             if (!carriesUsableAccessToken(body)) {
                 release(input, exchange)

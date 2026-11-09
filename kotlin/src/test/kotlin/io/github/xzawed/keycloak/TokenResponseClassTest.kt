@@ -73,15 +73,29 @@ private fun trxToken(accessToken: String): String =
     """{"access_token":"$accessToken","token_type":"Bearer","expires_in":300,"refresh_token":"$TRX_RT_CANARY"}"""
 
 // access_token 안에 잘못된 UTF-8 이 든 200 토큰 응답.
-private fun trxTokenWithInvalidUtf8(): TrxReply =
+private fun trxTokenWithInvalidUtf8(): TrxReply = trxTokenWith("ok", TRX_INVALID)
+
+// access_token 이 head 다음 bad 바이트를 품은 200 토큰 응답.
+private fun trxTokenWith(
+    head: String,
+    bad: ByteArray,
+): TrxReply =
     TrxReply(
         200,
         "application/json",
         trxConcat(
-            """{"access_token":"ok""".toByteArray(),
-            TRX_INVALID,
+            """{"access_token":"$head""".toByteArray(),
+            bad,
             """vc","token_type":"Bearer","expires_in":300,"refresh_token":"$TRX_RT_CANARY"}""".toByteArray(),
         ),
+    )
+
+// 잘못된 UTF-8 의 두 꼴 더 — 겹침 꼴(C1 81 = 'A' 를 두 바이트로 — Jackson 의 바이트 파서는 받아들여 admin 이 `Bearer goodA` 를
+// 보냈다, 독립 레그 실측)과 디코더의 4 KiB 버퍼를 넘긴 뒤의 잘못된 바이트(첫 4096 글자만 재는 검사가 놓친다). Java 동형.
+private val TRX_MORE_INVALID_UTF8: List<Pair<String, TrxReply>> =
+    listOf(
+        "겹침 꼴" to trxTokenWith("good", byteArrayOf(0xC1.toByte(), 0x81.toByte())),
+        "4096 글자 뒤" to trxTokenWith("a".repeat(5_000), TRX_INVALID),
     )
 
 // 정확히 size 바이트 — json 뒤를 JSON 공백으로 채운다.
@@ -274,6 +288,10 @@ internal class TokenResponseClassTest {
             for ((label, op) in listOf("S1" to cc, "S2" to prov, "refresh" to rf, "code exchange" to codeExchange)) {
                 tokens(trxTokenWithInvalidUtf8())
                 trxExpect("$label 200 잘못된 UTF-8", call(block = op), KeycloakAuthException::class.java, notUtf8, wrong)
+                for ((kind, reply) in TRX_MORE_INVALID_UTF8) {
+                    tokens(reply)
+                    trxExpect("$label 200 $kind", call(block = op), KeycloakAuthException::class.java, notUtf8, wrong)
+                }
             }
             introspectReply =
                 TrxReply(
@@ -317,12 +335,19 @@ internal class TokenResponseClassTest {
                     wrong,
                 )
             }
-            tokens(trxJson(400, """{"error":"invalid_grant"}"""))
-            val codeOnly = call(block = rf)
-            trxExpect("refresh 400 error 만", codeOnly, KeycloakAuthException::class.java, "Token refresh failed: HTTP 400", wrong)
-            val oauthError = (codeOnly.thrown as? KeycloakAuthException)?.oauthError
-            if (codeOnly.thrown is KeycloakAuthException && oauthError != "invalid_grant") {
-                wrong += "refresh 400 error 만: OAuth 오류 코드를 잃었다 — $oauthError"
+            // error 만 · 빈 설명 · 공백뿐인 설명 — 셋 다 「… failed: 」 가 아니라 상태다(빈 설명은 「Token refresh failed: 」 였다)
+            for (body in listOf(
+                """{"error":"invalid_grant"}""",
+                """{"error":"invalid_grant","error_description":""}""",
+                """{"error":"invalid_grant","error_description":"  "}""",
+            )) {
+                tokens(trxJson(400, body))
+                val codeOnly = call(block = rf)
+                trxExpect("refresh 400 $body", codeOnly, KeycloakAuthException::class.java, "Token refresh failed: HTTP 400", wrong)
+                val oauthError = (codeOnly.thrown as? KeycloakAuthException)?.oauthError
+                if (codeOnly.thrown is KeycloakAuthException && oauthError != "invalid_grant") {
+                    wrong += "refresh 400 $body: OAuth 오류 코드를 잃었다 — $oauthError"
+                }
             }
             assertNone(wrong)
         }
@@ -398,6 +423,8 @@ internal class TokenResponseClassTest {
                     ),
                     Triple("400 HTML", TrxReply(400, "text/html", "<html>400 $TRX_SECRET</html>".toByteArray()), 400),
                     Triple("200 잘못된 UTF-8", trxTokenWithInvalidUtf8(), 200),
+                    Triple("200 겹침 꼴", TRX_MORE_INVALID_UTF8[0].second, 200),
+                    Triple("200 4096 글자 뒤 잘못된 UTF-8", TRX_MORE_INVALID_UTF8[1].second, 200),
                     Triple(
                         "200 JSON expires_in 숫자 아님",
                         trxJson(
