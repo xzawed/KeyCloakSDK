@@ -132,6 +132,24 @@ public class ErrorsTests
         Assert.Same(copy, ErrorCause.WithholdAll(copy));
     }
 
+    /// <summary>A <see cref="System.Text.DecoderFallbackException"/> quotes the bytes it refused — System.Text.Json nests one
+    /// under the error of a string that is not UTF-8. Anywhere in a chain, with no <see cref="JsonException"/> above it too, its
+    /// type is kept and its message withheld (review leg N3, 2026-11-10).</summary>
+    [Fact]
+    public void A_decoder_fallback_in_the_chain_keeps_its_type_but_not_the_bytes_it_quotes()
+    {
+        var refused = new System.Text.DecoderFallbackException(
+            "Unable to translate bytes [E9] at index 3 from specified code page to Unicode.", new byte[] { 0xE9 }, 3);
+        var ex = new KeycloakAdminException(500, "admin response body could not be decoded",
+            new InvalidOperationException("Cannot transcode invalid UTF-8 JSON text to UTF-16 string.", refused));
+
+        var printed = ex.ToString();
+
+        Assert.DoesNotContain("[E9]", printed, StringComparison.Ordinal);
+        Assert.Contains("System.Text.DecoderFallbackException: bytes not valid in the encoding (input withheld)", printed, StringComparison.Ordinal);
+        Assert.Contains("Cannot transcode invalid UTF-8 JSON text to UTF-16 string.", printed, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Sdk_error_in_the_chain_is_kept_as_is_because_its_own_chain_was_already_scrubbed()
     {
