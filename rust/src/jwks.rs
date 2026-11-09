@@ -186,7 +186,14 @@ impl Source {
             })?;
         // ⚠️ serde_json 의 `Display` 는 틀린 타입의 문자열 값을 인용한다(`invalid type: string "…"`) —
         // 응답 본문을 오류로 옮기지 않도록 분류와 위치만 남긴다(Grok 레그 실측 2026-09-26).
-        let set: JwkSet = serde_json::from_slice(&body).map_err(|e| {
+        // ⚠️ **원소마다 푼다**(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). `JwkSet` 을 한 번에 풀면 원소 하나의
+        // 타입 오류(문자열 · 숫자 · null · 배열)로 키셋 전체가 거부돼, 같은 키셋의 정상 키로 서명한 토큰까지
+        // 거부됐다. 문서 자체의 틀(`keys` 배열)은 지금처럼 한 번에 보고, `Jwk` 로 풀리지 않는 원소만 건너뛴다.
+        #[derive(serde::Deserialize)]
+        struct RawSet {
+            keys: Vec<serde_json::Value>,
+        }
+        let raw: RawSet = serde_json::from_slice(&body).map_err(|e| {
             KeycloakError::Transport(format!(
                 "JWKS parse: {:?} error at line {} column {}",
                 e.classify(),
@@ -197,12 +204,25 @@ impl Source {
         // ⚠️ **빈 집합은 정상 답이 아니고, 설치하면 검증기가 눈이 먼다**(go/jwt.go 와 동형 —
         // 그쪽 #380 픽스의 나머지 절반이다). 200 + `{"keys":[]}` 를 주는 것은 키를 전부 회수한
         // IdP 가 아니라 프록시·WAF·반쯤 뜬 realm 이고, 좋은 캐시를 그것으로 덮으면 방금 검증되던
-        // 토큰이 거부되며 refetch 게이트가 복구까지 막는다. 쓰기 **전에** 거부한다.
-        if set.keys.is_empty() {
+        // 토큰이 거부되며 refetch 게이트가 복구까지 막는다. 쓰기 **전에** 거부한다 — 원소를 다 건너뛰어
+        // 남는 것이 없는 집합도 같다.
+        if raw.keys.is_empty() {
             return Err(KeycloakError::Transport(
                 "JWKS response contains no keys".to_string(),
             ));
         }
+        let total = raw.keys.len();
+        let keys: Vec<Jwk> = raw
+            .keys
+            .into_iter()
+            .filter_map(|key| serde_json::from_value(key).ok())
+            .collect();
+        if keys.is_empty() {
+            return Err(KeycloakError::Transport(format!(
+                "JWKS response contains no usable keys ({total} unreadable)"
+            )));
+        }
+        let set = JwkSet { keys };
         let arc = Arc::new(set);
         *self.cache.write().await = Some(Cached {
             set: arc.clone(),
@@ -385,13 +405,17 @@ mod tests {
     }
 
     /// 파싱 실패가 응답 본문을 인용하지 않는다 — serde_json 은 틀린 타입의 **문자열 값**을 오류 문구에
-    /// 인용한다(`invalid type: string "…"`). 형식 오류(비 JSON)도 함께 본다.
+    /// 인용한다(`invalid type: string "…"`). 형식 오류(비 JSON)도 함께 본다. 원소 하나의 타입 오류는 그 원소만
+    /// 건너뛰므로(RFC 7517 §5) 「no usable keys」가 되고, 그 원소의 serde 오류는 어디에도 실리지 않는다.
     #[tokio::test]
     async fn jwks_parse_error_does_not_quote_the_body() {
-        for body in [
-            r#"{"keys":"JWKS-BODY-CANARY-4T8W"}"#,
-            r#"{"keys":[{"kty":"RSA","kid":7,"n":"JWKS-BODY-CANARY-4T8W"}], "x": 1}"#,
-            "JWKS-BODY-CANARY-4T8W",
+        for (body, expected) in [
+            (r#"{"keys":"JWKS-BODY-CANARY-4T8W"}"#, "JWKS parse"),
+            (
+                r#"{"keys":[{"kty":"RSA","kid":7,"n":"JWKS-BODY-CANARY-4T8W"}], "x": 1}"#,
+                "no usable keys (1 unreadable)",
+            ),
+            ("JWKS-BODY-CANARY-4T8W", "JWKS parse"),
         ] {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
@@ -407,7 +431,7 @@ mod tests {
             let err = store.get_key("k1").await.unwrap_err();
             let msg = format!("{err} {err:?}");
             assert!(matches!(err, KeycloakError::Transport(_)), "{body}: {msg}");
-            assert!(msg.contains("JWKS parse"), "{body}: {msg}");
+            assert!(msg.contains(expected), "{body}: {msg}");
             assert!(!msg.contains("JWKS-BODY-"), "본문을 인용했다: {msg}");
         }
     }
@@ -809,6 +833,85 @@ mod tests {
             store.get_key("k1").await.unwrap().common.key_id.as_deref(),
             Some("k1"),
             "빈 200 이 좋은 캐시를 덮었다 — go 의 len(keys)==0 절반이 빠졌다"
+        );
+    }
+
+    // ⚠️ **JWK 가 아닌 원소 하나가 키셋 전체를 버리면 안 된다**(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). `JwkSet` 을 한
+    // 번에 풀면 원소 하나의 타입 오류(문자열 · 숫자 · null · 배열)로 serde 가 키셋 전체를 거부해, 같은 키셋의 정상 키로 서명한
+    // 토큰까지 거부됐다(등록부 jwks-unsupported-key-rejects-set). 못 읽는 원소를 **앞**에 둔다 — 순서대로 풀다 멈추는 구현이
+    // 정상 키에 닿기 전에 서는지 본다.
+    #[tokio::test]
+    async fn element_that_is_not_a_jwk_is_skipped_not_the_whole_set() {
+        for bad in [
+            serde_json::json!("not-a-jwk"),
+            serde_json::json!(1),
+            serde_json::Value::Null,
+            serde_json::json!([]),
+        ] {
+            let mut body = jwks_json("k1");
+            body["keys"].as_array_mut().unwrap().insert(0, bad.clone());
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/certs"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&server)
+                .await;
+            let store =
+                JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+            assert_eq!(
+                store.get_key("k1").await.unwrap().common.key_id.as_deref(),
+                Some("k1"),
+                "{bad}: 원소 하나가 키셋 전체를 버렸다"
+            );
+        }
+    }
+
+    // 대조 — `Jwk` 로 풀리는 원소가 하나도 없으면 빈 키셋과 같다: 콜드 스타트는 Transport 이고, 좋은 캐시는 덮지 않는다.
+    // 건너뛰기가 「다 건너뛰고 빈 집합을 설치」로 새면 둘째 단언이 운다.
+    #[tokio::test]
+    async fn keyset_without_a_usable_element_is_refused_like_an_empty_one() {
+        let unusable = serde_json::json!({ "keys": ["not-a-jwk", 1, null] });
+        let cold = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(unusable.clone()))
+            .mount(&cold)
+            .await;
+        let store = JwksStore::new(format!("{}/certs", cold.uri()), reqwest::Client::new(), 0);
+        let err = store
+            .get_key("k1")
+            .await
+            .expect_err("쓸 수 있는 키가 없는 키셋은 성공이 아니다");
+        assert!(
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (3 unreadable)")),
+            "expected Transport('…no usable keys (3 unreadable)…'), got {err:?}"
+        );
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(jwks_json("k1")))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+        assert!(
+            store.get_key("k1").await.is_ok(),
+            "사전조건: 좋은 캐시가 올라가야 한다"
+        );
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(unusable))
+            .mount(&server)
+            .await;
+        assert!(
+            store.get_key("k2").await.is_err(),
+            "없는 kid 는 실패해야 한다"
+        );
+        assert_eq!(
+            store.get_key("k1").await.unwrap().common.key_id.as_deref(),
+            Some("k1"),
+            "쓸 수 있는 키가 없는 200 이 좋은 캐시를 덮었다"
         );
     }
 
