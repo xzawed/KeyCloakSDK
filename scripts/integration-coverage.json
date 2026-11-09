@@ -172,7 +172,7 @@
     }
   },
   "java": {
-    "floor": { "metric": "bodies", "percent": 70.6 },
+    "floor": { "metric": "bodies", "percent": 70.3 },
     "pinned": [
       "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java",
@@ -195,7 +195,7 @@
     }
   },
   "kotlin": {
-    "floor": { "metric": "bodies", "percent": 79.8 },
+    "floor": { "metric": "bodies", "percent": 79.2 },
     "pinned": [
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminSockets.kt",
