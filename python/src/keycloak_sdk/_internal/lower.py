@@ -89,16 +89,23 @@ def oauth_error(exc: BaseException) -> str | None:
     return str(error) if error is not None else None
 
 
-def refused_body(exc: BaseException) -> KeycloakAuthError | None:
+def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError | None:
     """`exc` 가 이 SDK 의 응답 본문 거부(`token_cap.py`)를 감싼 python-keycloak 실패면, 같은
-    메시지의 `KeycloakAuthError` 를 **새로** 만든다 — 아니면 `None`.
+    메시지의 SDK 오류를 **새로** 만든다 — 아니면 `None`. 상한을 넘은 본문(`incomplete`)은
+    다 읽지 않은 응답이라 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
+    token-response-class-divergent · 1.0.7 까지는 `KeycloakAuthError`), 받은 머리만으로 쓸 수
+    없는 응답의 거부(두 번 압축 — 본문을 읽기 전)는 `KeycloakAuthError`.
 
     ⚠️ 그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 무엇이든
     `KeycloakConnectionError("Can't connect to server")` 로 감싼다. 그대로 두면 상한에 걸린 응답이
     연결 실패로 보고된다. 신호 자체는 원인으로 달지 않는다 — python-keycloak 프레임(보낼 폼)을
     지나왔다."""
     signal = exc.__cause__
-    return KeycloakAuthError(str(signal)) if isinstance(signal, ResponseRefused) else None
+    if not isinstance(signal, ResponseRefused):
+        return None
+    if signal.incomplete:
+        return KeycloakTransportError(str(signal))
+    return KeycloakAuthError(str(signal))
 
 
 def auth_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError:
@@ -106,7 +113,7 @@ def auth_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
 
     응답을 받았지만 python-keycloak 이 쓸 수 없다고 던진 실패(`TypeError` 등)도 응답을 받은
     쪽이다 — `TokenSet.from_response` 가 쓸 수 없는 토큰 JSON 을 `KeycloakAuthError` 로 내는 것과
-    같은 자리다. 응답 본문이 상한을 넘은 것(`refused_body`)도 같다."""
+    같은 자리다. 응답 본문이 상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`)."""
     refused = refused_body(exc)
     if refused is not None:
         return refused

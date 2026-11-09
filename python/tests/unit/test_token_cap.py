@@ -150,8 +150,9 @@ def test_bytes_after_the_end_of_the_stream_are_neither_inflated_nor_kept(
 
 
 def test_a_body_compressed_twice_is_refused() -> None:
-    with pytest.raises(ResponseRefused, match=r"^token response is compressed more than once"):
+    with pytest.raises(ResponseRefused, match=r"^token response is compressed more than once") as e:
         _inflater(["gzip", "deflate"], "token response")
+    assert e.value.incomplete is False  # 머리로 거부(본문 읽기 전) — auth 로 바뀐다(`lower.py`)
 
 
 def test_sync_reads_raw_bytes_and_inflates_them_itself_whatever_urllib3_does() -> None:
@@ -178,6 +179,7 @@ def test_sync_reads_raw_bytes_and_inflates_them_itself_whatever_urllib3_does() -
     assert peak < _BOUNDED_PEAK, f"16 MiB gzip bomb: peak {peak} bytes"
     assert type(outcome) is ResponseRefused
     assert str(outcome) == f"token response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"
+    assert outcome.incomplete is True  # 다 읽지 않았다 — transport 로 바뀐다(`lower.py`)
     assert seen == [{"stream": True}]
     assert raw.closed  # 남은 본문을 읽지 않고 연결째 버린다
 

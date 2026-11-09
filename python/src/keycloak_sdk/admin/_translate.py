@@ -79,8 +79,9 @@ def admin_failure(
     을 못 쓸 때도 여기다)는 HTTP 상태가 없으므로 이 경계의 규칙대로 전송 쪽이다. 예전에는 raw 로
     새어 본문을 인용했다. ⚠️ 그랜트 응답의 `access_token` 을 못 쓰는 것은 여기가 아니다 — 세터에
     닿기 전에 `_internal/admin_grant.py` 가 auth 레인과 같은 `KeycloakAuthError` 로 거부한다
-    (`refused_grant`). 그랜트 응답 본문이 상한을 넘은 것도 auth 레인과 같은 `KeycloakAuthError` 다
-    (`refused_body` — 그 그랜트는 admin REST 요청보다 먼저라 REST 요청은 나가지 않는다).
+    (`refused_grant`). 그랜트 응답 본문이 상한을 넘은 것은 auth 레인과 같은
+    `KeycloakTransportError` 다(`refused_body` — 그 그랜트는 admin REST 요청보다 먼저라 REST
+    요청은 나가지 않는다).
     """
     refused = refused_body(exc)
     if refused is not None:
