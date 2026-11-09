@@ -23,8 +23,8 @@
 
 use keycloak_sdk::jwks::JwksStore;
 use keycloak_sdk::{
-    AdminError, AuthClient, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig,
-    KeycloakError, TokenProvider, reqwest,
+    AuthClient, ClientCredentialsTokenProvider, KeycloakClient, KeycloakConfig, KeycloakError,
+    TokenProvider, reqwest,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Read, Write};
@@ -434,21 +434,14 @@ fn rejected_over_cap(
         Lane::Introspect => "introspection response exceeds 1048576 bytes",
         _ => "token response exceeds 1048576 bytes",
     };
-    match (lane, r) {
-        // admin 은 provider 의 실패를 기존 매핑 그대로 401 로 낸다 — 그리고 admin 요청을 **보내지 않는다**.
-        (Lane::Admin, Err(KeycloakError::Admin(AdminError::Other { status: 401 }))) => {
-            match fake.admin_hits() {
-                0 => Ok(()),
-                n => Err(format!(
-                    "{lane:?}: {n} admin request(s) sent after a rejected token response"
-                )),
-            }
-        }
-        (Lane::Admin, other) => Err(format!(
-            "{lane:?}: expected Admin(Other {{ status: 401 }}), got {other:?}"
+    // admin 은 provider 의 실패를 **그대로** 낸다(등록부 token-response-class-divergent D4 — 전에는 무엇이든
+    // `Admin(Other { status: 401 })` 이라 상한 초과도 「401」이었다) — 그리고 admin 요청을 **보내지 않는다**.
+    match (r, fake.admin_hits()) {
+        (Err(KeycloakError::Transport(m)), 0) if m == want => Ok(()),
+        (Err(KeycloakError::Transport(m)), n) if m == want => Err(format!(
+            "{lane:?}: {n} admin request(s) sent after a rejected token response"
         )),
-        (_, Err(KeycloakError::Transport(m))) if m == want => Ok(()),
-        (_, other) => Err(format!(
+        (other, _) => Err(format!(
             "{lane:?}: expected Transport({want:?}), got {other:?}"
         )),
     }

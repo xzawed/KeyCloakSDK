@@ -273,7 +273,7 @@ async fn hostile_token_responses_fail_as_classified_and_errors_do_not_render_tok
 
     // ── (3) 디버깅 정보는 남는다 — 서버 OAuth 오류는 `Auth` 이고 `oauth_error` 는 **코드 그대로**다.
     // 정화가 코드까지 지우면(None) 여기서 떨어진다(누출 검사는 그것을 못 본다). 코드 자리에 코드 아닌
-    // 값이 오면(e3) `None` 이다 — 두 경로(openidconnect·provider) 모두.
+    // 값이 오면(e3) `None` 이다 — 두 경로(openidconnect·provider) 모두, 그리고 provider 의 오류를 그대로 내는 admin 도.
     let mut codes = Vec::new();
     for (realm, want) in [
         ("e1-error-description", Some("invalid_grant")),
@@ -283,7 +283,6 @@ async fn hostile_token_responses_fail_as_classified_and_errors_do_not_render_tok
         for (_, call, r) in observed.iter().filter(|(v, _, _)| *v == realm) {
             match r {
                 Err(KeycloakError::Auth { oauth_error, .. }) if oauth_error.as_deref() == want => {}
-                Err(KeycloakError::Admin(_)) => {} // admin 경로는 상태코드만 싣는다(`AdminClient::send`).
                 other => codes.push(format!(
                     "{realm} | {call}: 기대 oauth_error={want:?}, 실제 {other:?}"
                 )),

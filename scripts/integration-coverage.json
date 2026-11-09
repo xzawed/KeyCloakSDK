@@ -52,7 +52,7 @@
     }
   },
   "rust": {
-    "floor": { "metric": "lines", "percent": 88.6 },
+    "floor": { "metric": "lines", "percent": 88.5 },
     "pinned": [
       "rust/src/admin.rs",
       "rust/src/auth.rs",

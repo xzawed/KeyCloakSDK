@@ -7,7 +7,8 @@
 //! 받은 `reqwest::Client::new()` 만 따라가다 한도에 걸린다)와 대조군 셋(쓸 수 있는 응답 · 닿지 않는 IdP · 70,000 자 realm 으로
 //! 보내지 못한 요청)을 더했다.
 //! 열은 공개 진입점 여덟이다 — `AuthClient` 의 토큰 호출 다섯(S1) · `introspect` · `ClientCredentialsTokenProvider`(S2)
-//! · admin 파사드(S5: 토큰을 못 얻으면 요청 없이 `Admin(Other { status: 401 })`).
+//! · admin 파사드(S5: 토큰을 못 얻으면 요청 없이 공급자의 오류 그대로 — 판정 D4. #1009 전에는 무엇이든
+//! `Admin(Other { status: 401 })` 이라 연결 실패까지 「401」이었다).
 //!
 //! ⚠️ 칸 하나를 바꾸면 등록부 `token-response-class-divergent` 의 아홉 언어 표도 함께 본다 — 계급은 언어 사이 계약이다.
 //! 2026-11-04 까지는 R1·R2·R4·R6·E 가 S1 에서 `Transport` 였고, S2 는 R4 만 `Auth` 였다(언어 안 분리).
@@ -43,18 +44,18 @@ const CALLS: [&str; 8] = [
 const EXPECTED: &[(&str, [&str; 8])] = &[
     //                             cc           refresh      exch         exch(redir)  AuthClient TP introspect   provider     admin
     ("ok",                        ["ok",        "ok",        "ok",        "ok",        "ok",        "ok",        "ok",        "ok"]),
-    ("r1-503-html",               ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("r2-200-not-json",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("r2-200-not-json-json-type", ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("r3-400-oauth-error",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("r4-no-access-token",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("r5-over-cap",               ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
-    ("e1-200-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("e2-502-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("x1-307-loop",               ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Admin(401)"]),
-    ("t-truncated-body",          ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
-    ("n-unreachable",             ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
-    ("u-uri-too-long",            ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Admin(401)"]),
+    ("r1-503-html",               ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("r2-200-not-json",           ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("r2-200-not-json-json-type", ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("r3-400-oauth-error",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("r4-no-access-token",        ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("r5-over-cap",               ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport"]),
+    ("e1-200-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("e2-502-empty",              ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("x1-307-loop",               ["Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth",      "Auth"]),
+    ("t-truncated-body",          ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport"]),
+    ("n-unreachable",             ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport"]),
+    ("u-uri-too-long",            ["Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport", "Transport"]),
 ];
 
 struct Row {
