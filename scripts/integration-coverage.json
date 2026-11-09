@@ -220,7 +220,6 @@
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.getJUDGE_ENTITY": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.getSTATUS": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.release": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.withinCapOrReject": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.<init>": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.getStatus": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/client.kt:KeycloakClient.isAdminInitialized": "facade-wiring-close-contract-unasserted"
