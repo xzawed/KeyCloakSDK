@@ -199,7 +199,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.12 |
-| OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
+| OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.39 |
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.10 |
 | 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.4.0 |
 | Testcontainers | `org.testcontainers:testcontainers` (+ `-junit-jupiter`) | 2.0.5 |
@@ -230,8 +230,8 @@ dev(`devDependencies` — **앵커 있음**):
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | 타입 | `typescript` | ^6 |
-| 테스트 | `vitest` | ~5.0.1 |
-| 커버리지 | `@vitest/coverage-v8` | ~5.0.1 |
+| 테스트 | `vitest` | ~5.1.0 |
+| 커버리지 | `@vitest/coverage-v8` | ~5.1.0 |
 | 통합 테스트 | `testcontainers` | ^12 |
 | 린트 | `eslint` | ^10 |
 | 린트(TS) | `typescript-eslint` | ^8 |
@@ -340,7 +340,7 @@ dev(테스트 csproj — **앵커 있음**):
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
 | Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.12 |
-| 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.38.2 |
+| 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.39 |
 | JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.10 |
 | 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
 | 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.4.0 |

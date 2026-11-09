@@ -1,0 +1,1177 @@
+Classfile java/kc-auth/target/classes/kc/auth/AuthClient$1.class
+  Last modified 2026. 11. 7.; size 1027 bytes
+  SHA-256 checksum 230ae6836eb6e57a8678c0a8a74431a421e400ed214eab1fa18d46a2c771e9ac
+  Compiled from "AuthClient.java"
+class kc.auth.AuthClient$1 extends java.lang.Object implements java.util.Comparator<java.lang.String>
+  minor version: 0
+  major version: 61
+  flags: (0x0020) ACC_SUPER
+  this_class: #2                          // kc/auth/AuthClient$1
+  super_class: #8                         // java/lang/Object
+  interfaces: 1, fields: 1, methods: 3, attributes: 5
+Constant pool:
+   #1 = Fieldref           #2.#3          // kc/auth/AuthClient$1.this$0:Lkc/auth/AuthClient;
+   #2 = Class              #4             // kc/auth/AuthClient$1
+   #3 = NameAndType        #5:#6          // this$0:Lkc/auth/AuthClient;
+   #4 = Utf8               kc/auth/AuthClient$1
+   #5 = Utf8               this$0
+   #6 = Utf8               Lkc/auth/AuthClient;
+   #7 = Methodref          #8.#9          // java/lang/Object."<init>":()V
+   #8 = Class              #10            // java/lang/Object
+   #9 = NameAndType        #11:#12        // "<init>":()V
+  #10 = Utf8               java/lang/Object
+  #11 = Utf8               <init>
+  #12 = Utf8               ()V
+  #13 = Methodref          #14.#15        // java/lang/String.compareTo:(Ljava/lang/String;)I
+  #14 = Class              #16            // java/lang/String
+  #15 = NameAndType        #17:#18        // compareTo:(Ljava/lang/String;)I
+  #16 = Utf8               java/lang/String
+  #17 = Utf8               compareTo
+  #18 = Utf8               (Ljava/lang/String;)I
+  #19 = Methodref          #2.#20         // kc/auth/AuthClient$1.compare:(Ljava/lang/String;Ljava/lang/String;)I
+  #20 = NameAndType        #21:#22        // compare:(Ljava/lang/String;Ljava/lang/String;)I
+  #21 = Utf8               compare
+  #22 = Utf8               (Ljava/lang/String;Ljava/lang/String;)I
+  #23 = Class              #24            // java/util/Comparator
+  #24 = Utf8               java/util/Comparator
+  #25 = Utf8               (Lkc/auth/AuthClient;)V
+  #26 = Utf8               Code
+  #27 = Utf8               LineNumberTable
+  #28 = Utf8               LocalVariableTable
+  #29 = Utf8               this
+  #30 = Utf8               Lkc/auth/AuthClient$1;
+  #31 = Utf8               MethodParameters
+  #32 = Utf8               a
+  #33 = Utf8               Ljava/lang/String;
+  #34 = Utf8               b
+  #35 = Utf8               (Ljava/lang/Object;Ljava/lang/Object;)I
+  #36 = Utf8               Signature
+  #37 = Utf8               Ljava/lang/Object;Ljava/util/Comparator<Ljava/lang/String;>;
+  #38 = Utf8               SourceFile
+  #39 = Utf8               AuthClient.java
+  #40 = Utf8               EnclosingMethod
+  #41 = Class              #42            // kc/auth/AuthClient
+  #42 = Utf8               kc/auth/AuthClient
+  #43 = NameAndType        #44:#45        // sorted:(Ljava/util/List;)Ljava/util/List;
+  #44 = Utf8               sorted
+  #45 = Utf8               (Ljava/util/List;)Ljava/util/List;
+  #46 = Utf8               NestHost
+  #47 = Utf8               InnerClasses
+{
+  final kc.auth.AuthClient this$0;
+    descriptor: Lkc/auth/AuthClient;
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  kc.auth.AuthClient$1(kc.auth.AuthClient);
+    descriptor: (Lkc/auth/AuthClient;)V
+    flags: (0x0000)
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #1                  // Field this$0:Lkc/auth/AuthClient;
+         5: aload_0
+         6: invokespecial #7                  // Method java/lang/Object."<init>":()V
+         9: return
+      LineNumberTable:
+        line 42: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lkc/auth/AuthClient$1;
+            0      10     1 this$0   Lkc/auth/AuthClient;
+    MethodParameters:
+      Name                           Flags
+      <no name>                      final mandated
+
+  public int compare(java.lang.String, java.lang.String);
+    descriptor: (Ljava/lang/String;Ljava/lang/String;)I
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=3, args_size=3
+         0: aload_2
+         1: aload_1
+         2: invokevirtual #13                 // Method java/lang/String.compareTo:(Ljava/lang/String;)I
+         5: ireturn
+      LineNumberTable:
+        line 45: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       6     0  this   Lkc/auth/AuthClient$1;
+            0       6     1     a   Ljava/lang/String;
+            0       6     2     b   Ljava/lang/String;
+
+  public int compare(java.lang.Object, java.lang.Object);
+    descriptor: (Ljava/lang/Object;Ljava/lang/Object;)I
+    flags: (0x1041) ACC_PUBLIC, ACC_BRIDGE, ACC_SYNTHETIC
+    Code:
+      stack=3, locals=3, args_size=3
+         0: aload_0
+         1: aload_1
+         2: checkcast     #14                 // class java/lang/String
+         5: aload_2
+         6: checkcast     #14                 // class java/lang/String
+         9: invokevirtual #19                 // Method compare:(Ljava/lang/String;Ljava/lang/String;)I
+        12: ireturn
+      LineNumberTable:
+        line 42: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      13     0  this   Lkc/auth/AuthClient$1;
+    MethodParameters:
+      Name                           Flags
+      <no name>                      synthetic
+      <no name>                      synthetic
+}
+Signature: #37                          // Ljava/lang/Object;Ljava/util/Comparator<Ljava/lang/String;>;
+SourceFile: "AuthClient.java"
+EnclosingMethod: #41.#43                // kc.auth.AuthClient.sorted
+NestHost: class kc/auth/AuthClient
+InnerClasses:
+  #2;                                     // class kc/auth/AuthClient$1
+Classfile java/kc-auth/target/classes/kc/auth/AuthClient$Mode.class
+  Last modified 2026. 11. 7.; size 1142 bytes
+  SHA-256 checksum 945a6c418ea4df27d73db4127570c5a4776a2dc74a5a3897fa76a40b5f65f157
+  Compiled from "AuthClient.java"
+public final class kc.auth.AuthClient$Mode extends java.lang.Enum<kc.auth.AuthClient$Mode>
+  minor version: 0
+  major version: 61
+  flags: (0x4031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER, ACC_ENUM
+  this_class: #1                          // kc/auth/AuthClient$Mode
+  super_class: #20                        // java/lang/Enum
+  interfaces: 0, fields: 3, methods: 5, attributes: 4
+Constant pool:
+   #1 = Class              #2             // kc/auth/AuthClient$Mode
+   #2 = Utf8               kc/auth/AuthClient$Mode
+   #3 = Fieldref           #1.#4          // kc/auth/AuthClient$Mode.PLAIN:Lkc/auth/AuthClient$Mode;
+   #4 = NameAndType        #5:#6          // PLAIN:Lkc/auth/AuthClient$Mode;
+   #5 = Utf8               PLAIN
+   #6 = Utf8               Lkc/auth/AuthClient$Mode;
+   #7 = Fieldref           #1.#8          // kc/auth/AuthClient$Mode.MASKED:Lkc/auth/AuthClient$Mode;
+   #8 = NameAndType        #9:#6          // MASKED:Lkc/auth/AuthClient$Mode;
+   #9 = Utf8               MASKED
+  #10 = Fieldref           #1.#11         // kc/auth/AuthClient$Mode.$VALUES:[Lkc/auth/AuthClient$Mode;
+  #11 = NameAndType        #12:#13        // $VALUES:[Lkc/auth/AuthClient$Mode;
+  #12 = Utf8               $VALUES
+  #13 = Utf8               [Lkc/auth/AuthClient$Mode;
+  #14 = Methodref          #15.#16        // "[Lkc/auth/AuthClient$Mode;".clone:()Ljava/lang/Object;
+  #15 = Class              #13            // "[Lkc/auth/AuthClient$Mode;"
+  #16 = NameAndType        #17:#18        // clone:()Ljava/lang/Object;
+  #17 = Utf8               clone
+  #18 = Utf8               ()Ljava/lang/Object;
+  #19 = Methodref          #20.#21        // java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #20 = Class              #22            // java/lang/Enum
+  #21 = NameAndType        #23:#24        // valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #22 = Utf8               java/lang/Enum
+  #23 = Utf8               valueOf
+  #24 = Utf8               (Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #25 = Methodref          #20.#26        // java/lang/Enum."<init>":(Ljava/lang/String;I)V
+  #26 = NameAndType        #27:#28        // "<init>":(Ljava/lang/String;I)V
+  #27 = Utf8               <init>
+  #28 = Utf8               (Ljava/lang/String;I)V
+  #29 = String             #5             // PLAIN
+  #30 = Methodref          #1.#26         // kc/auth/AuthClient$Mode."<init>":(Ljava/lang/String;I)V
+  #31 = String             #9             // MASKED
+  #32 = Methodref          #1.#33         // kc/auth/AuthClient$Mode.$values:()[Lkc/auth/AuthClient$Mode;
+  #33 = NameAndType        #34:#35        // $values:()[Lkc/auth/AuthClient$Mode;
+  #34 = Utf8               $values
+  #35 = Utf8               ()[Lkc/auth/AuthClient$Mode;
+  #36 = Utf8               values
+  #37 = Utf8               Code
+  #38 = Utf8               LineNumberTable
+  #39 = Utf8               (Ljava/lang/String;)Lkc/auth/AuthClient$Mode;
+  #40 = Utf8               LocalVariableTable
+  #41 = Utf8               name
+  #42 = Utf8               Ljava/lang/String;
+  #43 = Utf8               MethodParameters
+  #44 = Utf8               this
+  #45 = Utf8               Signature
+  #46 = Utf8               ()V
+  #47 = Utf8               <clinit>
+  #48 = Utf8               Ljava/lang/Enum<Lkc/auth/AuthClient$Mode;>;
+  #49 = Utf8               SourceFile
+  #50 = Utf8               AuthClient.java
+  #51 = Utf8               NestHost
+  #52 = Class              #53            // kc/auth/AuthClient
+  #53 = Utf8               kc/auth/AuthClient
+  #54 = Utf8               InnerClasses
+  #55 = Utf8               Mode
+{
+  public static final kc.auth.AuthClient$Mode PLAIN;
+    descriptor: Lkc/auth/AuthClient$Mode;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  public static final kc.auth.AuthClient$Mode MASKED;
+    descriptor: Lkc/auth/AuthClient$Mode;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  private static final kc.auth.AuthClient$Mode[] $VALUES;
+    descriptor: [Lkc/auth/AuthClient$Mode;
+    flags: (0x101a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL, ACC_SYNTHETIC
+
+  public static kc.auth.AuthClient$Mode[] values();
+    descriptor: ()[Lkc/auth/AuthClient$Mode;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: getstatic     #10                 // Field $VALUES:[Lkc/auth/AuthClient$Mode;
+         3: invokevirtual #14                 // Method "[Lkc/auth/AuthClient$Mode;".clone:()Ljava/lang/Object;
+         6: checkcast     #15                 // class "[Lkc/auth/AuthClient$Mode;"
+         9: areturn
+      LineNumberTable:
+        line 80: 0
+
+  public static kc.auth.AuthClient$Mode valueOf(java.lang.String);
+    descriptor: (Ljava/lang/String;)Lkc/auth/AuthClient$Mode;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: ldc           #1                  // class kc/auth/AuthClient$Mode
+         2: aload_0
+         3: invokestatic  #19                 // Method java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+         6: checkcast     #1                  // class kc/auth/AuthClient$Mode
+         9: areturn
+      LineNumberTable:
+        line 80: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  name   Ljava/lang/String;
+    MethodParameters:
+      Name                           Flags
+      <no name>                      mandated
+
+  private kc.auth.AuthClient$Mode();
+    descriptor: (Ljava/lang/String;I)V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=3, locals=3, args_size=3
+         0: aload_0
+         1: aload_1
+         2: iload_2
+         3: invokespecial #25                 // Method java/lang/Enum."<init>":(Ljava/lang/String;I)V
+         6: return
+      LineNumberTable:
+        line 80: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       7     0  this   Lkc/auth/AuthClient$Mode;
+    MethodParameters:
+      Name                           Flags
+      <no name>                      synthetic
+      <no name>                      synthetic
+    Signature: #46                          // ()V
+
+  private static kc.auth.AuthClient$Mode[] $values();
+    descriptor: ()[Lkc/auth/AuthClient$Mode;
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: iconst_2
+         1: anewarray     #1                  // class kc/auth/AuthClient$Mode
+         4: dup
+         5: iconst_0
+         6: getstatic     #3                  // Field PLAIN:Lkc/auth/AuthClient$Mode;
+         9: aastore
+        10: dup
+        11: iconst_1
+        12: getstatic     #7                  // Field MASKED:Lkc/auth/AuthClient$Mode;
+        15: aastore
+        16: areturn
+      LineNumberTable:
+        line 80: 0
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: new           #1                  // class kc/auth/AuthClient$Mode
+         3: dup
+         4: ldc           #29                 // String PLAIN
+         6: iconst_0
+         7: invokespecial #30                 // Method "<init>":(Ljava/lang/String;I)V
+        10: putstatic     #3                  // Field PLAIN:Lkc/auth/AuthClient$Mode;
+        13: new           #1                  // class kc/auth/AuthClient$Mode
+        16: dup
+        17: ldc           #31                 // String MASKED
+        19: iconst_1
+        20: invokespecial #30                 // Method "<init>":(Ljava/lang/String;I)V
+        23: putstatic     #7                  // Field MASKED:Lkc/auth/AuthClient$Mode;
+        26: invokestatic  #32                 // Method $values:()[Lkc/auth/AuthClient$Mode;
+        29: putstatic     #10                 // Field $VALUES:[Lkc/auth/AuthClient$Mode;
+        32: return
+      LineNumberTable:
+        line 81: 0
+        line 82: 13
+        line 80: 26
+}
+Signature: #48                          // Ljava/lang/Enum<Lkc/auth/AuthClient$Mode;>;
+SourceFile: "AuthClient.java"
+NestHost: class kc/auth/AuthClient
+InnerClasses:
+  public static final #55= #1 of #52;     // Mode=class kc/auth/AuthClient$Mode of class kc/auth/AuthClient
+Classfile java/kc-auth/target/classes/kc/auth/AuthClient$Token.class
+  Last modified 2026. 11. 7.; size 1816 bytes
+  SHA-256 checksum e8def583e39fe19c9c439a7857f673054949b27363a85cfe334f5ad016bb6112
+  Compiled from "AuthClient.java"
+public final class kc.auth.AuthClient$Token
+  minor version: 0
+  major version: 61
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #12                         // kc/auth/AuthClient$Token
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 2, methods: 4, attributes: 4
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = InvokeDynamic      #0:#8          // #0:get:()Ljava/util/function/Supplier;
+   #8 = NameAndType        #9:#10         // get:()Ljava/util/function/Supplier;
+   #9 = Utf8               get
+  #10 = Utf8               ()Ljava/util/function/Supplier;
+  #11 = Fieldref           #12.#13        // kc/auth/AuthClient$Token.label:Ljava/util/function/Supplier;
+  #12 = Class              #14            // kc/auth/AuthClient$Token
+  #13 = NameAndType        #15:#16        // label:Ljava/util/function/Supplier;
+  #14 = Utf8               kc/auth/AuthClient$Token
+  #15 = Utf8               label
+  #16 = Utf8               Ljava/util/function/Supplier;
+  #17 = Fieldref           #12.#18        // kc/auth/AuthClient$Token.value:Ljava/lang/String;
+  #18 = NameAndType        #19:#20        // value:Ljava/lang/String;
+  #19 = Utf8               value
+  #20 = Utf8               Ljava/lang/String;
+  #21 = Methodref          #22.#23        // java/lang/String.valueOf:(C)Ljava/lang/String;
+  #22 = Class              #24            // java/lang/String
+  #23 = NameAndType        #25:#26        // valueOf:(C)Ljava/lang/String;
+  #24 = Utf8               java/lang/String
+  #25 = Utf8               valueOf
+  #26 = Utf8               (C)Ljava/lang/String;
+  #27 = InterfaceMethodref #28.#29        // java/util/function/Supplier.get:()Ljava/lang/Object;
+  #28 = Class              #30            // java/util/function/Supplier
+  #29 = NameAndType        #9:#31         // get:()Ljava/lang/Object;
+  #30 = Utf8               java/util/function/Supplier
+  #31 = Utf8               ()Ljava/lang/Object;
+  #32 = InvokeDynamic      #1:#33         // #1:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #33 = NameAndType        #34:#35        // makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #34 = Utf8               makeConcatWithConstants
+  #35 = Utf8               (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #36 = String             #37            // token
+  #37 = Utf8               token
+  #38 = Utf8               Signature
+  #39 = Utf8               Ljava/util/function/Supplier<Ljava/lang/String;>;
+  #40 = Utf8               (Ljava/lang/String;)V
+  #41 = Utf8               Code
+  #42 = Utf8               LineNumberTable
+  #43 = Utf8               LocalVariableTable
+  #44 = Utf8               this
+  #45 = Utf8               Lkc/auth/AuthClient$Token;
+  #46 = Utf8               (C)V
+  #47 = Utf8               c
+  #48 = Utf8               C
+  #49 = Utf8               ()Ljava/lang/String;
+  #50 = Utf8               lambda$new$0
+  #51 = Utf8               SourceFile
+  #52 = Utf8               AuthClient.java
+  #53 = Utf8               NestHost
+  #54 = Class              #55            // kc/auth/AuthClient
+  #55 = Utf8               kc/auth/AuthClient
+  #56 = Utf8               BootstrapMethods
+  #57 = MethodType         #31            //  ()Ljava/lang/Object;
+  #58 = MethodHandle       6:#59          // REF_invokeStatic kc/auth/AuthClient$Token.lambda$new$0:()Ljava/lang/String;
+  #59 = Methodref          #12.#60        // kc/auth/AuthClient$Token.lambda$new$0:()Ljava/lang/String;
+  #60 = NameAndType        #50:#49        // lambda$new$0:()Ljava/lang/String;
+  #61 = MethodType         #49            //  ()Ljava/lang/String;
+  #62 = String             #63            // \u0001/\u0001
+  #63 = Utf8               \u0001/\u0001
+  #64 = MethodHandle       6:#65          // REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #65 = Methodref          #66.#67        // java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #66 = Class              #68            // java/lang/invoke/LambdaMetafactory
+  #67 = NameAndType        #69:#70        // metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #68 = Utf8               java/lang/invoke/LambdaMetafactory
+  #69 = Utf8               metafactory
+  #70 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #71 = MethodHandle       6:#72          // REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #72 = Methodref          #73.#74        // java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #73 = Class              #75            // java/lang/invoke/StringConcatFactory
+  #74 = NameAndType        #34:#76        // makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #75 = Utf8               java/lang/invoke/StringConcatFactory
+  #76 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #77 = Utf8               InnerClasses
+  #78 = Utf8               Token
+  #79 = Class              #80            // java/lang/invoke/MethodHandles$Lookup
+  #80 = Utf8               java/lang/invoke/MethodHandles$Lookup
+  #81 = Class              #82            // java/lang/invoke/MethodHandles
+  #82 = Utf8               java/lang/invoke/MethodHandles
+  #83 = Utf8               Lookup
+{
+  private final java.util.function.Supplier<java.lang.String> label;
+    descriptor: Ljava/util/function/Supplier;
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+    Signature: #39                          // Ljava/util/function/Supplier<Ljava/lang/String;>;
+
+  private final java.lang.String value;
+    descriptor: Ljava/lang/String;
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+
+  public kc.auth.AuthClient$Token(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: invokedynamic #7,  0              // InvokeDynamic #0:get:()Ljava/util/function/Supplier;
+        10: putfield      #11                 // Field label:Ljava/util/function/Supplier;
+        13: aload_0
+        14: aload_1
+        15: putfield      #17                 // Field value:Ljava/lang/String;
+        18: return
+      LineNumberTable:
+        line 65: 0
+        line 62: 4
+        line 66: 13
+        line 67: 18
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      19     0  this   Lkc/auth/AuthClient$Token;
+            0      19     1 value   Ljava/lang/String;
+
+  public kc.auth.AuthClient$Token(char);
+    descriptor: (C)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: invokedynamic #7,  0              // InvokeDynamic #0:get:()Ljava/util/function/Supplier;
+        10: putfield      #11                 // Field label:Ljava/util/function/Supplier;
+        13: aload_0
+        14: iload_1
+        15: invokestatic  #21                 // Method java/lang/String.valueOf:(C)Ljava/lang/String;
+        18: putfield      #17                 // Field value:Ljava/lang/String;
+        21: return
+      LineNumberTable:
+        line 70: 0
+        line 62: 4
+        line 71: 13
+        line 72: 21
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      22     0  this   Lkc/auth/AuthClient$Token;
+            0      22     1     c   C
+
+  public java.lang.String value();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #17                 // Field value:Ljava/lang/String;
+         4: aload_0
+         5: getfield      #11                 // Field label:Ljava/util/function/Supplier;
+         8: invokeinterface #27,  1           // InterfaceMethod java/util/function/Supplier.get:()Ljava/lang/Object;
+        13: checkcast     #22                 // class java/lang/String
+        16: invokedynamic #32,  0             // InvokeDynamic #1:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+        21: areturn
+      LineNumberTable:
+        line 75: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      22     0  this   Lkc/auth/AuthClient$Token;
+
+  private static java.lang.String lambda$new$0();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc           #36                 // String token
+         2: areturn
+      LineNumberTable:
+        line 62: 0
+}
+SourceFile: "AuthClient.java"
+NestHost: class kc/auth/AuthClient
+BootstrapMethods:
+  0: #64 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #57 ()Ljava/lang/Object;
+      #58 REF_invokeStatic kc/auth/AuthClient$Token.lambda$new$0:()Ljava/lang/String;
+      #61 ()Ljava/lang/String;
+  1: #71 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #62 \u0001/\u0001
+InnerClasses:
+  public static final #78= #12 of #54;    // Token=class kc/auth/AuthClient$Token of class kc/auth/AuthClient
+  public static final #83= #79 of #81;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles
+Classfile java/kc-auth/target/classes/kc/auth/AuthClient.class
+  Last modified 2026. 11. 7.; size 4195 bytes
+  SHA-256 checksum 99dd1d810f226b15ee9862ca6239796d8c7d4ccb94ae6a91531d2c3209fa71c5
+  Compiled from "AuthClient.java"
+public final class kc.auth.AuthClient
+  minor version: 0
+  major version: 61
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #8                          // kc/auth/AuthClient
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 3, methods: 12, attributes: 4
+Constant pool:
+    #1 = Methodref          #2.#3         // java/lang/Object."<init>":()V
+    #2 = Class              #4            // java/lang/Object
+    #3 = NameAndType        #5:#6         // "<init>":()V
+    #4 = Utf8               java/lang/Object
+    #5 = Utf8               <init>
+    #6 = Utf8               ()V
+    #7 = Fieldref           #8.#9         // kc/auth/AuthClient.base:Ljava/lang/String;
+    #8 = Class              #10           // kc/auth/AuthClient
+    #9 = NameAndType        #11:#12       // base:Ljava/lang/String;
+   #10 = Utf8               kc/auth/AuthClient
+   #11 = Utf8               base
+   #12 = Utf8               Ljava/lang/String;
+   #13 = Class              #14           // java/util/ArrayList
+   #14 = Utf8               java/util/ArrayList
+   #15 = Methodref          #13.#3        // java/util/ArrayList."<init>":()V
+   #16 = InvokeDynamic      #0:#17        // #0:accept:(Ljava/util/List;)Ljava/util/function/Consumer;
+   #17 = NameAndType        #18:#19       // accept:(Ljava/util/List;)Ljava/util/function/Consumer;
+   #18 = Utf8               accept
+   #19 = Utf8               (Ljava/util/List;)Ljava/util/function/Consumer;
+   #20 = InterfaceMethodref #21.#22       // java/util/List.forEach:(Ljava/util/function/Consumer;)V
+   #21 = Class              #23           // java/util/List
+   #22 = NameAndType        #24:#25       // forEach:(Ljava/util/function/Consumer;)V
+   #23 = Utf8               java/util/List
+   #24 = Utf8               forEach
+   #25 = Utf8               (Ljava/util/function/Consumer;)V
+   #26 = InvokeDynamic      #1:#27        // #1:get:(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/util/function/Supplier;
+   #27 = NameAndType        #28:#29       // get:(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/util/function/Supplier;
+   #28 = Utf8               get
+   #29 = Utf8               (Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/util/function/Supplier;
+   #30 = Methodref          #8.#31        // kc/auth/AuthClient.describe:(Ljava/util/function/Supplier;)Ljava/lang/String;
+   #31 = NameAndType        #32:#33       // describe:(Ljava/util/function/Supplier;)Ljava/lang/String;
+   #32 = Utf8               describe
+   #33 = Utf8               (Ljava/util/function/Supplier;)Ljava/lang/String;
+   #34 = InvokeDynamic      #2:#35        // #2:get:(Lkc/auth/AuthClient;Ljava/lang/String;I)Ljava/util/function/Supplier;
+   #35 = NameAndType        #28:#36       // get:(Lkc/auth/AuthClient;Ljava/lang/String;I)Ljava/util/function/Supplier;
+   #36 = Utf8               (Lkc/auth/AuthClient;Ljava/lang/String;I)Ljava/util/function/Supplier;
+   #37 = Methodref          #13.#38       // java/util/ArrayList."<init>":(Ljava/util/Collection;)V
+   #38 = NameAndType        #5:#39        // "<init>":(Ljava/util/Collection;)V
+   #39 = Utf8               (Ljava/util/Collection;)V
+   #40 = Class              #41           // kc/auth/AuthClient$1
+   #41 = Utf8               kc/auth/AuthClient$1
+   #42 = Methodref          #40.#43       // kc/auth/AuthClient$1."<init>":(Lkc/auth/AuthClient;)V
+   #43 = NameAndType        #5:#44        // "<init>":(Lkc/auth/AuthClient;)V
+   #44 = Utf8               (Lkc/auth/AuthClient;)V
+   #45 = InterfaceMethodref #21.#46       // java/util/List.sort:(Ljava/util/Comparator;)V
+   #46 = NameAndType        #47:#48       // sort:(Ljava/util/Comparator;)V
+   #47 = Utf8               sort
+   #48 = Utf8               (Ljava/util/Comparator;)V
+   #49 = Methodref          #50.#51       // java/lang/String.repeat:(I)Ljava/lang/String;
+   #50 = Class              #52           // java/lang/String
+   #51 = NameAndType        #53:#54       // repeat:(I)Ljava/lang/String;
+   #52 = Utf8               java/lang/String
+   #53 = Utf8               repeat
+   #54 = Utf8               (I)Ljava/lang/String;
+   #55 = InterfaceMethodref #56.#57       // java/util/function/Supplier.get:()Ljava/lang/Object;
+   #56 = Class              #58           // java/util/function/Supplier
+   #57 = NameAndType        #28:#59       // get:()Ljava/lang/Object;
+   #58 = Utf8               java/util/function/Supplier
+   #59 = Utf8               ()Ljava/lang/Object;
+   #60 = InvokeDynamic      #3:#61        // #3:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+   #61 = NameAndType        #62:#63       // makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+   #62 = Utf8               makeConcatWithConstants
+   #63 = Utf8               (Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+   #64 = InvokeDynamic      #4:#65        // #4:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+   #65 = NameAndType        #62:#66       // makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+   #66 = Utf8               (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+   #67 = Fieldref           #8.#68        // kc/auth/AuthClient.UPPER:Ljava/util/function/UnaryOperator;
+   #68 = NameAndType        #69:#70       // UPPER:Ljava/util/function/UnaryOperator;
+   #69 = Utf8               UPPER
+   #70 = Utf8               Ljava/util/function/UnaryOperator;
+   #71 = InterfaceMethodref #72.#73       // java/util/function/UnaryOperator.apply:(Ljava/lang/Object;)Ljava/lang/Object;
+   #72 = Class              #74           // java/util/function/UnaryOperator
+   #73 = NameAndType        #75:#76       // apply:(Ljava/lang/Object;)Ljava/lang/Object;
+   #74 = Utf8               java/util/function/UnaryOperator
+   #75 = Utf8               apply
+   #76 = Utf8               (Ljava/lang/Object;)Ljava/lang/Object;
+   #77 = InterfaceMethodref #21.#78       // java/util/List.add:(Ljava/lang/Object;)Z
+   #78 = NameAndType        #79:#80       // add:(Ljava/lang/Object;)Z
+   #79 = Utf8               add
+   #80 = Utf8               (Ljava/lang/Object;)Z
+   #81 = Methodref          #50.#82       // java/lang/String.toUpperCase:()Ljava/lang/String;
+   #82 = NameAndType        #83:#84       // toUpperCase:()Ljava/lang/String;
+   #83 = Utf8               toUpperCase
+   #84 = Utf8               ()Ljava/lang/String;
+   #85 = String             #86           // kc
+   #86 = Utf8               kc
+   #87 = Methodref          #50.#88       // java/lang/String."<init>":(Ljava/lang/String;)V
+   #88 = NameAndType        #5:#89        // "<init>":(Ljava/lang/String;)V
+   #89 = Utf8               (Ljava/lang/String;)V
+   #90 = Fieldref           #8.#91        // kc/auth/AuthClient.REALM:Ljava/lang/String;
+   #91 = NameAndType        #92:#12       // REALM:Ljava/lang/String;
+   #92 = Utf8               REALM
+   #93 = InvokeDynamic      #5:#94        // #5:apply:()Ljava/util/function/UnaryOperator;
+   #94 = NameAndType        #75:#95       // apply:()Ljava/util/function/UnaryOperator;
+   #95 = Utf8               ()Ljava/util/function/UnaryOperator;
+   #96 = Utf8               Signature
+   #97 = Utf8               Ljava/util/function/UnaryOperator<Ljava/lang/String;>;
+   #98 = Utf8               Code
+   #99 = Utf8               LineNumberTable
+  #100 = Utf8               LocalVariableTable
+  #101 = Utf8               this
+  #102 = Utf8               Lkc/auth/AuthClient;
+  #103 = Utf8               names
+  #104 = Utf8               (Ljava/util/List;)Ljava/util/List;
+  #105 = Utf8               raw
+  #106 = Utf8               Ljava/util/List;
+  #107 = Utf8               out
+  #108 = Utf8               LocalVariableTypeTable
+  #109 = Utf8               Ljava/util/List<Ljava/lang/String;>;
+  #110 = Utf8               (Ljava/util/List<Ljava/lang/String;>;)Ljava/util/List<Ljava/lang/String;>;
+  #111 = Utf8               token
+  #112 = Utf8               (Ljava/lang/String;)Ljava/lang/String;
+  #113 = Utf8               user
+  #114 = Utf8               (Ljava/lang/String;I)Ljava/lang/String;
+  #115 = Utf8               ttl
+  #116 = Utf8               I
+  #117 = Utf8               sorted
+  #118 = Utf8               in
+  #119 = Utf8               copy
+  #120 = Utf8               unused
+  #121 = Utf8               s
+  #122 = Utf8               Ljava/util/function/Supplier;
+  #123 = Utf8               Ljava/util/function/Supplier<Ljava/lang/String;>;
+  #124 = Utf8               (Ljava/util/function/Supplier<Ljava/lang/String;>;)Ljava/lang/String;
+  #125 = Utf8               lambda$token$3
+  #126 = Utf8               lambda$token$2
+  #127 = Utf8               lambda$names$1
+  #128 = Utf8               (Ljava/util/List;Ljava/lang/String;)V
+  #129 = Utf8               n
+  #130 = Utf8               lambda$static$0
+  #131 = Utf8               <clinit>
+  #132 = Utf8               SourceFile
+  #133 = Utf8               AuthClient.java
+  #134 = Utf8               NestMembers
+  #135 = Class              #136          // kc/auth/AuthClient$Mode
+  #136 = Utf8               kc/auth/AuthClient$Mode
+  #137 = Class              #138          // kc/auth/AuthClient$Token
+  #138 = Utf8               kc/auth/AuthClient$Token
+  #139 = Utf8               BootstrapMethods
+  #140 = MethodType         #141          //  (Ljava/lang/Object;)V
+  #141 = Utf8               (Ljava/lang/Object;)V
+  #142 = MethodHandle       6:#143        // REF_invokeStatic kc/auth/AuthClient.lambda$names$1:(Ljava/util/List;Ljava/lang/String;)V
+  #143 = Methodref          #8.#144       // kc/auth/AuthClient.lambda$names$1:(Ljava/util/List;Ljava/lang/String;)V
+  #144 = NameAndType        #127:#128     // lambda$names$1:(Ljava/util/List;Ljava/lang/String;)V
+  #145 = MethodType         #89           //  (Ljava/lang/String;)V
+  #146 = MethodType         #59           //  ()Ljava/lang/Object;
+  #147 = MethodHandle       5:#148        // REF_invokeVirtual kc/auth/AuthClient.lambda$token$2:(Ljava/lang/String;)Ljava/lang/String;
+  #148 = Methodref          #8.#149       // kc/auth/AuthClient.lambda$token$2:(Ljava/lang/String;)Ljava/lang/String;
+  #149 = NameAndType        #126:#112     // lambda$token$2:(Ljava/lang/String;)Ljava/lang/String;
+  #150 = MethodType         #84           //  ()Ljava/lang/String;
+  #151 = MethodHandle       5:#152        // REF_invokeVirtual kc/auth/AuthClient.lambda$token$3:(Ljava/lang/String;I)Ljava/lang/String;
+  #152 = Methodref          #8.#153       // kc/auth/AuthClient.lambda$token$3:(Ljava/lang/String;I)Ljava/lang/String;
+  #153 = NameAndType        #125:#114     // lambda$token$3:(Ljava/lang/String;I)Ljava/lang/String;
+  #154 = String             #155          // \u0001/\u0001?ttl=\u0001
+  #155 = Utf8               \u0001/\u0001?ttl=\u0001
+  #156 = String             #157          // \u0001/\u0001
+  #157 = Utf8               \u0001/\u0001
+  #158 = MethodType         #76           //  (Ljava/lang/Object;)Ljava/lang/Object;
+  #159 = MethodHandle       6:#160        // REF_invokeStatic kc/auth/AuthClient.lambda$static$0:(Ljava/lang/String;)Ljava/lang/String;
+  #160 = Methodref          #8.#161       // kc/auth/AuthClient.lambda$static$0:(Ljava/lang/String;)Ljava/lang/String;
+  #161 = NameAndType        #130:#112     // lambda$static$0:(Ljava/lang/String;)Ljava/lang/String;
+  #162 = MethodType         #112          //  (Ljava/lang/String;)Ljava/lang/String;
+  #163 = MethodHandle       6:#164        // REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #164 = Methodref          #165.#166     // java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #165 = Class              #167          // java/lang/invoke/LambdaMetafactory
+  #166 = NameAndType        #168:#169     // metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #167 = Utf8               java/lang/invoke/LambdaMetafactory
+  #168 = Utf8               metafactory
+  #169 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #170 = MethodHandle       6:#171        // REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #171 = Methodref          #172.#173     // java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #172 = Class              #174          // java/lang/invoke/StringConcatFactory
+  #173 = NameAndType        #62:#175      // makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #174 = Utf8               java/lang/invoke/StringConcatFactory
+  #175 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #176 = Utf8               InnerClasses
+  #177 = Utf8               Mode
+  #178 = Utf8               Token
+  #179 = Class              #180          // java/lang/invoke/MethodHandles$Lookup
+  #180 = Utf8               java/lang/invoke/MethodHandles$Lookup
+  #181 = Class              #182          // java/lang/invoke/MethodHandles
+  #182 = Utf8               java/lang/invoke/MethodHandles
+  #183 = Utf8               Lookup
+{
+  public static final java.lang.String REALM;
+    descriptor: Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+
+  private static final java.util.function.UnaryOperator<java.lang.String> UPPER;
+    descriptor: Ljava/util/function/UnaryOperator;
+    flags: (0x001a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL
+    Signature: #97                          // Ljava/util/function/UnaryOperator<Ljava/lang/String;>;
+
+  private final java.lang.String base;
+    descriptor: Ljava/lang/String;
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+
+  public kc.auth.AuthClient(java.lang.String);
+    descriptor: (Ljava/lang/String;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: aload_1
+         6: putfield      #7                  // Field base:Ljava/lang/String;
+         9: return
+      LineNumberTable:
+        line 18: 0
+        line 19: 4
+        line 20: 9
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lkc/auth/AuthClient;
+            0      10     1  base   Ljava/lang/String;
+
+  public java.util.List<java.lang.String> names(java.util.List<java.lang.String>);
+    descriptor: (Ljava/util/List;)Ljava/util/List;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=3, args_size=2
+         0: new           #13                 // class java/util/ArrayList
+         3: dup
+         4: invokespecial #15                 // Method java/util/ArrayList."<init>":()V
+         7: astore_2
+         8: aload_1
+         9: aload_2
+        10: invokedynamic #16,  0             // InvokeDynamic #0:accept:(Ljava/util/List;)Ljava/util/function/Consumer;
+        15: invokeinterface #20,  2           // InterfaceMethod java/util/List.forEach:(Ljava/util/function/Consumer;)V
+        20: aload_2
+        21: areturn
+      LineNumberTable:
+        line 24: 0
+        line 25: 8
+        line 26: 20
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      22     0  this   Lkc/auth/AuthClient;
+            0      22     1   raw   Ljava/util/List;
+            8      14     2   out   Ljava/util/List;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0      22     1   raw   Ljava/util/List<Ljava/lang/String;>;
+            8      14     2   out   Ljava/util/List<Ljava/lang/String;>;
+    Signature: #110                         // (Ljava/util/List<Ljava/lang/String;>;)Ljava/util/List<Ljava/lang/String;>;
+
+  public java.lang.String token(java.lang.String);
+    descriptor: (Ljava/lang/String;)Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: invokedynamic #26,  0             // InvokeDynamic #1:get:(Lkc/auth/AuthClient;Ljava/lang/String;)Ljava/util/function/Supplier;
+         7: invokestatic  #30                 // Method describe:(Ljava/util/function/Supplier;)Ljava/lang/String;
+        10: areturn
+      LineNumberTable:
+        line 31: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0  this   Lkc/auth/AuthClient;
+            0      11     1  user   Ljava/lang/String;
+
+  public java.lang.String token(java.lang.String, int);
+    descriptor: (Ljava/lang/String;I)Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=3, locals=3, args_size=3
+         0: aload_0
+         1: aload_1
+         2: iload_2
+         3: invokedynamic #34,  0             // InvokeDynamic #2:get:(Lkc/auth/AuthClient;Ljava/lang/String;I)Ljava/util/function/Supplier;
+         8: invokestatic  #30                 // Method describe:(Ljava/util/function/Supplier;)Ljava/lang/String;
+        11: areturn
+      LineNumberTable:
+        line 36: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0  this   Lkc/auth/AuthClient;
+            0      12     1  user   Ljava/lang/String;
+            0      12     2   ttl   I
+
+  public java.util.List<java.lang.String> sorted(java.util.List<java.lang.String>);
+    descriptor: (Ljava/util/List;)Ljava/util/List;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=4, locals=3, args_size=2
+         0: new           #13                 // class java/util/ArrayList
+         3: dup
+         4: aload_1
+         5: invokespecial #37                 // Method java/util/ArrayList."<init>":(Ljava/util/Collection;)V
+         8: astore_2
+         9: aload_2
+        10: new           #40                 // class kc/auth/AuthClient$1
+        13: dup
+        14: aload_0
+        15: invokespecial #42                 // Method kc/auth/AuthClient$1."<init>":(Lkc/auth/AuthClient;)V
+        18: invokeinterface #45,  2           // InterfaceMethod java/util/List.sort:(Ljava/util/Comparator;)V
+        23: aload_2
+        24: areturn
+      LineNumberTable:
+        line 41: 0
+        line 42: 9
+        line 48: 23
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      25     0  this   Lkc/auth/AuthClient;
+            0      25     1    in   Ljava/util/List;
+            9      16     2  copy   Ljava/util/List;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0      25     1    in   Ljava/util/List<Ljava/lang/String;>;
+            9      16     2  copy   Ljava/util/List<Ljava/lang/String;>;
+    Signature: #110                         // (Ljava/util/List<Ljava/lang/String;>;)Ljava/util/List<Ljava/lang/String;>;
+
+  public java.lang.String unused();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #7                  // Field base:Ljava/lang/String;
+         4: iconst_2
+         5: invokevirtual #49                 // Method java/lang/String.repeat:(I)Ljava/lang/String;
+         8: areturn
+      LineNumberTable:
+        line 53: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       9     0  this   Lkc/auth/AuthClient;
+
+  private static java.lang.String describe(java.util.function.Supplier<java.lang.String>);
+    descriptor: (Ljava/util/function/Supplier;)Ljava/lang/String;
+    flags: (0x000a) ACC_PRIVATE, ACC_STATIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokeinterface #55,  1           // InterfaceMethod java/util/function/Supplier.get:()Ljava/lang/Object;
+         6: checkcast     #50                 // class java/lang/String
+         9: areturn
+      LineNumberTable:
+        line 57: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0     s   Ljava/util/function/Supplier;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0     s   Ljava/util/function/Supplier<Ljava/lang/String;>;
+    Signature: #124                         // (Ljava/util/function/Supplier<Ljava/lang/String;>;)Ljava/lang/String;
+
+  private java.lang.String lambda$token$3(java.lang.String, int);
+    descriptor: (Ljava/lang/String;I)Ljava/lang/String;
+    flags: (0x1002) ACC_PRIVATE, ACC_SYNTHETIC
+    Code:
+      stack=3, locals=3, args_size=3
+         0: aload_0
+         1: getfield      #7                  // Field base:Ljava/lang/String;
+         4: aload_1
+         5: iload_2
+         6: invokedynamic #60,  0             // InvokeDynamic #3:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;
+        11: areturn
+      LineNumberTable:
+        line 36: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0  this   Lkc/auth/AuthClient;
+            0      12     1  user   Ljava/lang/String;
+            0      12     2   ttl   I
+
+  private java.lang.String lambda$token$2(java.lang.String);
+    descriptor: (Ljava/lang/String;)Ljava/lang/String;
+    flags: (0x1002) ACC_PRIVATE, ACC_SYNTHETIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: getfield      #7                  // Field base:Ljava/lang/String;
+         4: aload_1
+         5: invokedynamic #64,  0             // InvokeDynamic #4:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+        10: areturn
+      LineNumberTable:
+        line 31: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0  this   Lkc/auth/AuthClient;
+            0      11     1  user   Ljava/lang/String;
+
+  private static void lambda$names$1(java.util.List, java.lang.String);
+    descriptor: (Ljava/util/List;Ljava/lang/String;)V
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=3, locals=2, args_size=2
+         0: aload_0
+         1: getstatic     #67                 // Field UPPER:Ljava/util/function/UnaryOperator;
+         4: aload_1
+         5: invokeinterface #71,  2           // InterfaceMethod java/util/function/UnaryOperator.apply:(Ljava/lang/Object;)Ljava/lang/Object;
+        10: checkcast     #50                 // class java/lang/String
+        13: invokeinterface #77,  2           // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+        18: pop
+        19: return
+      LineNumberTable:
+        line 25: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      20     0   out   Ljava/util/List;
+            0      20     1     n   Ljava/lang/String;
+
+  private static java.lang.String lambda$static$0(java.lang.String);
+    descriptor: (Ljava/lang/String;)Ljava/lang/String;
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokevirtual #81                 // Method java/lang/String.toUpperCase:()Ljava/lang/String;
+         4: areturn
+      LineNumberTable:
+        line 14: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0     s   Ljava/lang/String;
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=3, locals=0, args_size=0
+         0: new           #50                 // class java/lang/String
+         3: dup
+         4: ldc           #85                 // String kc
+         6: invokespecial #87                 // Method java/lang/String."<init>":(Ljava/lang/String;)V
+         9: putstatic     #90                 // Field REALM:Ljava/lang/String;
+        12: invokedynamic #93,  0             // InvokeDynamic #5:apply:()Ljava/util/function/UnaryOperator;
+        17: putstatic     #67                 // Field UPPER:Ljava/util/function/UnaryOperator;
+        20: return
+      LineNumberTable:
+        line 12: 0
+        line 14: 12
+}
+SourceFile: "AuthClient.java"
+NestMembers:
+  kc/auth/AuthClient$Mode
+  kc/auth/AuthClient$Token
+  kc/auth/AuthClient$1
+BootstrapMethods:
+  0: #163 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #140 (Ljava/lang/Object;)V
+      #142 REF_invokeStatic kc/auth/AuthClient.lambda$names$1:(Ljava/util/List;Ljava/lang/String;)V
+      #145 (Ljava/lang/String;)V
+  1: #163 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #146 ()Ljava/lang/Object;
+      #147 REF_invokeVirtual kc/auth/AuthClient.lambda$token$2:(Ljava/lang/String;)Ljava/lang/String;
+      #150 ()Ljava/lang/String;
+  2: #163 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #146 ()Ljava/lang/Object;
+      #151 REF_invokeVirtual kc/auth/AuthClient.lambda$token$3:(Ljava/lang/String;I)Ljava/lang/String;
+      #150 ()Ljava/lang/String;
+  3: #170 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #154 \u0001/\u0001?ttl=\u0001
+  4: #170 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #156 \u0001/\u0001
+  5: #163 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #158 (Ljava/lang/Object;)Ljava/lang/Object;
+      #159 REF_invokeStatic kc/auth/AuthClient.lambda$static$0:(Ljava/lang/String;)Ljava/lang/String;
+      #162 (Ljava/lang/String;)Ljava/lang/String;
+InnerClasses:
+  #40;                                    // class kc/auth/AuthClient$1
+  public static final #177= #135 of #8;   // Mode=class kc/auth/AuthClient$Mode of class kc/auth/AuthClient
+  public static final #178= #137 of #8;   // Token=class kc/auth/AuthClient$Token of class kc/auth/AuthClient
+  public static final #183= #179 of #181; // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles
+Classfile java/kc-auth/target/classes/kc/auth/Config.class
+  Last modified 2026. 11. 7.; size 339 bytes
+  SHA-256 checksum 767e9e3250be6bd00fa384b61b65cd4f4457955ffe6bd2a180f3d169c904099d
+  Compiled from "Config.java"
+public final class kc.auth.Config
+  minor version: 0
+  major version: 61
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #9                          // kc/auth/Config
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 1
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = String             #8             // kc
+   #8 = Utf8               kc
+   #9 = Class              #10            // kc/auth/Config
+  #10 = Utf8               kc/auth/Config
+  #11 = Utf8               Code
+  #12 = Utf8               LineNumberTable
+  #13 = Utf8               LocalVariableTable
+  #14 = Utf8               this
+  #15 = Utf8               Lkc/auth/Config;
+  #16 = Utf8               realm
+  #17 = Utf8               ()Ljava/lang/String;
+  #18 = Utf8               SourceFile
+  #19 = Utf8               Config.java
+{
+  private kc.auth.Config();
+    descriptor: ()V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 5: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/auth/Config;
+
+  public static java.lang.String realm();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc           #7                  // String kc
+         2: areturn
+      LineNumberTable:
+        line 8: 0
+}
+SourceFile: "Config.java"
+Classfile java/kc-examples/target/classes/kc/examples/QuickStart.class
+  Last modified 2026. 11. 7.; size 912 bytes
+  SHA-256 checksum e79d2c4cc6fcb50c8d3a7c4d5948f3bd0eb882d5dae774afa8d0060827b6b4ee
+  Compiled from "QuickStart.java"
+public final class kc.examples.QuickStart
+  minor version: 0
+  major version: 61
+  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
+  this_class: #18                         // kc/examples/QuickStart
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 3, attributes: 1
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Fieldref           #8.#9          // java/lang/System.out:Ljava/io/PrintStream;
+   #8 = Class              #10            // java/lang/System
+   #9 = NameAndType        #11:#12        // out:Ljava/io/PrintStream;
+  #10 = Utf8               java/lang/System
+  #11 = Utf8               out
+  #12 = Utf8               Ljava/io/PrintStream;
+  #13 = String             #14            // KC_URL
+  #14 = Utf8               KC_URL
+  #15 = String             #16            // http://localhost:8080
+  #16 = Utf8               http://localhost:8080
+  #17 = Methodref          #18.#19        // kc/examples/QuickStart.env:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #18 = Class              #20            // kc/examples/QuickStart
+  #19 = NameAndType        #21:#22        // env:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #20 = Utf8               kc/examples/QuickStart
+  #21 = Utf8               env
+  #22 = Utf8               (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #23 = Methodref          #24.#25        // java/io/PrintStream.println:(Ljava/lang/String;)V
+  #24 = Class              #26            // java/io/PrintStream
+  #25 = NameAndType        #27:#28        // println:(Ljava/lang/String;)V
+  #26 = Utf8               java/io/PrintStream
+  #27 = Utf8               println
+  #28 = Utf8               (Ljava/lang/String;)V
+  #29 = Methodref          #8.#30         // java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+  #30 = NameAndType        #31:#32        // getenv:(Ljava/lang/String;)Ljava/lang/String;
+  #31 = Utf8               getenv
+  #32 = Utf8               (Ljava/lang/String;)Ljava/lang/String;
+  #33 = Utf8               Code
+  #34 = Utf8               LineNumberTable
+  #35 = Utf8               LocalVariableTable
+  #36 = Utf8               this
+  #37 = Utf8               Lkc/examples/QuickStart;
+  #38 = Utf8               main
+  #39 = Utf8               ([Ljava/lang/String;)V
+  #40 = Utf8               args
+  #41 = Utf8               [Ljava/lang/String;
+  #42 = Utf8               key
+  #43 = Utf8               Ljava/lang/String;
+  #44 = Utf8               fallback
+  #45 = Utf8               v
+  #46 = Utf8               StackMapTable
+  #47 = Class              #48            // java/lang/String
+  #48 = Utf8               java/lang/String
+  #49 = Utf8               SourceFile
+  #50 = Utf8               QuickStart.java
+{
+  private kc.examples.QuickStart();
+    descriptor: ()V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 5: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lkc/examples/QuickStart;
+
+  public static void main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)V
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=3, locals=1, args_size=1
+         0: getstatic     #7                  // Field java/lang/System.out:Ljava/io/PrintStream;
+         3: ldc           #13                 // String KC_URL
+         5: ldc           #15                 // String http://localhost:8080
+         7: invokestatic  #17                 // Method env:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+        10: invokevirtual #23                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+        13: return
+      LineNumberTable:
+        line 8: 0
+        line 9: 13
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      14     0  args   [Ljava/lang/String;
+
+  static java.lang.String env(java.lang.String, java.lang.String);
+    descriptor: (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=1, locals=3, args_size=2
+         0: aload_0
+         1: invokestatic  #29                 // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+         4: astore_2
+         5: aload_2
+         6: ifnonnull     13
+         9: aload_1
+        10: goto          14
+        13: aload_2
+        14: areturn
+      LineNumberTable:
+        line 12: 0
+        line 13: 5
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      15     0   key   Ljava/lang/String;
+            0      15     1 fallback   Ljava/lang/String;
+            5      10     2     v   Ljava/lang/String;
+      StackMapTable: number_of_entries = 2
+        frame_type = 252 /* append */
+          offset_delta = 13
+          locals = [ class java/lang/String ]
+        frame_type = 64 /* same_locals_1_stack_item */
+          stack = [ class java/lang/String ]
+}
+SourceFile: "QuickStart.java"

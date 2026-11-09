@@ -98,5 +98,75 @@
       "ruby/lib/kc/auth_client.rb:AuthClient#logout_url": "open-admin",
       "ruby/lib/kc/auth_client.rb:AuthClient.build": "open-masking"
     }
+  },
+  "dotnet": {
+    "pinned": [
+      "dotnet/src/Kc/Admin/Client.cs",
+      "dotnet/src/Kc/AuthClient.cs"
+    ],
+    "owners": {
+      "dotnet/src/Kc/Admin/Client.cs:Client.Close": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.Defaults.#cctor": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.Defaults.First": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.Dispose": "open-admin",
+      "dotnet/src/Kc/Admin/Client.cs:Client.UsersResource.DeleteAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.#ctor(System.String,System.String)": "open-masking",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Build": "open-masking",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Describe(System.Int32)": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Later": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.LogoutAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Lower": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.NamesAsync": "open-admin",
+      "dotnet/src/Kc/AuthClient.cs:AuthClient.Unused": "open-admin"
+    }
+  },
+  "java": {
+    "pinned": [
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java"
+    ],
+    "owners": {
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.Token.<init>(char)": "open-admin",
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.token(String, int)": "open-admin",
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.unused": "open-admin",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.env": "open-masking",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.main": "open-masking"
+    }
+  },
+  "kotlin": {
+    "pinned": [
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt",
+      "kotlin/src/main/kotlin/kc/examples/QuickStart.kt"
+    ],
+    "owners": {
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.Companion.getREALM": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.join": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.token(String, int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.unused": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.withLocalClass": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientDefaults.pick(int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientError.<init>(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientLoaders.load(String, Continuation)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientMixed.<init>(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientSusp.<init>(int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientTokens.parse": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientNest.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientRelay.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientKt.privTwice": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientKt.pubTwice": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientLog.debug(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientWide.wide(int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientObjPick.pick(int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientObjPick2.pick(int)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientBase.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientLater.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientCmp.g": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientIface.h": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientWhen.f": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientShared.<init>(String)": "open-admin",
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClientStatus.<init>": "open-admin",
+      "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.env": "open-masking",
+      "kotlin/src/main/kotlin/kc/examples/QuickStart.kt:QuickStartKt.main": "open-masking"
+    }
   }
 }

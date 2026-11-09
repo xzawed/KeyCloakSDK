@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>kc.fixture</groupId>
+    <artifactId>kc-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>kc-examples</artifactId>
+  <properties>
+    <!-- 실제 트리의 examples 와 같다 — 게이트가 통째로 안 잰다(coverage-boundary 의 forced). -->
+    <jacoco.skip>true</jacoco.skip>
+  </properties>
+</project>
