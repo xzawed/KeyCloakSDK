@@ -218,13 +218,26 @@ RSpec.describe KeycloakSdk::JwtValidator do
       "kty 없는 원소" => { "kid" => "nokty" },
       "숫자 원소" => 1,
       "null 원소" => nil,
-      "배열 원소" => []
+      "배열 원소" => [],
+      # ⚠️ 아래 둘은 `JWT::JWKError` 가 아닌 예외다(`NoMethodError` · `OpenSSL::PKey::EC::Point::Error`) — 잡는 범위를
+      # 좁히면 키셋 전체가 다시 실패한다.
+      "n 이 숫자인 RSA(kid 없음)" => { "kty" => "RSA", "n" => 123, "e" => "AQAB" },
+      "곡선 위에 없는 EC 점" => { "kty" => "EC", "crv" => "P-256", "kid" => "ec", "x" => "AAAA", "y" => "AAAA" }
     }.each do |name, bad|
       it "#{name} 은 건너뛰고 정상 키로 서명한 토큰이 통과한다" do
         stub_request(:get, jwks_url).to_return(status: 200, body: { keys: [bad, jwk_hash] }.to_json,
                                                headers: { "Content-Type" => "application/json" })
         expect(validator.validate(sign(base_claims)).subject).to eq("user-1")
       end
+    end
+
+    # ⚠️ kid 가 있으면 ruby-jwt 는 키 재료를 검증 때까지 미룬다 — 같은 kid 의 기형 키가 앞에 오면 그것이 골라져 날것의
+    # `NoMethodError` 가 샜다. 거를 때 재료까지 읽어야 한다(`verify_key`).
+    it "같은 kid 의 기형 키가 앞에 있어도 정상 키로 서명한 토큰이 통과한다" do
+      bad = { "kty" => "RSA", "kid" => kid, "n" => 123, "e" => "AQAB" }
+      stub_request(:get, jwks_url).to_return(status: 200, body: { keys: [bad, jwk_hash] }.to_json,
+                                             headers: { "Content-Type" => "application/json" })
+      expect(validator.validate(sign(base_claims)).subject).to eq("user-1")
     end
   end
 

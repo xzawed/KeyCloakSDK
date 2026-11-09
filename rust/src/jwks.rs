@@ -847,6 +847,9 @@ mod tests {
             serde_json::json!(1),
             serde_json::Value::Null,
             serde_json::json!([]),
+            // ⚠️ 객체이지만 `Jwk` 로 풀리지 않는 원소 — 「객체가 아닌 것만 버리고 나머지를 한 번에 푼다」는 틀린 구현을
+            // 가른다(PR #1000 레그).
+            serde_json::json!({ "kty": "RSA", "kid": 7, "n": "sXchg", "e": "AQAB" }),
         ] {
             let mut body = jwks_json("k1");
             body["keys"].as_array_mut().unwrap().insert(0, bad.clone());

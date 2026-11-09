@@ -182,10 +182,13 @@ module KeycloakSdk
 
     # 원소 하나 — ruby-jwt 가 키로 읽는가. ⚠️ 해시가 아닌 원소는 묻지 않고 버린다 — ruby-jwt 는 문자열을 **그 값이 비밀인
     # HMAC 키**로 만든다(`JWT::JWK::HMAC` 의 KTYS 에 String). JWK 는 JSON 객체다.
+    # ⚠️ **키 재료까지 읽는다**(`verify_key`). kid 가 있으면 ruby-jwt 는 n·e·x·y 를 검증 때까지 미뤄, 같은 kid 의 기형 키가
+    # 앞에 오면 검증이 날것의 `NoMethodError`·`OpenSSL::PKey::EC::Point::Error` 로 샜다(§4). ⚠️ `StandardError` 를 다 잡는다 —
+    # 그 둘은 `JWT::JWKError` 가 아니다.
     def readable_key?(key)
       return false unless key.is_a?(Hash)
 
-      JWT::JWK.new(key)
+      JWT::JWK.new(key).verify_key
       true
     rescue StandardError
       false

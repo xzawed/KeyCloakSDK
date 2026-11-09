@@ -39,7 +39,7 @@ const JWT_MAX_BYTES = 256_000
  */
 const JWKS_MAX_AGE_SECONDS = 300
 
-/** jose 의 `isJWKSLike` 가 원소로 받는 모양 — JSON 에서 온 값이므로 null · 배열이 아닌 객체면 된다. */
+/** jose 의 `isJwkSet`(`lib/validate.js`)이 원소로 받는 모양 — JSON 에서 온 값이므로 null · 배열이 아닌 객체면 된다. */
 function isJwkObject(key: unknown): boolean {
   return typeof key === 'object' && key !== null && !Array.isArray(key)
 }
@@ -80,7 +80,7 @@ const fetchJwksBounded: FetchImplementation = async (url, options) => {
   // 남는다. JSON 파싱 실패는 던지지 않는다 — 그 판정은 jose 몫이다.
   //
   // ⚠️ JWK 가 아닌 원소(객체가 아닌 것)는 걸러 낸다(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). jose 의
-  // `isJWKSLike` 는 그런 원소 하나로 키셋 전체를 「malformed」로 거부해, 같은 키셋의 정상 키로 서명한 토큰까지
+  // `isJwkSet` 은 그런 원소 하나로 키셋 전체를 「malformed」로 거부해, 같은 키셋의 정상 키로 서명한 토큰까지
   // 거부됐다. 지원 밖 kty · 곡선 · 기형 멤버는 jose 가 키를 고를 때만 보므로 그대로 둔다. 걸러서 남는 것이 없으면
   // 빈 키셋과 같다.
   if (response.status === 200) {

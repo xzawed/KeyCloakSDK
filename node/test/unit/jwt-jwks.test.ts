@@ -338,8 +338,8 @@ describe('빈 JWKS 키셋(200)이 좋은 캐시를 덮지 않는다', () => {
   })
 })
 
-// ⚠️ JWK 가 아닌 원소 하나가 키셋 전체를 버리면 안 된다(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). jose 의 `isJWKSLike`
-// 는 `keys` 의 원소가 전부 객체여야 키셋으로 받는다 — 문자열 · 숫자 · null · 배열 원소 하나로 「JSON Web Key Set malformed」
+// ⚠️ JWK 가 아닌 원소 하나가 키셋 전체를 버리면 안 된다(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). jose 의 `isJwkSet`
+// (`lib/validate.js`)은 `keys` 의 원소가 전부 객체여야 키셋으로 받는다 — 문자열 · 숫자 · null · 배열 원소 하나로 「JSON Web Key Set malformed」
 // 가 되어 같은 키셋의 정상 키로 서명한 토큰까지 거부됐다(등록부 jwks-unsupported-key-rejects-set). 지원 밖 kty · 곡선 · 기형
 // 멤버는 jose 가 키를 고를 때만 보므로 이미 통과한다 — 그래서 여기서 거르는 것은 객체가 아닌 원소뿐이다.
 describe('JWKS 의 JWK 가 아닌 원소는 건너뛴다', () => {
