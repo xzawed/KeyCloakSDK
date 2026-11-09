@@ -1,0 +1,16 @@
+[1m[32m   Compiling[0m x v1.0.0 (/w/rust)
+[1m[32m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.00s
+[1m[32m     Running[0m unittests src/lib.rs (target/debug/deps/x-0123456789abcdef)
+
+running 2 tests
+test auth::tests::rejects_mismatched_nonce ... ok
+test jwks::tests::backoff_bounds_cold_retries ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[1m[32m     Running[0m tests/facade_dump.rs (target/debug/deps/facade_dump-0123456789abcdef)
+
+running 1 test
+test jwks::tests::backoff_bounds_cold_retries ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s

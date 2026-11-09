@@ -57,6 +57,10 @@ expect ok-php 0 "통과 2 · FAIL 0"
 assert_contains "$OUT" "testNonStringAccessTokenIsRejected — 2 통과" "[ok-php] 데이터 셋 둘 — 출력: $OUT"
 run --lang rust --report "$REP/rust-pass.txt" --root "$REPO"
 expect ok-rust 0 "통과 2 · FAIL 0"
+# CI 의 rust 레인은 `CARGO_TERM_COLOR=always`(dtolnay/rust-toolchain)라 `Running …` 줄에 ANSI 색이 붙는다 — 그것을 못 걷으면
+# 바이너리를 못 읽어 src 카나리아가 전부 「보고서에 없다」가 된다(#996 첫 CI 실측). 다른 바이너리의 ignored 미끼도 있다.
+run --lang rust --report "$REP/rust-ansi.txt" --root "$REPO"
+expect ok-rust-ansi 0 "통과 2 · FAIL 0"
 run --lang ruby --report "$REP/ruby-pass.json" --root "$REPO"
 expect ok-ruby 0 "통과 2 · FAIL 0"
 assert_contains "$OUT" "(#{bad.inspect}) — 2 통과" "[ok-ruby] 보간 제목 둘 — 출력: $OUT"

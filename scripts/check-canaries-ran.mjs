@@ -373,6 +373,11 @@ export function stripXmlNoise(x) {
   }
 }
 
+// 텍스트 출력의 ANSI 색 — CI 의 rust 레인은 `dtolnay/rust-toolchain` 이 `CARGO_TERM_COLOR=always` 를 걸어 cargo 의
+// `Running …` 줄이 `ESC[1mESC[32m     RunningESC[0m unittests src/lib.rs` 로 온다(실측 #996 첫 CI — 바이너리를 못 읽어
+// src 카나리아 아홉이 전부 「보고서에 없다」였다). 로컬 콘솔 출력엔 색이 없어 보이지 않던 차이다.
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+
 export const PARSE = {
   junit(text) {
     const x = stripXmlNoise(text)
@@ -398,14 +403,14 @@ export const PARSE = {
   },
   gotest(text) {
     const out = []
-    for (const m of text.matchAll(/^\s*--- (PASS|FAIL|SKIP): (\S+) \(/gm))
+    for (const m of stripAnsi(text).matchAll(/^\s*--- (PASS|FAIL|SKIP): (\S+) \(/gm))
       out.push({ name: m[2], status: m[1] === 'PASS' ? 'passed' : m[1] === 'SKIP' ? 'skipped' : 'failed' })
     return out
   },
   libtest(text) {
     const out = []
     let binary = ''
-    for (const line of text.split(/\r?\n/)) {
+    for (const line of stripAnsi(text).split(/\r?\n/)) {
       const run = /^\s*Running (unittests )?(\S+)/.exec(line)
       if (run) {
         binary = (run[1] ?? '') + run[2].replace(/\\/g, '/')
