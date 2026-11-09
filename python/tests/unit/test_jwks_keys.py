@@ -66,7 +66,8 @@ def test_a_set_without_a_usable_key_is_refused_as_an_sdk_error(
 
 def test_the_refusal_names_and_chains_the_first_elements_error() -> None:
     """원인을 잃지 않는다 — 메시지에 첫 원소의 예외를 적고 `__cause__` 로 잇는다
-    (go 의 `Cause` 와 같다)."""
-    with pytest.raises(TokenValidationError, match=r"first: TypeError: unhashable") as caught:
+    (go 의 `Cause` 와 같다). ⚠️ stdlib 예외의 **문구**는 단언하지 않는다 — 3.14 가 이 `TypeError`
+    의 문구를 바꿨다(CI 3.14 레그 실측). 형과 사슬만 본다."""
+    with pytest.raises(TokenValidationError, match=r"first: TypeError: ") as caught:
         import_usable_keys({"keys": [{"kty": ["RSA"]}, {"kid": "nokty"}]})
     assert isinstance(caught.value.__cause__, TypeError)
