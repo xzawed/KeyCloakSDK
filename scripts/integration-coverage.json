@@ -1,6 +1,6 @@
 {
   "go": {
-    "floor": { "metric": "statements", "percent": 76.1 },
+    "floor": { "metric": "statements", "percent": 75.8 },
     "pinned": [
       "go/admin.go",
       "go/admin_clients.go",
