@@ -86,7 +86,7 @@ dependencies {
     api("org.jetbrains.kotlin:kotlin-stdlib:2.2.21")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
     api("org.keycloak:keycloak-admin-client:26.0.12") // representation 노출 → api
-    implementation("com.nimbusds:oauth2-oidc-sdk:11.38.2")
+    implementation("com.nimbusds:oauth2-oidc-sdk:11.39")
     implementation("com.nimbusds:nimbus-jose-jwt:10.10")
     // auth·JWKS 운송(BoundedTransport) — admin 의 RESTEasy 6.2.15.Final 이 이미 가져오는 판 그대로(httpclient 4.5.14 → httpcore 4.4.16 ·
     // commons-logging 1.2). 새 판을 들이지 않는다 — 전이로 쓰던 것을 직접 선언한다(Java keycloak-sdk-auth 와 같은 좌표).
