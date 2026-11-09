@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import contextlib
 import http.client
+import select
 import socket
+import ssl
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -24,11 +27,13 @@ import requests
 import urllib3
 from keycloak import KeycloakOpenID
 from requests.adapters import BaseAdapter
+from urllib3.util.ssltransport import SSLTransport
 
 from keycloak_sdk._internal import wire
 from keycloak_sdk._internal.deadline import reader
 from keycloak_sdk._internal.wire import FRAMING_ALLOWANCE_BYTES, exchange
 from keycloak_sdk.exceptions import KeycloakConfigError
+from tests.unit.conftest import server_tls
 
 GAP = 0.7
 
@@ -209,6 +214,165 @@ def test_a_budgeted_read_asks_for_8_kib_however_large_the_buffer() -> None:
 def test_a_non_blocking_read_that_got_nothing_charges_nothing() -> None:
     with exchange(60, 0):
         assert _metered(_Sock(1.0), lambda _b: None)(bytearray(8)) is None
+
+
+# --- TLS 안의 TLS · pyOpenSSL — 원문 읽기 하나가 아래 소켓을 여러 번 읽는다 ---------------
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """가짜 단조 시계 — 아래 소켓의 읽기 하나가 0.2 초를 쓴다."""
+    now = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    return now
+
+
+class _Outer(_Sock):
+    """TLS 안의 TLS 의 바깥 소켓 흉내 — `recv` 하나가 0.2 초를 쓰고 한 바이트를 준다."""
+
+    def __init__(self, timeout: float | None, clock: list[float]) -> None:
+        super().__init__(timeout)
+        self.clock = clock
+        self.seen: list[float | None] = []
+
+    def recv(self, _n: int) -> bytes:
+        self.seen.append(self.timeout)
+        self.clock[0] += 0.2
+        return b"x"
+
+
+def _transport(outer: Any) -> Any:
+    """urllib3 `SSLTransport`(HTTPS 프록시 뒤의 TLS) — 손잡기 없이 바깥 소켓만 단다."""
+    transport = SSLTransport.__new__(SSLTransport)
+    transport.socket = outer
+    return transport
+
+
+def _loop(transport: Any, rounds: int) -> Any:
+    """`SSLTransport._ssl_io_loop` 처럼 안쪽 레코드 하나가 찰 때까지 바깥을 여러 번 읽는 읽기."""
+
+    def read(_buffer: Any) -> int:
+        for _ in range(rounds):
+            transport.socket.recv(16384)
+        return 1
+
+    return read
+
+
+def test_tls_in_tls_bounds_each_outer_read_by_what_is_left(clock: list[float]) -> None:
+    # 수정 전(실측 2026-11-09 · HTTPS 프록시 + 안쪽 레코드 하나의 꼬리 10 바이트를 0.7 초마다 ·
+    # 읽기 타임아웃 1 초): 7,083 ms 뒤에야 ReadTimeout — 바깥 읽기마다 처음의 타임아웃 그대로였다.
+    outer = _Outer(30.0, clock)
+    transport = _transport(outer)
+    with exchange(0.5, None), pytest.raises(TimeoutError):
+        wire._metered(_loop(transport, 5), transport, _meter())(bytearray(8))
+    assert outer.seen == pytest.approx([0.5, 0.3, 0.1]), "0.6 초의 넷째 읽기는 마감이 거부한다"
+    assert "recv" not in vars(outer), "읽기가 끝나면 바깥 소켓을 그대로 되돌린다"
+    assert outer.timeout == 30.0
+
+
+def test_tls_in_tls_without_a_deadline_is_left_as_it_is(clock: list[float]) -> None:
+    outer = _Outer(30.0, clock)
+    transport = _transport(outer)
+    with exchange(None, None):
+        assert wire._metered(_loop(transport, 3), transport, _meter())(bytearray(8)) == 1
+    assert outer.seen == [30.0, 30.0, 30.0] and outer.set == []
+
+
+class _Wrapped:
+    """urllib3.contrib.pyopenssl `WrappedSocket` 의 꼴(2.7.0) — `gettimeout` 이 없고 타임아웃은
+    그 아래 원소켓(`socket`)의 것이다. WantRead 마다 원소켓을 기다렸다가 자기 `recv_into` 를
+    다시 부른다."""
+
+    def __init__(self, clock: list[float], rounds: int) -> None:
+        self.socket = _Sock(30.0)
+        self.clock, self.rounds = clock, rounds
+        self.seen: list[float | None] = []
+
+    def settimeout(self, value: float | None) -> None:
+        self.socket.settimeout(value)
+
+    def recv_into(self, buffer: Any) -> int:
+        self.seen.append(self.socket.timeout)
+        self.clock[0] += 0.2
+        return 1 if len(self.seen) >= self.rounds else self.recv_into(buffer)
+
+
+@pytest.fixture
+def pyopenssl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`urllib3.contrib.pyopenssl` 을 주입한 프로세스 — 그 모듈의 `WrappedSocket` 이
+    `_Wrapped` 다."""
+    module = SimpleNamespace(WrappedSocket=_Wrapped)
+    monkeypatch.setitem(sys.modules, "urllib3.contrib.pyopenssl", module)
+
+
+@pytest.mark.usefixtures("pyopenssl")
+def test_pyopenssl_bounds_each_wait_by_what_is_left(clock: list[float]) -> None:
+    sock = _Wrapped(clock, 5)
+    with exchange(0.5, None), pytest.raises(TimeoutError):
+        wire._metered(lambda b: sock.recv_into(b), sock, _meter())(bytearray(8))
+    assert sock.seen == pytest.approx([0.5, 0.3, 0.1]), sock.seen
+    assert "recv_into" not in vars(sock) and sock.socket.timeout == 30.0
+
+
+@pytest.mark.usefixtures("pyopenssl")
+def test_pyopenssl_reads_at_all(clock: list[float]) -> None:
+    # 1.0.7 은 `sock.gettimeout()` 을 불러 pyOpenSSL 을 주입한 프로세스의 sync 호출마다
+    # `AttributeError: 'WrappedSocket' object has no attribute 'gettimeout'` 였다(실측 2026-11-09 ·
+    # pyOpenSSL 26.4.0 · urllib3 2.7.0 — 마감이 없는 교환도 같다).
+    sock = _Wrapped(clock, 2)
+    with exchange(None, None):
+        assert wire._metered(lambda b: sock.recv_into(b), sock, _meter())(bytearray(8)) == 1
+    assert sock.seen == [30.0, 30.0] and sock.socket.set == []
+
+
+def test_an_outer_reader_already_on_the_instance_comes_back(clock: list[float]) -> None:
+    outer = _Outer(30.0, clock)
+    own = outer.recv
+    vars(outer)["recv"] = own  # 소비자가 인스턴스에 단 감싸개 — 읽기가 끝나면 그것이 돌아온다
+    transport = _transport(outer)
+    with exchange(5, None):
+        wire._metered(_loop(transport, 1), transport, _meter())(bytearray(8))
+    assert vars(outer)["recv"] is own
+
+
+def test_a_failed_restore_still_takes_the_wrapper_off(clock: list[float]) -> None:
+    # 연결이 읽는 사이에 닫히면 타임아웃 되돌리기(`settimeout`)가 실패할 수 있다 — 감싸개는 그 전에
+    # 떼어 둔다(Grok 레그가 짚은 순서: 되돌리기가 먼저 실패하면 `undo` 를 건너뛰었다).
+    class Closing(_Outer):
+        def settimeout(self, value: float | None) -> None:
+            if value == 30.0:
+                raise OSError("closed")
+            super().settimeout(value)
+
+    outer = Closing(30.0, clock)
+    transport = _transport(outer)
+    with exchange(5, None), pytest.raises(OSError, match="closed"):
+        wire._metered(_loop(transport, 1), transport, _meter())(bytearray(8))
+    assert "recv" not in vars(outer)
+
+
+def test_an_outer_socket_the_sdk_cannot_wrap_is_refused(clock: list[float]) -> None:
+    class Slotted:
+        __slots__ = ("timeout",)
+
+        def __init__(self) -> None:
+            self.timeout: float | None = 30.0
+
+        def gettimeout(self) -> float | None:
+            return self.timeout
+
+        def settimeout(self, value: float | None) -> None:
+            self.timeout = value
+
+        def recv(self, _n: int) -> bytes:
+            return b"x"
+
+    outer = Slotted()
+    transport = _transport(outer)
+    with exchange(5, None), pytest.raises(KeycloakConfigError, match="TLS"):
+        wire._metered(_loop(transport, 1), transport, _meter())(bytearray(8))
+    assert outer.timeout == 30.0, "거부는 아무것도 바꾸기 전이다"
 
 
 # --- 거는 자리 ---------------------------------------------------------------------------------
@@ -456,6 +620,157 @@ def test_a_trickled_connect_response_is_metered_too() -> None:
         session.close()
     print(f"[Wire] CONNECT trickled -> failed | {elapsed * 1000:.0f} ms")
     assert proxy.lines and proxy.lines[0].startswith(b"CONNECT idp.invalid:443 ")
+    assert elapsed < 2.0, f"{elapsed:.2f} s"
+
+
+class _RecordTarget:
+    """TLS 레코드를 손으로 싸는 대상(`ssl.MemoryBIO`) — 응답 머리를 레코드 **하나**로 싸서 그 마지막
+    10 바이트(레코드의 원문 바이트)를 `GAP` 초마다 하나씩 보낸다."""
+
+    def __init__(self, tls: ssl.SSLContext) -> None:
+        self.sock = socket.create_server(("127.0.0.1", 0))
+        self.port = self.sock.getsockname()[1]
+        self.tls = tls
+        self.stop = threading.Event()
+        self._conns: list[socket.socket] = []
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            self._conns.append(conn)
+            threading.Thread(target=self._exchange, args=(conn,), daemon=True).start()
+
+    def _exchange(self, conn: socket.socket) -> None:
+        incoming, outgoing = ssl.MemoryBIO(), ssl.MemoryBIO()
+        tls = self.tls.wrap_bio(incoming, outgoing, server_side=True)
+
+        def pump() -> None:
+            if data := outgoing.read():
+                conn.sendall(data)
+            if not (data := conn.recv(65536)):
+                raise EOFError
+            incoming.write(data)
+
+        try:
+            while True:
+                try:
+                    tls.do_handshake()
+                    break
+                except ssl.SSLWantReadError:
+                    pump()
+            conn.sendall(outgoing.read())
+            got = b""
+            while b"\r\n\r\n" not in got:
+                try:
+                    got += tls.read(65536)
+                except ssl.SSLWantReadError:
+                    pump()
+            tls.write(_TRICKLED_HEAD)
+            record = outgoing.read()  # 머리를 실은 레코드(그 앞에 TLS 1.3 세션 티켓이 있을 수 있다)
+            conn.sendall(record[:-10])
+            for i in range(len(record) - 10, len(record)):
+                if self.stop.wait(GAP):
+                    return
+                conn.sendall(record[i : i + 1])
+            tls.write(b"{}")
+            conn.sendall(outgoing.read())
+            self.stop.wait(30)
+        except (OSError, EOFError, ssl.SSLError):
+            return
+
+    def close(self) -> None:
+        self.stop.set()
+        with contextlib.suppress(OSError):
+            self.sock.close()
+        for conn in self._conns:
+            with contextlib.suppress(OSError):
+                conn.close()
+
+
+class _TlsProxy:
+    """HTTPS 프록시(바깥 TLS) — CONNECT 를 받아 대상 TCP 로 잇고, 받는 대로 넘긴다(대상이 한
+    바이트를 보내면 바깥 레코드 하나에 한 바이트). 터널 하나를 스레드 하나가 `select` 로 돈다."""
+
+    def __init__(self, tls: ssl.SSLContext) -> None:
+        self.sock = socket.create_server(("127.0.0.1", 0))
+        self.url = f"https://127.0.0.1:{self.sock.getsockname()[1]}"
+        self.tls = tls
+        self.stop = threading.Event()
+        self.lines: list[bytes] = []
+        self._conns: list[socket.socket] = []
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                raw, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._tunnel, args=(raw,), daemon=True).start()
+
+    def _tunnel(self, raw: socket.socket) -> None:
+        try:
+            conn = self.tls.wrap_socket(raw, server_side=True)
+            self._conns.append(conn)
+            head = b""
+            while b"\r\n\r\n" not in head:
+                if not (got := conn.recv(4096)):
+                    return
+                head += got
+            line, _, rest = head.partition(b"\r\n")
+            self.lines.append(line)
+            host, _, port = line.split(b" ")[1].decode("ascii").rpartition(":")
+            up = socket.create_connection((host, int(port)))
+            self._conns.append(up)
+            conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            if early := rest.partition(b"\r\n\r\n")[2]:
+                up.sendall(early)
+            while not self.stop.is_set():
+                ready, _, _ = select.select([conn, up], [], [], 0.05)
+                for src, dst in ((conn, up), (up, conn)):
+                    if src in ready or (src is conn and conn.pending()):
+                        if not (data := src.recv(65536)):
+                            return
+                        dst.sendall(data)
+        except (OSError, ssl.SSLError, ValueError):
+            return
+
+    def close(self) -> None:
+        self.stop.set()
+        with contextlib.suppress(OSError):
+            self.sock.close()
+        for conn in self._conns:
+            with contextlib.suppress(OSError):
+                conn.close()
+
+
+def test_a_record_trickled_through_an_https_proxy_fails_at_the_deadline(
+    tls_cert: tuple[str, str],
+) -> None:
+    """HTTPS 프록시 뒤(TLS 안의 TLS · urllib3 `SSLTransport`) — 안쪽 레코드 하나의 꼬리를 흘린다.
+    안쪽 읽기 하나가 바깥 소켓을 여러 번 읽는다(`ssltransport.py` `_ssl_io_loop`). 수정 전(실측
+    2026-11-09 · Windows · 3.13.11 · urllib3 2.7.0): 7,083 ms. 같은 꼬리를 바이트마다 안쪽 레코드
+    하나로 흘리면(읽기마다 선다) 1,007 ms, 프록시 없이 레코드 하나를 흘리면 1,003 ms 였다."""
+    target, proxy = _RecordTarget(server_tls(tls_cert)), _TlsProxy(server_tls(tls_cert))
+    session = _hooked_session()
+    session.verify = tls_cert[0]
+    start = time.monotonic()
+    try:
+        with exchange(1.0, 1000), pytest.raises(requests.RequestException):
+            session.get(
+                f"https://127.0.0.1:{target.port}/x", timeout=1.0, proxies={"https": proxy.url}
+            )
+    finally:
+        elapsed = time.monotonic() - start
+        session.close()
+        target.close()
+        proxy.close()
+    print(f"[Wire] TLS-in-TLS record trickled -> failed | {elapsed * 1000:.0f} ms")
+    assert proxy.lines and proxy.lines[0].startswith(b"CONNECT 127.0.0.1:"), proxy.lines
     assert elapsed < 2.0, f"{elapsed:.2f} s"
 
 

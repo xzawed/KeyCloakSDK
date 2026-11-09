@@ -17,7 +17,9 @@
 내준 관리자의 것) → 풀의 `_get_conn`(새 연결·쉬던 연결이 다 지난다) → 연결의
 `response_class`(http.client 가 응답마다 부른다) → 응답 버퍼의 `raw.readinto`. 그
 하나가 원문 읽기 하나(소켓 `recv_into` 하나)다 — 버퍼 채우기(`readline` 하나가 여러
-읽기)가 아니다.
+읽기)가 아니다. ⚠️ 그 하나가 아래 소켓을 여러 번 읽는 두 소켓 — HTTPS 프록시 뒤의 TLS
+(`SSLTransport`)와 pyOpenSSL(`WrappedSocket` · `gettimeout` 이 없다) — 은 그 아래 읽기마다
+다시 묶는다(`_layers`).
 
 **무엇을 보는가.** 요청을 보내기 직전에 `exchange` 가 그 교환의 마감과 예산을 문맥
 변수에 걸고, 그 안에서 만들어진 응답이 그것을 붙든다. 원문 읽기마다: 마감이 지났으면
@@ -63,6 +65,7 @@ from __future__ import annotations
 
 import contextlib
 import http.client
+import sys
 import time
 from collections.abc import Callable, Iterator
 from contextvars import ContextVar
@@ -70,6 +73,7 @@ from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.util.ssltransport import SSLTransport
 
 from ..exceptions import KeycloakConfigError
 from .deadline import _late
@@ -163,19 +167,84 @@ def _metered(read: _Read, sock: Any, meter: _Meter) -> _Read:
         most = room()
         if most is not None and most < len(buffer):
             buffer = memoryview(buffer)[:most]
-        prior = sock.gettimeout()
+        timer, target, name = _layers(sock)
+        prior = timer.gettimeout()
         bounded = remaining is not None and (prior is None or remaining < prior)
-        if bounded:
-            sock.settimeout(remaining)
+        undo = None if remaining is None or name is None else _rebound(target, name, timer, left)
         try:
+            if bounded:
+                timer.settimeout(remaining)
             got = read(buffer)
         finally:
+            if undo is not None:
+                undo()  # 먼저 — 아래 `settimeout` 이 실패해도(닫힌 소켓) 감싸개는 남지 않는다
             if bounded:
-                sock.settimeout(prior)
+                timer.settimeout(prior)
         charge(got or 0)
         return got
 
     return readinto
+
+
+def _layers(sock: Any) -> tuple[Any, Any, str | None]:
+    """(타임아웃을 가진 소켓, 읽기 하나 안에서 아래를 여러 번 읽는 자리, 그 이름) — 그런 자리가
+    없으면 `(sock, None, None)`.
+
+    두 소켓이 읽기 **하나** 안에서 아래 소켓을 여러 번 읽는다. HTTPS 프록시 뒤의 TLS(urllib3
+    `SSLTransport`)는 안쪽 레코드가 찰 때까지 바깥 소켓의 `recv` 를 돌고(`_ssl_io_loop` —
+    타임아웃도 바깥 소켓의 것이다), pyOpenSSL(`urllib3.contrib.pyopenssl.WrappedSocket`)은
+    WantRead 마다 그 아래 원소켓을 기다렸다가 자기 `recv_into` 를 다시 부른다(`gettimeout` 이
+    없다 — urllib3 2.7.0 실측: 1.0.7 은 그 런의 sync 호출마다 `AttributeError` 였다). 그 하나하나에
+    처음의 타임아웃이 그대로 걸려, 안쪽 레코드 하나의 꼬리를 흘리는 서버가 마감의 몇 배를
+    붙들었다(수정 전 실측 2026-11-09 · 읽기 타임아웃 1 초 · 꼬리 10 바이트를 0.7 초마다: HTTPS
+    프록시 7,083 ms — `tests/unit/test_wire.py`). 모양이 다르면 거부한다(`KeycloakConfigError`)."""
+    if isinstance(sock, SSLTransport):
+        under = getattr(sock, "socket", None)
+        layers: tuple[Any, Any, str | None] = (under, under, "recv")
+    else:
+        wrapped = getattr(sys.modules.get("urllib3.contrib.pyopenssl"), "WrappedSocket", None)
+        if not (isinstance(wrapped, type) and isinstance(sock, wrapped)):
+            return sock, None, None
+        layers = (getattr(sock, "socket", None), sock, "recv_into")
+    timer, target, name = layers
+    if not (
+        callable(getattr(timer, "gettimeout", None))
+        and callable(getattr(target, str(name), None))
+        and hasattr(target, "__dict__")
+    ):
+        raise _unreachable("the TLS socket under a TLS-in-TLS or pyOpenSSL connection")
+    return layers
+
+
+def _rebound(
+    target: Any, name: str, timer: Any, left: Callable[[], float | None]
+) -> Callable[[], None]:
+    """`target.name`(아래 소켓 읽기 하나)을 그때 남은 시간으로 묶는 감싸개로 — 그 연결의 그
+    읽기 동안만(인스턴스에 단다). 되돌리는 함수를 낸다."""
+    inner = getattr(target, name)
+    saved = vars(target).get(name)
+
+    def bounded(*args: Any, **kwargs: Any) -> Any:
+        remaining = left()
+        prior = timer.gettimeout()
+        tighter = remaining is not None and (prior is None or remaining < prior)
+        if tighter:
+            timer.settimeout(remaining)
+        try:
+            return inner(*args, **kwargs)
+        finally:
+            if tighter:
+                timer.settimeout(prior)
+
+    setattr(target, name, bounded)
+
+    def undo() -> None:
+        if saved is None:
+            delattr(target, name)
+        else:
+            setattr(target, name, saved)
+
+    return undo
 
 
 def _unreachable(what: str) -> KeycloakConfigError:

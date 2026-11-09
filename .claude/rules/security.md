@@ -108,7 +108,7 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## Response read deadline
 
-⚠️ **A response the SDK reads must arrive in full within the configured timeout, counted from send** — a per-read timeout alone lets a trickle hold one call for ≈ cap × timeout. Tests: `ResponseReadDeadline*`; gaps: registry `response-read-deadline-divergent`.
+⚠️ **A response the SDK reads must arrive in full within the configured timeout, counted from send** — a per-read timeout alone lets a trickle hold one call for ≈ cap × timeout. Tests: `ResponseReadDeadline*` — no known gap left in the nine.
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 
