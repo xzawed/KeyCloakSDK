@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=170964 max-raw-bytes=189428 -->
+<!-- doc-budget: max-bytes=170971 max-raw-bytes=189435 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -8,7 +8,7 @@
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
      인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) — 은 git 으로 보냈다. -->
-<!-- 170873 → 170964 · 189137 → 189428: 새 항목·SILENT↔09-07 중복 #995 -->
+<!-- 170873 → 170971 · 189137 → 189435: 새 항목·SILENT↔09-07 중복 #995 -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -418,7 +418,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-node` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #768 #772]** bearer 끝 공백 다듬기를 SDK 가 맡는다(bearer 판정) · 폼 본문 U+FFFD 는 「그대로」
 - [x] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #763 #874]** 전역 `Rack::OAuth2.http_config` 를 걸지 않는다(판정) — ASCII 밖 bearer 는 bearer 판정이 닫는다
 - [x] `wave4-hardening-php` **[L/S · 닫힘 2026-11-02 #935]** 칸(6) → auth. (1)–(5)의 되살릴 조건은 #892 본문
-- [ ] `token-response-class-divergent` **[L/M · 신규 2026-11-02 · rust #951 · go #952 · node #993 · python #994 위임]** 깨진 토큰 응답의 오류 계급이 갈린다 — 남은 칸 dotnet R2·R6 · ruby R2 · S5 · 안 잰 열(400 비-JSON·UTF-8·charset)은 아홉부터 잰다. 표는 #935 본문
+- [ ] `token-response-class-divergent` **[L/M · 신규 2026-11-02 · rust #951 · go #952 · node #993 · python #994 위임]** 깨진 토큰 응답의 오류 계급이 갈린다 — 남은 칸 dotnet R2·R6 · ruby R2 · S5(admin) · 안 잰 열(400 비-JSON·UTF-8·charset)은 아홉부터 잰다. 표는 #935 본문
 - [x] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #769 #833 #875]** JVM 공통 bearer 는 판정이 닫았고 조회 스레드 생성 실패(Error)는 「그대로」 — admin 원인 사슬의 jakarta 타입은 `nimbus-type-on-public-surface` 로
 - [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
 - [x] `python-admin-error-body-strict-decode` **[M/S · 신규·닫힘 2026-10-05 #719]** UTF-8 아닌 admin 오류 본문이 raw `UnicodeDecodeError` 였고 그 `__context__` 가 본문을 실었다(§4)
