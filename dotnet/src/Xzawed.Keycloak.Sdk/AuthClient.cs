@@ -29,6 +29,7 @@ public sealed class AuthClient : ITokenSource
     private readonly OidcEndpoints _ep;
     private readonly JwtValidator _validator;
     private readonly HttpClient _http;
+    private readonly TokenEndpointInvoker _tokenEndpoint;   // every token and introspection request goes out through it
 
     /// <param name="cfg">Normalized configuration.</param>
     /// <param name="ep">The realm's endpoints.</param>
@@ -41,6 +42,7 @@ public sealed class AuthClient : ITokenSource
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;
+        _tokenEndpoint = new TokenEndpointInvoker(http);
     }
 
     /// <summary>Starts a PKCE (S256) authorization-code flow. Synchronous — no network.</summary>
@@ -71,7 +73,7 @@ public sealed class AuthClient : ITokenSource
         TokenResponse resp;
         try
         {
-            resp = await _http.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
+            resp = await _tokenEndpoint.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
             {
                 Address = _ep.Token,
                 ClientId = _cfg.ClientId,
@@ -93,7 +95,7 @@ public sealed class AuthClient : ITokenSource
         TokenResponse resp;
         try
         {
-            resp = await _http.RequestAuthorizationCodeTokenAsync(new AuthorizationCodeTokenRequest
+            resp = await _tokenEndpoint.RequestAuthorizationCodeTokenAsync(new AuthorizationCodeTokenRequest
             {
                 Address = _ep.Token,
                 ClientId = _cfg.ClientId,
@@ -137,7 +139,7 @@ public sealed class AuthClient : ITokenSource
         TokenResponse resp;
         try
         {
-            resp = await _http.RequestRefreshTokenAsync(new RefreshTokenRequest
+            resp = await _tokenEndpoint.RequestRefreshTokenAsync(new RefreshTokenRequest
             {
                 Address = _ep.Token,
                 ClientId = _cfg.ClientId,
@@ -154,16 +156,18 @@ public sealed class AuthClient : ITokenSource
 
     public async Task<IntrospectionResult> IntrospectAsync(string token, CancellationToken ct = default)
     {
+        var request = new TokenIntrospectionRequest
+        {
+            Address = _ep.Introspection,
+            ClientId = _cfg.ClientId,
+            ClientSecret = _cfg.ClientSecret,
+            Token = token,
+        };
+        var arrival = ResponseArrival.On(request);
         TokenIntrospectionResponse resp;
         try
         {
-            resp = await _http.IntrospectTokenAsync(new TokenIntrospectionRequest
-            {
-                Address = _ep.Introspection,
-                ClientId = _cfg.ClientId,
-                ClientSecret = _cfg.ClientSecret,
-                Token = token,
-            }, ct).ConfigureAwait(false);
+            resp = await _tokenEndpoint.IntrospectTokenAsync(request, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
         {
@@ -180,11 +184,18 @@ public sealed class AuthClient : ITokenSource
             // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
             throw new KeycloakAuthException("Token introspection failed: response body is not a decodable JSON object", ex);
         }
+        catch (Exception ex) when (TokenResponseVerdict.Unconverted(ex, arrival, "Token introspection failed") is { } unusable)
+        {
+            // 끝까지 온 응답의 값을 Duende 가 바꾸지 못했다(exp · iat · nbf · JWT 페이로드) — 날것의 예외가 샜다(리뷰 레그, 2026-11-10).
+            throw unusable;
+        }
         ThrowIfError(resp, "Token introspection failed", "introspection transport failure");
 
         var claims = resp.Claims.GroupBy(c => c.Type)
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
-        return new IntrospectionResult(resp.IsActive, resp.UserName, resp.ClientId, claims);
+        // active 는 REQUIRED boolean 이다(RFC 7662 §2.2) — Duende 의 IsActive 는 없거나 boolean 이 아니면 false 라, 깨진 응답이
+        // 「비활성」으로 읽혔다(판정 D3).
+        return new IntrospectionResult(TokenResponseVerdict.Active(resp.Json), resp.UserName, resp.ClientId, claims);
     }
 
     public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
@@ -303,12 +314,10 @@ public sealed class AuthClient : ITokenSource
                 // handler's 64 KiB, which .NET reports with the same code (measured), so the message names neither alone.
                 throw new KeycloakTransportException($"{failureMessage}: response exceeds a size limit", tooLarge);
             case ResponseErrorType.Exception:
-                // 전송 실패(연결거부/DNS/TLS) — 그리고 도착한 응답을 Duende 가 못 읽은 경우(처음부터 이 분류다). 전송 실패는
-                // KeycloakTransportException 이어야 §4 경계에서 인증 실패와 구분된다. 원인 사슬은 생성자가 정화한다(ErrorCause).
-                // ⚠️ 응답이 도착했으면(HttpResponse 있음) 그 사슬의 어느 메시지든 응답을 인용할 수 있다 — JSON 파서는 본문을,
-                // Encoding 은 알 수 없는 charset 이름을 인용했다(실측, 후자는 Grok 레그). 그래서 메시지를 전부 뺀다.
-                throw new KeycloakTransportException(transportMessage,
-                    resp is { HttpResponse: not null, Exception: { } read } ? ErrorCause.WithholdAll(read) : resp.Exception);
+                // Duende 가 응답을 예외로 냈다 — 끝까지 온 응답(HttpResponse 있음 · TokenEndpointInvoker 가 보장한다)을 못 썼으면
+                // 인증 실패, 오지 않았으면(연결거부 · DNS · TLS · 끊긴 본문 · 깨진 틀) 전송 실패다(판정 2026-11-10 — 예전에는 둘 다
+                // 전송 실패였다). 도착한 응답의 사슬은 메시지를 전부 뺀다 — JSON 파서는 본문을 인용한다(TokenResponseVerdict.Unread).
+                throw TokenResponseVerdict.Unread(resp, failureMessage, transportMessage);
             case ResponseErrorType.Http:
                 // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
                 var reason = CanonicalReason(resp.HttpStatusCode);

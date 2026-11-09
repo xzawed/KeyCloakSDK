@@ -93,9 +93,16 @@ public sealed class HostilePathMatrixTests
             "internal 설정 리트리버 — 위 BoundedDocumentRetriever 를 감싸 실패한 조회를 백오프한다. 주소는 ConfigurationManager 가 쥔 " +
             "디스커버리 URL 이고 합성 문자열(JWS)은 URI 가 아니라 요청 전에 실패한다. 이것이 내는 요청도 전부 그것을 모는 공개 메서드" +
             "(ValidateAsync → JWKS_FETCH)의 행에 이미 잡힌다",
+        ["TokenEndpointInvoker.SendAsync(HttpRequestMessage, CancellationToken)"] =
+            "internal invoker — Duende 가 만든 요청(토큰 · introspection 엔드포인트의 절대 URI)만 보낸다. 합성 요청은 절대 URI 가 없어 " +
+            "HttpClient 가 보내기 전에 거부한다. 이것이 내는 요청은 전부 그것을 모는 공개 메서드(세 그랜트 · IntrospectAsync · " +
+            "AdminAsync 의 토큰 요청)의 행에 이미 잡힌다",
         ["AuthorizationRequestJsonConverter.*"] = JsonConverterReason,
         ["KeycloakConfigJsonConverter.*"] = JsonConverterReason,
         ["TokenSetJsonConverter.*"] = JsonConverterReason,
+        ["TokenResponseNotUtf8Exception.*"] =
+            "내부 신호(TokenEndpointInvoker.cs — FacadeDumpTests.Exempt 와 같은 이유) — 인스턴스는 SDK 밖으로 나가지 않아 공개 API 뿌리에서 " +
+            "닿지 않고, 생성자는 고정 문구의 예외를 만들 뿐 요청을 내지 않는다(필드 없음)",
     };
 
     private const string JsonConverterReason =

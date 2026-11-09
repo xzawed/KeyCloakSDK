@@ -94,7 +94,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     {
         var call = TypedCallState.Value = new();
         try { return await fn(_typed).ConfigureAwait(false); }
-        catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
+        catch (KeycloakHttpClientException ex) { throw HttpError(ex); }
         catch (JsonException ex) when (!call.Value.TokenProviderFailed) { throw Undecodable(call.Value.Status, ex); }
         catch (Exception ex) when (call.Value.Status != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(call.Value.Status, ErrorCause.WithholdAll(ex)); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
@@ -107,7 +107,7 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
         AdminResponseBody.LeaveUnread();
         var call = TypedCallState.Value = new();
         try { await fn(_typed).ConfigureAwait(false); }
-        catch (KeycloakHttpClientException ex) { throw KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex); }
+        catch (KeycloakHttpClientException ex) { throw HttpError(ex); }
         catch (JsonException ex) when (!call.Value.TokenProviderFailed) { throw Undecodable(call.Value.Status, ex); }
         catch (Exception ex) when (call.Value.Status != 0 && IsUnsupportedCharset(ex)) { throw Undecodable(call.Value.Status, ErrorCause.WithholdAll(ex)); }
         catch (HttpRequestException ex) { throw new KeycloakTransportException("admin request failed", ex); }
@@ -120,12 +120,19 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     /// <see cref="BearerHandler"/> already turns a body the serializer refuses into that same error where it is written,
     /// inside the transport (<c>UnencodableRequestBodyTests</c>); the arm keeps the answer the same for one that surfaces
     /// here instead.</summary>
-    private static KeycloakException Undecodable(int status, Exception ex) => status switch
+    private static KeycloakException Undecodable(int status, Exception? ex) => status switch
     {
         0 => new KeycloakTransportException(UnencodableBody, ex),
         >= 300 => KeycloakErrorMapping.MapHttpError(status, "admin error response body could not be decoded", ex),
         _ => new KeycloakAdminException(500, UndecodableBody, ex),
     };
+
+    /// <summary>The SDK error for the typed client's error response, its body as the message — unless that text is not one to
+    /// quote (<see cref="ResponseCharset.IsQuotable"/>: a body in another encoding read as UTF-8), which is withheld as an
+    /// undecodable error body is, its chain with it.</summary>
+    private static KeycloakException HttpError(KeycloakHttpClientException ex) => ResponseCharset.IsQuotable(ex.HttpResponse)
+        ? KeycloakErrorMapping.MapHttpError(ex.StatusCode, ex.Response?.ErrorDescription ?? ex.HttpResponse ?? ex.Message, ex)
+        : Undecodable(ex.StatusCode, ErrorCause.WithholdAll(ex));
 
     private const string UndecodableBody = "admin response body could not be decoded";
 
@@ -134,7 +141,8 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     /// <summary>Whether <paramref name="ex"/> is .NET refusing the charset a response's <c>Content-Type</c> names — the body
     /// was never read. It escaped the admin calls that read a body raw, an unknown name quoted in its chain (measured:
-    /// <c>UnsupportedCharsetResponseTests</c>).</summary>
+    /// <c>UnsupportedCharsetResponseTests</c>). Only a body not labelled JSON gets here: a JSON body's charset has no effect
+    /// (<see cref="AdminResponseBody.SettleAsync"/>).</summary>
     /// <remarks>An unknown name makes <c>Encoding.GetEncoding</c> throw <see cref="ArgumentException"/>, quoting it, which
     /// <see cref="HttpContent"/>'s string read and System.Net.Http.Json wrap in <see cref="InvalidOperationException"/>;
     /// UTF-7, disabled under every alias, makes it throw <see cref="NotSupportedException"/>, which neither wraps (8.0 and
@@ -188,11 +196,12 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     }
 
     /// <summary>The SDK error for an admin error response, its body as the message. A body in a charset .NET does not
-    /// support gets the error the typed path gives an error body it cannot decode, under the same status.</summary>
+    /// support, or text not to quote (<see cref="ResponseCharset.IsQuotable"/>), gets the error the typed path gives an error
+    /// body it cannot decode, under the same status.</summary>
     private static async Task<KeycloakException> ErrorResponseAsync(HttpResponseMessage resp, CancellationToken ct)
     {
         var status = (int)resp.StatusCode;
-        try { return KeycloakErrorMapping.MapHttpError(status, await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false)); }
+        try { return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false) is var text && ResponseCharset.IsQuotable(text) ? KeycloakErrorMapping.MapHttpError(status, text) : Undecodable(status, null); }
         catch (Exception ex) when (IsUnsupportedCharset(ex)) { return Undecodable(status, ErrorCause.WithholdAll(ex)); }
     }
 
