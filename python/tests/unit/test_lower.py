@@ -173,7 +173,7 @@ def test_a_body_over_the_cap_is_a_transport_error_not_a_connection_failure() -> 
 
 
 def test_a_refusal_of_a_response_that_arrived_stays_the_auth_error_it_names() -> None:
-    # 대조군 — 끝까지 온 응답을 쓰지 않는 거부(두 번 압축)는 auth 다.
+    # 대조군 — 받은 머리만으로 쓸 수 없는 응답의 거부(두 번 압축 · 본문을 읽기 전)는 auth 다.
     signal = ResponseRefused("token response is compressed more than once (gzip, gzip)")
     lower = _wrapped_by_python_keycloak(signal)
 

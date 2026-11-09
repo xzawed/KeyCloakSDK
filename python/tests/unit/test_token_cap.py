@@ -152,7 +152,7 @@ def test_bytes_after_the_end_of_the_stream_are_neither_inflated_nor_kept(
 def test_a_body_compressed_twice_is_refused() -> None:
     with pytest.raises(ResponseRefused, match=r"^token response is compressed more than once") as e:
         _inflater(["gzip", "deflate"], "token response")
-    assert e.value.incomplete is False  # 끝까지 온 응답을 쓰지 않는다 — auth 로 바뀐다(`lower.py`)
+    assert e.value.incomplete is False  # 머리로 거부(본문 읽기 전) — auth 로 바뀐다(`lower.py`)
 
 
 def test_sync_reads_raw_bytes_and_inflates_them_itself_whatever_urllib3_does() -> None:

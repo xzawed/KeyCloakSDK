@@ -31,9 +31,9 @@ decode_content=False)`·aio `aiter_raw`)을 받아 여기서 풀고, 그렇게 �
 ⚠️ **여기서 던지는 것은 신호다.** python-keycloak 의 `raw_*` 는 세션 안에서 난 예외를 전부
 `KeycloakConnectionError("Can't connect to server")` 로 감싼다. 경계(`lower.py` 의
 `refused_body`)가 `__cause__` 에서 이 신호를 알아보고 같은 메시지의 SDK 오류를 **새로** 만든다
-— 상한을 넘은 본문(`incomplete`)은 다 읽지 않은 응답이라 `KeycloakTransportError`, 끝까지
-온 응답을 쓰지 않는 거부(두 번 압축)는 `KeycloakAuthError` 다. 신호는 python-keycloak 의
-프레임(보낼 폼, 곧 `client_secret`)을 지나왔으므로 원인으로 달지 않는다.
+— 상한을 넘은 본문(`incomplete`)은 다 읽지 않은 응답이라 `KeycloakTransportError`, 받은
+머리만으로 쓸 수 없는 응답(두 번 압축 — 본문을 읽기 전에 거부)은 `KeycloakAuthError` 다. 신호는
+python-keycloak 의 프레임(보낼 폼, 곧 `client_secret`)을 지나왔으므로 원인으로 달지 않는다.
 
 ⚠️ **admin REST 세션에는 걸지 않는다** — 사용자 목록은 정당하게 크다(그 세션의 오류
 본문 상한과 쓰지 않는 본문은 `admin_body.py` 가 맡는다). admin 은 자체 그랜트의
@@ -86,8 +86,8 @@ _Ended = Callable[[], bool]
 
 class ResponseRefused(Exception):
     """세션이 응답 본문을 거부했다 — 경계가 같은 메시지의 SDK 오류로 바꾸는 신호. `incomplete` 면
-    본문을 다 읽지 않았다(상한 초과 → `KeycloakTransportError`), 아니면 끝까지 온 응답을 쓰지
-    않는다(→ `KeycloakAuthError`)."""
+    본문을 다 읽지 않았다(상한 초과 → `KeycloakTransportError`), 아니면 받은 머리만으로 쓸 수
+    없는 응답이다(두 번 압축 — 본문을 읽기 전 → `KeycloakAuthError`)."""
 
     def __init__(self, message: str, *, incomplete: bool = False) -> None:
         super().__init__(message)
