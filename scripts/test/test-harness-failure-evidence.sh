@@ -98,4 +98,58 @@ assert_eq "ok" "$(ok_if "$_enough" "$_writes")" \
 
 done
 
+# ── (9) 단위 스위트도 원인을 남긴다 ─────────────────────────────────────────────────────────────
+# ⚠️ **실측이 이 절을 만들었다**(2026-11-06). 야간 score-all 이 「dotnet 통과 621/622」로 빨갰는데 어느 테스트인지
+# 알 길이 없었다 — suites/<lang>.sh 아홉이 마지막 JSON 한 줄만 내고 테스트 출력을 버려, signals 아티팩트의
+# *.suite.raw 가 각 127–137 B 였다. 규약은 harness/suites/run-suite.sh 머리(___SUITE_LOG_*)가 소유한다.
+# 여기서는 **행동**으로 잰다: 가짜 docker 가 정해 둔 출력을 내면 스위트의 판정과 덤프가 그 출력만으로 갈린다.
+# 대상은 손 목록이 아니라 df_tree_langs 다 — 스위트 없는 열 번째 언어는 여기서 실패한다.
+. "$DIR/../lib/deploy-facts.sh"
+_tmp="$(mktemp -d)"
+trap 'rm -rf "$_tmp"' EXIT
+mkdir -p "$_tmp/bin" "$_tmp/h/suites" "$_tmp/h/report"
+printf '%s\n' '#!/usr/bin/env sh' '[ "${1:-}" = run ] && cat "$HFE_FAKE_OUT"' 'exit 0' > "$_tmp/bin/docker"
+chmod +x "$_tmp/bin/docker"
+_canary="HFE-CANARY-$$"
+# 깨진 출력 — 테스트 종료코드 마커 1. java 는 surefire 요약 행이 없으면 실패다(fail-closed) — 이것으로 아홉이 다 깨진다.
+printf '%s\n' "$_canary --- FAIL: TestCanary" '___TESTEXIT=1' > "$_tmp/fail.out"
+# 통과 출력 — 아홉이 각자 보는 통과 마커를 다 담는다(surefire 요약 · 설치 0 · 테스트 0). 음성 대조군이다.
+printf '%s\n' "$_canary ok" 'Tests run: 3, Failures: 0, Errors: 0, Skipped: 0' '___INSTALLEXIT=0' '___TESTEXIT=0' > "$_tmp/pass.out"
+_nl=0
+for _l in $(df_tree_langs "$ROOT"); do
+  _nl=$((_nl + 1))
+  _s="$ROOT/harness/suites/$_l.sh"
+  if [ ! -f "$_s" ]; then
+    assert_eq "있음" "없음" "[하네스 증거] harness/suites/$_l.sh 가 없다 — $_l 의 단위 스위트가 야간에 안 돈다"
+    continue
+  fi
+  _fo="$(PATH="$_tmp/bin:$PATH" HFE_FAKE_OUT="$_tmp/fail.out" bash "$_s" 2>&1 || true)"
+  _po="$(PATH="$_tmp/bin:$PATH" HFE_FAKE_OUT="$_tmp/pass.out" bash "$_s" 2>&1 || true)"
+  assert_contains "$_fo" '"testsPassed":false' "[하네스 증거] $_l.sh 가 깨진 출력을 실패로 판정하지 않는다 — 아래 단언이 공허하다"
+  assert_contains "$_fo" "___SUITE_LOG_BEGIN
+$_canary --- FAIL: TestCanary" "[하네스 증거] $_l.sh 가 깨진 테스트의 출력을 ___SUITE_LOG 블록으로 남기지 않는다"
+  assert_contains "$_fo" "___SUITE_LOG_END" "[하네스 증거] $_l.sh 의 실패 단서 블록이 닫히지 않는다"
+  assert_contains "$_po" '"testsPassed":true' "[하네스 증거] $_l.sh 가 통과 출력을 통과로 판정하지 않는다 — 음성 대조가 공허하다"
+  assert_not_contains "$_po" "___SUITE_LOG_BEGIN" "[하네스 증거] $_l.sh 가 통과한 런에도 블록을 낸다 — 단서가 소음이 된다"
+done
+# 공허 하한 — 파생이 깨져 언어가 줄면 위 루프가 「대상이 없어서」 초록이 된다. ⚠️ 세어서 박는다: 실측 9(2026-11-09).
+assert_eq "ok" "$(ok_if "$([ "$_nl" -ge 9 ] && echo 0 || echo 1)" "$_nl")" \
+  "[하네스 증거] 스위트 대상 언어가 9 미만이다($_nl) — df_tree_langs 가 깨졌나?"
+
+# run-suite.sh 가 실패한 언어의 블록에서 **실패 표지 줄만** 잡 로그에 찍는가 — 진짜 run-suite.sh 를 가짜 스위트 셋으로.
+cp "$ROOT/harness/suites/run-suite.sh" "$_tmp/h/suites/run-suite.sh"
+printf '%s\n' '#!/usr/bin/env bash' \
+  '{ echo ___SUITE_LOG_BEGIN; echo "=== RUN   TestQuiet"; echo "--- FAIL: TestLoud"; echo ___SUITE_LOG_END; } >&2' \
+  'echo "{\"lang\":\"broke\",\"ran\":true,\"testsPassed\":false}"' > "$_tmp/h/suites/broke.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"bare\",\"ran\":true,\"testsPassed\":false}"' > "$_tmp/h/suites/bare.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"fine\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/fine.sh"
+chmod +x "$_tmp/h/suites/"*.sh
+_rrc=0
+_ro="$(bash "$_tmp/h/suites/run-suite.sh" broke bare fine 2>&1)" || _rrc=$?
+assert_eq "1" "$_rrc" "[하네스 증거] run-suite.sh 가 실패한 스위트에 0 이 아닌 코드로 끝나지 않는다"
+assert_contains "$_ro" "--- FAIL: TestLoud" "[하네스 증거] run-suite.sh 가 실패 표지 줄을 잡 로그에 찍지 않는다"
+assert_not_contains "$_ro" "TestQuiet" "[하네스 증거] run-suite.sh 가 블록 전체를 잡 로그에 쏟는다 — 실패 표지 줄만이어야 한다"
+assert_contains "$_ro" "[bare] 실패 단서 블록이 없다" "[하네스 증거] run-suite.sh 가 블록 없는 실패를 말하지 않는다 — 빈칸이 「단서 없음」으로 안 읽힌다"
+assert_not_contains "$_ro" "[fine]" "[하네스 증거] run-suite.sh 가 통과한 스위트에 실패 단서를 찍는다"
+
 assert_report
