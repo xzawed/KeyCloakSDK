@@ -67,6 +67,8 @@ var dumpWalkExempt = map[string]string{
 		"필드는 감싼 본문 · belowHTTPSlot 뿐이고 본문 바이트를 쥐지 않는다(cause.go)",
 	"cappedBody": "토큰 응답 본문을 감싸 상한까지 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 원래 본문·상한 판정 플래그·센 바이트 수·끝 오류뿐이고 본문 바이트를 쥐지 않는다(tokencap.go)",
+	"utf8Body": "2xx 토큰 응답 본문을 감싸 UTF-8 인지 보는 동안만 산다 — 파사드가 쥐지 않는다. 쥐는 본문 바이트는 읽기 하나가 " +
+		"자른 문자의 앞 조각(최대 3 바이트)뿐이다(tokencap.go)",
 	"adminBodyTransport": "*http.Client.Transport·resty 안에만 산다(wireScrubTransport 를 감싼다) — 걷기는 외부 타입(http.Client) 안으로 " +
 		"내려가지 않는다. 필드는 하위 RoundTripper 하나뿐이고 비밀을 쥐지 않는다(adminbody.go)",
 	"endedBody": "admin 응답 본문을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +

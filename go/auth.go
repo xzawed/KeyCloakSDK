@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
@@ -45,13 +46,14 @@ func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	}
 }
 
-// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, the token-response cap (tokencap.go)
-// and the slot that keeps an error x/oauth2 would flatten (cause.go). The flag reports whether the cap refused the
-// response.
-func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool, *belowHTTPSlot) {
+// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, the token-response cap and the UTF-8
+// check (tokencap.go), and the slot that keeps an error x/oauth2 would flatten (cause.go). The two flags report
+// whether the cap or the check refused the response.
+func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool, *atomic.Bool, *belowHTTPSlot) {
 	ctx, capped := withTokenCap(ctx)
+	ctx, notUTF8 := withStrictUTF8(ctx)
 	ctx, below := withBelowHTTP(ctx)
-	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped, below
+	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped, notUTF8, below
 }
 
 func (a *AuthClient) scope() string {
@@ -94,10 +96,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 		ClientID: a.cfg.ClientID, ClientSecret: a.cfg.ClientSecret,
 		TokenURL: a.ep.token, Scopes: a.cfg.Scopes, AuthStyle: oauth2.AuthStyleInParams,
 	}
-	octx, capped, below := a.oauthCtx(ctx)
+	octx, capped, notUTF8, below := a.oauthCtx(ctx)
 	tok, err := cc.Token(octx)
 	if err != nil {
-		return nil, grantFailed("client credentials grant failed", err, capped, below)
+		return nil, grantFailed("client credentials grant failed", err, capped, notUTF8, below)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -113,10 +115,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // validation failure all fail closed. An empty expectedNonce skips id_token
 // validation (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
-	octx, capped, below := a.oauthCtx(ctx)
+	octx, capped, notUTF8, below := a.oauthCtx(ctx)
 	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
-		return nil, grantFailed("authorization code exchange failed", err, capped, below)
+		return nil, grantFailed("authorization code exchange failed", err, capped, notUTF8, below)
 	}
 	ts := tokenSetFromToken(tok)
 	if expectedNonce != "" {
@@ -147,11 +149,11 @@ func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce str
 
 // Refresh obtains a new access token from a refresh token.
 func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSet, error) {
-	octx, capped, below := a.oauthCtx(ctx)
+	octx, capped, notUTF8, below := a.oauthCtx(ctx)
 	src := a.codeConfig("").TokenSource(octx, &oauth2.Token{RefreshToken: refreshToken})
 	tok, err := src.Token()
 	if err != nil {
-		return nil, grantFailed("token refresh failed", err, capped, below)
+		return nil, grantFailed("token refresh failed", err, capped, notUTF8, below)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -166,14 +168,22 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	if err != nil {
 		return nil, err
 	}
+	// encoding/json turns a sequence that is not UTF-8 into U+FFFD without an error — the claims would be ones the IdP
+	// never sent (RFC 8259 §8.1; registry token-response-class-divergent D1, measured 2026-11-10).
+	if !utf8.Valid(body) {
+		return nil, &AuthError{Msg: "introspection response is not valid UTF-8"}
+	}
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, &AuthError{Msg: "introspection response parse failed", Cause: err}
 	}
-	res := &IntrospectionResult{Claims: raw}
-	if v, ok := raw["active"].(bool); ok {
-		res.Active = v
+	// active is REQUIRED and a boolean (RFC 7662 §2.2). It used to be read as false when missing or of another type —
+	// a broken response hid behind an ordinary "inactive" (D3).
+	active, ok := raw["active"].(bool)
+	if !ok {
+		return nil, &AuthError{Msg: "introspection response has no boolean active"}
 	}
+	res := &IntrospectionResult{Claims: raw, Active: active}
 	if v, ok := raw["username"].(string); ok {
 		res.Username = v
 	}

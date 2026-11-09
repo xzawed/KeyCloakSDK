@@ -37,7 +37,8 @@ type classRow struct {
 	expected [6]string
 }
 
-// classRows 의 기대 계급 — classCalls 순서. Introspect 의 R4 가 ok 인 것은 introspection 에 `active` 가 없으면 비활성이라서다.
+// classRows 의 기대 계급 — classCalls 순서. Introspect 의 R4 는 `active` 가 없어 *AuthError 다(RFC 7662 §2.2 REQUIRED — 판정 D3,
+// 2026-11-10; 그 전에는 비활성으로 읽어 ok 였다).
 var classRows = []classRow{
 	{name: "ok", status: 200, ctype: "application/json", body: classUsable,
 		expected: [6]string{"ok", "ok", "ok", "ok", "ok", "ok"}},
@@ -50,7 +51,22 @@ var classRows = []classRow{
 	{name: "r3-400-oauth-error", status: 400, ctype: "application/json", body: `{"error":"invalid_client","error_description":"bad client"}`,
 		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
 	{name: "r4-no-access-token", status: 200, ctype: "application/json", body: `{"token_type":"Bearer","expires_in":300}`,
-		expected: [6]string{"Auth", "Auth", "Auth", "ok", "Auth", "Auth"}},
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	// r9 — 문자열 안의 잘못된 UTF-8(RFC 8259 §8.1). encoding/json 은 그것을 U+FFFD 로 바꾸고 받아들였다(판정 D1, 실측
+	// 2026-11-10: 그랜트 셋 · Introspect 성공). 본문 어디든 — 토큰 안이든 밖이든 — 같은 판정이다.
+	{name: "r9-invalid-utf8-in-token", status: 200, ctype: "application/json",
+		body:     "{\"access_token\":\"at\xff\xfe\",\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_token\":\"rt\",\"active\":true}",
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r9-invalid-utf8-outside-token", status: 200, ctype: "application/json",
+		body:     "{\"access_token\":\"at\",\"token_type\":\"Bearer\",\"expires_in\":300,\"refresh_token\":\"rt\",\"active\":true,\"username\":\"s\xff\xfevc\"}",
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	// r10 — application/json 의 모르는 charset 은 효과가 없다(RFC 8259 §11, 판정 D2) — 받아들인다(대조군).
+	{name: "r10-unknown-charset", status: 200, ctype: "application/json; charset=x-no-such-charset", body: classUsable,
+		expected: [6]string{"ok", "ok", "ok", "ok", "ok", "ok"}},
+	// D3 — introspection 의 active 는 boolean 이어야 한다. 문자열 "true" 는 비활성으로 읽혔다(오류 없이).
+	{name: "d3-active-not-boolean", status: 200, ctype: "application/json",
+		body:     `{"access_token":"at","token_type":"Bearer","expires_in":300,"refresh_token":"rt","active":"true"}`,
+		expected: [6]string{"ok", "ok", "ok", "Auth", "ok", "ok"}},
 	{name: "r5-over-cap", status: 200, ctype: "application/json", body: classUsable + strings.Repeat(" ", tokenResponseMaxBytes+1-len(classUsable)),
 		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
 	{name: "e1-200-empty", status: 200, ctype: "application/json", body: "",

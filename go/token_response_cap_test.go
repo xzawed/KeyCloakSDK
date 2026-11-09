@@ -14,7 +14,58 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 )
+
+// TestUTF8BodyFollowsASequenceAcrossReads — 읽기 하나가 다중 바이트 문자를 둘로 잘라도 그 문자는 UTF-8 이다(한 바이트씩 읽어
+// 잰다 — httptest 는 본문을 한 번에 보내 그 경계를 만들지 않는다). 가운데 · 끝의 잘못된 바이트, 잘린 채 끝난 문자, UTF-8 로
+// 인코딩한 서로게이트 반쪽은 거부되고 플래그가 선다.
+func TestUTF8BodyFollowsASequenceAcrossReads(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		ok   bool
+	}{
+		{"ascii", `{"access_token":"at"}`, true},
+		{"two three and four byte runes", "{\"u\":\"é한😀\"}", true},
+		{"empty", "", true},
+		{"invalid in the middle", "{\"u\":\"a\xffb\"}", false},
+		{"invalid at the end", "{\"u\":\"ab\"}\xfe", false},
+		{"sequence cut at EOF", "{\"u\":\"ab\"}\xe2\x82", false},
+		{"surrogate half", "{\"u\":\"\xed\xa0\x80\"}", false},
+	}
+	for _, c := range cases {
+		bad := new(atomic.Bool)
+		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), bad: bad}
+		got, err := io.ReadAll(b)
+		if c.ok {
+			if err != nil || string(got) != c.body || bad.Load() {
+				t.Errorf("%s: must pass whole: %q, err %v, flag %v", c.name, got, err, bad.Load())
+			}
+		} else if !errors.Is(err, errTokenResponseNotUTF8) || !bad.Load() {
+			t.Errorf("%s: must be refused: err %v, flag %v", c.name, err, bad.Load())
+		}
+	}
+}
+
+// TestStrictUTF8WrapsOnlyMarkedSuccessBodies — 오류 상태(3xx 이상)의 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은
+// 감싸지 않는다.
+func TestStrictUTF8WrapsOnlyMarkedSuccessBodies(t *testing.T) {
+	marked, _ := withStrictUTF8(context.Background())
+	body := io.NopCloser(strings.NewReader("x"))
+	for _, c := range []struct {
+		ctx     context.Context
+		status  int
+		wrapped bool
+	}{
+		{marked, 200, true}, {marked, 204, true}, {marked, 302, false}, {marked, 400, false}, {marked, 503, false},
+		{context.Background(), 200, false},
+	} {
+		if _, got := strictUTF8(c.ctx, c.status, body).(*utf8Body); got != c.wrapped {
+			t.Errorf("status %d (marked %v): wrapped %v, want %v", c.status, c.ctx != context.Background(), got, c.wrapped)
+		}
+	}
+}
 
 // 토큰 응답 상한(등록부 token-response-size-unbounded). 토큰 엔드포인트(세 그랜트 + admin 레인의 토큰 요청)와
 // introspection 응답 본문은 1,048,576 바이트(전송이 푼 뒤의 바이트)까지만 받는다.
