@@ -265,7 +265,7 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		slot.keep(ctx, err)
 		return resp, err
 	}
-	resp.Body = capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot}))
+	resp.Body = strictUTF8(ctx, resp.StatusCode, capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot})))
 	if slot != nil {
 		slot.arrived.Store(true)
 		slot.status.Store(int64(resp.StatusCode))
@@ -322,8 +322,14 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 // OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect target, which the
 // IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept in below when gocloak
 // dropped it (a deadline that ended the exchange), so errors.Is still finds it.
-func loginError(err error, capped *atomic.Bool, below *belowHTTPSlot) error {
+func loginError(err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot) error {
 	typ := fmt.Sprintf("%T", err)
+	// A 2xx body that is not UTF-8 arrived and is unusable (tokencap.go) — checked first, because the check withheld the
+	// EOF that below's arrival mark waits for.
+	if notUTF8.Load() && !capped.Load() {
+		msg := "client-credentials login failed: " + errTokenResponseNotUTF8.Error()
+		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
+	}
 	var apiErr *gocloak.APIError
 	if errors.As(err, &apiErr) && apiErr.Code != 0 && !capped.Load() {
 		msg := "client-credentials login failed: HTTP " + strconv.Itoa(apiErr.Code) + " " + http.StatusText(apiErr.Code)
