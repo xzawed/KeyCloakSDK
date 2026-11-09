@@ -71,6 +71,9 @@ public sealed class FacadeDumpTests
         // 만든다 — 인스턴스는 공개 API 로 나오지 않는다(TokenResponseClassTests 가 그 오류의 ToString 을 잰다). 필드가 없고 메시지는
         // 고정 문구다.
         ["Xzawed.Keycloak.TokenResponseNotUtf8Exception"] = "내부 신호 — 인스턴스는 SDK 밖으로 나가지 않는다(Duende 가 쥐고 SDK 는 버린다) · 필드 없음 · 고정 문구",
+        // 호출마다 AuthClient.IntrospectAsync 가 만들어 그 호출의 요청 Options 에만 싣는 도착 기록(TokenEndpointInvoker.cs) —
+        // 호출이 끝나면 아무 SDK 객체도 쥐지 않는다. 필드는 응답 상태(int) 하나뿐이다.
+        ["Xzawed.Keycloak.ResponseArrival"] = "호출 하나의 도착 기록 — 그 요청의 Options 에만 실리고 SDK 객체가 쥐지 않는다 · 상태(int) 하나",
     };
 
     /// <summary>

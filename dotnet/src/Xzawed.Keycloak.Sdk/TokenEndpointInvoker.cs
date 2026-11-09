@@ -9,10 +9,15 @@ namespace Xzawed.Keycloak;
 /// and D2).</summary>
 /// <remarks>
 /// <para><b>Arrived in full.</b> The client buffers a response before <c>SendAsync</c> returns
-/// (<see cref="HttpCompletionOption.ResponseContentRead"/>), so a response it hands back arrived whole: a body cut short, one
-/// over the 1,048,576-byte cap and broken framing all make <c>SendAsync</c> throw first, which Duende reports with no
-/// <see cref="ProtocolResponse.HttpResponse"/> — a <see cref="KeycloakTransportException"/>. What is refused after that is
-/// a <see cref="KeycloakAuthException"/> (<see cref="TokenResponseVerdict"/>).</para>
+/// (<see cref="HttpCompletionOption.ResponseContentRead"/>), so a response it hands back arrived whole: a body with a declared
+/// length (<c>Content-Length</c> or chunked) cut short, one over the 1,048,576-byte cap and broken framing all make
+/// <c>SendAsync</c> throw first, which Duende reports with no <see cref="ProtocolResponse.HttpResponse"/> — a
+/// <see cref="KeycloakTransportException"/>. What is refused after that is a <see cref="KeycloakAuthException"/>
+/// (<see cref="TokenResponseVerdict"/>). ⚠️ A body with no declared length ends where the server closes the connection
+/// (RFC 9112 §6.3), so one cut short cannot be told from a whole one: it is judged as arrived (<c>TokenResponseClassTests</c>,
+/// the close-delimited cell). Keycloak always declares the length.</para>
+/// <para>That a response arrived is also recorded on the request (<see cref="ResponseArrival"/>), for the failures Duende
+/// raises only after this send returned.</para>
 /// <para><b>D1 — a 2xx body is UTF-8</b> (RFC 8259 §8.1), checked on its raw bytes. Duende reads the body with
 /// <see cref="HttpContent.ReadAsStringAsync()"/>, which turns a sequence that is not UTF-8 into U+FFFD without an error: the
 /// grants returned an access token, and introspection claims, the IdP never sent (measured 2026-11-10). An error status is
@@ -35,6 +40,7 @@ internal sealed class TokenEndpointInvoker : HttpMessageInvoker
     public override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        ResponseArrival.Record(request, response);
         try
         {
             if (response.IsSuccessStatusCode
@@ -63,6 +69,37 @@ internal sealed class TokenEndpointInvoker : HttpMessageInvoker
     }
 }
 
+/// <summary>Whether a token or introspection request got a response, and its status — recorded by
+/// <see cref="TokenEndpointInvoker"/> once the response arrived in full, read by <c>AuthClient</c> when Duende then fails while
+/// reading it.</summary>
+/// <remarks>Duende sends a clone of the request it is given, and the clone carries the original's
+/// <see cref="HttpRequestMessage.Options"/> entries by reference (<c>ProtocolRequest.Clone</c>) — so this object, put there
+/// before the call, is what the invoker writes to. A flag set on the clone would never reach the caller.</remarks>
+internal sealed class ResponseArrival
+{
+    private static readonly HttpRequestOptionsKey<ResponseArrival> Key = new("Xzawed.Keycloak.ResponseArrival");
+
+    private ResponseArrival() { }
+
+    /// <summary>The status of the response that arrived; 0 while none has.</summary>
+    internal int Status { get; private set; }
+
+    /// <summary>A new record, carried by <paramref name="request"/> to whatever sends it.</summary>
+    internal static ResponseArrival On(HttpRequestMessage request)
+    {
+        var arrival = new ResponseArrival();
+        request.Options.Set(Key, arrival);
+        return arrival;
+    }
+
+    /// <summary>Records that <paramref name="request"/> got <paramref name="response"/>.</summary>
+    internal static void Record(HttpRequestMessage request, HttpResponseMessage response)
+    {
+        if (request.Options.TryGetValue(Key, out var arrival))
+            arrival.Status = (int)response.StatusCode;
+    }
+}
+
 /// <summary>Thrown inside Duende's send for a 2xx token or introspection body that is not UTF-8. Duende keeps it as the
 /// response's <see cref="ProtocolResponse.Exception"/>, and <see cref="TokenResponseVerdict.Unread"/> turns it into a
 /// <see cref="KeycloakAuthException"/>. It carries nothing from the body.</summary>
@@ -87,6 +124,22 @@ internal static class TokenResponseVerdict
             $"{failureMessage}: response body could not be parsed as JSON (HTTP {(int)arrived.StatusCode})", ErrorCause.WithholdAll(unread)),
         _ => new KeycloakTransportException(transportMessage, response.Exception),
     };
+
+    /// <summary>The SDK error for <paramref name="ex"/>, thrown by Duende while it read a response that arrived — a value in the
+    /// body it could not convert — or null when no response arrived or <paramref name="ex"/> is no such failure.</summary>
+    /// <remarks>Duende's <c>TokenIntrospectionResponse</c> reads <c>exp</c>, <c>iat</c> and <c>nbf</c> with <c>long.Parse</c> and
+    /// <c>DateTimeOffset.FromUnixTimeSeconds</c>, and a JWT response's payload with Base64Url and <c>JsonDocument</c>: a word, a
+    /// fraction, a number past <see cref="long"/> or past year 9999, or a payload that is not base64url or not JSON threw
+    /// <see cref="FormatException"/>, <see cref="OverflowException"/>, <see cref="ArgumentOutOfRangeException"/> or
+    /// <see cref="JsonException"/> out of the SDK raw — the last quoting the payload (review leg, measured 2026-11-10). A
+    /// request Duende could not build throws a <see cref="FormatException"/> too (an address it will not parse), so only an
+    /// arrived response is converted (<see cref="ResponseArrival"/>). Every message in the chain is withheld; the status is
+    /// named.</remarks>
+    internal static KeycloakAuthException? Unconverted(Exception ex, ResponseArrival arrival, string failureMessage) =>
+        arrival.Status != 0 && ex is FormatException or OverflowException or ArgumentOutOfRangeException or JsonException
+            ? new KeycloakAuthException(
+                $"{failureMessage}: response body holds a value that could not be converted (HTTP {arrival.Status})", ErrorCause.WithholdAll(ex))
+            : null;
 
     /// <summary>An introspection response's <c>active</c> — REQUIRED and a JSON boolean (RFC 7662 §2.2). A response without
     /// one is broken, not inactive: it fails with <see cref="KeycloakAuthException"/> (decision D3 — Duende read it as

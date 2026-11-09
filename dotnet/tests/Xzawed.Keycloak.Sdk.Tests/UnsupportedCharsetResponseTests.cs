@@ -172,6 +172,108 @@ public sealed class UnsupportedCharsetResponseTests : IDisposable
         }
     }
 
+    /// <summary>D2 reaches charsets .NET could decode as well: a UTF-8 body labelled ISO-8859-1 reads as the UTF-8 it is, on the
+    /// typed and the raw path — .NET used to decode it as ISO-8859-1 ("JosÃ©").</summary>
+    [Fact]
+    public async Task A_UTF8_JSON_body_labelled_with_another_charset_reads_as_UTF8()
+    {
+        var (kc, admin) = await AdminAsync();
+        using (kc)
+        {
+            _idp.ResetMappings();
+            AnswerToken();
+            _idp.Given(Request.Create().WithPath(new WildcardMatcher("/admin/*")).UsingGet()).RespondWith(
+                Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json; charset=iso-8859-1")
+                    .WithBody(Encoding.UTF8.GetBytes("""{"id":"1","username":"José","clientId":"José"}""")));
+
+            Assert.Equal("José", (await admin.Users.GetAsync("1")).Username);
+            Assert.Equal("José", (await admin.Clients.GetAsync("1")).ClientId);
+        }
+    }
+
+    /// <summary>The rewrite happens where every admin response passes (<c>BearerHandler</c>), so a JSON response the <c>Raw</c>
+    /// client hands back names <c>charset=utf-8</c> too — not the name the server sent. One with no charset gets none.</summary>
+    [Fact]
+    public async Task A_JSON_response_Raw_hands_back_has_its_charset_rewritten_too()
+    {
+        var (kc, admin) = await AdminAsync();
+        using (kc)
+        {
+            AnswerAdminAs(200, "application/json; charset=x-no-such-charset", list: false);
+            using (var labelled = await admin.Raw.GetUserWithResponseAsync("r", "1"))
+            {
+                Assert.Equal("application/json", labelled.Content.Headers.ContentType?.MediaType);
+                Assert.Equal("utf-8", labelled.Content.Headers.ContentType?.CharSet);
+            }
+            AnswerAdminAs(200, "application/json", list: false);
+            using var bare = await admin.Raw.GetUserWithResponseAsync("r", "1");
+            Assert.Null(bare.Content.Headers.ContentType?.CharSet);
+        }
+    }
+
+    public static IEnumerable<object[]> ForeignEncodingCases =>
+        from charset in new[] { "utf-16", "iso-8859-1" }
+        from status in new[] { 200, 400, 404 }
+        select new object[] { charset, status };
+
+    /// <summary>The other side of D2: a JSON body really encoded in a charset .NET used to decode (UTF-16, ISO-8859-1) is read as
+    /// UTF-8, and so is undecodable — a read fails as the undecodable body, an error status keeps its status with the
+    /// undecodable message, a write that reads no body succeeds. And nothing undecodable is quoted: no error carries U+0000,
+    /// U+FFFD or the bytes a decoder refused.</summary>
+    /// <remarks>Measured before the fix (2026-11-10, review leg and this test): a raw 404 in UTF-16 put the body, read as UTF-8,
+    /// in the message — NULs between the letters; an ISO-8859-1 one put U+FFFD there, on the typed path too; a 200 in ISO-8859-1
+    /// kept System.Text.Json's <c>DecoderFallbackException</c> in the chain, quoting the byte ("Unable to translate bytes [E9]
+    /// at index …").</remarks>
+    [Theory]
+    [MemberData(nameof(ForeignEncodingCases))]
+    public async Task A_JSON_body_really_in_another_charset_is_undecodable_and_quoted_nowhere(string charset, int status)
+    {
+        var encoding = Encoding.GetEncoding(charset);
+        var (type, message) = status switch
+        {
+            404 => (typeof(KeycloakNotFoundException), Undecodable),
+            200 => (typeof(KeycloakAdminException), "admin response body could not be decoded"),
+            _ => (typeof(KeycloakAdminException), $"HTTP {status}: {Undecodable}"),
+        };
+        var (kc, admin) = await AdminAsync();
+        using (kc)
+        {
+            var wrong = new List<string>();
+            foreach (var (name, reads, list, run) in Calls)
+            {
+                _idp.ResetMappings();
+                AnswerToken();
+                // "id" holds the letter that is not ASCII: every representation decodes it — System.Text.Json skips a member the
+                // type does not map without decoding it, so a bad byte only there goes unseen (measured: Realms.GetAsync,
+                // Users.GetAsync).
+                var body = list
+                    ? """[{"id":"José","name":"José"}]"""
+                    : """{"id":"José","name":"José","error":"José","errorMessage":"José"}""";
+                _idp.Given(Request.Create().WithPath(new WildcardMatcher("/admin/*")).UsingAnyMethod()).RespondWith(
+                    Response.Create().WithStatusCode(status)
+                        .WithHeader("Content-Type", $"application/json; charset={charset}")
+                        .WithHeader("Location", _idp.Urls[0] + "/admin/realms/r/things/new-id")
+                        .WithBody(encoding.GetBytes(body)));
+                var ex = await Record.ExceptionAsync(() => run(admin));
+                if (status == 200 && !reads)
+                {
+                    if (ex is not null)
+                        wrong.Add($"{name}: it reads no body, so it must succeed — got {Describe(ex)}");
+                    continue;
+                }
+                if (ex?.GetType() != type || ((KeycloakAdminException)ex).StatusCode != (status == 200 ? 500 : status) || ex.Message != message)
+                    wrong.Add($"{name}: {Describe(ex)} — want {type.Name}({(status == 200 ? 500 : status)}) \"{message}\"");
+                var printed = ex?.ToString() ?? "";
+                foreach (var (what, mark) in new[] { ("U+0000", "\0"), ("U+FFFD", "�"), ("a decoder's byte quote", "translate bytes") })
+                {
+                    if (printed.Contains(mark, StringComparison.Ordinal))
+                        wrong.Add($"{name}: ToString() carries {what}");
+                }
+            }
+            Assert.True(wrong.Count == 0, $"[HTTP {status} · body in {charset}, labelled so]\n" + string.Join("\n", wrong));
+        }
+    }
+
     /// <summary>A call's result as JSON, or its error by type, status and message.</summary>
     private static async Task<string> OutcomeAsync(Func<Task<object?>> run)
     {

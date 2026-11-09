@@ -34,6 +34,13 @@ internal static class ResponseCharset
             type.CharSet = Utf8;
     }
 
+    /// <summary>Whether a body's text, as it was read, is text an SDK error may quote: no U+0000 and no U+FFFD.</summary>
+    /// <remarks>Every JSON body is read as UTF-8 (above), so one really encoded in UTF-16 comes out with NULs between its letters,
+    /// and one in ISO-8859-1 with U+FFFD — what the decoder puts where bytes it could not decode were — for its letters past
+    /// ASCII; admin error messages carried both (measured 2026-11-10). Such a message is withheld as an undecodable body's is. A
+    /// U+FFFD the server really sent is withheld too: the text alone cannot tell it from a decoder's.</remarks>
+    internal static bool IsQuotable(string? text) => text is null || text.AsSpan().IndexOfAny('\0', '�') < 0;
+
     private static bool IsJson(string mediaType) =>
         mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
         || (mediaType.StartsWith("application/", StringComparison.OrdinalIgnoreCase)

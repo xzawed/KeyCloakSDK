@@ -156,16 +156,18 @@ public sealed class AuthClient : ITokenSource
 
     public async Task<IntrospectionResult> IntrospectAsync(string token, CancellationToken ct = default)
     {
+        var request = new TokenIntrospectionRequest
+        {
+            Address = _ep.Introspection,
+            ClientId = _cfg.ClientId,
+            ClientSecret = _cfg.ClientSecret,
+            Token = token,
+        };
+        var arrival = ResponseArrival.On(request);
         TokenIntrospectionResponse resp;
         try
         {
-            resp = await _tokenEndpoint.IntrospectTokenAsync(new TokenIntrospectionRequest
-            {
-                Address = _ep.Introspection,
-                ClientId = _cfg.ClientId,
-                ClientSecret = _cfg.ClientSecret,
-                Token = token,
-            }, ct).ConfigureAwait(false);
+            resp = await _tokenEndpoint.IntrospectTokenAsync(request, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (ex.InnerException is TimeoutException)
         {
@@ -181,6 +183,11 @@ public sealed class AuthClient : ITokenSource
             // 메시지는 셋 모두에 참인 말이다(예전 "not a JSON object" 는 셋째에 거짓이었다). 어느 메시지도 응답을 인용하지 않는다.
             // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
             throw new KeycloakAuthException("Token introspection failed: response body is not a decodable JSON object", ex);
+        }
+        catch (Exception ex) when (TokenResponseVerdict.Unconverted(ex, arrival, "Token introspection failed") is { } unusable)
+        {
+            // 끝까지 온 응답의 값을 Duende 가 바꾸지 못했다(exp · iat · nbf · JWT 페이로드) — 날것의 예외가 샜다(리뷰 레그, 2026-11-10).
+            throw unusable;
         }
         ThrowIfError(resp, "Token introspection failed", "introspection transport failure");
 

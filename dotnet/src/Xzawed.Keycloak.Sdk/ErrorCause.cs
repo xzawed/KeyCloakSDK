@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace Xzawed.Keycloak;
@@ -50,8 +51,10 @@ internal static class ErrorCause
     private static bool IsClean(Exception e) => e is KeycloakException || e.Data.Contains(SanitizedKey);
 
     // The measured quoting families. HttpRequestError.InvalidResponse is what SocketsHttpHandler tags every
-    // malformed-response error with — the ones that quote and the ones that do not.
-    private static bool QuotesInput(Exception e) => e is JsonException
+    // malformed-response error with — the ones that quote and the ones that do not. DecoderFallbackException quotes the bytes it
+    // refused ("Unable to translate bytes [E9] at index 3"): System.Text.Json nests one under the JsonException of a string that
+    // is not UTF-8 (measured 2026-11-10, an admin body in ISO-8859-1 read as UTF-8).
+    private static bool QuotesInput(Exception e) => e is JsonException or DecoderFallbackException
         or HttpRequestException { HttpRequestError: HttpRequestError.InvalidResponse }
         or HttpIOException { HttpRequestError: HttpRequestError.InvalidResponse };
 
@@ -72,6 +75,8 @@ internal static class ErrorCause
     {
         if (e is JsonException j)
             return $"invalid JSON (input withheld). LineNumber: {j.LineNumber} | BytePositionInLine: {j.BytePositionInLine}.";
+        if (e is DecoderFallbackException)
+            return "bytes not valid in the encoding (input withheld)";
         if (QuotesInput(e))
             return "invalid HTTP response (input withheld)";
         if (quoted is null)

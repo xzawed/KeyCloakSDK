@@ -47,8 +47,9 @@ public sealed class TokenResponseClassTests
     private static readonly byte[] Html = Encoding.ASCII.GetBytes($"<html><body><h1>503 Service Unavailable</h1>{Canary}</body></html>");
 
     /// <summary>A scripted answer, exact bytes. <paramref name="DeclaredLength"/> above the body's length makes the server close
-    /// the connection after the body — a body cut short.</summary>
-    internal sealed record Answer(int Status, string ContentType, byte[] Body, int? DeclaredLength = null);
+    /// the connection after the body — a body cut short. <paramref name="CloseDelimited"/> sends no <c>Content-Length</c> (and no
+    /// chunking): the body ends where the server closes the connection (RFC 9112 §6.3).</summary>
+    internal sealed record Answer(int Status, string ContentType, byte[] Body, int? DeclaredLength = null, bool CloseDelimited = false);
 
     private static Answer A(int status, string type, string body) => new(status, type, Encoding.UTF8.GetBytes(body));
 
@@ -96,8 +97,20 @@ public sealed class TokenResponseClassTests
             Bytes("""{"access_token":"AT-""", 0xFF, 0xFE, Canary, "\",\"token_type\":\"Bearer\",\"expires_in\":300}")),
         ["r9o 200 invalid UTF-8 outside the token"] = A(200, Json,
             Bytes("""{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300,"scope":"s""", 0xFF, Canary, "\"}")),
+        // D1 holds on every 2xx, not on 200 alone (the review leg's surviving mutation: IsSuccessStatusCode → StatusCode == OK).
+        ["r9s 203 invalid UTF-8 (a 2xx other than 200)"] = A(203, Json,
+            Bytes("""{"access_token":"AT-""", 0xFF, 0xFE, Canary, "\",\"token_type\":\"Bearer\",\"expires_in\":300}")),
         ["r10 200 unknown charset"] = A(200, Json + "; charset=x-no-such-charset", GoodToken),
         ["r10q 200 unknown quoted charset"] = A(200, Json + "; charset=\"x-no-such-charset\"", GoodToken),
+        // D2 ignores every charset — one .NET used to decode too: a body really in UTF-16 is read as UTF-8, and is not JSON then.
+        ["r10u 200 UTF-16 body labelled utf-16"] = A(200, Json + "; charset=utf-16", Encoding.Unicode.GetBytes(GoodToken)),
+        // …and an error body really in UTF-16 loses its OAuth code: read as UTF-8 it is not JSON (review leg, 2026-11-10).
+        ["r10w 400 UTF-16 error body labelled utf-16"] = A(400, Json + "; charset=utf-16", Encoding.Unicode.GetBytes("""{"error":"invalid_grant"}""")),
+        // expires_in Duende cannot read is no failure: TokenResponse reads it with int.TryParse (0 when it cannot) — measured
+        // here because the introspection lane's date claims do throw (x1–x4).
+        ["e1 200 expires_in a word"] = A(200, Json, """{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":"soon"}"""),
+        ["e2 200 expires_in a fraction"] = A(200, Json, """{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":1.5}"""),
+        ["e3 200 expires_in past Int64"] = A(200, Json, """{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":99999999999999999999}"""),
         ["401 invalid_client"] = A(401, Json, """{"error":"invalid_client"}"""),
         ["403 access_denied"] = A(403, Json, """{"error":"access_denied"}"""),
         ["404 realm missing"] = A(404, Json, """{"error":"Realm does not exist"}"""),
@@ -108,6 +121,9 @@ public sealed class TokenResponseClassTests
         ["t over the cap, invalid UTF-8 first"] = Padded(Bytes(0xFF), Cap + 1),
         ["t cut short"] = new(200, Json, Encoding.UTF8.GetBytes($$"""{"access_token":"AT-{{Canary}}"""), DeclaredLength: 400),
         ["t cut short after invalid UTF-8"] = new(200, Json, Bytes("""{"access_token":"AT-""", 0xFF, Canary), DeclaredLength: 400),
+        // Not a control: a body with no declared length ends where the connection closes (RFC 9112 §6.3), so one cut short is
+        // indistinguishable from a whole one — it arrived, and is not JSON. Keycloak always declares the length.
+        ["c close-delimited body cut short"] = new(200, Json, Encoding.UTF8.GetBytes($$"""{"access_token":"AT-{{Canary}}"""), CloseDelimited: true),
     };
 
     public static IEnumerable<object[]> TokenCellNames => TokenCells.Keys.Select(k => new object[] { k });
@@ -159,13 +175,16 @@ public sealed class TokenResponseClassTests
         string Coded(string reason, string code) => Auth($"{p}: {reason}", code);
         return cell switch
         {
-            "ok" or "bom 200 UTF-8 BOM (control)" or "r10 200 unknown charset" or "r10q 200 unknown quoted charset" => Ok(lane.Success),
+            "ok" or "bom 200 UTF-8 BOM (control)" or "r10 200 unknown charset" or "r10q 200 unknown quoted charset"
+                or "e1 200 expires_in a word" or "e2 200 expires_in a fraction" or "e3 200 expires_in past Int64" => Ok(lane.Success),
             "r1 503 HTML" => Auth($"{p}: Service Unavailable", "Service Unavailable"),
-            "r2 200 HTML" or "r2j 200 HTML typed as JSON" or "r2d 200 JSON nested past the parser's depth" => Auth($"{p}: {NotJson} (HTTP 200)"),
+            "r2 200 HTML" or "r2j 200 HTML typed as JSON" or "r2d 200 JSON nested past the parser's depth"
+                or "r10u 200 UTF-16 body labelled utf-16" or "c close-delimited body cut short" => Auth($"{p}: {NotJson} (HTTP 200)"),
             "r4 200 JSON without access_token" => Auth("token response missing access_token"),
-            "r8 400 HTML" or "r8j 400 HTML typed as JSON" => Auth($"{p}: {NotJson} (HTTP 400)"),
+            "r8 400 HTML" or "r8j 400 HTML typed as JSON" or "r10w 400 UTF-16 error body labelled utf-16" => Auth($"{p}: {NotJson} (HTTP 400)"),
             "r8u 400 invalid UTF-8 in the error body" => Auth($"{p}: invalid_grant", "invalid_grant"),
-            "r9 200 invalid UTF-8 inside the token" or "r9o 200 invalid UTF-8 outside the token" => Auth($"{p}: response is not valid UTF-8"),
+            "r9 200 invalid UTF-8 inside the token" or "r9o 200 invalid UTF-8 outside the token"
+                or "r9s 203 invalid UTF-8 (a 2xx other than 200)" => Auth($"{p}: response is not valid UTF-8"),
             "401 invalid_client" => Coded("Unauthorized", "invalid_client"),
             "403 access_denied" => Coded("Forbidden", "access_denied"),
             "404 realm missing" => Coded("Not Found", "Realm does not exist"),
@@ -223,10 +242,32 @@ public sealed class TokenResponseClassTests
         ["r8j 400 HTML typed as JSON"] = A(400, Json, Html),
         ["r8u 400 invalid UTF-8 in the error body"] = A(400, Json, Bytes("""{"error":"invalid_grant","error_description":"x""", 0xFF, Canary, "\"}")),
         ["r9 200 invalid UTF-8 inside a string"] = A(200, Json, Bytes("""{"active":true,"username":"s""", 0xFF, 0xFE, Canary, "\"}")),
+        ["r9s 201 invalid UTF-8 (a 2xx other than 200)"] = A(201, Json, Bytes("""{"active":true,"username":"s""", 0xFF, 0xFE, Canary, "\"}")),
         ["r10 200 unknown charset"] = A(200, Json + "; charset=x-no-such-charset", GoodIntrospection),
+        ["r10u 200 UTF-16 body labelled utf-16"] = A(200, Json + "; charset=utf-16", Encoding.Unicode.GetBytes(GoodIntrospection)),
+        // An arrived body Duende cannot convert — TokenIntrospectionResponse.InitializeAsync reads exp · iat · nbf with long.Parse
+        // and DateTimeOffset.FromUnixTimeSeconds, and a JWT response's payload with Base64Url and JsonDocument; each threw out of
+        // the SDK raw (review leg, 2026-11-10).
+        ["x1 200 exp a word"] = A(200, Json, $$"""{"active":true,"exp":"soon","username":"{{Canary}}"}"""),
+        ["x2 200 exp a fraction"] = A(200, Json, $$"""{"active":true,"exp":1.5,"username":"{{Canary}}"}"""),
+        ["x3 200 iat past Int64"] = A(200, Json, $$"""{"active":true,"iat":99999999999999999999,"username":"{{Canary}}"}"""),
+        ["x4 200 nbf past 9999-12-31"] = A(200, Json, $$"""{"active":true,"nbf":253402300800,"username":"{{Canary}}"}"""),
+        ["x5 200 JWT whose payload is not base64url"] = A(200, IntrospectionJwt, $"eyJhbGciOiJub25lIn0.{Canary}*!.c2ln"),
+        ["x6 200 JWT whose payload is not JSON"] = A(200, IntrospectionJwt, $"eyJhbGciOiJub25lIn0.{B64Url("not JSON " + Canary)}.c2ln"),
+        ["x7 200 JWT without token_introspection"] = A(200, IntrospectionJwt, $$"""eyJhbGciOiJub25lIn0.{{B64Url("""{"active":true}""")}}.c2ln"""),
         ["t over the cap"] = Padded(Encoding.UTF8.GetBytes(GoodIntrospection), Cap + 1),
         ["t cut short after invalid UTF-8"] = new(200, Json, Bytes("""{"active":true,"username":"s""", 0xFF, Canary), DeclaredLength: 400),
+        ["c close-delimited body cut short"] = new(200, Json, Encoding.UTF8.GetBytes($$"""{"active":true,"username":"{{Canary}}"""), CloseDelimited: true),
     };
+
+    /// <summary>The media type of an RFC 9701 JWT introspection response — Duende reads its payload instead of the body.</summary>
+    private const string IntrospectionJwt = "application/token-introspection+jwt";
+
+    private static string B64Url(string text) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(text)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    /// <summary>An arrived body holding a value Duende cannot convert.</summary>
+    private const string NotConvertible = "response body holds a value that could not be converted";
 
     public static IEnumerable<object[]> IntrospectionCellNames => IntrospectionCells.Keys.Select(k => new object[] { k });
 
@@ -237,12 +278,16 @@ public sealed class TokenResponseClassTests
         "ok" or "r10 200 unknown charset" => Ok("active=True username=svc"),
         "r4f 200 inactive (control)" => Ok("active=False username=null"),
         "r1 503 HTML" => Auth($"{IntroPrefix}: Service Unavailable", "Service Unavailable"),
-        "r2 200 HTML" or "r2j 200 HTML typed as JSON" => Auth($"{IntroPrefix}: {NotJson} (HTTP 200)"),
+        "r2 200 HTML" or "r2j 200 HTML typed as JSON" or "r10u 200 UTF-16 body labelled utf-16" or "c close-delimited body cut short"
+            => Auth($"{IntroPrefix}: {NotJson} (HTTP 200)"),
         "r4 200 JSON without active" or "r4s 200 active as the string \"true\"" or "r4n 200 active null" or "r4i 200 active as the number 1"
             => Auth($"{IntroPrefix}: response has no boolean active"),
         "r8 400 HTML" or "r8j 400 HTML typed as JSON" => Auth($"{IntroPrefix}: {NotJson} (HTTP 400)"),
         "r8u 400 invalid UTF-8 in the error body" => Auth($"{IntroPrefix}: invalid_grant", "invalid_grant"),
-        "r9 200 invalid UTF-8 inside a string" => Auth($"{IntroPrefix}: response is not valid UTF-8"),
+        "r9 200 invalid UTF-8 inside a string" or "r9s 201 invalid UTF-8 (a 2xx other than 200)" => Auth($"{IntroPrefix}: response is not valid UTF-8"),
+        "x1 200 exp a word" or "x2 200 exp a fraction" or "x3 200 iat past Int64" or "x4 200 nbf past 9999-12-31"
+            or "x5 200 JWT whose payload is not base64url" or "x6 200 JWT whose payload is not JSON" => Auth($"{IntroPrefix}: {NotConvertible} (HTTP 200)"),
+        "x7 200 JWT without token_introspection" => Auth($"{IntroPrefix}: response body is not a decodable JSON object"),
         "t over the cap" => Transport($"{IntroPrefix}: response exceeds a size limit"),
         "t cut short after invalid UTF-8" => Transport("introspection transport failure"),
         _ => throw new InvalidOperationException($"no expectation for {cell}"),
@@ -286,6 +331,50 @@ public sealed class TokenResponseClassTests
                 Transport("introspection transport failure"));
         }
         Assert.True(wrong.Count == 0, string.Join("\n", wrong));
+    }
+
+    // ── D2: a charset has no effect — one .NET could decode included ────────────────────────────────────────────────
+
+    /// <summary>A UTF-8 body labelled with another charset .NET knows reads as the UTF-8 it is — .NET used to decode it as
+    /// ISO-8859-1 and hand back mojibake ("JosÃ©"). The other side of the same rule, a body really in UTF-16, is
+    /// <c>r10u</c>.</summary>
+    [Fact]
+    public async Task A_UTF8_body_labelled_with_another_charset_reads_as_UTF8()
+    {
+        using var idp = new ScriptedIdp((_, path) => path switch
+        {
+            $"{Oidc}/token" => A(200, Json + "; charset=iso-8859-1", """{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300,"scope":"José"}"""),
+            $"{Oidc}/token/introspect" => A(200, Json + "; charset=iso-8859-1", """{"active":true,"username":"José"}"""),
+            _ => A(404, Json, "{}"),
+        });
+        using var kc = Facade(idp.Url);
+
+        Assert.Equal("José", (await kc.Auth.ClientCredentialsTokenAsync()).Scope);
+        Assert.Equal("José", (await kc.Auth.IntrospectAsync("tok-sent")).Username);
+    }
+
+    // ── an arrived introspection body Duende cannot convert — only an arrived one ───────────────────────────────────
+
+    /// <summary>The x1–x6 conversion failures become <see cref="KeycloakAuthException"/> only for a response that arrived. A
+    /// request that could not even be built — here an introspection address .NET will not parse, which Duende turns into a
+    /// <see cref="Uri"/> before it sends anything — throws a <see cref="FormatException"/> as well, and must not be reported as
+    /// an arrived response. (That it leaves the SDK raw is older than this change: the address comes from a hand-built
+    /// <see cref="OidcEndpoints"/> given to the public <see cref="AuthClient"/> constructor.)</summary>
+    [Fact]
+    public async Task A_request_that_could_not_be_built_is_not_taken_for_an_arrived_response()
+    {
+        using var idp = new ScriptedIdp((_, _) => A(200, Json, GoodIntrospection));
+        var cfg = new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = Secret }.Normalized();
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm) with { Introspection = "http://127.0.0.1:99999999/introspect" };
+        var validator = new JwtValidator(JwtValidator.BuildParameters(ep.Issuer, new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { "c" } }));
+        using var http = new HttpClient();
+        var auth = new AuthClient(cfg, ep, validator, http);
+
+        var ex = await Record.ExceptionAsync(() => auth.IntrospectAsync("tok-sent"));
+
+        Assert.IsAssignableFrom<FormatException>(ex); // the control: the failure is one of the types an arrived body maps
+        Assert.IsNotType<KeycloakAuthException>(ex);
+        Assert.Empty(idp.Requests());
     }
 
     // ── D1: what is UTF-8 — the edges of the check ──────────────────────────────────────────────────────────────────
@@ -492,6 +581,9 @@ public sealed class TokenResponseClassTests
         /// <summary>Every admin request seen so far, as <c>"METHOD /path"</c>.</summary>
         public List<string> AdminRequests() => _seen.Where(r => r.Split(' ')[1].StartsWith("/admin/", StringComparison.Ordinal)).ToList();
 
+        /// <summary>Every request seen so far, as <c>"METHOD /path"</c>.</summary>
+        public List<string> Requests() => _seen.ToList();
+
         private async Task AcceptLoopAsync()
         {
             while (!_cts.IsCancellationRequested)
@@ -514,7 +606,7 @@ public sealed class TokenResponseClassTests
                     _seen.Enqueue($"{method} {path}");
                     var answer = _route(method, path);
                     var head = $"HTTP/1.1 {answer.Status} X\r\nContent-Type: {answer.ContentType}\r\nConnection: close\r\n" +
-                               $"Content-Length: {answer.DeclaredLength ?? answer.Body.Length}\r\n\r\n";
+                               (answer.CloseDelimited ? "" : $"Content-Length: {answer.DeclaredLength ?? answer.Body.Length}\r\n") + "\r\n";
                     await stream.WriteAsync(Encoding.ASCII.GetBytes(head), _cts.Token);
                     await stream.WriteAsync(answer.Body, _cts.Token);
                     await stream.FlushAsync(_cts.Token);
