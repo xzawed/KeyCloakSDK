@@ -30,6 +30,12 @@ final class BearerToken
 {
     public const GRANT_REFUSED = 'admin token request failed: the access token is not a valid RFC 6750 bearer token (b64token)';
 
+    /** A 2xx grant body that is not strict UTF-8 JSON (RFC 8259 §8.1) — HTML, a JSON-typed HTML page, invalid UTF-8 anywhere. */
+    public const GRANT_NOT_JSON = 'admin token request failed: the token response is not JSON';
+
+    /** A 2xx grant body that is JSON but carries no string `access_token` (not an object, missing, not a string). */
+    public const GRANT_NO_TOKEN = 'admin token request failed: the token response has no access_token';
+
     public const PROVIDER_REFUSED = 'client-credentials failed: the access token is not a valid RFC 6750 bearer token (b64token)';
 
     /** 이 미들웨어의 거부를 다른 `RequestException` 과 가르는 Guzzle handler context 키 — `isRejection`. */
@@ -47,11 +53,17 @@ final class BearerToken
     }
 
     /**
-     * Admin handler-stack middleware — in the 2xx response to a request picked by `$isTokenGrant` (fschmtt's token grant), if
-     * the string `access_token` is not a b64token that needs no trimming, it rejects that grant with a Guzzle `RequestException`
-     * (message `GRANT_REFUSED` · no response or cause). This is before fschmtt stores it, so nothing is cached (the next call
-     * asks again) and no admin REST request goes out. Why it is Guzzle's: the same as `TokenResponseCap::middleware` — it
-     * reaches a `raw()` consumer as is. A non-string `access_token` or a non-JSON body is rejected by fschmtt, as today.
+     * Admin handler-stack middleware — the 2xx response to a request picked by `$isTokenGrant` (fschmtt's token grant) must be
+     * a usable token response: strict UTF-8 JSON (`GRANT_NOT_JSON`), an object with a string `access_token`
+     * (`GRANT_NO_TOKEN`), and that token a b64token that needs no trimming (`GRANT_REFUSED`). Otherwise it rejects the grant
+     * with a Guzzle `RequestException` (that message · no response or cause) — before fschmtt stores it, so nothing is cached
+     * (the next call asks again) and no admin REST request goes out. `Admin\ErrorTranslation` turns the rejection into
+     * `KeycloakAuthError`: the response arrived and is unusable (registry `token-response-class-divergent`). Why it is
+     * Guzzle's: the same as `TokenResponseCap::middleware` — it reaches a `raw()` consumer as is.
+     *
+     * ⚠️ The JSON is decoded strictly. Read leniently (`JSON_INVALID_UTF8_SUBSTITUTE`), a byte that is not UTF-8 outside the
+     * token passed here and then failed in fschmtt's own `json_decode` as an unclassified error — and the auth lanes of five
+     * other languages returned a token carrying U+FFFD as a success (measured 2026-11-10).
      *
      * ⚠️ It goes **outside** `TokenResponseCap::middleware` in the stack — it sees the body the cap has judged.
      *
@@ -73,10 +85,16 @@ final class BearerToken
                     return $response;   // 오류 응답은 http_errors 와 `Admin\ErrorTranslation` 의 몫이다
                 }
                 $raw = (string) $response->getBody();
-                // 잘못된 UTF-8 은 U+FFFD 로 읽는다 — 그 바이트를 담은 토큰도 문법 밖이다(fschmtt 의 json_decode 는 본문째 거부한다).
-                $json = json_decode($raw, true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
-                $token = \is_array($json) ? ($json['access_token'] ?? null) : null;
-                if (\is_string($token) && self::sendable($token) !== $token) {
+                try {
+                    $json = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);   // 엄격하다 — 잘못된 UTF-8 도 여기서 거부된다
+                } catch (\JsonException) {
+                    throw new RequestException(self::GRANT_NOT_JSON, $request, null, null, [self::REJECTION => true]);
+                }
+                $token = \is_array($json) && !array_is_list($json) ? ($json['access_token'] ?? null) : null;
+                if (!\is_string($token)) {
+                    throw new RequestException(self::GRANT_NO_TOKEN, $request, null, null, [self::REJECTION => true]);
+                }
+                if (self::sendable($token) !== $token) {
                     throw new RequestException(self::GRANT_REFUSED, $request, null, null, [self::REJECTION => true]);
                 }
 

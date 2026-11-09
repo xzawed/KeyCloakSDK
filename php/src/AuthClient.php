@@ -202,6 +202,11 @@ final class AuthClient
         if (!is_array($json)) {
             throw new KeycloakAuthError('introspection returned non-JSON');
         }
+        // RFC 7662 §2.2 — `active` 는 REQUIRED 인 boolean 이다. 없으면 깨진 응답이지 「비활성」이 아니다(토큰 응답에 access_token 이 없는
+        // 칸과 같은 auth 계급). ⚠️ 문자열은 받지 않는다 — `(bool) "false"` 는 PHP 에서 참이라 비활성 토큰이 활성으로 읽혔다.
+        if (!is_bool($json['active'] ?? null)) {
+            throw new KeycloakAuthError('introspection response has no boolean active member');
+        }
 
         return IntrospectionResult::fromArray(self::stringKeyed($json));
     }
