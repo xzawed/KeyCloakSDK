@@ -17,16 +17,17 @@ import asyncio
 import secrets
 import time
 from collections.abc import Awaitable
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 from urllib.parse import urlencode
 
-from joserfc.jwk import KeySet, KeySetSerialization
+from joserfc.jwk import KeySet
 from keycloak import KeycloakOpenID
 
 from .._internal.backoff import JwksFailureBackoff
 from .._internal.frames import ascrub_frames, scrub_frames
 from .._internal.jwks_cache import JwksKeyCache
 from .._internal.jwks_fetch import afetch_jwks
+from .._internal.jwks_keys import import_usable_keys
 from .._internal.jwt import JwtValidator, check_token_size
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
@@ -300,17 +301,9 @@ class AsyncAuthClient:
             # 상류 `a_certs()` 와 달리 이 경로는 바이트 상한을 건다
             # (`_internal/jwks_fetch.py`). sync 미러와 **같은 모듈**을 쓴다.
             certs = await self._afetch_jwks()
-            certs_typed = cast(KeySetSerialization, cast(Any, certs))
-            # ⚠️ sync 미러와 동일 — 기형 JWKS에서 joserfc는 joserfc 타입도 아닌 stdlib
-            # `binascii.Error`를 던진다. 그대로 두면 `keycloak_sdk.exceptions`를 잡는
-            # 소비자가 아무것도 잡지 못한다(§4 위반). 두 미러가 갈라지지 않도록 같이 고친다.
-            try:
-                # ⚠️ sync 미러와 같다 — joserfc 1.8.0 에서 반환이 `Any` 로 읽혀 타입을 적어 둔다.
-                key_set: KeySet = KeySet.import_key_set(certs_typed)
-            except Exception as exc:
-                raise TokenValidationError(
-                    f"malformed JWKS from the identity provider: {exc}"
-                ) from exc
+            # ⚠️ sync 미러와 같은 모듈 — 못 읽는 키는 건너뛰고 기형·빈 키셋은 SDK 타입으로
+            # 거부한다(`_internal/jwks_keys.py`). 두 미러가 갈라지지 않게 한곳에 둔다.
+            key_set = import_usable_keys(certs)
         except Exception:
             self._jwks_backoff.record_failure()
             raise

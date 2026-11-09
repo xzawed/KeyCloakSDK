@@ -31,6 +31,7 @@ from keycloak_sdk.exceptions import (
 )
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
+from tests.unit.conftest import UNREADABLE_JWKS
 
 
 class _FakeClock:
@@ -1025,6 +1026,47 @@ def test_malformed_jwks_yields_sdk_error_not_a_raw_library_exception(jwks):
 
     with pytest.raises(TokenValidationError):
         client.validate(token)
+
+
+def test_jwks_key_it_cannot_read_is_skipped_not_the_whole_set(jwks, unreadable_jwk):
+    """⚠️ 못 읽는 키 하나가 키셋 전체를 버리면 안 된다(RFC 7517 §5 — 이해 못 하는 kty ·
+    범위 밖 값의 키는 무시한다). joserfc 의 `import_key_set` 은 1.7.x 에서 그런 키 하나로
+    키셋 전체를 거부하고, 1.8.0 도 `InvalidKeyTypeError` 만 건너뛴다 — 곡선이 범위 밖인 키
+    (P-192) · 기형/빠진 멤버 하나로 전체가 실패해 같은 키셋의 정상 키로 서명한 토큰까지
+    거부됐다(등록부 jwks-unsupported-key-rejects-set). 못 읽는 키를 **앞**에 둔다.
+    """
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    token = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+    jwks.return_value = {"keys": [unreadable_jwk, key.as_dict(private=False)]}
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+
+    assert client.validate(token).subject
+
+
+def test_jwks_with_only_keys_it_cannot_read_is_refused_and_keeps_the_cached_set(jwks):
+    """대조 — 쓸 수 있는 키가 하나도 없는 키셋은 여전히 `TokenValidationError` 이고 신뢰 키
+    캐시를 덮지 않는다. 건너뛰기가 「다 건너뛰고 빈 키셋을 설치」로 새면 마지막 검증이 운다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    good = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+    unknown = _signed_token(
+        RSAKey.generate_key(2048, {"kid": "kZ", "use": "sig"}),
+        issuer=endpoints.issuer,
+        audience=config.client_id,
+    )
+    jwks.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+    client.validate(good)
+
+    jwks.return_value = {"keys": list(UNREADABLE_JWKS.values())}
+    with pytest.raises(TokenValidationError, match="no usable keys"):
+        client.validate(unknown)
+    assert jwks.call_count == 2  # 강제 재조회가 정말 일어났다
+
+    assert client.validate(good).subject  # 신뢰 키 캐시가 그대로다
 
 
 # ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. 위 `test_forced_jwks_refetch_is_rate_limited`
