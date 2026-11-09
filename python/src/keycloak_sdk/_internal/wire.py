@@ -176,10 +176,10 @@ def _metered(read: _Read, sock: Any, meter: _Meter) -> _Read:
                 timer.settimeout(remaining)
             got = read(buffer)
         finally:
+            if undo is not None:
+                undo()  # 먼저 — 아래 `settimeout` 이 실패해도(닫힌 소켓) 감싸개는 남지 않는다
             if bounded:
                 timer.settimeout(prior)
-            if undo is not None:
-                undo()
         charge(got or 0)
         return got
 

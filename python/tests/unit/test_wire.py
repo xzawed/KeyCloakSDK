@@ -216,7 +216,7 @@ def test_a_non_blocking_read_that_got_nothing_charges_nothing() -> None:
         assert _metered(_Sock(1.0), lambda _b: None)(bytearray(8)) is None
 
 
-# --- TLS 안의 TLS · pyOpenSSL — 원문 읽기 하나가 아래 소켓을 여러 번 읽는다 ------------------------
+# --- TLS 안의 TLS · pyOpenSSL — 원문 읽기 하나가 아래 소켓을 여러 번 읽는다 ---------------
 
 
 @pytest.fixture
@@ -280,8 +280,9 @@ def test_tls_in_tls_without_a_deadline_is_left_as_it_is(clock: list[float]) -> N
 
 
 class _Wrapped:
-    """urllib3.contrib.pyopenssl `WrappedSocket` 의 꼴(2.7.0) — `gettimeout` 이 없고 타임아웃은 그 아래
-    원소켓(`socket`)의 것이다. WantRead 마다 원소켓을 기다렸다가 자기 `recv_into` 를 다시 부른다."""
+    """urllib3.contrib.pyopenssl `WrappedSocket` 의 꼴(2.7.0) — `gettimeout` 이 없고 타임아웃은
+    그 아래 원소켓(`socket`)의 것이다. WantRead 마다 원소켓을 기다렸다가 자기 `recv_into` 를
+    다시 부른다."""
 
     def __init__(self, clock: list[float], rounds: int) -> None:
         self.socket = _Sock(30.0)
@@ -299,7 +300,8 @@ class _Wrapped:
 
 @pytest.fixture
 def pyopenssl(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`urllib3.contrib.pyopenssl` 을 주입한 프로세스 — 그 모듈의 `WrappedSocket` 이 `_Wrapped` 다."""
+    """`urllib3.contrib.pyopenssl` 을 주입한 프로세스 — 그 모듈의 `WrappedSocket` 이
+    `_Wrapped` 다."""
     module = SimpleNamespace(WrappedSocket=_Wrapped)
     monkeypatch.setitem(sys.modules, "urllib3.contrib.pyopenssl", module)
 
@@ -332,6 +334,22 @@ def test_an_outer_reader_already_on_the_instance_comes_back(clock: list[float]) 
     with exchange(5, None):
         wire._metered(_loop(transport, 1), transport, _meter())(bytearray(8))
     assert vars(outer)["recv"] is own
+
+
+def test_a_failed_restore_still_takes_the_wrapper_off(clock: list[float]) -> None:
+    # 연결이 읽는 사이에 닫히면 타임아웃 되돌리기(`settimeout`)가 실패할 수 있다 — 감싸개는 그 전에
+    # 떼어 둔다(Grok 레그가 짚은 순서: 되돌리기가 먼저 실패하면 `undo` 를 건너뛰었다).
+    class Closing(_Outer):
+        def settimeout(self, value: float | None) -> None:
+            if value == 30.0:
+                raise OSError("closed")
+            super().settimeout(value)
+
+    outer = Closing(30.0, clock)
+    transport = _transport(outer)
+    with exchange(5, None), pytest.raises(OSError, match="closed"):
+        wire._metered(_loop(transport, 1), transport, _meter())(bytearray(8))
+    assert "recv" not in vars(outer)
 
 
 def test_an_outer_socket_the_sdk_cannot_wrap_is_refused(clock: list[float]) -> None:
@@ -674,8 +692,8 @@ class _RecordTarget:
 
 
 class _TlsProxy:
-    """HTTPS 프록시(바깥 TLS) — CONNECT 를 받아 대상 TCP 로 잇고, 받는 대로 넘긴다(대상이 한 바이트를
-    보내면 바깥 레코드 하나에 한 바이트). 터널 하나를 스레드 하나가 `select` 로 돈다."""
+    """HTTPS 프록시(바깥 TLS) — CONNECT 를 받아 대상 TCP 로 잇고, 받는 대로 넘긴다(대상이 한
+    바이트를 보내면 바깥 레코드 하나에 한 바이트). 터널 하나를 스레드 하나가 `select` 로 돈다."""
 
     def __init__(self, tls: ssl.SSLContext) -> None:
         self.sock = socket.create_server(("127.0.0.1", 0))
