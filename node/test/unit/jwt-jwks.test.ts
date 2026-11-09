@@ -338,6 +338,84 @@ describe('빈 JWKS 키셋(200)이 좋은 캐시를 덮지 않는다', () => {
   })
 })
 
+// ⚠️ JWK 가 아닌 원소 하나가 키셋 전체를 버리면 안 된다(RFC 7517 §5 — 이해 못 하는 원소는 무시한다). jose 의 `isJWKSLike`
+// 는 `keys` 의 원소가 전부 객체여야 키셋으로 받는다 — 문자열 · 숫자 · null · 배열 원소 하나로 「JSON Web Key Set malformed」
+// 가 되어 같은 키셋의 정상 키로 서명한 토큰까지 거부됐다(등록부 jwks-unsupported-key-rejects-set). 지원 밖 kty · 곡선 · 기형
+// 멤버는 jose 가 키를 고를 때만 보므로 이미 통과한다 — 그래서 여기서 거르는 것은 객체가 아닌 원소뿐이다.
+describe('JWKS 의 JWK 가 아닌 원소는 건너뛴다', () => {
+  async function withJwks(
+    first: string,
+    run: (
+      v: JwtValidator,
+      sign: (kid: string) => Promise<string>,
+      serve: (body: string) => void,
+      hits: () => number,
+    ) => Promise<void>,
+  ): Promise<void> {
+    const pair = await generateKeyPair('RS256')
+    const jwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', use: 'sig', alg: 'RS256' }
+    let served = first.replace('GOOD', JSON.stringify(jwk))
+    let count = 0
+    const srv = createServer((_req, res) => {
+      count += 1
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(served)
+    })
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+    try {
+      const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+      const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 0 })
+      const sign = (kid: string) =>
+        new SignJWT({ sub: 'u', aud: 'my-client' })
+          .setProtectedHeader({ alg: 'RS256', kid })
+          .setIssuer(ISS)
+          .setIssuedAt()
+          .setExpirationTime('5m')
+          .sign(pair.privateKey)
+      await run(
+        v,
+        sign,
+        (body) => {
+          served = body
+        },
+        () => count,
+      )
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()))
+    }
+  }
+
+  it.each([
+    ['문자열', '"not-a-jwk"'],
+    ['숫자', '1'],
+    ['null', 'null'],
+    ['배열', '[]'],
+  ])('%s 원소가 정상 키 앞에 있어도 그 키로 서명한 토큰이 통과한다', async (_name, bad) => {
+    await withJwks(`{"keys":[${bad},GOOD]}`, async (v, sign) => {
+      await expect(v.validate(await sign('k1'))).resolves.toMatchObject({ subject: 'u' })
+    })
+  })
+
+  // 대조 — 객체 원소가 하나도 없는 키셋은 빈 키셋처럼 조회 실패이고 좋은 캐시를 덮지 않는다. 건너뛰기가 「다 거르고 빈
+  // 키셋을 넘김」으로 새면 마지막 두 단언이 운다. ⚠️ 히트 증가 단언이 전제다(빈 키셋 테스트와 같은 이유).
+  it('대조 — 객체 원소가 하나도 없으면 KeycloakTokenValidationError 이고 기존 k1 검증은 유지된다', async () => {
+    await withJwks('{"keys":[GOOD]}', async (v, sign, serve, hits) => {
+      const k1 = await sign('k1')
+      await expect(v.validate(k1)).resolves.toMatchObject({ subject: 'u' })
+
+      serve('{"keys":["not-a-jwk",1,null]}')
+      const before = hits()
+      await expect(v.validate(await sign('k2'))).rejects.toBeInstanceOf(
+        KeycloakTokenValidationError,
+      )
+      expect(hits()).toBeGreaterThan(before)
+
+      await expect(v.validate(k1)).resolves.toMatchObject({ subject: 'u' })
+      await expect(v.validate(await sign('k1'))).resolves.toMatchObject({ subject: 'u' })
+    })
+  })
+})
+
 // ⚠️ 여기부터가 **웜 캐시 + IdP 장애** 축이다. 위 콜드 캐시 백오프는 캐시가 찬 뒤를 보지 않는다(규칙 (4) —
 // 웜 캐시의 미해결 kid 거부는 fetch 실패가 아니다). 그런데 jose 는 재조회 창(`cooldownDuration`)을 **성공**한
 // 조회에만 찍으므로, 캐시가 찬 채 IdP 가 503 이면 위조 kid 토큰마다 IdP 로 나갔다 — 실측(2026-10-05,
