@@ -57,12 +57,17 @@ func strictUTF8(ctx context.Context, status int, body io.ReadCloser) io.ReadClos
 }
 
 // utf8Body hands a body upward while checking that it is UTF-8, keeping the start of a sequence one Read cut in two
-// until the next Read completes it. An invalid sequence — or a sequence still cut at EOF — fails the read.
+// until the next Read completes it. An invalid sequence — or a sequence still cut at EOF — fails the read **at EOF**:
+// whether the body is unusable can only be said once it arrived in full. Refusing at the first bad byte turned a body
+// that was then cut short or went over the cap — not arrived, *TransportError — into *AuthError on the grants while
+// Introspect, which reads first and checks after, still said *TransportError (independent review leg, measured
+// 2026-11-10). So a cap or read error from below passes through untouched, and the flag is set only at EOF.
 type utf8Body struct {
 	io.ReadCloser
-	bad  *atomic.Bool
-	tail []byte // the start of a sequence the last Read cut in two (at most utf8.UTFMax-1 bytes)
-	end  error  // errTokenResponseNotUTF8 once refused
+	bad     *atomic.Bool
+	tail    []byte // the start of a sequence the last Read cut in two (at most utf8.UTFMax-1 bytes)
+	invalid bool   // a sequence that is not UTF-8 went by — refused if the body then ends
+	end     error  // errTokenResponseNotUTF8 once refused
 }
 
 func (b *utf8Body) Read(p []byte) (int, error) {
@@ -70,7 +75,10 @@ func (b *utf8Body) Read(p []byte) (int, error) {
 		return 0, b.end
 	}
 	n, err := b.ReadCloser.Read(p)
-	if !b.take(p[:n]) || (errors.Is(err, io.EOF) && len(b.tail) > 0) {
+	if !b.invalid && !b.take(p[:n]) {
+		b.invalid = true
+	}
+	if errors.Is(err, io.EOF) && (b.invalid || len(b.tail) > 0) {
 		b.bad.Store(true)
 		b.end = errTokenResponseNotUTF8
 		return 0, b.end

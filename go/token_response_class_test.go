@@ -34,6 +34,7 @@ type classRow struct {
 	toSelf   bool   // Location 이 같은 token 주소다 — 따라가지 않는 SDK 는 3xx 를 그대로 받는다
 	raw      string // 있으면 소켓이 이 바이트를 그대로 쓴다(newRawIdP)
 	nowhere  bool   // 닿지 않는 IdP
+	contains string // 있으면 실패한 모든 칸의 오류 메시지가 이것을 담는다
 	expected [6]string
 }
 
@@ -76,6 +77,17 @@ var classRows = []classRow{
 	{name: "x1-307-self", status: 307, ctype: "text/plain", body: "", toSelf: true,
 		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
 	{name: "t-truncated-body", raw: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"access_token\"",
+		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
+	// 다 오지 않은 본문은 잘못된 바이트가 어디 있든 *TransportError 다 — UTF-8 판정은 끝까지 온 본문에만 한다. 수정 전 첫 판(fb6b4f06)은
+	// 첫 나쁜 바이트에서 거부해 그랜트 · admin 이 *AuthError(그리고 상한 메시지가 UTF-8 메시지로)였고 Introspect 만 Transport 였다
+	// (독립 레그가 찾음).
+	{name: "t-truncated-body-invalid-utf8", raw: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"access_token\":\"a\xff",
+		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
+	{name: "r5-over-cap-invalid-utf8-first", status: 200, ctype: "application/json",
+		body: "\xff" + strings.Repeat(" ", tokenResponseMaxBytes+1), contains: "exceeds 1048576 bytes",
+		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
+	{name: "r5-over-cap-invalid-utf8-near-cap", status: 200, ctype: "application/json",
+		body: strings.Repeat(" ", tokenResponseMaxBytes-5) + "\xff" + strings.Repeat(" ", 10), contains: "exceeds 1048576 bytes",
 		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
 	{name: "n-unreachable", nowhere: true,
 		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
@@ -139,6 +151,9 @@ func TestTokenResponseClassFollowsTheNineLanguageDecision(t *testing.T) {
 		for i, err := range []error{cc, ex, rf, in, ad, inj} {
 			if got := classKind(err); got != r.expected[i] {
 				wrong = append(wrong, fmt.Sprintf("%s × %s: %s (기대 %s) — %v", r.name, classCalls[i], got, r.expected[i], err))
+			}
+			if r.contains != "" && err != nil && !strings.Contains(err.Error(), r.contains) {
+				wrong = append(wrong, fmt.Sprintf("%s × %s: 메시지에 %q 가 없다 — %v", r.name, classCalls[i], r.contains, err))
 			}
 		}
 		_ = c.Close()
