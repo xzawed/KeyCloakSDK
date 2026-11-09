@@ -8,8 +8,9 @@ declare(strict_types=1);
  * ⚠️ 왜 Guzzle 핸들러가 아니라 프로세스인가: `KeycloakClient::create()`·`AdminClient` 는 Guzzle 을 스스로 만들어 핸들러를 넣을
  * 자리가 없다(`hostile-idp-router.php` 와 같은 이유).
  *
- * 상태는 `BG_STATE` 디렉터리의 `state.json` — `{"body_hex": 토큰 응답 본문의 hex}`. 토큰 엔드포인트는 그 바이트를 그대로 200 으로
- * 낸다(hex 인 까닭: 잘못된 UTF-8 바이트도 그대로 실어야 한다). 모든 요청은 라우팅 앞에서 `requests.log` 에
+ * 상태는 `BG_STATE` 디렉터리의 `state.json` — `{"body_hex": 토큰 응답 본문의 hex, "status"?: 상태, "type"?: Content-Type}`.
+ * 토큰 엔드포인트는 그 바이트를 그대로 낸다 — 상태 · 형식을 안 주면 200 · `application/json`(hex 인 까닭: 잘못된 UTF-8 바이트도
+ * 그대로 실어야 한다). 모든 요청은 라우팅 앞에서 `requests.log` 에
  * `[메서드, 경로, Authorization 값의 hex 또는 null]` 한 줄로 남는다(hex 인 까닭: 받은 바이트를 그대로 대조한다).
  */
 
@@ -36,7 +37,8 @@ if ($body === false) {
 }
 
 if (str_ends_with($path, '/protocol/openid-connect/token')) {
-    header('Content-Type: application/json');
+    http_response_code(is_int($state['status'] ?? null) ? $state['status'] : 200);
+    header('Content-Type: ' . (is_string($state['type'] ?? null) ? $state['type'] : 'application/json'));
     echo $body;
 } elseif ($path === '/admin/serverinfo') {
     // fschmtt 는 첫 자원 접근 전에 서버 버전을 묻는다 — 토큰 부여가 거기서 난다.

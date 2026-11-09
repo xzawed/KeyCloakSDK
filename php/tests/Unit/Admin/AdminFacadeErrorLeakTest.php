@@ -31,6 +31,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\RequestInterface;
 use Xzawed\Keycloak\Admin\AdminClient;
 use Xzawed\Keycloak\Exception\KeycloakAdminError;
+use Xzawed\Keycloak\Exception\KeycloakAuthError;
 use Xzawed\Keycloak\Exception\KeycloakConflictError;
 use Xzawed\Keycloak\Exception\KeycloakForbiddenError;
 use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
@@ -102,7 +103,7 @@ final class AdminFacadeErrorLeakTest extends TestCase
      * 메시지 꼬리] — 원인은 하위 예외 원본이 아니라 `SanitizedCause` 사본이다. `reach` 는 실패가 난 자리(공허성 검사). `id` 는
      * 경로로 가는 문자열 인자의 값(없으면 `id-1`).
      *
-     * @return array<string, array{class: class-string<\Throwable>, status: ?int, message: string, cause: array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string, id?: string}>
+     * @return array<string, array{class: class-string<\Throwable>, status: ?int, message: string, cause: ?array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string, id?: string}>
      */
     private static function modes(): array
     {
@@ -111,10 +112,13 @@ final class AdminFacadeErrorLeakTest extends TestCase
 
         return [
             // 오류 본문이 토큰·설명을 되울린다 — 메시지에는 상태와 코드 모양의 error 만.
-            'token 401 · error body echoes' => ['class' => KeycloakAdminError::class, 'status' => 401,
+            // 끝까지 온 부여 응답의 실패는 auth 계급이다(등록부 token-response-class-divergent) — 상태는 메시지에.
+            'token 401 · error body echoes' => ['class' => KeycloakAuthError::class, 'status' => null,
                 'message' => 'admin token request failed: HTTP 401 (invalid_client)',
                 'cause' => [ClientException::class, "HTTP 401 from POST $tokenUrl (response body withheld)", ''], 'reach' => 'token'],
-            // 200 인데 JSON 이 아니다 — fschmtt 의 json_decode 가 본문을 인자로 쥔 채 던진다.
+            // 200 인데 JSON 이 아니다 — 이 하네스에는 `AdminClient` 의 미들웨어가 없어(핸들러만 가짜인 fschmtt) fschmtt 의 json_decode 가
+            // 본문을 인자로 쥔 채 던지고 그물이 받는다. ⚠️ 실제 스택에서는 그랜트 응답 미들웨어가 먼저 거부해 auth 계급이다
+            // (`AdminBearerGrammarTest` 의 '200 HTML typed as JSON'). 여기서 재는 것은 그물이 새지 않는가다.
             'token 200 · non-JSON body' => ['class' => KeycloakAdminError::class, 'status' => null,
                 'message' => 'admin request failed unexpectedly',
                 'cause' => [\JsonException::class, $withheld, ''], 'reach' => 'token'],
@@ -362,7 +366,7 @@ final class AdminFacadeErrorLeakTest extends TestCase
      * 한 칸(메서드 × 실패 방식)의 위반 — 비면 통과.
      *
      * @param array{0: class-string, 1: string} $target
-     * @param array{class: class-string<\Throwable>, status: ?int, message: string, cause: array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string, id?: string} $want
+     * @param array{class: class-string<\Throwable>, status: ?int, message: string, cause: ?array{0: class-string<\Throwable>, 1: string, 2: string}, reach: string, id?: string} $want
      * @return list<string>
      */
     private static function cell(array $target, string $mode, array $want): array
@@ -402,6 +406,13 @@ final class AdminFacadeErrorLeakTest extends TestCase
             }
         }
         $cause = $e->getPrevious();
+        if ($want['cause'] === null) {
+            if ($cause !== null) {
+                $why[] = '원인이 없어야 한다 — ' . $cause::class;
+            }
+
+            return [...$why, ...self::printed($e)];
+        }
         [$origin, $head, $tail] = $want['cause'];
         if (!$cause instanceof SanitizedCause || $cause->originalClass !== $origin) {
             $why[] = '첫 원인이 ' . ($cause === null ? 'null' : $cause::class) . " — 기대 $origin 의 SanitizedCause";

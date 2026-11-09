@@ -15,7 +15,6 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Xzawed\Keycloak\ClientCredentialsTokenProvider;
-use Xzawed\Keycloak\Exception\KeycloakAdminError;
 use Xzawed\Keycloak\Exception\KeycloakAuthError;
 use Xzawed\Keycloak\Internal\BearerToken;
 use Xzawed\Keycloak\KeycloakClient;
@@ -35,7 +34,8 @@ use Xzawed\Keycloak\OidcEndpoints;
  * 캐시를 가지므로 다듬은 값을 캐시한다.
  *
  * ⚠️ fschmtt 는 access token 을 lcobucci 로 **JWT 로 파싱**한다 — 점 둘로 가른 base64url 세 조각이 아니면(plain·pad) 문법과 무관하게
- * 거기서 실패한다(`admin request failed unexpectedly`). 그래서 다듬기·가운데 공백 칸을 fschmtt 가 받아들일 JWT 에도 다시 잰다(`jwt-*`).
+ * 거기서 실패한다(auth 계급 · `the access token is not a JWT`). 그래서 다듬기·가운데 공백 칸을 fschmtt 가 받아들일 JWT 에도 다시
+ * 잰다(`jwt-*`). 잘못된 UTF-8 은 문법보다 앞에서 본문째 거부된다(`json` — 엄격한 해석).
  *
  * 수정 전 실측(2026-10-29, 이 파일을 수정 전 코드에서 돌림): sodium 이 있으면 표준 표의 거부 칸과 `jwt-*` 는 전부 lcobucci 가 파싱에서
  * 거부했다 — 파사드는 `admin request failed unexpectedly`(원인 `InvalidTokenStructure`·`CannotDecodeContent`, 잘못된 UTF-8 은 fschmtt
@@ -48,8 +48,12 @@ final class AdminBearerGrammarTest extends TestCase
 {
     private const GRANT_REFUSED = 'admin token request failed: the access token is not a valid RFC 6750 bearer token (b64token)';
     private const PROVIDER_REFUSED = 'client-credentials failed: the access token is not a valid RFC 6750 bearer token (b64token)';
-    /** fschmtt(lcobucci)가 JWT 가 아닌 access token 을 거부할 때 오늘의 파사드 오류 — 문법과 무관하다. */
-    private const NOT_A_JWT = 'admin request failed unexpectedly';
+    /** fschmtt 의 파서(lcobucci)가 읽지 못하는 access token — 부여 미들웨어가 같은 파서로 먼저 거부한다. 문법과 무관하다. */
+    private const NOT_A_JWT = 'admin token request failed: the access token cannot be read as a JWT';
+    private const REFRESH_NOT_A_JWT = 'admin token request failed: the refresh token cannot be read as a JWT';
+    /** 잘못된 UTF-8 을 담은 토큰 응답 — 엄격한 해석이 본문째 거부한다(RFC 8259 §8.1). */
+    private const GRANT_NOT_JSON = 'admin token request failed: the token response is not JSON';
+    private const GRANT_NO_TOKEN = 'admin token request failed: the token response has no access_token';
     private const TOKEN_SUFFIX = '/protocol/openid-connect/token';
 
     private static string $dir = '';
@@ -157,7 +161,7 @@ final class AdminBearerGrammarTest extends TestCase
             'nbsp' => ["abc\u{00A0}", 'grammar', null],
             'ideographic' => ["\u{3000}abc", 'grammar', null],
             'vt' => ["abc\x0B", 'grammar', null],
-            'invalid-utf8' => ["abc\xFF", 'grammar', null],
+            'invalid-utf8' => ["abc\xFF", 'json', null],
             'jwt-lf' => [$jwt . "\n", 'grammar', $jwt],
             'jwt-crlf' => [$jwt . "\r\n", 'grammar', $jwt],
             'jwt-lead-tab' => [" \t" . $jwt . "\t ", 'grammar', $jwt],
@@ -212,13 +216,135 @@ final class AdminBearerGrammarTest extends TestCase
             return;
         }
         foreach (['search' => $first, 'search again' => $second, 'roles update' => $rename] as $call => $e) {
-            self::assertInstanceOf(KeycloakAdminError::class, $e, "$id $call: " . self::describe($e));
-            self::assertSame($expect === 'grammar' ? self::GRANT_REFUSED : self::NOT_A_JWT, $e->getMessage(), "$id $call");
-            self::assertNull($e->getStatusCode(), "$id $call");
+            // 끝까지 온 쓸 수 없는 부여는 auth 계급이다 — admin 요청은 하나도 나가지 않았다(등록부 token-response-class-divergent).
+            // `KeycloakAuthError` 는 final 이라 instanceOf 가 정확한 클래스 검사다.
+            self::assertInstanceOf(KeycloakAuthError::class, $e, "$id $call: " . self::describe($e));
+            self::assertSame(self::refusal($expect), $e->getMessage(), "$id $call");
+            self::assertNull($e->oauthError, "$id $call");
             self::assertQuotesNoToken($id, $e, true);
         }
         self::assertSame(2, $grants, "$id: 거부한 부여는 캐시되지 않는다 — 다음 호출이 IdP 에 다시 묻는다");
         self::assertSame([], $sent, "$id: admin 요청은 나가지 않는다");
+    }
+
+    /**
+     * admin 의 자기 토큰 부여(S5)가 **끝까지 온 응답**으로 실패하는 칸 — 상태가 있든(503 · 400 · 404 · 403 · 409 · 401) 쓸 수 없는
+     * 2xx 든 auth 계급이다(등록부 `token-response-class-divergent` · auth 클라이언트의 같은 칸과 같다). 상태는 메시지에, OAuth 코드는
+     * `oauthError` 에 싣는다.
+     *
+     * ⚠️ 왜 admin 계급이 아닌가: 상태로 형을 고르면 토큰 엔드포인트의 404 가 `KeycloakNotFoundError` 가 되어, 토큰을 못 받은
+     * `users()->delete()` 가 admin 요청 0 번에 「이미 없다」로 읽혔다(실측 2026-11-10 — go #952 가 고친 것과 같은 위험). 403 · 409 도
+     * 같다(Forbidden · Conflict).
+     *
+     * @return array<string, array{int, string, string, string, ?string}> [상태, Content-Type, 본문, 메시지, oauthError]
+     */
+    public static function grantResponses(): array
+    {
+        $head = 'admin token request failed: HTTP ';
+
+        return [
+            '503 HTML' => [503, 'text/html', '<html>Service Unavailable</html>', $head . '503', null],
+            '400 HTML' => [400, 'text/html', '<html>Bad Request</html>', $head . '400', null],
+            '400 HTML typed as JSON' => [400, 'application/json', '<html>Bad Request</html>', $head . '400', null],
+            '401 invalid_client' => [401, 'application/json', '{"error":"invalid_client"}', $head . '401 (invalid_client)', 'invalid_client'],
+            '403 access_denied' => [403, 'application/json', '{"error":"access_denied"}', $head . '403 (access_denied)', 'access_denied'],
+            '404 realm missing' => [404, 'application/json', '{"error":"Realm does not exist"}', $head . '404', null],
+            '409 conflict' => [409, 'application/json', '{"error":"conflict"}', $head . '409 (conflict)', 'conflict'],
+            '200 HTML' => [200, 'text/html', '<html>login</html>', self::GRANT_NOT_JSON, null],
+            '200 HTML typed as JSON' => [200, 'application/json', '<html>login</html>', self::GRANT_NOT_JSON, null],
+            '200 without access_token' => [200, 'application/json', '{"token_type":"Bearer","expires_in":300}', self::GRANT_NO_TOKEN, null],
+            '200 access_token not a string' => [200, 'application/json', '{"access_token":7,"token_type":"Bearer"}', self::GRANT_NO_TOKEN, null],
+            '200 array, not an object' => [200, 'application/json', '["access_token"]', self::GRANT_NO_TOKEN, null],
+            // 잘못된 UTF-8 이 토큰 밖에 있어도 본문째 거부한다 — 관대하게 풀면 쓸 수 없는 응답을 성공으로 넘긴다.
+            '200 invalid UTF-8 outside the token' => [200, 'application/json', 'JWT-WITH-BAD-SCOPE', self::GRANT_NOT_JSON, null],
+            // 리다이렉트는 따라가지 않고 http_errors 는 400 미만을 통과시킨다 — 수정 전 fschmtt 는 토큰을 실은 302 를 받아들였고, 빈
+            // 302 는 분류되지 않은 `JsonException`(그물 `admin request failed unexpectedly`)이었다(독립 레그 실측).
+            '302 empty' => [302, 'text/html', '', $head . '302', null],
+            '302 carrying a token' => [302, 'application/json', 'GOOD-TOKEN', $head . '302', null],
+            // fschmtt 는 access token 을 저장한 **뒤** 참인 refresh_token 을 푼다 — 수정 전 거기서 실패하면 그 access token 이 남아 다음
+            // 호출이 부여 없이 나갔고, 메시지는 access token 을 탓했다(독립 레그 · Grok 레그가 따로 찾음).
+            '200 refresh_token not a JWT' => [200, 'application/json', 'OPAQUE-REFRESH', self::REFRESH_NOT_A_JWT, null],
+            '200 refresh_token a number' => [200, 'application/json', 'NUMBER-REFRESH', self::REFRESH_NOT_A_JWT, null],
+            // 점 둘이지만 base64url JSON 이 아니다(lcobucci `CannotDecodeContent`) · 클레임 형식이 틀렸다(`exp` null — lcobucci 의 `\TypeError`).
+            '200 access token a.b.c' => [200, 'application/json', 'ABC-ACCESS', self::NOT_A_JWT, null],
+            '200 access token with a null exp' => [200, 'application/json', 'NULL-EXP-ACCESS', self::NOT_A_JWT, null],
+        ];
+    }
+
+    /**
+     * 칸 본문의 자리표시를 실제 본문으로 — 토큰은 시험 인자로 넘기지 않는다(트레이스 인자에 실린다 — 클래스 docblock).
+     */
+    private static function grantBody(string $body): string
+    {
+        $jwt = self::jwt();
+        $b64 = static fn (string $v): string => rtrim(strtr(base64_encode($v), '+/', '-_'), '=');
+        $nullExp = $b64('{"alg":"HS256","typ":"JWT"}') . '.' . $b64('{"sub":"svc","exp":null}') . '.' . $b64('sig');
+
+        return match ($body) {
+            'JWT-WITH-BAD-SCOPE' => '{"access_token":"' . $jwt . '","token_type":"Bearer","scope":"a' . "\xFF" . '"}',
+            'GOOD-TOKEN' => '{"access_token":"' . $jwt . '","token_type":"Bearer","expires_in":300}',
+            'OPAQUE-REFRESH' => '{"access_token":"' . $jwt . '","token_type":"Bearer","refresh_token":"opaque-refresh-value"}',
+            'NUMBER-REFRESH' => '{"access_token":"' . $jwt . '","token_type":"Bearer","refresh_token":12345}',
+            'ABC-ACCESS' => '{"access_token":"a.b.c","token_type":"Bearer"}',
+            'NULL-EXP-ACCESS' => '{"access_token":"' . $nullExp . '","token_type":"Bearer"}',
+            default => $body,
+        };
+    }
+
+    #[DataProvider('grantResponses')]
+    public function testAGrantThatArrivedButIsUnusableIsAnAuthErrorAndSendsNoAdminRequest(
+        int $status,
+        string $type,
+        string $body,
+        string $message,
+        ?string $code,
+    ): void {
+        self::serveRaw($status, $type, self::grantBody($body));
+        $admin = KeycloakClient::create(self::config())->admin();
+        $first = self::thrown(static fn (): int => count($admin->users()->search()));
+        // 같은 클라이언트의 두 번째 호출 — 거부한 부여에서 아무것도 저장되지 않아 IdP 에 다시 묻고 같은 이유로 실패한다.
+        $second = self::thrown(static fn (): int => count($admin->users()->search()));
+
+        foreach (['first' => $first, 'second' => $second] as $call => $e) {
+            self::assertInstanceOf(KeycloakAuthError::class, $e, "$call: " . self::describe($e));   // final — 정확한 클래스다
+            self::assertSame($message, $e->getMessage(), $call);
+            self::assertSame($code, $e->oauthError, $call);
+        }
+        self::assertSame(2, self::tokenRequests(), '호출마다 부여가 한 번씩 나갔다 — 거부한 부여는 저장되지 않는다');
+        self::assertSame([], self::adminRequests(), 'admin 요청은 나가지 않는다 — 토큰 엔드포인트의 상태가 자원의 상태로 읽히면 안 된다');
+    }
+
+    /**
+     * fschmtt 는 참인 refresh_token 만 푼다(`if ($tokens['refresh_token'])`) — 거짓인 값은 건너뛰고 그 부여를 쓴다. 미들웨어도 같은
+     * 조건이어야 한다: `!== null` 로 넓혀도 다른 시험이 다 통과했는데 그것은 쓸 수 있는 부여를 거부한다(독립 레그의 변이).
+     *
+     * @return array<string, array{string}> refresh_token 자리의 JSON 리터럴
+     */
+    public static function falsyRefreshTokens(): array
+    {
+        return ['empty string' => ['""'], 'string zero' => ['"0"'], 'null' => ['null'], 'false' => ['false'], 'zero' => ['0'], 'empty array' => ['[]']];
+    }
+
+    #[DataProvider('falsyRefreshTokens')]
+    public function testAFalsyRefreshTokenIsSkippedAsFschmttSkipsIt(string $literal): void
+    {
+        self::serveRaw(200, 'application/json', '{"access_token":"' . self::jwt() . '","token_type":"Bearer","expires_in":300,"refresh_token":' . $literal . '}');
+        $admin = KeycloakClient::create(self::config())->admin();
+        $e = self::thrown(static fn (): int => count($admin->users()->search()));
+
+        self::assertNull($e, self::describe($e));
+        self::assertSame(1, self::tokenRequests(), '부여는 한 번 — 받아들여 저장했다');
+        self::assertNotSame([], self::adminRequests(), 'admin 요청이 나갔다');
+    }
+
+    /** 거부 종류의 메시지 — `grammar`(문법 밖) · `json`(JSON 아님) · 그 밖은 `jwt`(fschmtt 가 JWT 가 아니라 거부). */
+    private static function refusal(string $expect): string
+    {
+        return match ($expect) {
+            'grammar' => self::GRANT_REFUSED,
+            'json' => self::GRANT_NOT_JSON,
+            default => self::NOT_A_JWT,
+        };
     }
 
     /**
@@ -245,9 +371,9 @@ final class AdminBearerGrammarTest extends TestCase
         }
         self::assertInstanceOf(VersionDetectionException::class, $e, "$id: " . self::describe($e));
         $cause = $e->getPrevious();
-        if ($expect === 'grammar') {
+        if (\in_array($expect, ['grammar', 'json', 'jwt'], true)) {   // 셋 다 부여 미들웨어의 거부다
             self::assertInstanceOf(RequestException::class, $cause, "$id: " . self::describe($cause));
-            self::assertSame(self::GRANT_REFUSED, $cause->getMessage(), $id);
+            self::assertSame(self::refusal($expect), $cause->getMessage(), $id);
             self::assertFalse($cause->hasResponse(), "$id: 받은 본문(토큰을 담는다)을 달지 않는다");
             self::assertNull($cause->getPrevious(), $id);
         }
@@ -319,6 +445,13 @@ final class AdminBearerGrammarTest extends TestCase
     private static function serve(string $id): void
     {
         file_put_contents(self::$dir . '/state.json', json_encode(['body_hex' => bin2hex($id === '' ? '{}' : self::body($id))], JSON_THROW_ON_ERROR));
+        @unlink(self::$dir . '/requests.log');
+    }
+
+    /** 토큰 엔드포인트가 이 상태 · 형식 · 본문 바이트를 그대로 내게 하고 요청 기록을 비운다. */
+    private static function serveRaw(int $status, string $type, string $body): void
+    {
+        file_put_contents(self::$dir . '/state.json', json_encode(['body_hex' => bin2hex($body), 'status' => $status, 'type' => $type], JSON_THROW_ON_ERROR));
         @unlink(self::$dir . '/requests.log');
     }
 

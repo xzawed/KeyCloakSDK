@@ -560,7 +560,7 @@ final class TokenResponseCapTest extends TestCase
 
     /**
      * 오류 상태(400)의 본문도 상한을 지난다 — league 는 그 본문을 읽어 OAuth 오류를 만들고, admin 은 그 본문에서 오류 코드를 찾는다.
-     * 상한 안이면 그 레인이 오늘 내는 오류 그대로(`KeycloakAuthError` · admin 은 상태를 지킨 `KeycloakAdminError`), 넘으면 상한 오류다.
+     * 상한 안이면 그 레인이 오늘 내는 오류 그대로(`KeycloakAuthError` — admin 의 토큰 부여도, 상태는 메시지에), 넘으면 상한 오류다.
      */
     #[DataProvider('lanes')]
     public function testAnErrorStatusBodyIsCappedToo(string $lane, string $transport): void
@@ -576,8 +576,9 @@ final class TokenResponseCapTest extends TestCase
                 self::assertSame(self::OVER[$lane], $result->getMessage(), "$lane $size");
                 self::assertLessThan(self::BOUND_OVER, $peak, "$lane $size: 거부하며 zend 메모리를 $peak 바이트 잡았다");
             } elseif ($lane === 'admin') {
-                self::assertInstanceOf(KeycloakAdminError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
-                self::assertSame(400, $result->getStatusCode());
+                // admin 의 토큰 부여가 끝까지 온 400 — auth 계급이다(등록부 token-response-class-divergent). 상태는 메시지에.
+                self::assertSame(KeycloakAuthError::class, $result::class, "$lane $size: " . $result->getMessage());
+                self::assertSame('admin token request failed: HTTP 400', $result->getMessage(), "$lane $size");
             } else {
                 self::assertInstanceOf(KeycloakAuthError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
                 if ($lane === 'logout') {

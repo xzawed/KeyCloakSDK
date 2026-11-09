@@ -10,8 +10,10 @@ use Fschmtt\Keycloak\Exception\BuilderException;
 use Fschmtt\Keycloak\Exception\SerializerException;
 use GuzzleHttp\Exception\{ClientException, ConnectException, RequestException, ServerException};
 use GuzzleHttp\Psr7\{FnStream, Request, Response};
+use Lcobucci\JWT\Encoding\CannotDecodeContent;
+use Lcobucci\JWT\Token\InvalidTokenStructure;
 use Xzawed\Keycloak\Admin\ErrorTranslation;
-use Xzawed\Keycloak\Exception\{KeycloakNotFoundError, KeycloakConflictError, KeycloakForbiddenError, KeycloakAdminError, KeycloakConfigError, KeycloakTransportError, SanitizedCause};
+use Xzawed\Keycloak\Exception\{KeycloakNotFoundError, KeycloakConflictError, KeycloakForbiddenError, KeycloakAdminError, KeycloakAuthError, KeycloakConfigError, KeycloakTransportError, SanitizedCause};
 
 /**
  * 분기별 변환 — 타입·상태·메시지·원인의 모양. 보낸 비밀(client secret·Bearer·representation)이 트레이스 인자로 새지 않는지는
@@ -21,6 +23,7 @@ final class ErrorTranslationTest extends TestCase
 {
     private const TOKEN_URL = 'http://kc.test/realms/r/protocol/openid-connect/token';
     private const ADMIN_URL = 'http://kc.test/admin/realms/r/users/u1';
+    private const GRANT_NOT_A_JWT = 'admin token request failed: a token in the token response cannot be read as a JWT';
 
     private function clientEx(int $status): ClientException
     {
@@ -149,8 +152,15 @@ final class ErrorTranslationTest extends TestCase
             ? new ServerException('Guzzle message ' . $body, $req, $res)
             : new ClientException('Guzzle message ' . $body, $req, $res))));
 
-        self::assertInstanceOf(KeycloakAdminError::class, $e);
-        self::assertSame($status, $e->getStatusCode());
+        if ($method === 'POST') {
+            // admin 의 토큰 부여 — 끝까지 온 응답의 실패는 상태와 무관하게 auth 계급이다(등록부 token-response-class-divergent).
+            // 상태는 메시지에, 코드 모양의 OAuth `error` 는 메시지와 `oauthError` 에 같이 실린다.
+            self::assertSame(KeycloakAuthError::class, $e::class);
+            self::assertSame(preg_match('/ \(([a-z_]+)\)$/', $message, $m) === 1 ? $m[1] : null, $e->oauthError);
+        } else {
+            self::assertInstanceOf(KeycloakAdminError::class, $e);
+            self::assertSame($status, $e->getStatusCode());
+        }
         self::assertSame($message, $e->getMessage());
         $cause = $e->getPrevious();
         self::assertInstanceOf(SanitizedCause::class, $cause);
@@ -190,8 +200,9 @@ final class ErrorTranslationTest extends TestCase
         $res = new Response(400, [], $body);
         $e = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new ClientException('x', new Request('POST', self::TOKEN_URL), $res)));
 
-        self::assertSame(KeycloakAdminError::class, $e::class);
+        self::assertSame(KeycloakAuthError::class, $e::class);   // 끝까지 온 부여 응답 — auth 계급(코드는 못 읽어 없다)
         self::assertSame('admin token request failed: HTTP 400', $e->getMessage());
+        self::assertNull($e->oauthError);
     }
 
     /**
@@ -213,6 +224,10 @@ final class ErrorTranslationTest extends TestCase
             // 분류 밖 예외의 메시지는 옮기지 않는다 — 감사하지 않은 라이브러리(fschmtt·lcobucci·json_decode)의 메시지다.
             'unclassified Throwable' => [new \RuntimeException('ETmsg00-quoted-token'), KeycloakAdminError::class, 'admin request failed unexpectedly'],
             'TypeError' => [new \TypeError('Parser::parse(): Argument #1 must be of type string, array given'), KeycloakAdminError::class, 'admin request failed unexpectedly'],
+            // fschmtt 가 부여의 토큰을 lcobucci 로 풀다 실패한 안전망 — 부여 미들웨어가 같은 파서로 먼저 거르므로 실제 스택에서는 닿지
+            // 않는다(그 칸은 `AdminBearerGrammarTest`). lcobucci 의 예외 계열 전부여야 한다 — 하나만 잡으면 나머지가 그물로 샌다.
+            'lcobucci InvalidTokenStructure' => [InvalidTokenStructure::missingOrNotEnoughSeparators(), KeycloakAuthError::class, self::GRANT_NOT_A_JWT],
+            'lcobucci CannotDecodeContent' => [CannotDecodeContent::invalidBase64String(), KeycloakAuthError::class, self::GRANT_NOT_A_JWT],
         ];
     }
 
