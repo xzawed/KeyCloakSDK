@@ -1,22 +1,24 @@
 #!/usr/bin/env node
-// check-hp-attest-wiring.mjs — 적대 경로 행렬 attest 의 **배선**을 정적으로 대조한다: 레인이 attest 단계를 조건 없이
-// 돌고, 행렬·attest 가 읽는 공용 파일만 바꾼 PR 에서도 그 레인이 생기는가.
+// check-hp-attest-wiring.mjs — 레인이 **반드시 돌아야 하는 증명 단계 둘**의 배선을 정적으로 대조한다: 적대 경로 행렬
+// attest(`check-hp-attest.mjs`)와 보안 카나리아 실행 대조(`check-canaries-ran.mjs`, #996). 레인이 두 단계를 조건 없이
+// 돌고, 그 둘과 가드가 읽는 공용 파일만 바꾼 PR 에서도 그 레인이 생기는가.
 //
-// 왜: `check-hp-attest.mjs` 는 레인 단계가 **돌 때만** 증명한다 — 그 단계를 지우거나 `if:`·`continue-on-error` 로
-// 무르면 아무것도 울지 않았다(등록부 `guard-detection-surface-hand-narrowed` 의 남은 칸). 그리고 아홉 행렬의 W1 이
-// 런타임에 읽는 `scripts/test/test-security-defaults.sh` 가 레인 `paths:` 밖이라, 그 스크립트만 바꾼 PR 은 언어 CI 를
-// 만들지 않았다 — 2026-09-01 이후 그 파일을 고친 `main` 커밋 36 중 18 이 언어 디렉터리를 안 건드렸다
-// (`w1-shared-script-drift-weekly-only`). 행렬이 런타임에 읽는 루트 파일은 그 하나다(다른 루트 경로는 주석 속 인용).
+// 왜: 두 검사는 레인 단계가 **돌 때만** 증명한다 — 그 단계를 지우거나 `if:`·`continue-on-error` 로 무르면 아무것도
+// 울지 않았다(등록부 `guard-detection-surface-hand-narrowed` 의 남은 칸 — attest 는 #934, 카나리아는 이 판). 그리고 아홉
+// 행렬의 W1 과 카나리아 검사가 런타임에 읽는 `scripts/test/test-security-defaults.sh` 가 레인 `paths:` 밖이라, 그 스크립트만
+// 바꾼 PR 은 언어 CI 를 만들지 않았다 — 2026-09-01 이후 그 파일을 고친 `main` 커밋 36 중 18 이 언어 디렉터리를 안
+// 건드렸다(`w1-shared-script-drift-weekly-only`). 런타임에 읽는 루트 파일은 그 하나다(다른 루트 경로는 주석 속 인용).
 //
-// 모델 — 언어 집합은 트리에서 파생한다(`check-known-gaps.mjs` 의 `deriveLangs` = `df_tree_langs`). 언어마다:
-//  (1) `.github/workflows/*.yml|yaml` 의 주석 아닌 줄에서 `node … scripts/check-hp-attest.mjs … --lang <언어>` 를 도는
-//      단계가 하나 이상 있다.
-//  (2) 그 단계와 그 잡에 `if:` · `continue-on-error:` 키가 없다 — 조건부 attest 는 증명이 아니다. 그리고 단계의 종료코드가
-//      곧 attest 의 것이다: 줄 머리에서 시작하고(앞 명령 · `!` 없음) 그 줄에 셸 연산자가 없고 그 run 의 마지막 명령이다.
+// 모델 — 언어 집합은 트리에서 파생한다(`check-known-gaps.mjs` 의 `deriveLangs` = `df_tree_langs`). 단계 종류(STEPS)마다,
+// 언어마다:
+//  (1) `.github/workflows/*.yml|yaml` 의 주석 아닌 줄에서 `node … <그 스크립트> … --lang <언어>` 를 도는 단계가 하나
+//      이상 있다(카나리아 단계는 `--report` 도 있어야 한다 — 없으면 그 검사가 실행마다 판정 불가다).
+//  (2) 그 단계와 그 잡에 `if:` · `continue-on-error:` 키가 없다 — 조건부 증명은 증명이 아니다. 그리고 단계의 종료코드가
+//      곧 그 검사의 것이다: 줄 머리에서 시작하고(앞 명령 · `!` 없음) 그 줄에 셸 연산자가 없고 그 run 의 마지막 명령이다.
 //  (3) 그 워크플로의 `push` · `pull_request` 트리거가 `<언어>/**` 와 `SHARED` 를 받는다(`paths:` 가 없으면 전부 받는다).
 //      `branches` 가 있으면 main 을, `pull_request.types` 가 있으면 opened · synchronize · reopened 를 담고, push 가 태그에만
 //      걸리지 않는다 — 경로만 보면 PR 에서 아예 안 도는 트리거가 「받는다」로 읽힌다(Grok 레그).
-//  그리고 attest 가 부르는 언어가 파생 집합 밖이면(철자 · 지운 언어) FAIL 이다.
+//  그리고 단계가 부르는 언어가 파생 집합 밖이면(철자 · 지운 언어) FAIL 이다.
 // ⚠️ 등록부는 SHARED 가 아니다. attest 는 known gap id 가 있을 때만 등록부를 읽고(오늘 아홉 다 빈 목록 —
 //    `check-known-gaps.mjs` 실측), 리터럴 id 는 모든 PR 의 `known-gaps-join` 이 열림/닫힘을 대조하며, 리터럴 없는 비지
 //    않은 목록은 같은 정적 대조가 판정 불가로 막는다. 등록부를 걸면 등록부 PR 마다 아홉 레인이 돈다.
@@ -31,7 +33,14 @@ import { fileURLToPath } from 'node:url'
 import { deriveLangs } from './check-known-gaps.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-export const SHARED = ['scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh']
+export const SHARED = ['scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh']
+// 레인이 반드시 돌아야 하는 증명 단계 — 종류 이름은 메시지에 그대로 나간다(attest 쪽 문구는 #934 그대로다).
+const stepRe = (script) => new RegExp(`(^|[\\s;&|(])node\\s+(?:\\S+\\s+)*?(?:\\.{1,2}\\/)*${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s"']|$)`)
+export const STEPS = [
+  { kind: 'attest', script: 'scripts/check-hp-attest.mjs', re: stepRe('scripts/check-hp-attest.mjs'), need: [] },
+  // `--report` 없이 부르면 그 검사는 실행마다 판정 불가(2)다 — 배선이 증명을 낳지 못한다.
+  { kind: '카나리아', script: 'scripts/check-canaries-ran.mjs', re: stepRe('scripts/check-canaries-ran.mjs'), need: [['--report', /--report(?:=|\s)/]] },
+]
 const TRIGGERS = ['push', 'pull_request']
 const GUARD_KEYS = ['if', 'continue-on-error']
 // `pull_request` 의 기본 활동 — `types:` 를 적으면 이 셋을 다 담아야 PR 을 열고 밀 때 레인이 돈다.
@@ -138,18 +147,18 @@ export function triggerSpec(lines, trig) {
   return { paths, types: list('types'), branches: list('branches'), tags: list('tags') }
 }
 
-// attest 를 부르는 단계들 — {line, langs, stepKeys, job, jobKeys}.
-const ATTEST = /(^|[\s;&|(])node\s+(?:\S+\s+)*?(?:\.{1,2}\/)*scripts\/check-hp-attest\.mjs(?=[\s"']|$)/
-export function attestSteps(lines) {
+// 그 종류의 증명 단계들 — {line, langs, stepKeys, job, jobKeys, problems}.
+export function laneSteps(lines, step) {
+  const K = step.kind
   const body = lines.map(stripComment)
   const jobsAt = body.findIndex((l) => /^jobs\s*:\s*$/.test(l))
   const out = []
   for (let k = 0; k < body.length; k++) {
-    if (!ATTEST.test(body[k])) continue
+    if (!step.re.test(body[k])) continue
     const lang = /--lang(?:=|\s+)(["']?)([^\s"']+)\1/.exec(body[k])
-    if (!lang) throw new Unreadable(`${k + 1}행: attest 호출의 \`--lang\` 을 읽지 못했다`)
+    if (!lang) throw new Unreadable(`${k + 1}행: ${K} 호출의 \`--lang\` 을 읽지 못했다`)
     if (lang[2].includes('$')) throw new Unreadable(`${k + 1}행: \`--lang\` 이 변수다 — 정적으로 대조할 수 없다`)
-    if (jobsAt < 0 || jobsAt > k) throw new Unreadable(`${k + 1}행: attest 호출이 \`jobs:\` 밖에 있다`)
+    if (jobsAt < 0 || jobsAt > k) throw new Unreadable(`${k + 1}행: ${K} 호출이 \`jobs:\` 밖에 있다`)
     // 단계 머리 — 이 줄이 `- ` 이면 이 줄, 아니면 더 얕은 들여쓰기의 가장 가까운 `- ` 줄.
     let s = -1
     for (let j = k; j > jobsAt; j--) {
@@ -158,7 +167,7 @@ export function attestSteps(lines) {
         break
       }
     }
-    if (s < 0) throw new Unreadable(`${k + 1}행: attest 호출을 담은 단계(\`- \`)를 찾지 못했다`)
+    if (s < 0) throw new Unreadable(`${k + 1}행: ${K} 호출을 담은 단계(\`- \`)를 찾지 못했다`)
     const si = indentOf(body[s])
     const stepKeys = []
     const first = /^\s*-\s+([A-Za-z_][\w-]*)\s*:/.exec(body[s])
@@ -178,7 +187,7 @@ export function attestSteps(lines) {
         break
       }
     }
-    if (jl < 0) throw new Unreadable(`${k + 1}행: attest 단계를 담은 잡을 찾지 못했다`)
+    if (jl < 0) throw new Unreadable(`${k + 1}행: ${K} 단계를 담은 잡을 찾지 못했다`)
     const jobKeys = []
     for (let j = jl + 1; j < body.length; j++) {
       if (body[j].trim() === '') continue
@@ -186,12 +195,14 @@ export function attestSteps(lines) {
       const m = indentOf(body[j]) === ji + 2 && KEY.exec(body[j].trim())
       if (m) jobKeys.push(unq(m[1]))
     }
-    // 종료코드 — 단계의 종료코드가 곧 attest 의 것이어야 한다(`|| true` 가 실패를 삼킨다 — Grok 레그). 그래서 attest 는
+    // 종료코드 — 단계의 종료코드가 곧 그 검사의 것이어야 한다(`|| true` 가 실패를 삼킨다 — Grok 레그). 그래서 그 호출은
     // 줄 머리에서 시작하고(앞 명령 · `!` 없음), 그 줄에 셸 연산자가 없고, 블록 스칼라라면 그 run 의 마지막 명령이다.
     const problems = []
     const cmd = body[k].trim().replace(/^-\s+/, '').replace(/^run\s*:\s*/, '')
-    if (!/^node\s/.test(cmd)) problems.push('attest 명령이 줄 머리에서 시작하지 않는다(앞 명령 · `!`)')
-    if (/[;&|]/.test(cmd.replace(/"[^"]*"|'[^']*'/g, ''))) problems.push('attest 줄에 셸 연산자(; & |)가 있다 — 단계의 종료코드가 바뀐다')
+    if (!/^node\s/.test(cmd)) problems.push(`${K} 명령이 줄 머리에서 시작하지 않는다(앞 명령 · \`!\`)`)
+    if (/[;&|]/.test(cmd.replace(/"[^"]*"|'[^']*'/g, ''))) problems.push(`${K} 줄에 셸 연산자(; & |)가 있다 — 단계의 종료코드가 바뀐다`)
+    for (const [flag, re] of step.need)
+      if (!re.test(body[k])) problems.push(`${K} 호출에 \`${flag}\` 가 없다 — 그 검사가 실행마다 판정 불가다`)
     if (!/^(-\s+)?run\s*:/.test(body[k].trim())) {
       let r = -1
       for (let j = k - 1; j >= s; j--) {
@@ -200,10 +211,10 @@ export function attestSteps(lines) {
           break
         }
       }
-      if (r < 0) throw new Unreadable(`${k + 1}행: attest 호출이 어느 \`run:\` 블록에 있는지 읽지 못했다`)
+      if (r < 0) throw new Unreadable(`${k + 1}행: ${K} 호출이 어느 \`run:\` 블록에 있는지 읽지 못했다`)
       for (let j = k + 1; j < body.length; j++) {
         if (body[j].trim() === '') continue
-        if (indentOf(body[j]) > indentOf(body[r])) problems.push('attest 가 그 run 의 마지막 명령이 아니다 — 단계의 종료코드가 뒤 명령의 것이 된다')
+        if (indentOf(body[j]) > indentOf(body[r])) problems.push(`${K} 가 그 run 의 마지막 명령이 아니다 — 단계의 종료코드가 뒤 명령의 것이 된다`)
         break
       }
     }
@@ -211,6 +222,8 @@ export function attestSteps(lines) {
   }
   return out
 }
+// #934 의 이름 — attest 단계만.
+export const attestSteps = (lines) => laneSteps(lines, STEPS[0])
 
 function main() {
   const root = resolve(process.argv[2] ?? REPO)
@@ -230,37 +243,38 @@ function main() {
   } catch (e) {
     unusable.push(`${dir} 를 읽지 못했다: ${e.message}`)
   }
-  const byLang = new Map(langs.map((l) => [l, []]))
-  let nSteps = 0
+  const byKind = new Map(STEPS.map((s) => [s.kind, new Map(langs.map((l) => [l, []]))]))
+  const nSteps = new Map(STEPS.map((s) => [s.kind, 0]))
   for (const f of files) {
     const lines = readFileSync(join(dir, f), 'utf8').split(/\r?\n/)
-    let steps
+    const found = []
     const trig = {}
     try {
-      steps = attestSteps(lines)
-      if (steps.length) for (const t of TRIGGERS) trig[t] = triggerSpec(lines, t)
+      for (const step of STEPS) for (const st of laneSteps(lines, step)) found.push({ K: step.kind, st })
+      if (found.length) for (const t of TRIGGERS) trig[t] = triggerSpec(lines, t)
     } catch (e) {
       if (!(e instanceof Unreadable)) throw e
       unusable.push(`${f}: ${e.message}`)
       continue
     }
-    for (const st of steps) {
-      nSteps++
+    for (const { K, st } of found) {
+      nSteps.set(K, nSteps.get(K) + 1)
+      const byLang = byKind.get(K)
       for (const lang of st.langs) {
         if (!byLang.has(lang)) {
-          fails.add(`${f}:${st.line} attest 가 파생 언어 밖의 「${lang}」를 부른다(철자 · 지운 언어)`)
+          fails.add(`${f}:${st.line} ${K} 가 파생 언어 밖의 「${lang}」를 부른다(철자 · 지운 언어)`)
           continue
         }
         byLang.get(lang).push(`${f}:${st.line} (${st.job})`)
         for (const k of GUARD_KEYS) {
-          if (st.stepKeys.includes(k)) fails.add(`${f}:${st.line} ${lang} attest 단계에 \`${k}:\` — 조건부 attest 는 증명이 아니다`)
-          if (st.jobKeys.includes(k)) fails.add(`${f}:${st.line} ${lang} attest 를 담은 잡 \`${st.job}\` 에 \`${k}:\` — 조건부 attest 는 증명이 아니다`)
+          if (st.stepKeys.includes(k)) fails.add(`${f}:${st.line} ${lang} ${K} 단계에 \`${k}:\` — 조건부 ${K} 는 증명이 아니다`)
+          if (st.jobKeys.includes(k)) fails.add(`${f}:${st.line} ${lang} ${K} 를 담은 잡 \`${st.job}\` 에 \`${k}:\` — 조건부 ${K} 는 증명이 아니다`)
         }
         for (const p of st.problems) fails.add(`${f}:${st.line} ${lang} ${p}`)
         for (const t of TRIGGERS) {
           const spec = trig[t]
           if (spec === null) {
-            fails.add(`${f}: \`${t}\` 트리거가 없다 — ${lang} 레인이 그 사건에서 attest 를 돌지 않는다`)
+            fails.add(`${f}: \`${t}\` 트리거가 없다 — ${lang} 레인이 그 사건에서 ${K} 를 돌지 않는다`)
             continue
           }
           if (!covers(spec.paths, `${lang}/x`)) fails.add(`${f}: \`${t}.paths\` 가 \`${lang}/**\` 를 받지 않는다`)
@@ -276,13 +290,16 @@ function main() {
       }
     }
   }
-  for (const [lang, where] of byLang) {
-    if (where.length === 0) fails.add(`${lang}: attest(\`node scripts/check-hp-attest.mjs … --lang ${lang}\`)를 도는 워크플로 단계가 없다`)
-    else console.log(`ok    ${lang.padEnd(7)} ${where.join(' · ')}`)
-  }
+  for (const s of STEPS)
+    for (const [lang, where] of byKind.get(s.kind))
+      if (where.length === 0) fails.add(`${lang}: ${s.kind}(\`node ${s.script} … --lang ${lang}\`)를 도는 워크플로 단계가 없다`)
+  for (const lang of langs)
+    if (STEPS.every((s) => byKind.get(s.kind).get(lang).length))
+      console.log(`ok    ${lang.padEnd(7)} ${STEPS.map((s) => `${s.kind} ${byKind.get(s.kind).get(lang).join(' · ')}`).join(' | ')}`)
   for (const u of unusable) console.error(`::error::판정 불가 — ${u}`)
   for (const x of fails) console.error(`::error::FAIL ${x}`)
-  console.log(`hp-attest 배선: 언어 ${langs.length} · attest 단계 ${nSteps} · FAIL ${fails.size} · 판정 불가 ${unusable.length}`)
+  const counts = STEPS.map((s) => `${s.kind} 단계 ${nSteps.get(s.kind)}`).join(' · ')
+  console.log(`레인 배선: 언어 ${langs.length} · ${counts} · FAIL ${fails.size} · 판정 불가 ${unusable.length}`)
   process.exit(unusable.length ? 2 : fails.size ? 1 : 0)
 }
 

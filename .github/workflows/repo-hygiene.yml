@@ -175,9 +175,9 @@ jobs:
         # 픽스처(`scripts/test/fixtures/canaries-ran/`)만 읽는다. 실제 대조는 레인의 비-required 단계다.
         run: sh scripts/test/test-check-canaries-ran.sh
 
-      - name: 적대 경로 행렬 attest 배선 — 레인마다 조건 없는 attest 단계 · 공용 파일 paths(FAIL 1 · 못 읽으면 2)
-        # attest 는 레인 단계가 돌 때만 증명한다 — 그 단계를 지우거나 조건·실패 무시 키로 무르거나, 행렬의 W1 이
-        # 읽는 `scripts/test/test-security-defaults.sh` 만 바꾼 PR 이 레인을 만들지 않으면 아무것도 안 울었다. 워크플로
+      - name: 레인 증명 단계 배선(attest · 카나리아) — 레인마다 조건 없는 두 단계 · 공용 파일 paths(FAIL 1 · 못 읽으면 2)
+        # attest 와 카나리아 실행 대조는 레인 단계가 돌 때만 증명한다 — 그 단계를 지우거나 조건·실패 무시 키로 무르거나,
+        # 둘이 읽는 `scripts/test/test-security-defaults.sh` 만 바꾼 PR 이 레인을 만들지 않으면 아무것도 안 울었다. 워크플로
         # 파일과 `df_tree_langs` 만 읽으니(레인 결과·네트워크 없음) required 에 둔다. 판정 규칙은 가드 머리 주석.
         run: |
           sh scripts/test/test-check-hp-attest-wiring.sh

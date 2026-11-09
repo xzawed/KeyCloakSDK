@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# `check-hp-attest-wiring.mjs` 자가테스트 — 레인의 적대 경로 행렬 attest 배선(단계가 있다 · 조건이 없다 · 행렬과
-# attest 가 읽는 공용 파일만 바꾼 PR 에서도 레인이 생긴다).
+# `check-hp-attest-wiring.mjs` 자가테스트 — 레인의 증명 단계 둘(적대 경로 행렬 attest · 보안 카나리아 실행 대조)의
+# 배선(단계가 있다 · 조건이 없다 · 그 둘과 가드가 읽는 공용 파일만 바꾼 PR 에서도 레인이 생긴다).
 #
 # ⚠️ 픽스처만 쓴다. 실제 트리 대조는 같은 잡이 `node scripts/check-hp-attest-wiring.mjs` 로 따로 한다.
 # 무게는 셋이다.
@@ -22,8 +22,8 @@ lane_flow() { # $1=루트 $2=언어
   put "$1/.github/workflows/$2-ci.yml" <<EOF
 name: $2 CI
 on:
-  push: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh'] }
-  pull_request: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh'] }
+  push: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs'] }
+  pull_request: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs'] }
   workflow_dispatch:
 permissions:
   contents: read
@@ -43,6 +43,9 @@ jobs:
           HP_ATTEST_DIR: \${{ runner.temp }}/hp-attest
           HP_ATTEST_NONCE: \${{ github.run_id }}
         run: node scripts/check-hp-attest.mjs "\$HP_ATTEST_DIR" --nonce "\$HP_ATTEST_NONCE" --lang $2
+      - name: canaries
+        working-directory: .
+        run: node scripts/check-canaries-ran.mjs --lang $2 --report "\$RUNNER_TEMP/canaries/$2.xml"
 EOF
 }
 
@@ -53,13 +56,14 @@ name: $2 CI
 on:
   push:
     branches: [main]
-    paths: ['$2/**', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh']
+    paths: ['$2/**', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs']
   pull_request:
     branches: [main]
     paths:
       - '$2/**'
       - 'scripts/check-hp-attest.mjs'
       - 'scripts/test/test-security-defaults.sh'
+      - 'scripts/check-canaries-ran.mjs'
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -70,6 +74,10 @@ jobs:
         run: |
           set -eu
           node scripts/check-hp-attest.mjs "\$HP_ATTEST_DIR" --nonce "\$HP_ATTEST_NONCE" --lang $2
+      - name: canaries
+        run: |
+          set -eu
+          node scripts/check-canaries-ran.mjs --lang $2 --report r.xml
 EOF
 }
 
@@ -103,7 +111,7 @@ wb() { printf '%s/.github/workflows/lang-b-ci.yml' "$TMP/$1"; }
 fork base; run
 expect base 0 "ok    lang-a"
 assert_contains "$OUT" "ok    lang-b" "[base] 블록 모양 레인"
-assert_contains "$OUT" "attest 단계 2" "[base] 단계 수"
+assert_contains "$OUT" "attest 단계 2 · 카나리아 단계 2" "[base] 단계 수"
 
 # ═══ (a) 양성 ══════════════════════════════════════════════════════════════════════════
 fork step-deleted; sed -i '/- name: attest/,$d' "$(wa step-deleted)"; run
@@ -166,6 +174,23 @@ expect pr-branches 1 "main"
 fork push-tags; sed -i "s|^  push: {.*\$|  push: { tags: ['v*'] }|" "$(wa push-tags)"; run
 expect push-tags 1 "태그"
 
+# 카나리아 단계(#996 — check-canaries-ran.mjs) — attest 와 같은 규칙에 `--report` 하나를 더 받는다.
+fork canary-deleted; sed -i '/- name: canaries/,$d' "$(wa canary-deleted)"; run
+expect canary-deleted 1 "lang-a: 카나리아"
+assert_not_contains "$OUT" "lang-a: attest" "[canary-deleted] 지우지 않은 attest 를 탓한다"
+
+fork canary-coe; sed -i 's/^      - name: canaries$/      - name: canaries\n        continue-on-error: true/' "$(wb canary-coe)"; run
+expect canary-coe 1 "카나리아 단계에 \`continue-on-error:\`"
+
+fork canary-paths; sed -i "/^  pull_request:/s|, 'scripts/check-canaries-ran.mjs'||" "$(wa canary-paths)"; run
+expect canary-paths 1 "\`pull_request.paths\` 가 scripts/check-canaries-ran.mjs"
+
+fork canary-no-report; sed -i 's| --report "\$RUNNER_TEMP/canaries/lang-a.xml"||' "$(wa canary-no-report)"; run
+expect canary-no-report 1 "\`--report\` 가 없다"
+
+fork canary-var-lang; sed -i 's/check-canaries-ran.mjs --lang lang-a /check-canaries-ran.mjs --lang "$L" /' "$(wa canary-var-lang)"; run
+expect canary-var-lang 2 "변수"
+
 # ═══ (b) 음성 — 정당한 표기 ══════════════════════════════════════════════════════════
 # 통과를 기대하는 변이는 빗나가도 통과한다 — 각 변이가 착지했는지 먼저 단언한다.
 fork broad-glob; sed -i "s|'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh'|'scripts/**'|g" "$(wa broad-glob)"
@@ -177,7 +202,7 @@ assert_eq "1" "$(grep -c '^  pull_request:$' "$(wa no-paths)")" "[no-paths] 변�
 run; expect no-paths 0 "ok    lang-a"
 
 fork compact-seq; sed -i 's/^      - \(.*\)'"'"'$/    - \1'"'"'/' "$(wb compact-seq)"
-assert_eq "3" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
+assert_eq "4" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
 run; expect compact-seq 0 "ok    lang-b"
 
 fork pr-types-ok; sed -i "s|^  pull_request: {.*\$|  pull_request: { types: [opened, synchronize, reopened, labeled] }|" "$(wa pr-types-ok)"
