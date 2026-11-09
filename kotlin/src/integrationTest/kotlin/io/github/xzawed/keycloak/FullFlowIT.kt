@@ -272,6 +272,25 @@ internal class FullFlowIT {
             }
         }
 
+    // admin 의 자기 토큰 그랜트가 틀린 client secret 으로 실패하면(실 Keycloak 은 401) 전송 오류도 admin 계열도 아니라 인증
+    // 오류다(등록부 token-response-class-divergent D4). 전에는 KeycloakTransportException 이었다.
+    @Test
+    fun `a wrong client secret fails the admin call as an auth failure`(): Unit =
+        runBlocking {
+            val wrong =
+                KeycloakConfig(
+                    serverUrl = container.authServerUrl,
+                    realm = "it-realm",
+                    clientId = "it-client",
+                    clientSecret = "not-the-secret".toCharArray(),
+                    scopes = listOf("openid"),
+                )
+            KeycloakClient.create(wrong).use { kc ->
+                val e = assertFailsWith<KeycloakAuthException> { kc.admin.users().search("x", 0, 1) }
+                assertEquals("Admin token request failed: HTTP 401", e.message)
+            }
+        }
+
     /**
      * 공개(시크릿 없는) 클라이언트도 refresh 와 logout 을 할 수 있어야 한다 — 서버가 허용한다.
      *
