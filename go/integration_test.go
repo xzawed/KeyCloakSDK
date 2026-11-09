@@ -268,6 +268,69 @@ func TestE2E(t *testing.T) {
 	}
 }
 
+// ⚠️ realm 에 Ed448 EdDSA 키가 있어도 RS256 토큰 검증은 그대로여야 한다. Keycloak 은 `eddsa-generated` 제공자의
+// Ed448 키를 JWKS 에 그대로 내놓고(kty OKP · crv Ed448), go-jose 는 그 키를 못 읽는다 — 키셋을 한 번에 풀던 동안 그
+// 키 하나가 키셋 전체를 버려 realm 의 모든 토큰이 거부됐다(등록부 jwks-unsupported-key-rejects-set).
+func TestE2EValidateIgnoresEd448KeyInRealmJWKS(t *testing.T) {
+	ctx := context.Background()
+	client, err := New(Config{
+		ServerURL: keycloakURL(t), Realm: "it-realm", ClientID: "it-client", ClientSecret: "it-secret",
+	})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+	admin, err := client.Admin(ctx)
+	if err != nil {
+		t.Fatalf("admin: %v", err)
+	}
+	realm, err := admin.Raw().GetRealm(ctx, mustToken(t, admin, ctx), "it-realm")
+	if err != nil || realm.ID == nil {
+		t.Fatalf("raw GetRealm: %+v %v", realm, err)
+	}
+	cid, err := admin.Raw().CreateComponent(ctx, mustToken(t, admin, ctx), "it-realm", gocloak.Component{
+		Name:         gocloak.StringP("e2e-ed448"),
+		ProviderID:   gocloak.StringP("eddsa-generated"),
+		ProviderType: gocloak.StringP("org.keycloak.keys.KeyProvider"),
+		ParentID:     realm.ID,
+		ComponentConfig: &map[string][]string{
+			"priority": {"50"}, "enabled": {"true"}, "active": {"true"}, "eddsaEllipticCurveKey": {"Ed448"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create Ed448 key provider: %v", err)
+	}
+	// 다음 테스트가 Ed448 키 없는 realm 을 보게 지운다.
+	t.Cleanup(func() {
+		if err := admin.Raw().DeleteComponent(ctx, mustToken(t, admin, ctx), "it-realm", cid); err != nil {
+			t.Errorf("delete Ed448 key provider: %v", err)
+		}
+	})
+
+	// 전제 — JWKS 에 Ed448 키가 정말 있다(없으면 이 테스트는 아무것도 재지 않는다).
+	certs, err := admin.Raw().GetCerts(ctx, "it-realm")
+	if err != nil || certs.Keys == nil {
+		t.Fatalf("certs: %+v %v", certs, err)
+	}
+	hasEd448 := false
+	for _, k := range *certs.Keys {
+		if k.Crv != nil && *k.Crv == "Ed448" {
+			hasEd448 = true
+		}
+	}
+	if !hasEd448 {
+		t.Fatalf("realm JWKS 에 Ed448 키가 없다 — 이 테스트의 전제가 무너졌다 (%d keys)", len(*certs.Keys))
+	}
+
+	token, err := client.Auth.ClientCredentialsToken(ctx)
+	if err != nil {
+		t.Fatalf("client credentials: %v", err)
+	}
+	if _, err := client.Auth.Validate(ctx, token.AccessToken); err != nil {
+		t.Fatalf("realm 에 Ed448 키가 있다고 RS256 토큰이 거부됐다: %v", err)
+	}
+}
+
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {

@@ -482,6 +482,136 @@ func TestValidateJWKSEmpty200DoesNotPoisonCache(t *testing.T) {
 	}
 }
 
+// unreadableJWKs — 이 SDK(go-jose)가 못 읽는 키 다섯 모양. 값은 무작위다(서명에 쓰지 않는다 — 파싱이 거부하는 것은
+// kty · 곡선 · 모듈러스 크기다).
+func unreadableJWKs(t *testing.T) map[string]string {
+	t.Helper()
+	rnd := func(n int) []byte {
+		b := make([]byte, n)
+		if _, err := rand.Read(b); err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	b64 := base64.RawURLEncoding.EncodeToString
+	n4097 := rnd(513)
+	n4097[0], n4097[512] = 0x01, n4097[512]|1 // 정확히 4097 비트 · 홀수
+	return map[string]string{
+		"OKP Ed448":    `{"kty":"OKP","crv":"Ed448","x":"` + b64(rnd(57)) + `","kid":"ed448","use":"sig","alg":"EdDSA"}`,
+		"OKP X25519":   `{"kty":"OKP","crv":"X25519","x":"` + b64(rnd(32)) + `","kid":"x25519","use":"enc"}`,
+		"EC P-192":     `{"kty":"EC","crv":"P-192","x":"` + b64(rnd(24)) + `","y":"` + b64(rnd(24)) + `","kid":"p192","use":"sig"}`,
+		"RSA 4097 bit": `{"kty":"RSA","n":"` + b64(n4097) + `","e":"AQAB","kid":"rsa4097","use":"sig","alg":"RS256"}`,
+		"unknown kty":  `{"kty":"XYZ","kid":"xyz","use":"sig"}`,
+	}
+}
+
+// ⚠️ **못 읽는 키 하나가 키셋 전체를 버리면 안 된다**(RFC 7517 §5 — 이해 못 하는 kty · 범위 밖 값의 키는 무시한다).
+// 한 번에 풀던 동안 그 키 하나가 전체를 거부해, 지원되는 RS256 키로 서명한 토큰까지 거부됐다 — Keycloak 26.6 은
+// eddsa-generated 의 Ed448 키를 JWKS 에 낸다(등록부 jwks-unsupported-key-rejects-set · 실측은 PR #998 본문).
+// 못 읽는 키를 **앞**에 둔다 — 순서대로 풀다 멈추는 구현이 정상 키에 닿기 전에 서는지 본다.
+func TestValidateJWKSSkipsKeysItCannotRead(t *testing.T) {
+	f := newJWTFixture(t)
+	good, err := json.Marshal(jose.JSONWebKey{Key: &f.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, bad := range unreadableJWKs(t) {
+		t.Run(name, func(t *testing.T) {
+			// 전제 — go-jose 가 그 키를 정말 못 읽는다(아니면 이 칸은 아무것도 재지 않는다).
+			var k jose.JSONWebKey
+			if json.Unmarshal([]byte(bad), &k) == nil {
+				t.Fatalf("go-jose 가 %s 를 읽는다 — 못 읽는 키가 아니다", name)
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"keys":[` + bad + `,` + string(good) + `]}`))
+			}))
+			t.Cleanup(srv.Close)
+			v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+				allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30, minRefetch: time.Minute})
+			tok := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+			if _, err := v.Validate(context.Background(), tok); err != nil {
+				t.Fatalf("못 읽는 키(%s)는 건너뛰어야 한다 — 키셋 전체를 버렸다: %v", name, err)
+			}
+		})
+	}
+}
+
+// 대조 — 쓸 수 있는 키가 하나도 없는 200 은 여전히 거부하고, 빈 키셋처럼 좋은 캐시를 덮지 않는다(설치하면 검증기가
+// 눈이 먼다). 건너뛰기가 「다 건너뛰고 빈 키셋을 설치」로 새면 이 테스트가 운다.
+func TestValidateJWKSWithOnlyUnreadableKeysIsRejectedAndDoesNotPoisonCache(t *testing.T) {
+	f := newJWTFixture(t)
+	u := unreadableJWKs(t)
+	unusableBody := `{"keys":[` + u["OKP Ed448"] + `,` + u["unknown kty"] + `]}`
+	var unusable int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.LoadInt32(&unusable) == 1 {
+			_, _ = w.Write([]byte(unusableBody))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{
+			{Key: &f.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	// 첫 강제 재조회는 창에 걸리지 않는다(forcedAt 이 비어 있다) — 그래서 1분 창으로도 아래 재조회가 난다.
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30, minRefetch: time.Minute})
+
+	good := f.sign(t, f.priv, "k1", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("최초 로드는 성공해야 한다: %v", err)
+	}
+	atomic.StoreInt32(&unusable, 1)
+	unknown := f.sign(t, f.priv, "kZ", claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)))
+	_, err := v.Validate(context.Background(), unknown)
+	var te *TransportError
+	if !errors.As(err, &te) || !strings.Contains(te.Msg, "no usable keys") {
+		t.Fatalf("쓸 수 있는 키가 없는 키셋은 TransportError(no usable keys)여야 한다: %v", err)
+	}
+	// 원인을 잃지 않는다 — 첫 키(Ed448)를 go-jose 가 거부한 오류가 사슬에 남는다.
+	if !errors.Is(err, jose.ErrUnsupportedKeyType) {
+		t.Fatalf("첫 키의 거부 원인이 사슬에 없다: %v", err)
+	}
+	if _, err := v.Validate(context.Background(), good); err != nil {
+		t.Fatalf("못 읽는 키만 있는 200 이 신뢰 키 캐시를 덮었다: %v", err)
+	}
+}
+
+// ⚠️ **go-jose 가 거부한 키는 절대 쓰지 않는다** — go-jose 는 x5u · x5t 검사에서 실패하기 **전에** 키를 채운다
+// (v4.1.9 jwk.go). 「채워진 키는 쓴다」로 새면, 같은 kid 를 단 위조 키가 진짜 키보다 앞에 와 위조 토큰이 통과하고
+// 진짜 토큰이 거부된다(PR #998 독립 레그가 찾은 변이: `err == nil || k.Key != nil`).
+func TestValidateJWKSKeyGoJoseRefusedIsNeverUsedEvenIfFilledIn(t *testing.T) {
+	f := newJWTFixture(t)
+	forged, err := json.Marshal(jose.JSONWebKey{Key: &f.other.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 크기가 틀린 x5t(1 바이트) — go-jose 는 키를 채운 뒤 「x5t header is of incorrect size」로 거부한다.
+	refused := `{"x5t":"AA",` + strings.TrimPrefix(string(forged), "{")
+	var k jose.JSONWebKey
+	if err := json.Unmarshal([]byte(refused), &k); err == nil || k.Key == nil {
+		t.Fatalf("전제가 무너졌다 — go-jose 가 거부하되 키를 채워야 한다 (err=%v, key=%v)", err, k.Key != nil)
+	}
+	good, err := json.Marshal(jose.JSONWebKey{Key: &f.priv.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"keys":[` + refused + `,` + string(good) + `]}`))
+	}))
+	t.Cleanup(srv.Close)
+	v := newValidator(validatorOptions{jwksURI: srv.URL, issuer: testISS, audience: "my-client",
+		allowedAlgs: []jose.SignatureAlgorithm{jose.RS256}, clockSkewSec: 30, minRefetch: time.Minute})
+
+	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+	if _, err := v.Validate(context.Background(), f.sign(t, f.other, "k1", cl)); err == nil {
+		t.Fatal("go-jose 가 거부한 키로 서명한 위조 토큰이 통과했다")
+	}
+	if _, err := v.Validate(context.Background(), f.sign(t, f.priv, "k1", cl)); err != nil {
+		t.Fatalf("진짜 k1 토큰이 거부됐다 — 거부된 키가 키셋에 들어갔다: %v", err)
+	}
+}
+
 // 크기 상한. 상한이 없으면 공격자가 영향을 줄 수 있는 엔드포인트에 대한 무제한 ReadAll 이
 // 메모리 DoS 다. 경계 양쪽을 함께 재서 상한이 실재함을 보인다(공허한 통과 방지).
 func TestValidateJWKSBodySizeCap(t *testing.T) {
