@@ -61,7 +61,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <keycloak.adminclient.version>26.0.12</keycloak.adminclient.version>
-    <nimbus.oidc.version>11.38.2</nimbus.oidc.version>
+    <nimbus.oidc.version>11.39</nimbus.oidc.version>
     <nimbus.jose.version>10.10</nimbus.jose.version>
     <!-- auth 운송(BoundedTransport) — 아래 dependencyManagement 와 keycloak-sdk-auth 가 함께 쓴다(nimbus.*.version 과 같은
          관용). ⚠️ v1.2.0·v1.2.1 의 Portal 거부는 이 표기와 무관했다 — 원인은 러너 Maven 3.10.0 × central-publishing 0.11.x
@@ -196,7 +196,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>3.6.3</version>
+        <version>3.7.0</version>
         <executions>
           <execution>
             <id>enforce</id><goals><goal>enforce</goal></goals>
@@ -221,7 +221,7 @@
       <plugin>
         <groupId>com.github.siom79.japicmp</groupId>
         <artifactId>japicmp-maven-plugin</artifactId>
-        <version>0.26.5</version>
+        <version>0.27.0</version>
         <executions>
           <execution>
             <id>api-compat</id>
