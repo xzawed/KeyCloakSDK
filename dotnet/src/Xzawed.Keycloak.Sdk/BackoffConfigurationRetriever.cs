@@ -1,6 +1,7 @@
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.Configuration;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Xzawed.Keycloak;
 
@@ -62,6 +63,7 @@ internal sealed class BackoffConfigurationRetriever : IConfigurationRetriever<Op
         try
         {
             config = await _inner.GetConfigurationAsync(address, retriever, cancel).ConfigureAwait(false);
+            DropSymmetricKeys(config);
             var verdict = _validator.Validate(config);
             if (!verdict.Succeeded)
                 throw new InvalidConfigurationException(verdict.ErrorMessage);
@@ -75,5 +77,25 @@ internal sealed class BackoffConfigurationRetriever : IConfigurationRetriever<Op
         _lifetime?.Fetched(config);
         _backoff.Succeeded();
         return config;
+    }
+
+    /// <summary>
+    /// ⚠️ A symmetric (<c>oct</c>) key is never a verification key: the JWKS is public, so its secret is no secret.
+    /// IdentityModel keeps an oct key out of <c>SigningKeys</c> only while <see cref="JsonWebKeySet.DefaultSkipUnresolvedJsonWebKeys"/>
+    /// — a process-wide static a host can flip — is true; with it false, a token HMAC-signed with the published key verified
+    /// (measured, <c>JwksOctKeyGlobalFlagTests</c>). Dropped here, where every fetch passes, before the minimum-key check — a
+    /// set holding only oct keys fails that check like an empty one.
+    /// </summary>
+    internal static void DropSymmetricKeys(OpenIdConnectConfiguration config)
+    {
+        if (config.JsonWebKeySet is { } set)
+        {
+            foreach (var key in set.Keys.Where(k => k.Kty == JsonWebAlgorithmsKeyTypes.Octet).ToList())
+                set.Keys.Remove(key);
+        }
+        foreach (var key in config.SigningKeys
+                     .Where(k => k is SymmetricSecurityKey || k is JsonWebKey { Kty: JsonWebAlgorithmsKeyTypes.Octet })
+                     .ToList())
+            config.SigningKeys.Remove(key);
     }
 }

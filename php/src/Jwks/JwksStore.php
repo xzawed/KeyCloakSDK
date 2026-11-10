@@ -182,7 +182,8 @@ final class JwksStore
         // (그러지 않으면 「unknown kid」로 **오분류**되어 전송 문제가 토큰 탓이 된다 — 실측).
         // ⚠️ 여기서 멈춘다 — `kty`·`n`·`e` 검증으로 번지면 JWKS 스키마 검사가 된다.
         if ($map === []) {
-            throw new KeycloakTransportError('JWKS response contains no keys');
+            // 원소가 있었는데 다 버려졌으면(kid 없음 · oct) 「키 없음」이 아니라 「쓸 수 있는 키 없음」이다.
+            throw new KeycloakTransportError($json['keys'] === [] ? 'JWKS response contains no keys' : 'JWKS response contains no usable keys');
         }
         $this->keys = $map;
         $this->fetchedAt = ($this->clock)(); // 수명은 적재가 끝난 이 시각부터다(강제 재조회도 다시 시작한다)

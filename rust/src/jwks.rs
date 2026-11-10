@@ -222,7 +222,7 @@ impl Source {
             .collect();
         if keys.is_empty() {
             return Err(KeycloakError::Transport(format!(
-                "JWKS response contains no usable keys ({total} unreadable)"
+                "JWKS response contains no usable keys ({total} skipped)"
             )));
         }
         let set = JwkSet { keys };
@@ -416,7 +416,7 @@ mod tests {
             (r#"{"keys":"JWKS-BODY-CANARY-4T8W"}"#, "JWKS parse"),
             (
                 r#"{"keys":[{"kty":"RSA","kid":7,"n":"JWKS-BODY-CANARY-4T8W"}], "x": 1}"#,
-                "no usable keys (1 unreadable)",
+                "no usable keys (1 skipped)",
             ),
             ("JWKS-BODY-CANARY-4T8W", "JWKS parse"),
         ] {
@@ -914,8 +914,8 @@ mod tests {
             .await
             .expect_err("oct 만 있는 키셋은 성공이 아니다");
         assert!(
-            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (1 unreadable)")),
-            "expected Transport('…no usable keys (1 unreadable)…'), got {err:?}"
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (1 skipped)")),
+            "expected Transport('…no usable keys (1 skipped)…'), got {err:?}"
         );
     }
 
@@ -936,8 +936,8 @@ mod tests {
             .await
             .expect_err("쓸 수 있는 키가 없는 키셋은 성공이 아니다");
         assert!(
-            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (3 unreadable)")),
-            "expected Transport('…no usable keys (3 unreadable)…'), got {err:?}"
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (3 skipped)")),
+            "expected Transport('…no usable keys (3 skipped)…'), got {err:?}"
         );
 
         let server = MockServer::start().await;

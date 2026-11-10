@@ -98,7 +98,7 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
     }
     if (usable.isEmpty()) {
       throw new IOException(keys.isEmpty() ? "JWKS response contains no keys"
-          : "JWKS response contains no usable keys (" + keys.size() + " unreadable)");
+          : "JWKS response contains no usable keys (" + keys.size() + " skipped)");
     }
     return usable.size() == keys.size() ? res : new Resource(new JWKSet(usable).toString(false), res.getContentType());
   }

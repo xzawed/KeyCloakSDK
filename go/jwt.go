@@ -443,7 +443,7 @@ func (v *Validator) fetch(ctx context.Context) error {
 		return &TransportError{Msg: "JWKS response contains no keys"}
 	}
 	if len(ks.Keys) == 0 {
-		return &TransportError{Msg: fmt.Sprintf("JWKS response contains no usable keys (%d unreadable, first: %v)",
+		return &TransportError{Msg: fmt.Sprintf("JWKS response contains no usable keys (%d skipped, first: %v)",
 			len(raw.Keys), firstErr), Cause: firstErr}
 	}
 	v.mu.Lock()

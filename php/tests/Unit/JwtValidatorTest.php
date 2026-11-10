@@ -498,7 +498,7 @@ final class JwtValidatorTest extends TestCase
     {
         $validator = $this->hsAllowedValidator([['kty' => 'oct', 'kid' => 'test-kid', 'k' => 'c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0']]);
         $this->expectException(KeycloakTransportError::class);
-        $this->expectExceptionMessage('JWKS response contains no keys');
+        $this->expectExceptionMessage('JWKS response contains no usable keys');
         $validator->validate($this->sign($this->goodClaims()));
     }
 

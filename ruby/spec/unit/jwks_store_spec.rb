@@ -326,7 +326,7 @@ RSpec.describe KeycloakSdk::JwksStore do
       expect(store.key_set["keys"].first["kid"]).to eq("k1") # 사전조건: 좋은 캐시
 
       expect { store.key_set(force: true) }
-        .to raise_error(KeycloakSdk::TransportError, /no usable keys \(6 unreadable\)/)
+        .to raise_error(KeycloakSdk::TransportError, /no usable keys \(6 skipped\)/)
       expect(store.key_set["keys"].first["kid"]).to eq("k1")
     end
 
@@ -344,7 +344,7 @@ RSpec.describe KeycloakSdk::JwksStore do
       only_oct = { keys: [{ kty: "oct", kid: "k1", k: "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0" }] }.to_json
       stub_request(:get, jwks_url).to_return(status: 200, body: only_oct,
                                              headers: { "Content-Type" => "application/json" })
-      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /no usable keys \(1 unreadable\)/)
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /no usable keys \(1 skipped\)/)
     end
   end
 

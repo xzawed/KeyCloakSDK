@@ -151,7 +151,7 @@ internal class NoRedirectResourceRetriever(
                     if (keys.isEmpty()) {
                         "JWKS response contains no keys"
                     } else {
-                        "JWKS response contains no usable keys (${keys.size} unreadable)"
+                        "JWKS response contains no usable keys (${keys.size} skipped)"
                     },
                 )
             }

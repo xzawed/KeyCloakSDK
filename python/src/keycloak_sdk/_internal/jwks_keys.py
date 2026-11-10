@@ -51,6 +51,6 @@ def import_usable_keys(certs: Any) -> KeySet:
     if not usable:
         cause = f"{type(first).__name__}: {first}"
         raise TokenValidationError(
-            f"{_MALFORMED}: no usable keys ({len(keys)} unreadable, first: {cause})"
+            f"{_MALFORMED}: no usable keys ({len(keys)} skipped, first: {cause})"
         ) from first
     return KeySet(usable)

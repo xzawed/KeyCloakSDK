@@ -70,7 +70,7 @@ internal class JwksOctKeyTest {
                 "application/json",
             )
         val e = assertFailsWith<IOException> { NoRedirectResourceRetriever.usableKeysOnly(res) }
-        assertTrue(e.message!!.contains("no usable keys (1 unreadable)"), e.message)
+        assertTrue(e.message!!.contains("no usable keys (1 skipped)"), e.message)
     }
 
     /**

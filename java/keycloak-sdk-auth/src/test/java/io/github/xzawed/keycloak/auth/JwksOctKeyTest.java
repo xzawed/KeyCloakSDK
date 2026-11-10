@@ -71,7 +71,7 @@ class JwksOctKeyTest {
         "application/json");
     java.io.IOException e =
         assertThrows(java.io.IOException.class, () -> NoRedirectResourceRetriever.usableKeysOnly(res));
-    assertTrue(e.getMessage().contains("no usable keys (1 unreadable)"), e.getMessage());
+    assertTrue(e.getMessage().contains("no usable keys (1 skipped)"), e.getMessage());
   }
 
   /**

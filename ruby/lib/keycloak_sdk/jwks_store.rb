@@ -175,7 +175,7 @@ module KeycloakSdk
       raise TransportError, "JWKS response contains no keys" if keys.empty?
 
       usable = keys.select { |key| usable_key?(key) }
-      raise TransportError, "JWKS response contains no usable keys (#{keys.size} unreadable)" if usable.empty?
+      raise TransportError, "JWKS response contains no usable keys (#{keys.size} skipped)" if usable.empty?
 
       usable.size == keys.size ? body : body.merge("keys" => usable)
     end

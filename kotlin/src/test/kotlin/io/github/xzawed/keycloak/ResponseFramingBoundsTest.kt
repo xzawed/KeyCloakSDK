@@ -36,6 +36,7 @@ import kotlin.test.assertTrue
 // 없어야 한다(§4 — 호출부가 원인을 그대로 단다).
 private const val RFB_CAP = 1_048_576
 private val RFB_TOKEN = """{"access_token":"AT","token_type":"Bearer","expires_in":300}""".toByteArray()
+
 // 키 하나짜리 읽히는 키셋 — 비대칭이어야 한다(oct 는 키셋에서 버려져 「쓸 수 있는 키 없음」이 된다 · JwksOctKeyTest).
 private val RFB_JWKS = """{"keys":[{"kty":"RSA","kid":"k1","n":"AQAB","e":"AQAB"}]}""".toByteArray()
 

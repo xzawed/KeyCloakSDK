@@ -72,7 +72,43 @@ public class JwksOctKeyTests
         }
     }
 
-    private static WireMockServer Idp(out string issuer, string jwks)
+    /// <summary>A set holding only an oct key has no usable key — refused like an empty set, never installed.</summary>
+    [Fact]
+    public async Task Only_an_oct_key_has_no_usable_keys()
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, """{"keys":[{"kty":"oct","kid":"k1","k":"c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0"}]}""");
+        using var http = new HttpClient();
+        var validator = HsAllowed(issuer, http);
+
+        var refused = await Record.ExceptionAsync(
+            () => validator.ValidateAsync(Sign(Payload(issuer, "user-1"), rsa, SecurityAlgorithms.RsaSha256)));
+        Assert.IsAssignableFrom<KeycloakException>(refused);
+    }
+
+    /// <summary>
+    /// The SDK drops oct keys where every fetch passes (<c>BackoffConfigurationRetriever</c>), so the refusal does not rest on
+    /// IdentityModel's process-wide <see cref="JsonWebKeySet.DefaultSkipUnresolvedJsonWebKeys"/> (see the class below).
+    /// </summary>
+    [Fact]
+    public void DropSymmetricKeys_leaves_only_the_asymmetric_keys()
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        var config = new Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectConfiguration
+        {
+            JsonWebKeySet = new JsonWebKeySet($$"""{"keys":[{"kty":"oct","kid":"hk","k":"c2VjcmV0LXNlY3JldA"},{{RsaJwk(rsa)}}]}"""),
+        };
+        config.SigningKeys.Add(new SymmetricSecurityKey(new byte[32]) { KeyId = "hk" });
+        config.SigningKeys.Add(new JsonWebKey("""{"kty":"oct","kid":"hk2","k":"c2VjcmV0LXNlY3JldA"}"""));
+        config.SigningKeys.Add(rsa);
+
+        BackoffConfigurationRetriever.DropSymmetricKeys(config);
+
+        Assert.Equal(new[] { "k1" }, config.JsonWebKeySet.Keys.Select(k => k.Kid));
+        Assert.Equal(new[] { "k1" }, config.SigningKeys.Select(k => k.KeyId));
+    }
+
+    internal static WireMockServer Idp(out string issuer, string jwks)
     {
         var server = WireMockServer.Start();
         issuer = $"{server.Urls[0]}{Realm}";
@@ -84,7 +120,7 @@ public class JwksOctKeyTests
         return server;
     }
 
-    private static JwtValidator HsAllowed(string issuer, HttpClient http) => new(issuer, new JwtValidatorOptions
+    internal static JwtValidator HsAllowed(string issuer, HttpClient http) => new(issuer, new JwtValidatorOptions
     {
         Issuer = issuer,
         Audiences = new[] { "it-client" },
@@ -92,16 +128,57 @@ public class JwksOctKeyTests
         RefreshIntervalSeconds = 1,
     }, http);
 
-    private static string RsaJwk(RsaSecurityKey key)
+    internal static string RsaJwk(RsaSecurityKey key)
     {
         var p = key.Rsa!.ExportParameters(false);
         return $$"""{"kty":"RSA","kid":"{{key.KeyId}}","use":"sig","alg":"RS256","n":"{{Base64UrlEncoder.Encode(p.Modulus)}}","e":"{{Base64UrlEncoder.Encode(p.Exponent)}}"}""";
     }
 
-    private static string Payload(string issuer, string sub)
+    internal static string Payload(string issuer, string sub)
         => $$"""{"iss":"{{issuer}}","sub":"{{sub}}","aud":"it-client","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
 
-    private static string Sign(string payloadJson, SecurityKey key, string algorithm)
+    internal static string Sign(string payloadJson, SecurityKey key, string algorithm)
         => new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }
             .CreateToken(payloadJson, new SigningCredentials(key, algorithm));
+}
+
+/// <summary>Runs alone — it flips a process-wide IdentityModel static.</summary>
+[CollectionDefinition(nameof(GlobalJwksFlagCollection), DisableParallelization = true)]
+public class GlobalJwksFlagCollection
+{
+}
+
+/// <summary>
+/// With <see cref="JsonWebKeySet.DefaultSkipUnresolvedJsonWebKeys"/> false — a process-wide static a host application can
+/// set — IdentityModel hands the oct key to signature validation, and a token HMAC-signed with the published key verified
+/// (measured on the fake IdP: all three shapes). The SDK must refuse it whatever the host set.
+/// </summary>
+[Collection(nameof(GlobalJwksFlagCollection))]
+public class JwksOctKeyGlobalFlagTests
+{
+    [Fact]
+    public async Task Oct_key_is_refused_even_when_the_host_turns_off_skipping_unresolved_keys()
+    {
+        var saved = JsonWebKeySet.DefaultSkipUnresolvedJsonWebKeys;
+        JsonWebKeySet.DefaultSkipUnresolvedJsonWebKeys = false;
+        try
+        {
+            var secret = RandomNumberGenerator.GetBytes(32);
+            var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+            var oct = $$"""{"kty":"oct","kid":"hk","alg":"HS256","use":"sig","k":"{{Base64UrlEncoder.Encode(secret)}}"}""";
+            using var server = JwksOctKeyTests.Idp(out var issuer, $$"""{"keys":[{{oct}},{{JwksOctKeyTests.RsaJwk(rsa)}}]}""");
+            using var http = new HttpClient();
+            var validator = JwksOctKeyTests.HsAllowed(issuer, http);
+
+            var forged = JwksOctKeyTests.Sign(JwksOctKeyTests.Payload(issuer, "attacker"),
+                new SymmetricSecurityKey(secret) { KeyId = "hk" }, SecurityAlgorithms.HmacSha256);
+            await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => validator.ValidateAsync(forged));
+            Assert.Equal("user-1", (await validator.ValidateAsync(JwksOctKeyTests.Sign(
+                JwksOctKeyTests.Payload(issuer, "user-1"), rsa, SecurityAlgorithms.RsaSha256))).Subject);
+        }
+        finally
+        {
+            JsonWebKeySet.DefaultSkipUnresolvedJsonWebKeys = saved;
+        }
+    }
 }
