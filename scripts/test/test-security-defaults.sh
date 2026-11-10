@@ -170,8 +170,9 @@ sd_universe_name_axis() {
 sd_universe_name_axis
 # ⚠️ **손 목록 축은 분할이어야 한다 — 목록 ∪ 곁 표 = `SD_LANGS`, 겹침 0, 유령 이름 0.** 곁 표는
 # 언어 → 「이 축 대신 무엇이 그 성질을 지는가」의 증거이고(축마다 그 증거를 단언한다), 비면 그 언어는
-# 목록에 있어야 한다. 부분집합만 보던 판은 **열 번째 언어가 그 축을 조용히 건너뛰었다** — 실측: 트리와
-# `SD_LANGS` 에 언어 하나를 더하니 다른 축 11 이 그 이름을 댔고 손 목록 축 셋은 아무 말도 없었다.
+# 목록에 있어야 한다. 부분집합만 보던 판은 **열 번째 언어가 그 축을 조용히 건너뛰었다** — 실측(`set -e` 를 빼고
+# 끝까지 돌린 판 — 그대로면 bearer 축 뒤에서 멈춘다): 트리와 `SD_LANGS` 에 언어 하나를 더하니 다른 축 11 이 그 이름을
+# 댔고 손 목록 축 셋은 아무 말도 없었다.
 # ⚠️ 잔여: 구성원을 곁 표로 옮기고 그 축의 `_seen` 수를 함께 낮추는 편집은 통과한다 — 곁 표에 증거를
 # 적어야 하므로 diff 에 드러나는 쪽으로만 좁혔다(Grok 레그 지목).
 sd_partition_gap() { # $1=목록 $2=곁 표 함수(언어 → 증거, 없으면 빈 문자열) → 어긋난 이름을 찍는다
@@ -417,7 +418,8 @@ rm -rf "$_cap_nc"
 # 1b 와 다른 셋:
 #   · **아홉 전부다** — JVM 둘도 자기 소스에 리터럴을 선언한다(Nimbus 상수가 아니다). 그래서 손 목록을
 #     두지 않고 `SD_LANGS`(0절이 트리와 대조한다)를 그대로 돈다 — 열 번째 언어는 아래 `case` 에 없으면
-#     「선언 0 개」로 운다. 손 목록을 도는 축(1b · 1b2)은 그 대신 `sd_partition_of_langs` 로 분할을 단언한다.
+#     「선언 0 개」로 운다. 손 목록 축 중 크기상한 · 백오프는 그 대신 `sd_partition_of_langs` 로 분할을, 토큰타입은
+#     `SD_LANGS` 와의 동치를 단언한다(축 번호는 겹친다 — 이름으로 지목한다).
 #   · **언어마다 핀과 직접 비교한다** — 「첫 언어 = 합의값」(1b)은 첫 언어가 드리프트하면 맞는 나머지가
 #     「다르다」로 울고 범인은 핀 단언 하나로만 드러난다.
 #   · **주석 밖의 맨 리터럴 선언이 정확히 하나여야 한다** — 식(`1_048_576 * 2` · `1 << 20`)·꼬리 주석·
@@ -940,11 +942,13 @@ assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — �
 # **대칭**만 본다 — 한 언어에서 장치를 지우면 그 언어 CI 와 이 가드가 함께 운다.
 # 곁 표(면제) — java·kotlin 은 Nimbus 가 JWKS **source** 를 rate-limit 해 콜드 적재 실패도 그 창에 묶인다
 # (security.md · 2026-09-06 실측 2 회). 증거는 그 경계를 고정하는 시험이다(`파일|선언`, 주석 밖 ≥ 1 — 이 축 끝에서
-# 단언한다). 시험이 사라지면 면제의 근거도 사라진다.
+# 단언한다). 시험이 사라지면 면제의 근거도 사라진다. ⚠️ 두 행은 각 JVM 행렬 W1 의 손 목록 앵커와 **같은 자리**여야 한다 —
+# 행렬이 이 파일에서 그 언어의 행위 앵커를 전부 뽑아 자기 손 목록에 있는지 본다(kotlin 은 시험이 부르는 도우미 `run` 이
+# 앵커다 · kotlin 행렬엔 java 의 `run>validate` 같은 호출 사슬이 없다). 시험 이름을 적었더니 kotlin 레인이 W1 로 울었다.
 sd_backoff_exempt() {
   case "$1" in
     java)   printf '%s' 'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/JwksColdCacheOutageTest.java|void coldCacheDuringIdpOutage_isBounded(' ;;
-    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksColdCacheOutageTest.kt|fun `cold cache during an IdP outage is bounded`(' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksColdCacheOutageTest.kt|fun run(' ;;
   esac
 }
 SD_BACKOFF_LANGS="python node go dotnet php rust ruby"
