@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=170971 max-raw-bytes=188643 -->
+<!-- doc-budget: max-bytes=170489 max-raw-bytes=187637 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -8,7 +8,7 @@
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
      인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) · #995 — 은 git 으로 보냈다. -->
-<!-- max-raw-bytes 189435 → 188643: ③ 마감(닫음 넷 · 새 셋) -->
+<!-- max-raw-bytes 188643 → 187637: oct 마감(닫음 하나 · 새 둘 · H3 경위는 git) -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -40,7 +40,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `290`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `292`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -62,15 +62,15 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-10 · #914–#1010 반영)
+### 다음 세션 진입점 (2026-11-10 · #914–#1013 반영)
 
-**지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 태그 위임은 물결마다 다시 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
+**지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 릴리스는 먼저 권하지 않는다(사용자 2026-11-10 「잦다」), 태그는 물결마다 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
 
 열린 항목 수는 위 「규모」의 명령으로 센다. 게시 번호는 루트 `CLAUDE.md` 현재 상태 표가 소유한다. 릴리스 물결의 경위는 `CHANGELOG.md` 와 `git log --oneline d7439f5..HEAD` 가 소유한다.
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. `jwks-oct-key-usable-with-hs` [M/S] · `guard-detection-surface-hand-narrowed` [H/M] · `token-error-code-secret-echo` · `token-response-class-residue` · `logout-2xx-html-false-success` [L/S].
+1. `guard-detection-surface-hand-narrowed` [H/M] · `rust-mixed-family-algorithms-reject-all` [M/S] · `token-error-code-secret-echo` · `token-response-class-residue` · `logout-2xx-html-false-success` · `hs-refusal-rests-on-libraries` [L/S].
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -341,11 +341,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 138건 (열림 64)
+## C. 품질 부채 — 140건 (열림 65)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 76
+### 9언어 소스 — 78
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -390,8 +390,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `go-admin-3xx-read-as-success` **[M/S · 신규 2026-10-25]** Location 없는 3xx 를 admin 파사드 24 호출(Realms.Update 뺌)이 성공으로 읽는다 · `go/admin.go:175`
 <!-- go-admin-3xx-read-as-success 실측(2026-10-25 · main 0a4cfee · 루프백 · NewAdminClient + 정적 토큰): 300 · 302(Location 없음) · 399 + JSON 본문 — 파사드 25 호출(다섯 리소스의 Create·Get·목록·Update·Delete) 중 24 가 오류 없이 돌아온다: Users.Get 은 빈 *User, Search 는 0 건, Create 는 id "", Update·Delete 는 nil. Realms.Update 만 오류다(raw PUT 이 2xx 를 명시한다). 기전: gocloak checkForError 는 resty IsError()(> 399)만 오류로 보고, resty 는 2xx 만 결과로 해석한다 — 3xx 는 둘 다 아니라 영값과 nil 이다. net/http 는 Location 없는 3xx 를 따라가지 않으므로 errOnRedirect 도 닿지 않는다. #380 은 같은 구멍을 토큰 요청(LoginClient — AccessToken == "" 검사)과 Realms.Update 의 raw PUT(2xx 명시)에서 막았다 — gocloak 의 판정을 쓰는 나머지 파사드는 그대로다. 발견: admin-response-body-unbounded go 수정 중 300 행을 쓰다가. 나머지 여덟 언어는 미측정 — 다음 걸음은 부류 재스캔(같은 다섯 리소스 × 300·302 무 Location·399). 한 칸씩 잰 여섯(2026-10-26·27, admin-response-body 시험의 3xx 행): python · dotnet · ruby · rust · node 는 오류, **php 는 302 를 성공(User)으로** — 칸별 원문은 `git log -1 -S 'php 한 칸(같은 날' -- docs/superpowers/plans/remaining-work.md` 가 찾는 커밋의 부모에 있다. · 재스캔 때 먼저 볼 셋(닫힌 admin-response-body-unbounded 의 주석에서 옮김 — go 의 첫 설계를 깬 것): Raw() 의 하위 메서드가 201·PUT 본문을 결합하는가 · 잘린 오류 본문이 분류를 바꾸는가 · 호출자가 청한 압축을 상한 위에서 누가 푸는가. 본문 크기 칸(T1·T2·A1–A3)의 정의는 #834 의 PR 본문. -->
 - [x] `jwks-unsupported-key-rejects-set` **[M/M · 닫힘 2026-11-09 #998–#1001]** 못 읽는 원소 하나가 JWKS 전체를 버렸다 · 표는 #1000 본문
-- [ ] `jwks-oct-key-usable-with-hs` **[M/S · 신규 2026-11-09]** JWKS 의 `oct` 키가 HS 허용 검증 키가 된다
-<!-- jwks-oct-key-usable-with-hs 실측(2026-11-09 · #1000 레그): ruby 는 signature_algorithms 에 HS256 을 허용하면 JWKS 의 {"kty":"oct","k":…} 로 서명한 위조 토큰이 main · #1000 둘 다 통과한다(문자열 원소는 #1000 이 막았다). node 는 jose 가 JWKS 의 oct 를 받지 않는다. 일곱 미측정. 다음 걸음: 아홉 × (HS 를 허용할 수 있는가 · JWKS 의 oct 가 검증 키가 되는가)를 가짜 IdP 로 잰다 — Keycloak 은 oct 를 JWKS 에 내지 않으므로 기본 경로의 결함이 아니라 설정 함정이다. -->
+- [x] `jwks-oct-key-usable-with-hs` **[M/S · 닫힘 2026-11-10 #1013]** 여덟이 oct 를 버린다(.NET 은 전역 플래그와 무관하게) · php 는 HS 서명을 거부(alg 없는 EC · OKP) · 표는 #1013 본문
+- [ ] `rust-mixed-family-algorithms-reject-all` **[M/S · 신규 2026-11-10]** 계열이 다른 알고리즘(RS256+ES256 · +EdDSA · +HS256)을 함께 허용하면 정상 RS256 토큰도 「algorithm not allowed」(RS384 · PS256 은 통과) · `rust/src/jwt.rs:113`
+- [ ] `hs-refusal-rests-on-libraries` **[L/S · 신규 2026-11-10]** HS 서명 거부를 일곱이 라이브러리의 키·알고리즘 묶음에 맡긴다(지금은 다 거부 · php 만 명시 #1013) — 핀 다음에 HS* 를 거부하면 갱신과 무관하다
 - [x] `response-read-deadline-divergent` **[M/S · 신규 2026-10-09 · 판정 2026-10-29 · 닫힘 2026-11-09 #992]** 응답 전체를 설정한 타임아웃 안에 — 아홉 다(마지막 칸 python HTTPS 프록시 · pyOpenSSL) · 옮긴 주석은 #992 본문 · `.claude/rules/security.md`
 - [x] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 닫힘 2026-11-04]** 아홉이 응답 틀을 묶인 메모리로 읽는다 — ruby #760 · go #742 · JVM #756·#761 · python #893 · php ext-curl. node 는 전제 거짓 — 1 GiB 청크 확장에도 최대 RSS 88 MB(기준 53, 함정 (mm)) · 상류 보고 안 함
 - [x] `ruby-framing-hook-breaks-on-net-protocol-0-4` **[H/S · 닫힘 2026-10-22 #797 · 미게시]** 훅이 `limit:` 를 원판(0.3.0+)의 뜻으로 받는다(SDK 상한이 먼저) · 핀은 두 모양과 설치된 원판과의 대조 · 레인 CI 에 `latest-runtime-deps`(런타임 그룹을 새로 푼다 — 소비자 시야) · `ruby/lib/keycloak_sdk/http.rb`
@@ -514,7 +515,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### harness 사각지대 — 13
 
 - [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
-- [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** ⚠️ **「세 자리」가 아니라 한 파일의 두 결함이었고, 그중 하나는 거짓 초록이었다.** (1) `security-audit.yml:277` 이 `cargo audit -f harness/apps/rust/Cargo.lock` 으로 감사하는 그 락을 `harness/apps/rust/Dockerfile` 은 **COPY 하지 않았다** — 게다가 락이 `keycloak-sdk` **0.1.0** 을 고정한 채였고 매니페스트는 **1.0.0** 이다(4ed3298, 2026-08-30). 락은 2026-08-01 이후 안 움직였으므로 야간 감사는 **1.0 이전 그래프**를 6주째 감사하며 초록을 냈다. (2) `FROM rust:alpine` 은 하네스 아홉 앱 중 **유일한 무버전 태그**였다(install 경로 둘은 이미 `rust:1.88-alpine`). ⚠️ **install 경로의 락 처리는 결함이 아니다** — consume 은 registry 의존으로 재기입하고 publish 는 클로저 미러링용으로 `generate-lockfile` 하는 것이 설계다(주석이 그렇게 적는다). 부류 재스캔: `git ls-files harness/apps | grep -Ei 'lock|\.sum$'` → **1건** · `cargo audit -f` 전수 → **1건** · 무버전 `FROM` 전수(9앱) → **1건**. 형제 언어에 같은 결함 없음. ⚠️ **락 재생성에 MSRV 인지 해석이 필요했다** — cargo 가 `Locking 253 packages to latest Rust 1.88 compatible versions` 로 reqwest 0.13·matchit 0.8.6 을 눌렀다. edition 2021 은 resolver v2 라 기본이 아니고, 플래그 없이 재생성했으면 `--locked` 빌드가 1.88 에서 깨졌다(`scripts/regen-harness-rust-lock.sh` 가 소유). **Docker 실빌드로 확인**(107s, `rust:1.88-alpine` + `--locked`). 변이 6/6 `CAUGHT` + OFF 짝 6/6 `SILENT`.
+- [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** 한 파일의 두 결함 — 야간 감사가 보는 rust 하네스 락을 Dockerfile 이 COPY 하지 않았고(1.0 이전 그래프를 6주 감사한 거짓 초록) · `FROM rust:alpine` 무버전. ⚠️ 락 재생성은 MSRV 인지 해석이 필요하다 — `scripts/regen-harness-rust-lock.sh` 가 소유 · 재스캔 · 변이는 `git log -S'H3-harness-image-and-lock-pins' -- docs/superpowers/plans/remaining-work.md`
 - [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** ⚠️ **가드 부재가 아니라 실제 노출이었다.** `ClientCredentialsTokenProvider` 의 기본 `inspect` 가 캐시된 **액세스 토큰을 원문으로** 찍었다 — `@cached` 가 `ts.access_token`(원시 String)이라 `TokenSet#inspect` 의 마스킹이 닿지 않는다. 형제인 `Config`·`TokenSet` 은 `inspect` 재정의가 있는데 **이 타입만 없던** 불일치다. **실행으로 재현**했다(읽기 아님): `p provider` → `@cached="AT-CENSUS-TOKEN-…"`. 고친 뒤 재측정 → `cached="***"`. ⚠️ 캐시 **유무는 남긴다**(빈 캐시에 `***` 를 찍으면 「토큰이 있다」는 거짓 신호다 — 대조군 spec 이 고정). ruby 123/123 · 커버리지 99.61/96.72 · rubocop 청정 · 변이 `CAUGHT`(수정 전 상태로 되돌리는 변이). ⚠️ **아홉 전수는 실행으로 갈랐다** — node 는 안전(`#cached` 비노출 실측) · python 은 공개 캐싱 provider 없음 · java·kotlin·dotnet·rust 는 기본 표현이 필드를 안 찍음 · go 는 provider 가 미노출 타입.
 - [x] `php-var-dump-bypasses-all-masking` **[M/M · 닫힘 2026-09-12 · 범위 재정의]** ⚠️ **「덤프 경로를 마스킹한다」는 아홉 언어 균일 계약으로 불가능하다** — 정밀 실측(독립 레그 census + 내 실행 검증)이 그것을 갈랐다. 그래서 **할 수 있는 것만 하고 못 하는 것은 경계로 적었다**. **훅 가능·저렴(구현함)**: php `__debugInfo`(`var_dump`·`print_r`·`debug_zval_dump`) · go `GoStringer`(`%#v` 만 — `%v`·`%+v`·`%s` 는 `String()` 그대로, 대조군이 고정) · ruby `pretty_print`(⚠️ 이것은 **바닥 안**이었다 — `pp` 는 표시 경로인데 `Data` 타입은 PP 가 멤버를 직접 찍어 `inspect` 를 건너뛴다. 일반 클래스인 `Config` 는 폴백해 안전). **훅 불가(경계로 문서화)**: python `asdict`/`astuple`/`vars`(필드를 직접 훑는다 — `__getstate__` 무시됨, 실측) · node 객체 스프레드(열거 가능 프로퍼티를 훅보다 먼저 복사) · .NET Serilog `{@}`(소비자가 정책을 등록해야 한다) · php `var_export`(private 까지 원문, 실측) · java/kotlin Jackson·Gson(게터 기반 — java core 는 **의존성 0** 이라 `jackson-annotations` 가 첫 컴파일 의존이 된다) · **아홉 전부의 공개 필드/게터 읽기**. ⚠️ **왕복 훅은 일부러 안 넣었다** — go `MarshalJSON`·rust `Serialize` 를 마스킹하면 소비자가 세션·캐시에 `***` 를 저장한다(덤프는 단방향, JSON 은 왕복이라 부류가 다르다). ⚠️ **저장소 주석 셋이 거짓이 됐다가 정정됐다** — 「`var_dump`/`print_r` 은 여전히 프로퍼티를 직접 읽는다」(php 8.3.32 에서 `print_r` 은 `__debugInfo` 를 **존중한다**, 실측). 계약은 `SECURITY.md` 가 소유한다 — **기밀 경계가 아니라 우발적 로깅에 대한 심층 방어**라고 적었다.
 - [x] `harness-orphan-container-reads-as-build-failure` **[L/S · 닫힘 2026-09-16 · 부류로 넓혀서]** 중단된 하네스 런이 남긴 컨테이너가 다음 런을 막는데, 신호가 **원인을 잘못 가리킨다** · `harness/verify.sh:30`
