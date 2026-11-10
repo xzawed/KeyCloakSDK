@@ -439,7 +439,7 @@ class ConnectionReuseTest {
     byte[] chunk = latin1("0".repeat(8_000) + "1\r\n \r\n");
     for (int i = 0; i < 60; i++) padded.writeBytes(chunk);
     padded.writeBytes(latin1("0\r\n\r\n"));
-    byte[] keys = ok(utf8("{\"keys\":[{\"kty\":\"oct\",\"kid\":\"k1\",\"k\":\"AAAA\"}]}"));
+    byte[] keys = ok(utf8("{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"k1\",\"n\":\"AQAB\",\"e\":\"AQAB\"}]}"));
     try (RawServer server = new RawServer(null, p -> {
       p.readRequest();
       p.write(keys);

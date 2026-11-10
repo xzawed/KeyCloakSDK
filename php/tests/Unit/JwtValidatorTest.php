@@ -503,8 +503,34 @@ final class JwtValidatorTest extends TestCase
     }
 
     /**
-     * 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(firebase/php-jwt 가 키 종류와 alg 를
-     * 묶는다). oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+     * ⚠️ alg 없는 EC · OKP 공개키의 재료를 HMAC 비밀로 쓴 위조도 거부한다. php-jwt 는 JWK 에 alg 가 없으면 넘긴 기본값(SDK 가
+     * 토큰의 alg 를 넘겼다)을 쓰고, EC 는 PEM 문자열 · OKP 는 x 의 base64 문자열을 키 재료로 만든다 — HS256 을 허용한 설정에서 그
+     * 공개 재료로 서명한 위조가 통과했다(Grok 레그 주장 → 실측, 수정 전 둘 다 통과). 재료는 공개 값만으로 정해지므로 키 쌍이 필요
+     * 없다(php-jwt 는 점을 검사하지 않는다).
+     *
+     * @return iterable<string, array{array<string,string>, string}>
+     */
+    public static function algLessPublicKeys(): iterable
+    {
+        $b64u = static fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+        yield 'EC P-256' => [['kty' => 'EC', 'crv' => 'P-256', 'kid' => 'ec1', 'x' => $b64u(random_bytes(32)), 'y' => $b64u(random_bytes(32))], 'ec1'];
+        yield 'OKP Ed25519' => [['kty' => 'OKP', 'crv' => 'Ed25519', 'kid' => 'ed1', 'x' => $b64u(random_bytes(32))], 'ed1'];
+    }
+
+    /** @param array<string,string> $jwk */
+    #[DataProvider('algLessPublicKeys')]
+    public function testAnAlgLessPublicKeyIsNeverAnHmacSecret(array $jwk, string $kid): void
+    {
+        $material = \Firebase\JWT\JWK::parseKey($jwk, 'HS256')?->getKeyMaterial();
+        self::assertIsString($material, '전제 — php-jwt 가 이 공개키의 재료를 문자열로 만든다(아니면 이 칸은 HMAC 을 재지 않는다)');
+        $forged = FbJwt::encode(['sub' => 'attacker'] + $this->goodClaims(), $material, 'HS256', $kid);
+        $this->expectException(TokenValidationError::class);
+        $this->hsAllowedValidator([$jwk])->validate($forged);
+    }
+
+    /**
+     * 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(firebase/php-jwt 의 RSA 재료는 OpenSSL 키
+     * 객체라 HMAC 이 받지 않는다). 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
      */
     public function testRsaPublicKeyBytesAsHmacSecretAreRejectedEvenWithHsAllowed(): void
     {

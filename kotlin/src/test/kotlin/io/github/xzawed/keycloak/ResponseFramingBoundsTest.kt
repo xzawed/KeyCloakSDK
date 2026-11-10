@@ -36,7 +36,8 @@ import kotlin.test.assertTrue
 // 없어야 한다(§4 — 호출부가 원인을 그대로 단다).
 private const val RFB_CAP = 1_048_576
 private val RFB_TOKEN = """{"access_token":"AT","token_type":"Bearer","expires_in":300}""".toByteArray()
-private val RFB_JWKS = """{"keys":[{"kty":"oct","kid":"k1","k":"AAAA"}]}""".toByteArray()
+// 키 하나짜리 읽히는 키셋 — 비대칭이어야 한다(oct 는 키셋에서 버려져 「쓸 수 있는 키 없음」이 된다 · JwksOctKeyTest).
+private val RFB_JWKS = """{"keys":[{"kty":"RSA","kid":"k1","n":"AQAB","e":"AQAB"}]}""".toByteArray()
 
 // 거부의 어느 표현에도 찍히면 안 되는 응답 바이트.
 private const val RFB_MARKER = "ZframeMARKER0123456789"

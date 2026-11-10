@@ -7,6 +7,8 @@ from __future__ import annotations
 import base64
 import datetime
 import gzip
+import hashlib
+import hmac
 import importlib
 import ipaddress
 import json
@@ -27,8 +29,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-from joserfc import jwt as jjwt
-from joserfc.jwk import JWKRegistry, OctKey
+from joserfc.jwk import JWKRegistry
 
 CLIENT_SECRET = "s3cret-must-not-leak"
 REFRESH_TOKEN = "refresh-must-not-leak"
@@ -266,10 +267,18 @@ def b64u(raw: bytes) -> str:
 
 
 def hs_token(secret: bytes, issuer: str, audience: str, kid: str | None) -> str:
-    """`secret` 으로 HS256 서명한 위조 토큰(sub=attacker)."""
-    header: dict[str, object] = {"alg": "HS256"} if kid is None else {"alg": "HS256", "kid": kid}
+    """`secret` 으로 HS256 서명한 위조 토큰(sub=attacker).
+
+    ⚠️ joserfc 로 서명하지 않는다 — 새 joserfc 는 비대칭 공개키를 oct 키로 들이지 않아
+    (「Asymmetric public keys must not be used as oct keys」) RS→HS 위조 토큰을 못 만든다
+    (CI 실측 — 옛 판은 경고만 냈다). 공격자는 그 라이브러리를 쓰지 않는다."""
+    header: dict[str, object] = {"alg": "HS256", "typ": "JWT"}
+    if kid is not None:
+        header["kid"] = kid
     claims = {"iss": issuer, "aud": audience, "sub": "attacker", "exp": int(time.time()) + 60}
-    return jjwt.encode(header, claims, OctKey.import_key(secret))
+    signing_input = f"{b64u(json.dumps(header).encode())}.{b64u(json.dumps(claims).encode())}"
+    signature = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
+    return f"{signing_input}.{b64u(signature)}"
 
 
 def joserfc_reads(data: dict[str, object]) -> bool:

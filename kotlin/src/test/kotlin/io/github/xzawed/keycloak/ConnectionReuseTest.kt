@@ -460,7 +460,7 @@ internal class ConnectionReuseTest {
                 repeat(60) { write(chunk) }
                 write(crtLatin1("0\r\n\r\n"))
             }
-        val keys = crtOk("""{"keys":[{"kty":"oct","kid":"k1","k":"AAAA"}]}""".toByteArray())
+        val keys = crtOk("""{"keys":[{"kty":"RSA","kid":"k1","n":"AQAB","e":"AQAB"}]}""".toByteArray())
         CrtRawServer(null) { p ->
             p.readRequest()
             p.write(keys)
@@ -1123,7 +1123,7 @@ internal class ConnectionReuseTest {
     @Test
     @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `a JWKS fetch whose caller is interrupted still returns its result and keeps the interrupt flag`() {
-        val jwks = """{"keys":[{"kty":"oct","kid":"k1","k":"AAAA"}]}""".toByteArray()
+        val jwks = """{"keys":[{"kty":"RSA","kid":"k1","n":"AQAB","e":"AQAB"}]}""".toByteArray()
         CrtRawServer(null) { p ->
             while (p.readRequest() != null) {
                 Thread.sleep(500)

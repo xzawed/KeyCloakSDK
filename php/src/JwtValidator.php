@@ -89,6 +89,13 @@ final class JwtValidator
         if ($alg === null || !in_array($alg, $this->config->signatureAlgorithms, true)) {
             throw new TokenValidationError(sprintf('algorithm not allowed: %s', $alg ?? '(none)'));
         }
+        // ⚠️ HS(대칭) 서명은 설정이 허용해도 검증하지 않는다 — 이 SDK 의 키는 JWKS(공개 문서)뿐이라 HMAC 비밀이 될 수 있는 것은
+        // 공개된 값뿐이다. php-jwt 는 JWK 에 alg 가 없으면 아래에서 넘기는 기본값(토큰의 alg)을 쓰고 EC 는 PEM 문자열 · OKP 는 x 의
+        // base64 문자열을 키 재료로 만들어, 그 공개 재료로 서명한 HS256 위조가 통과했다(실측 · JwtValidatorTest). oct 를 버리는
+        // 키 저장소(JwksStore)와 겹치는 방어다.
+        if (str_starts_with($alg, 'HS')) {
+            throw new TokenValidationError(sprintf('algorithm not allowed: %s (a JWKS holds public keys only)', $alg));
+        }
         $kid = isset($header['kid']) && is_string($header['kid']) ? $header['kid'] : null;
         if ($kid === null) {
             throw new TokenValidationError('missing kid');

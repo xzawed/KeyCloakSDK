@@ -1104,7 +1104,6 @@ def test_jwks_with_only_an_oct_key_has_no_usable_keys(jwks):
         client.validate(_signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id))
 
 
-@pytest.mark.filterwarnings("ignore:This key should not be used as an oct key")  # 위조하는 쪽
 @pytest.mark.parametrize("encoding", ["pem", "der", "n"])
 def test_rsa_public_key_bytes_as_hmac_secret_are_rejected_even_with_hs_allowed(jwks, encoding):
     """고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 고전 RS→HS 혼동은 거부된다

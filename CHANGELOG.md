@@ -47,6 +47,7 @@
 - **(Python)** HTTPS 프록시(`HTTPS_PROXY=https://…`) 뒤와 pyOpenSSL 을 주입한 프로세스의 sync 호출도 응답을 요청을 보낸 때부터 읽기 타임아웃 안에 읽습니다 — 거기서는 TLS 읽기 하나가 아래 소켓을 여러 번 읽는데 그 하나하나에 처음의 타임아웃이 걸려, TLS 레코드 하나의 꼬리를 흘리는 서버가 1 초 설정에 7 초 호출을 붙잡았습니다. 이제 같은 `KeycloakTransportError` 로 마감에 끝납니다.
 - **(PHP)** ⚠️ `introspect()` 가 응답의 `active` 를 `(bool)` 로 캐스트해 문자열 `"false"` 와 `1` 을 **활성**으로 읽었습니다 — 비활성 토큰이 활성으로 통과하는 fail-open 입니다(게시본 `1.0.0`–`1.5.2`, 실측). 이제 `IntrospectionResult::fromArray()` 가 `active` 가 없거나 JSON boolean 이 아닌 응답을 `KeycloakAuthError` 로 거부하고, `introspect()` 도 그 길을 지납니다(RFC 7662 §2.2 — 없는 `active` 는 비활성으로 읽었습니다). 그 예외를 「허용」으로 처리하지 마십시오.
 - **(Java · Kotlin · Go · Python · Ruby · PHP · Rust)** JWKS 의 대칭(`oct`) 키를 더는 검증 키로 쓰지 않습니다 — JWKS 는 공개 문서라 그 키는 비밀이 아닌데, 서명 알고리즘 설정(`signatureAlgorithms` 등)에 HS 계열을 허용한 소비자에게는 JWKS 에 `oct` 키가 있으면 키셋을 읽은 누구나 그 키로 서명한 위조 토큰이 통과했습니다(실측 — 기본값 `["RS256"]` 은 영향이 없고, Keycloak 은 `oct` 를 JWKS 에 내지 않습니다). `oct` 만 있는 키셋은 쓸 수 있는 키가 없는 키셋처럼 조회 실패입니다. Node · .NET 은 원래 거부했고 이제 시험으로 고정합니다.
+- **(PHP)** HS 계열(HS256 등) 서명은 설정이 허용해도 검증하지 않습니다 — JWK 에 `alg` 가 없는 EC · OKP 공개키가 있으면 php-jwt 가 토큰의 alg 로 그 키를 만들어(EC 는 PEM 문자열, OKP 는 `x` 의 base64 문자열이 HMAC 비밀이 됩니다) 공개된 그 값으로 서명한 위조 토큰이 통과했습니다(실측 — HS 를 허용한 설정만 해당하고 기본값 `["RS256"]` 은 영향이 없습니다). SDK 의 키는 JWKS 의 공개키뿐이라 HS 서명이 정상으로 검증되는 경우는 없었습니다.
 
 ## [1.5.2] - 2026-11-03 (PHP)
 
