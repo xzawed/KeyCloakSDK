@@ -113,6 +113,76 @@ _before="$(cat "$TMP/CHANGELOG.md" "$TMP/changelog/"*.md | cksum)"
 _o="$(node "$ROT" --root="$TMP" 2>&1 || true)"; assert_contains "$_o" "보관본 형식이 아니다" "깨진 보관본을 지목한다"
 assert_eq "$_before" "$(cat "$TMP/CHANGELOG.md" "$TMP/changelog/"*.md | cksum)" "멈출 때 원장을 한 바이트도 쓰지 않는다"
 
+# C4 --eager — 상한 안이어도 최신 날짜 하나만 남기고 옮긴다. 여러 PR 이 [Unreleased] 를 함께 키우기 전에
+# 회전만 하는 PR 을 먼저 내려고 둔다(상한을 넘긴 PR 이 회전까지 실으면 그 위로 rebase 한 PR 의 새 글머리가
+# 충돌 없이 이웃 절로 들어간다 — 등록부 함정 (ff)). 픽스처는 상한 한참 아래라 기본 회전이면 무동작이다.
+eager_fix() {
+  fresh
+  { sec 1.0.4 2026-11-03 10; sec 1.0.3 2026-11-03 10; sec 1.0.2 2026-10-31 10; sec 1.0.1 2026-09-10 10; } | root_file
+}
+eager_fix; commit_main
+_o="$(node "$ROT" --root="$TMP" 2>&1)"; assert_contains "$_o" "옮길 것이 없다" "대조군 — 같은 픽스처를 기본 회전은 옮기지 않는다"
+_o="$(node "$ROT" --root="$TMP" --eager 2>&1)"
+assert_contains "$_o" "2026-10-31 · 2026-09-10" "eager 는 최신 날짜 하나만 남기고 나머지 날짜를 옮긴다"
+_r="$(cat "$TMP/CHANGELOG.md")"
+assert_contains "$_r" "## [1.0.4] - 2026-11-03" "최신 날짜의 첫 절은 루트에 남는다"
+assert_contains "$_r" "## [1.0.3] - 2026-11-03" "최신 날짜의 둘째 절도 루트에 남는다(날짜는 쪼개지 않는다)"
+assert_not_contains "$_r" "## [1.0.2]" "그보다 오래된 절은 루트를 떠난다"
+assert_contains "$_r" "> 이전 릴리스(월별 보관본): [2026-10](changelog/2026-10.md) · [2026-09](changelog/2026-09.md)" "색인 줄이 옮긴 달을 가리킨다"
+_out="$(run)"; assert_not_contains "$_out" "검사 8d" "eager 회전 결과도 8d(보존 포함)를 통과한다"
+_c1="$(cat "$TMP/CHANGELOG.md" "$TMP/changelog/"*.md | cksum)"
+_o="$(node "$ROT" --root="$TMP" --eager 2>&1)"; assert_contains "$_o" "옮길 것이 없다" "날짜가 하나 남으면 eager 도 무동작이다"
+assert_eq "$_c1" "$(cat "$TMP/CHANGELOG.md" "$TMP/changelog/"*.md | cksum)" "두 번째 eager 실행이 원장을 바꾸지 않는다"
+eager_fix; _before="$(cksum < "$TMP/CHANGELOG.md")"
+_o="$(node "$ROT" --root="$TMP" --eager --dry-run 2>&1)"; assert_contains "$_o" "plan" "eager dry-run 은 계획을 인쇄한다"
+assert_eq "$_before" "$(cksum < "$TMP/CHANGELOG.md")" "eager dry-run 은 루트를 쓰지 않는다"
+assert_eq "no" "$([ -d "$TMP/changelog" ] && echo yes || echo no)" "eager dry-run 은 보관본을 만들지 않는다"
+
+# C5 최신 날짜 하나가 혼자 상한을 넘으면 옮길 것이 없다 — 경고하고 아무것도 다시 쓰지 않는다.
+fresh; { sec 1.0.3 2026-10-02 40000; sec 1.0.2 2026-10-02 40000; } | root_file
+_before="$(cksum < "$TMP/CHANGELOG.md")"
+_o="$(node "$ROT" --root="$TMP" 2>&1)"; assert_contains "$_o" "옮길 것이 없다" "날짜 하나뿐이면 옮길 것이 없다"
+assert_contains "$_o" "상한을 넘는다" "날짜 하나가 혼자 상한을 넘는다고 경고한다"
+assert_eq "$_before" "$(cksum < "$TMP/CHANGELOG.md")" "날짜 하나뿐이면 루트를 다시 쓰지 않는다"
+assert_eq "no" "$([ -d "$TMP/changelog" ] && echo yes || echo no)" "날짜 하나뿐이면 보관본을 만들지 않는다"
+# 같은 픽스처를 CRLF 로 — LF 로는 같은 바이트를 다시 써도 cksum 이 같아 「다시 쓴다」를 못 본다(독립 레그 실측).
+sed 's/$/\r/' "$TMP/CHANGELOG.md" > "$TMP/c.tmp" && mv "$TMP/c.tmp" "$TMP/CHANGELOG.md"
+_crs="$(tr -cd '\r' < "$TMP/CHANGELOG.md" | wc -c | tr -d ' ')"
+node "$ROT" --root="$TMP" >/dev/null 2>&1
+assert_eq "$_crs" "$(tr -cd '\r' < "$TMP/CHANGELOG.md" | wc -c | tr -d ' ')" "옮길 것이 없으면 CRLF 원장을 다시 쓰지 않는다"
+
+# C5b 다시 그리면 달라지는 원장(머리말의 묵은 색인 줄)은 옮길 절이 없어도 다시 써서 고친다 — 「옮길 것이
+# 없다」로 멈추면 상한 위의 원장이 막다른 길이 된다(Grok 레그 실측: 원문 70,152B · 다시 그리면 상한 안 · 날짜 둘).
+fresh
+printf '# Changelog\n\n머리말.\n\n> 이전 릴리스(월별 보관본): %s\n\n## [Unreleased]\n\n' "$(big 70000)" > "$TMP/CHANGELOG.md"
+{ sec 1.0.2 2026-10-02 10; sec 1.0.1 2026-09-01 10; } >> "$TMP/CHANGELOG.md"
+_o="$(node "$ROT" --root="$TMP" 2>&1)"; assert_not_contains "$_o" "옮길 것이 없다" "다시 그리면 달라지는 원장은 「옮길 것이 없다」로 멈추지 않는다"
+assert_not_contains "$(cat "$TMP/CHANGELOG.md")" "이전 릴리스(월별 보관본)" "묵은 색인 줄을 지운다(main 과 같은 동작)"
+assert_eq "yes" "$([ "$(wc -c < "$TMP/CHANGELOG.md")" -le 65536 ] && echo yes || echo no)" "다시 쓴 루트는 상한 안이다"
+
+# C6 모르는 인자는 실패다 — 오타(`--eagre`)나 `--root <dir>` 꼴이 조용히 기본 동작으로 떨어지면 「옮길 것이
+# 없다」가 회전이 끝난 것으로 읽히고, `--root <dir>` 은 현재 디렉터리의 원장을 돌린다. 그래서 픽스처 안에서 돌린다.
+eager_fix; _before="$(cksum < "$TMP/CHANGELOG.md")"
+_o="$(cd "$TMP" && node "$ROT" --eagre 2>&1 || true)"; assert_contains "$_o" "모르는 인자" "오타 인자를 지목한다"
+assert_fails sh -c 'cd "$1" && node "$2" --eagre' _ "$TMP" "$ROT"
+assert_fails sh -c 'cd "$1" && node "$2" --root "$1" --eager' _ "$TMP" "$ROT"
+# 맨 위치 인자(`--` 없는 것)도 모르는 인자다 · `--root=` 는 값과 함께 한 번만 — 빈 값은 현재 디렉터리가 된다.
+assert_fails sh -c 'cd "$1" && node "$2" "$1" --eager' _ "$TMP" "$ROT"
+assert_fails sh -c 'cd "$1" && node "$2" --root= --eager' _ "$TMP" "$ROT"
+assert_fails sh -c 'cd "$1" && node "$2" --root="$1" --root="$1" --eager' _ "$TMP" "$ROT"
+assert_eq "$_before" "$(cksum < "$TMP/CHANGELOG.md")" "모르는 인자면 아무것도 쓰지 않는다"
+assert_eq "no" "$([ -d "$TMP/changelog" ] && echo yes || echo no)" "모르는 인자면 보관본을 만들지 않는다"
+
+# C7 루트가 최신순이 아니면 회전은 멈춘다 — 끝에서부터 날짜 묶음을 떼므로 한 날짜가 루트와 보관본에 갈라진다
+# (독립 레그 실측: 11-03 · 10-31 · 11-03 에 --eager 가 1.0.3 은 루트에, 1.0.1 은 보관본에 두었다). 8d 도 막지만 먼저 멈춘다.
+fresh; { sec 1.0.3 2026-11-03 10; sec 1.0.2 2026-10-31 10; sec 1.0.1 2026-11-03 10; } | root_file
+_before="$(cksum < "$TMP/CHANGELOG.md")"
+_o="$(node "$ROT" --root="$TMP" 2>&1)"; assert_contains "$_o" "옮길 것이 없다" "대조군 — 상한 안의 기본 회전은 무동작이다"
+_o="$(node "$ROT" --root="$TMP" --eager 2>&1 || true)"; assert_contains "$_o" "최신순" "순서가 어긋난 루트를 지목한다"
+assert_fails node "$ROT" --root="$TMP" --eager
+assert_eq "$_before" "$(cksum < "$TMP/CHANGELOG.md")" "순서가 어긋나면 루트를 쓰지 않는다"
+assert_eq "no" "$([ -d "$TMP/changelog" ] && echo yes || echo no)" "순서가 어긋나면 보관본을 만들지 않는다"
+
 # ---- B. 보존 (git 기준 = main 과의 merge-base) ----
 # 회전된 원장을 기준으로 커밋해 두고 한 가지씩만 비튼다.
 rot_base() { rot_fix; node "$ROT" --root="$TMP" >/dev/null 2>&1; commit_main; }
