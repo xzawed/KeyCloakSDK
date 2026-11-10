@@ -127,9 +127,7 @@ assert_eq "ok" "$(ok_if "$([ -n "$_sd_tree" ] && echo 0 || echo 1)" 'EMPTY')" \
 assert_eq "$(sd_sorted "$_sd_tree")" "$(sd_sorted "$SD_LANGS")" \
   "[언어집합] SD_LANGS 가 트리와 다르다 — 언어가 들고 났는데 이 파일의 손 목록이 안 따라왔다(아래 축 전부가 그 언어를 건너뛴다)"
 
-# ⚠️ 부분집합만 본다 — `SD_CAP_LANGS`·`SD_BACKOFF_LANGS` 는 **의도적으로 일곱**이다
-# (java·kotlin 은 JWKS fetch 를 Nimbus 가 소유해 이 축의 대상이 아니다). 전체집합과 같기를
-# 요구하면 그 설계를 깨뜨린다. 여기서 잡는 것은 **오타·유령 이름**이다.
+# ⚠️ `SD_LANGS` 가 아닌 손 목록을 도는 축은 그 목록이 **분할**이어야 한다(`sd_partition_of_langs`, 아래).
 
 # ⚠️ **음성 대조군 — 파생이 트리를 실제로 읽는가.** 위 단언은 「지금 일치한다」만 본다. 그 형태는
 # **파생이 no-op 이어도 통과한다** — `sd_tree_langs() { printf '%s ' java python … kotlin; }` 로
@@ -170,13 +168,46 @@ sd_universe_name_axis() {
     "[이름축·언어집합] 정규식·glob 문자를 담은 이름의 언어 디렉터리가 빠졌다 — 파생이 이름을 해석한다"
 }
 sd_universe_name_axis
-sd_subset_of_langs() { # $1=라벨 $2=목록
-  _ss_bad=''
-  for _l in $2; do
-    case " $SD_LANGS " in *" $_l "*) ;; *) _ss_bad="$_ss_bad $_l" ;; esac
+# ⚠️ **손 목록 축은 분할이어야 한다 — 목록 ∪ 곁 표 = `SD_LANGS`, 겹침 0, 유령 이름 0.** 곁 표는
+# 언어 → 「이 축 대신 무엇이 그 성질을 지는가」의 증거이고(축마다 그 증거를 단언한다), 비면 그 언어는
+# 목록에 있어야 한다. 부분집합만 보던 판은 **열 번째 언어가 그 축을 조용히 건너뛰었다** — 실측: 트리와
+# `SD_LANGS` 에 언어 하나를 더하니 다른 축 11 이 그 이름을 댔고 손 목록 축 셋은 아무 말도 없었다.
+# ⚠️ 잔여: 구성원을 곁 표로 옮기고 그 축의 `_seen` 수를 함께 낮추는 편집은 통과한다 — 곁 표에 증거를
+# 적어야 하므로 diff 에 드러나는 쪽으로만 좁혔다(Grok 레그 지목).
+sd_partition_gap() { # $1=목록 $2=곁 표 함수(언어 → 증거, 없으면 빈 문자열) → 어긋난 이름을 찍는다
+  _pg_out=''
+  for _l in $1; do
+    case " $SD_LANGS " in *" $_l "*) ;; *) _pg_out="$_pg_out $_l(유령)" ;; esac
   done
-  assert_eq "" "$_ss_bad" "[언어집합] $1 에 SD_LANGS 에 없는 이름이 있다 —$_ss_bad"
+  for _l in $SD_LANGS; do
+    _pg_in=1; case " $1 " in *" $_l "*) _pg_in=0 ;; esac
+    # ⚠️ 곁 표의 실패를 삼키지 않는다 — 없는 함수·실패한 함수면 `set -e` 가 이 서브셸을 출력 없이 끝내
+    # 단언이 「어긋남 없음」으로 통과했다(실측: sh·dash 둘 다 빈 출력 · busybox ash 만 계속 돈다).
+    _pg_side="$("$2" "$_l")" || { printf '%s %s(곁 표 실패)' "$_pg_out" "$2"; return 0; }
+    if [ "$_pg_in" = 0 ] && [ -n "$_pg_side" ]; then _pg_out="$_pg_out $_l(둘 다)"
+    elif [ "$_pg_in" = 1 ] && [ -z "$_pg_side" ]; then _pg_out="$_pg_out $_l"
+    fi
+  done
+  printf '%s' "$_pg_out"
 }
+sd_partition_of_langs() { # $1=라벨 $2=목록 $3=곁 표 함수
+  assert_eq "" "$(sd_partition_gap "$2" "$3")" \
+    "[언어집합] $1 이 SD_LANGS 를 나누지 않는다 — 이름만 있으면 목록에도 곁 표에도 없다(그 언어가 이 축을 조용히 건너뛴다) · (둘 다)는 겹침 · (유령)은 SD_LANGS 밖"
+}
+# 음성 대조군 — 위 단언은 빈 출력만 본다. 헬퍼가 no-op 이어도 통과하므로 **헬퍼 자신**에 알려진 답을 묻는다.
+# 곁 표는 대조 전용이다(java 하나만 곁에 둔다) — 축의 곁 표는 아직 정의되지 않았고, 축 쪽 배선은 각 축이 진다.
+sd_partition_control_side() { case "$1" in java) printf '%s' 'x' ;; esac; }
+_pc_rest="$(printf '%s' "$SD_LANGS" | tr ' ' '\n' | grep -vx 'java' | tr '\n' ' ')"
+assert_eq "" "$(sd_partition_gap "$_pc_rest" sd_partition_control_side)" \
+  "[양성대조·언어집합] 오늘의 SD_LANGS 를 정확히 나눈 목록에서 분할 검사가 어긋남을 냈다 — 「늘 운다」와 구분되지 않는다"
+assert_eq " zz10" "$(SD_LANGS="$SD_LANGS zz10" sd_partition_gap "$_pc_rest" sd_partition_control_side)" \
+  "[음성대조·언어집합] SD_LANGS 에 더한 열 번째 언어를 분할 검사가 못 본다 — no-op 이다"
+assert_eq " java(둘 다)" "$(sd_partition_gap "$_pc_rest java" sd_partition_control_side)" \
+  "[음성대조·언어집합] 목록과 곁 표에 함께 있는 언어를 겹침으로 못 본다"
+assert_eq " zz9(유령)" "$(sd_partition_gap "$_pc_rest zz9" sd_partition_control_side)" \
+  "[음성대조·언어집합] SD_LANGS 밖의 이름을 유령으로 못 본다"
+assert_eq " sd_no_such_side(곁 표 실패)" "$(sd_partition_gap "$_pc_rest" sd_no_such_side 2>/dev/null)" \
+  "[음성대조·언어집합] 곁 표 함수가 없어도 분할 검사가 통과한다 — set -e 가 서브셸을 출력 없이 끝냈다"
 
 # 코드 축을 파라미터별로 돈다. 결과 기대값은 `SD_EXPECT`에 남긴다(문서 축이 그걸 쓴다).
 sd_code_axis() { # $1=라벨 $2=추출 함수명
@@ -296,8 +327,15 @@ sd_jvm_cap_hits() {
     | grep -cE '(super|DefaultResourceRetriever)[(][^)]*,[[:space:]]*JWKSourceBuilder[.]DEFAULT_HTTP_SIZE_LIMIT[[:space:]]*[)]' || true
 }
 
+# 곁 표 — 리터럴 대신 Nimbus 상수를 상위 생성자에 넘기는 언어와 그 파일. 아래 참조 루프가 이 표를 돈다.
+sd_cap_jvm_file() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java' ;;
+    kotlin) printf '%s' 'kotlin/src/main/kotlin/io/github/xzawed/keycloak/NoRedirectResourceRetriever.kt' ;;
+  esac
+}
 SD_CAP_LANGS='go rust php ruby node dotnet python'
-sd_subset_of_langs "SD_CAP_LANGS" "$SD_CAP_LANGS"
+sd_partition_of_langs "SD_CAP_LANGS" "$SD_CAP_LANGS" sd_cap_jvm_file
 sd_cap_expect=''
 sd_cap_seen=0
 for L in $SD_CAP_LANGS; do
@@ -314,24 +352,27 @@ for L in $SD_CAP_LANGS; do
     sd_cap_expect="$_raw"
   else
     assert_eq "$sd_cap_expect" "$_raw" \
-      "[JWKS 크기상한] $L 의 상한이 다른 언어와 다르다 — 여섯이 함께 움직여야 하는 값이다"
+      "[JWKS 크기상한] $L 의 상한이 다른 언어와 다르다 — 일곱이 함께 움직여야 하는 값이다"
   fi
 done
-# 대조군 — 위 루프가 실제로 여섯을 돌았는지. 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
+# 대조군 — 위 루프가 실제로 일곱을 돌았는지. 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
 assert_eq "7" "$sd_cap_seen" "[JWKS 크기상한] 상한을 읽은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
 # 값은 Nimbus 의 기본 상한이다. 자매 JVM 둘이 그것을 **심볼로** 참조하므로, 여기서만 수를 고정한다.
 assert_eq "51200" "$sd_cap_expect" "[JWKS 크기상한] 51200(Nimbus DEFAULT_HTTP_SIZE_LIMIT)이 아니다"
 
-# JVM 둘 — 리터럴이 아니라 **참조의 존재**를 본다. 이 인자를 빼면 `JWKSourceBuilder` 가 자기
+# JVM 둘(곁 표) — 리터럴이 아니라 **참조의 존재**를 본다. 이 인자를 빼면 `JWKSourceBuilder` 가 자기
 # 리트리버를 만들며 상한을 지운다(#400 의 바이트코드 실측).
-for _f in \
-  "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java" \
-  "kotlin/src/main/kotlin/io/github/xzawed/keycloak/NoRedirectResourceRetriever.kt"
-do
+_cap_jvm_seen=0
+for L in $SD_LANGS; do
+  _f="$(sd_cap_jvm_file "$L")"
+  [ -n "$_f" ] || continue
   _hits="$(sd_jvm_cap_hits "$ROOT/$_f")"
   assert_eq "ok" "$(ok_if "$([ "$_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
-    "[JWKS 크기상한] $_f 가 상위 생성자에 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 넘기지 않는다"
+    "[JWKS 크기상한] $L 의 $_f 가 상위 생성자에 JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT 을 넘기지 않는다"
+  _cap_jvm_seen=$((_cap_jvm_seen + 1))
 done
+# 대조군 — 곁 표가 그대로인데 루프가 아무것도 안 보는 변형(건너뛰기)을 막는다.
+assert_eq "2" "$_cap_jvm_seen" "[JWKS 크기상한] 참조를 본 언어 수가 2가 아니다 — 곁 표나 루프가 낡았나?"
 
 # 대조군 — 위 두 판정이 **주석 속 사본을 거부하는가**. 라이브 파일만 보면 판정을 `grep -c` 로
 # 되돌려도 초록이다(그것이 바로 이 절이 고친 판이다). 각 행은 **그 모양 하나만** 다르다.
@@ -376,8 +417,7 @@ rm -rf "$_cap_nc"
 # 1b 와 다른 셋:
 #   · **아홉 전부다** — JVM 둘도 자기 소스에 리터럴을 선언한다(Nimbus 상수가 아니다). 그래서 손 목록을
 #     두지 않고 `SD_LANGS`(0절이 트리와 대조한다)를 그대로 돈다 — 열 번째 언어는 아래 `case` 에 없으면
-#     「선언 0 개」로 운다. 손 목록 + `sd_subset_of_langs` 는 부분집합 축의 관용이다(오타·유령 이름만
-#     잡고 **누락은 못 잡는다**).
+#     「선언 0 개」로 운다. 손 목록을 도는 축(1b · 1b2)은 그 대신 `sd_partition_of_langs` 로 분할을 단언한다.
 #   · **언어마다 핀과 직접 비교한다** — 「첫 언어 = 합의값」(1b)은 첫 언어가 드리프트하면 맞는 나머지가
 #     「다르다」로 울고 범인은 핀 단언 하나로만 드러난다.
 #   · **주석 밖의 맨 리터럴 선언이 정확히 하나여야 한다** — 식(`1_048_576 * 2` · `1 << 20`)·꼬리 주석·
@@ -606,7 +646,7 @@ assert_eq "GREW" "$SD_BTP" \
   "[음성대조·bearer 문법] nbsp 행을 지운 사본에서 축이 안 울었다 — 행 대조가 no-op 이거나 파일을 안 읽는다"
 
 # ---------------------------------------------------------------------------
-# 빈 키셋 거부 — 자체 JWKS 스토어를 가진 넷
+# 빈 키셋 거부 — 아홉 전부(거부 지점과 그것을 잡는 테스트)
 # ---------------------------------------------------------------------------
 # ⚠️ go 의 #380 픽스는 **두 절반**이었다 — 상태코드 거부와 `len(ks.Keys) == 0` 거부. 자매 SDK
 # 로는 **앞 절반만** 복제됐고, 뒤 절반이 없는 rust·ruby·php 는 200 + `{"keys":[]}` 하나로 좋은
@@ -615,8 +655,10 @@ assert_eq "GREW" "$SD_BTP" \
 # 운다). 그래서 이 축은 **거부 지점**과 **그것을 잡는 테스트**를 함께 본다. 한쪽만 보면 코드를
 # 지우고 테스트만 남기거나 그 반대가 통과한다.
 #
-# ⚠️ 여기 없는 하나의 이유: python 은 joserfc 가 빈 키셋에서 `MissingKeyError` 를 던져 대입
-# 전에 막는다(실측) — 거부 지점이 우리 코드에 없다.
+# ✅ **아홉 전부라 손 목록을 두지 않고 `SD_LANGS` 를 돈다** — 열 번째 언어는 아래 표에 행이 없으면 운다.
+# python 은 「joserfc 가 빈 키셋에서 막는다 — 거부 지점이 우리 코드에 없다」로 빠져 있었는데 #999 이후로는
+# 거짓이다: `_internal/jwks_keys.py` 가 `no keys` 로 거부하고 호출자는 거부된 키셋을 저장하지 않는다.
+# 손 목록에 분할을 단언하자 드러났다(2026-11-10). 시험은 sync 미러를 겨눈다(aio 에 같은 이름이 있다).
 # java·kotlin·dotnet·node 도 캐시는 라이브러리 것이지만 **거부 지점은 우리 코드다**(JWKS 전용
 # 리트리버 · ConfigurationManager 의 설정 검증기 · jose `[customFetch]` 래퍼). dotnet 은 표지가
 # 메시지가 아니라 검증기 설정이다. node 는 jose 가 fetch 가 던지면 옛 캐시를 남기는 데 기댄다.
@@ -630,6 +672,7 @@ sd_empty_reject() {
     kotlin) printf '%s\t%s\n' "kotlin/src/main/kotlin/io/github/xzawed/keycloak/NoRedirectResourceRetriever.kt" "contains no keys" ;;
     dotnet) printf '%s\t%s\n' "dotnet/src/Xzawed.Keycloak.Sdk/JwtValidator.cs" "MinimumNumberOfKeys = 1" ;;
     node) printf '%s\t%s\n' "node/src/jwt.ts" "contains no keys" ;;
+    python) printf '%s\t%s\n' "python/src/keycloak_sdk/_internal/jwks_keys.py" "{_MALFORMED}: no keys" ;;
   esac
 }
 sd_empty_test() {
@@ -642,14 +685,18 @@ sd_empty_test() {
     kotlin) printf '%s\t%s\n' "kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksEmptyKeysetTest.kt" "empty200DoesNotPoisonGoodCache" ;;
     dotnet) printf '%s\t%s\n' "dotnet/tests/Xzawed.Keycloak.Sdk.Tests/JwksEmptyKeysetTests.cs" "Empty_200_does_not_poison_good_cache" ;;
     node) printf '%s\t%s\n' "node/test/unit/jwt-jwks.test.ts" "빈 키셋을 받아도 기존 k1 검증은 유지된다" ;;
+    python) printf '%s\t%s\n' "python/tests/unit/test_auth.py" "test_empty_jwks_is_refused_and_keeps_the_cached_set" ;;
   esac
 }
 
-SD_EMPTY_LANGS='go rust ruby php java kotlin dotnet node'
-sd_subset_of_langs "SD_EMPTY_LANGS" "$SD_EMPTY_LANGS"
 sd_empty_seen=0
-for L in $SD_EMPTY_LANGS; do
+for L in $SD_LANGS; do
   _r="$(sd_empty_reject "$L")"
+  if [ -z "$_r" ] || [ -z "$(sd_empty_test "$L")" ]; then
+    assert_eq "ok" "MISSING" \
+      "[빈 키셋] $L 의 행이 표에 없다 — 거부 지점(sd_empty_reject)과 그것을 잡는 테스트(sd_empty_test)를 함께 적는다"
+    continue
+  fi
   _src="${_r%%	*}"; _mark="${_r##*	}"
   _n="$(sd_code_lines "$ROOT/$_src" | grep -c -F -- "$_mark" || true)"
   assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
@@ -661,8 +708,8 @@ for L in $SD_EMPTY_LANGS; do
     "[빈 키셋] $L 의 회귀 테스트가 사라졌다 — $_tf 에 '$_tn' 이 없다(코드만 남고 증명이 없다)"
   [ "$_n" -ge 1 ] && [ "$_tn_hits" -ge 1 ] && sd_empty_seen=$((sd_empty_seen + 1))
 done
-# 대조군 — 목록이 비면 어서션이 0건 실행되고 조용히 통과한다.
-assert_eq "8" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 8이 아니다 — 추출 표가 낡았나?"
+# 대조군 — 루프가 아무것도 안 보면 어서션이 0건 실행되고 조용히 통과한다.
+assert_eq "9" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 9가 아니다 — 추출 표가 낡았나?"
 
 # ---------------------------------------------------------------------------
 # 1h) JWKS 키 집합의 **수명** — 아홉 언어가 같은 리터럴 하나를 선언한다
@@ -891,8 +938,17 @@ assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — �
 # ⚠️ 이 축은 **일곱**이다(java·kotlin 제외 — Nimbus 가 그들의 fetch 를 소유해 이 자리가 없다).
 # `_seen`이 7이 아니면 표가 낡은 것이다. 언어별 동작은 각 언어 단위테스트가 증명하고, 여기서는
 # **대칭**만 본다 — 한 언어에서 장치를 지우면 그 언어 CI 와 이 가드가 함께 운다.
+# 곁 표(면제) — java·kotlin 은 Nimbus 가 JWKS **source** 를 rate-limit 해 콜드 적재 실패도 그 창에 묶인다
+# (security.md · 2026-09-06 실측 2 회). 증거는 그 경계를 고정하는 시험이다(`파일|선언`, 주석 밖 ≥ 1 — 이 축 끝에서
+# 단언한다). 시험이 사라지면 면제의 근거도 사라진다.
+sd_backoff_exempt() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/JwksColdCacheOutageTest.java|void coldCacheDuringIdpOutage_isBounded(' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksColdCacheOutageTest.kt|fun `cold cache during an IdP outage is bounded`(' ;;
+  esac
+}
 SD_BACKOFF_LANGS="python node go dotnet php rust ruby"
-sd_subset_of_langs "SD_BACKOFF_LANGS" "$SD_BACKOFF_LANGS"
+sd_partition_of_langs "SD_BACKOFF_LANGS" "$SD_BACKOFF_LANGS" sd_backoff_exempt
 
 sd_backoff_file() {
   case "$1" in
@@ -993,6 +1049,17 @@ EOF
   _backoff_seen=$((_backoff_seen + 1))
 done
 assert_eq "7" "$_backoff_seen" "[backoff] 훑은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
+# 면제의 증거 — 곁 표의 시험 선언이 주석 밖에 있는가. 선언만 본다(동작은 그 레인 CI 가 돌린다).
+_backoff_ex_seen=0
+for L in $SD_LANGS; do
+  _bx="$(sd_backoff_exempt "$L")"
+  [ -n "$_bx" ] || continue
+  _bxf="${_bx%%|*}"; _bxd="${_bx#*|}"
+  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_bxf" "$_bxd")" \
+    "[backoff] $L 의 면제 근거 시험이 없다(주석 밖) — 기대: $_bxd ($_bxf). 근거가 사라지면 면제도 사라진다"
+  _backoff_ex_seen=$((_backoff_ex_seen + 1))
+done
+assert_eq "2" "$_backoff_ex_seen" "[backoff] 면제 근거를 본 언어 수가 2가 아니다 — 곁 표나 루프가 낡았나?"
 
 # ---------------------------------------------------------------------------
 # 1c) 마스킹 축 — 아홉 언어의 **바닥 계약**이 살아있는가
