@@ -42,7 +42,7 @@ internal class JwksOctKeyTest {
         kid: String?,
     ): Unit =
         runBlocking {
-            val secret = ByteArray(32).also { SecureRandom().nextBytes(it) }
+            val secret = ByteArray(32).also { RANDOM.nextBytes(it) }
             val k1 = RSAKeyGenerator(2048).keyID("k1").generate()
             val oct = "{\"kty\":\"oct\",\"k\":\"${Base64URL.encode(secret)}\",$members}"
             val server = serve("{\"keys\":[$oct,${k1.toPublicJWK().toJSONString()}]}")
@@ -155,6 +155,8 @@ internal class JwksOctKeyTest {
     }
 
     companion object {
+        private val RANDOM = SecureRandom()
+
         @JvmStatic
         fun octShapes(): List<Arguments> =
             listOf(

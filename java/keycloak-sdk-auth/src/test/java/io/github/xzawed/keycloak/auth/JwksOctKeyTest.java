@@ -32,6 +32,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * 않는다. Kotlin 자매 시험과 같은 모양이다.
  */
 class JwksOctKeyTest {
+  private static final SecureRandom RANDOM = new SecureRandom();
 
   static Stream<Arguments> octShapes() {
     return Stream.of(
@@ -44,7 +45,7 @@ class JwksOctKeyTest {
   @MethodSource("octShapes")
   void octKey_isNeverAVerificationKey(String name, String members, String kid) throws Exception {
     byte[] secret = new byte[32];
-    new SecureRandom().nextBytes(secret);
+    RANDOM.nextBytes(secret);
     RSAKey k1 = new RSAKeyGenerator(2048).keyID("k1").generate();
     String oct = "{\"kty\":\"oct\",\"k\":\"" + Base64URL.encode(secret) + "\"," + members + "}";
     String set = "{\"keys\":[" + oct + "," + k1.toPublicJWK().toJSONString() + "]}";
