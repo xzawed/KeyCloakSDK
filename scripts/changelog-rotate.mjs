@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 // CHANGELOG 원장 회전 — 루트가 상한(ROOT_MAX_BYTES)을 넘으면 가장 오래된 **날짜**의 절부터
 // `changelog/<YYYY-MM>.md` 월별 보관본으로 옮긴다. 지우지 않고, 내용을 바꾸지 않는다(상대 링크만
-// 한 단계 위를 가리키게 고친다). 루트가 상한 안이면 아무것도 하지 않는다 — 몇 번을 돌려도 같다.
+// 한 단계 위를 가리키게 고친다). 루트가 상한 안이면(`--eager` 가 아니면) 아무것도 하지 않는다 — 몇 번을 돌려도 같다.
 //
-// 사용: node scripts/changelog-rotate.mjs [--root=<디렉터리>] [--dry-run]
+// 사용: node scripts/changelog-rotate.mjs [--root=<디렉터리>] [--dry-run] [--eager]
+//
+// `--eager` 는 상한 안이어도 최신 날짜 하나만 남기고 옮긴다 — 여러 PR 이 `[Unreleased]` 를 함께 키우기
+// 전에 회전만 하는 PR 을 먼저 낼 때 쓴다(상한을 넘긴 PR 이 회전까지 실으면, 그 위로 rebase 한 PR 의 새
+// 글머리가 충돌 없이 이웃 절로 들어간다 — 등록부 함정 (ff)). 이것도 몇 번을 돌려도 같다.
+// ⚠️ 모르는 인자는 실패다 — 오타가 기본 동작으로 떨어지면 「옮길 것이 없다」가 회전이 끝난 것으로 읽히고,
+// `--root <디렉터리>` 꼴은 현재 디렉터리의 원장을 돌린다.
 //
 // ⚠️ **날짜 묶음 단위로만 옮긴다.** 한 날짜가 루트와 보관본에 갈라 살면 「그 물결」을 한 곳에서
 // 읽을 수 없다. 그래서 최신 날짜 하나가 혼자 상한을 넘으면 그대로 둔다(검사 8d 도 그것을 허용한다).
@@ -28,6 +34,9 @@ const die = (msg) => {
   console.error(`changelog-rotate: ${msg}`)
   process.exit(1)
 }
+const EAGER = argv.includes('--eager')
+const unknown = argv.filter((a) => a !== '--dry-run' && a !== '--eager' && !a.startsWith('--root='))
+if (unknown.length) die(`모르는 인자 — ${unknown.join(' ')} (사용: [--root=<디렉터리>] [--dry-run] [--eager]) — 아무것도 쓰지 않았다`)
 
 // 검사 8d 와 같은 눈으로 읽는다 — 줄 끝은 LF 로 맞춘다(쓰는 것도 LF 다).
 const readLF = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
@@ -56,7 +65,7 @@ if (existsSync(volDir)) {
 }
 
 const before = bytes(rootText)
-if (before <= ROOT_MAX_BYTES) {
+if (before <= ROOT_MAX_BYTES && !EAGER) {
   console.log(`ok   ${ROOT_FILE} ${before}B ≤ ${ROOT_MAX_BYTES}B — 옮길 것이 없다`)
   process.exit(0)
 }
@@ -72,12 +81,20 @@ const keep = root.releases.slice() // 최신순
 let moved = [] // 최신순
 const monthsDesc = () => [...new Set([...volumes.keys(), ...moved.map((b) => b.month)])].sort().reverse()
 let next = renderRoot(keep.map((b) => b.text), monthsDesc())
-while (bytes(next) > ROOT_MAX_BYTES && new Set(keep.map((b) => b.date)).size > 1) {
+while ((EAGER || bytes(next) > ROOT_MAX_BYTES) && new Set(keep.map((b) => b.date)).size > 1) {
   const oldest = keep[keep.length - 1].date
   const group = []
   while (keep.length && keep[keep.length - 1].date === oldest) group.unshift(keep.pop())
   moved = [...group, ...moved]
   next = renderRoot(keep.map((b) => b.text), monthsDesc())
+}
+// 남은 날짜가 하나뿐이면(--eager 의 두 번째 실행, 또는 최신 날짜 하나가 혼자 상한을 넘는다) 아무것도 쓰지
+// 않는다 — 다시 그려도 같은 바이트겠지만 빈 보관본 디렉터리를 만들었고, 무동작은 파일을 안 건드리는 쪽이
+// 확인하기 쉽다.
+if (!moved.length) {
+  console.log(`ok   ${ROOT_FILE} ${before}B — 최신 날짜 말고는 옮길 것이 없다`)
+  if (before > ROOT_MAX_BYTES) console.log(`⚠️  루트 ${before}B 가 상한을 넘는다 — 남은 것은 [Unreleased] 와 최신 날짜 하나라 회전으로 더 줄일 수 없다(날짜는 쪼개지 않는다)`)
+  process.exit(0)
 }
 
 // 확인 1 — 링크 왕복.
