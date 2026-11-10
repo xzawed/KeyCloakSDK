@@ -674,6 +674,7 @@ mod tests {
             &["RS256", "EdDSA"],
             &["RS256", "HS256"],
             &["HS256", "ES384", "EdDSA", "RS256"],
+            &["PS256", "RS384", "RS256"], // 같은 계열끼리 — 고치기 전에도 통과했다(퇴행 대조)
         ] {
             let v = validator_for_config(&fx, cfg_with(algs)).await;
             let vt = v
