@@ -808,6 +808,30 @@ async def test_jwks_with_only_keys_it_cannot_read_is_refused_and_keeps_the_cache
     assert (await client.validate(good)).subject  # 신뢰 키 캐시가 그대로다
 
 
+async def test_empty_jwks_is_refused_and_keeps_the_cached_set(ajwks):
+    """sync 미러와 같은 대조 — 200 + `{"keys": []}` 는 `TokenValidationError` 이고
+    캐시를 덮지 않는다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    good = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+    unknown = _signed_token(
+        RSAKey.generate_key(2048, {"kid": "kZ", "use": "sig"}),
+        issuer=endpoints.issuer,
+        audience=config.client_id,
+    )
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(MagicMock(), config=config)
+    await client.validate(good)
+
+    ajwks.return_value = {"keys": []}
+    with pytest.raises(TokenValidationError, match="no keys"):
+        await client.validate(unknown)
+    assert ajwks.await_count == 2  # 강제 재조회가 정말 일어났다
+
+    assert (await client.validate(good)).subject  # 신뢰 키 캐시가 그대로다
+
+
 @pytest.mark.parametrize(("member", "kid"), OCT_SHAPES)
 async def test_jwks_oct_key_is_never_a_verification_key(ajwks, member, kid):
     """sync 미러와 같은 계약 — JWKS 의 대칭(`oct`) 키는 검증 키가 아니다(등록부

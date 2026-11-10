@@ -1070,6 +1070,31 @@ def test_jwks_with_only_keys_it_cannot_read_is_refused_and_keeps_the_cached_set(
     assert client.validate(good).subject  # 신뢰 키 캐시가 그대로다
 
 
+def test_empty_jwks_is_refused_and_keeps_the_cached_set(jwks):
+    """200 + `{"keys": []}` 는 `TokenValidationError` 이고 신뢰 키 캐시를 덮지 않는다
+    (go #380 의 부류 — 빈 키셋 하나로 좋은 캐시가 덮였다). 보안 기본값 가드의
+    빈 키셋 축이 이 이름을 본다."""
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    good = _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+    unknown = _signed_token(
+        RSAKey.generate_key(2048, {"kid": "kZ", "use": "sig"}),
+        issuer=endpoints.issuer,
+        audience=config.client_id,
+    )
+    jwks.return_value = {"keys": [key.as_dict(private=False)]}
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+    client.validate(good)
+
+    jwks.return_value = {"keys": []}
+    with pytest.raises(TokenValidationError, match="no keys"):
+        client.validate(unknown)
+    assert jwks.call_count == 2  # 강제 재조회가 정말 일어났다
+
+    assert client.validate(good).subject  # 신뢰 키 캐시가 그대로다
+
+
 @pytest.mark.parametrize(("member", "kid"), OCT_SHAPES)
 def test_jwks_oct_key_is_never_a_verification_key(jwks, member, kid):
     """⚠️ JWKS 의 대칭(`oct`) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 안의 대칭 키는
