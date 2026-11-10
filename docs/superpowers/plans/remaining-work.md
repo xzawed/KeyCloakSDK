@@ -62,7 +62,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-11 · #914–#1015 반영)
+### 다음 세션 진입점 (2026-11-11 · #914–#1016 반영)
 
 **지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 릴리스는 먼저 권하지 않는다(사용자 2026-11-10 「잦다」), 태그는 물결마다 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
 
@@ -70,7 +70,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. `rust-mixed-family-algorithms-reject-all` [M/S] · `guard-detection-surface-hand-narrowed` [H/M] · `token-error-code-secret-echo` · `token-response-class-residue` · `logout-2xx-html-false-success` · `hs-refusal-rests-on-libraries` [L/S].
+1. `guard-detection-surface-hand-narrowed` [H/M] · `token-error-code-secret-echo` · `token-response-class-residue` · `logout-2xx-html-false-success` · `hs-refusal-rests-on-libraries` [L/S].
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -341,7 +341,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 140건 (열림 65)
+## C. 품질 부채 — 140건 (열림 64)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -391,7 +391,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- go-admin-3xx-read-as-success 실측(2026-10-25 · main 0a4cfee · 루프백 · NewAdminClient + 정적 토큰): 300 · 302(Location 없음) · 399 + JSON 본문 — 파사드 25 호출(다섯 리소스의 Create·Get·목록·Update·Delete) 중 24 가 오류 없이 돌아온다: Users.Get 은 빈 *User, Search 는 0 건, Create 는 id "", Update·Delete 는 nil. Realms.Update 만 오류다(raw PUT 이 2xx 를 명시한다). 기전: gocloak checkForError 는 resty IsError()(> 399)만 오류로 보고, resty 는 2xx 만 결과로 해석한다 — 3xx 는 둘 다 아니라 영값과 nil 이다. net/http 는 Location 없는 3xx 를 따라가지 않으므로 errOnRedirect 도 닿지 않는다. #380 은 같은 구멍을 토큰 요청(LoginClient — AccessToken == "" 검사)과 Realms.Update 의 raw PUT(2xx 명시)에서 막았다 — gocloak 의 판정을 쓰는 나머지 파사드는 그대로다. 발견: admin-response-body-unbounded go 수정 중 300 행을 쓰다가. 나머지 여덟 언어는 미측정 — 다음 걸음은 부류 재스캔(같은 다섯 리소스 × 300·302 무 Location·399). 한 칸씩 잰 여섯(2026-10-26·27, admin-response-body 시험의 3xx 행): python · dotnet · ruby · rust · node 는 오류, **php 는 302 를 성공(User)으로** — 칸별 원문은 `git log -1 -S 'php 한 칸(같은 날' -- docs/superpowers/plans/remaining-work.md` 가 찾는 커밋의 부모에 있다. · 재스캔 때 먼저 볼 셋(닫힌 admin-response-body-unbounded 의 주석에서 옮김 — go 의 첫 설계를 깬 것): Raw() 의 하위 메서드가 201·PUT 본문을 결합하는가 · 잘린 오류 본문이 분류를 바꾸는가 · 호출자가 청한 압축을 상한 위에서 누가 푸는가. 본문 크기 칸(T1·T2·A1–A3)의 정의는 #834 의 PR 본문. -->
 - [x] `jwks-unsupported-key-rejects-set` **[M/M · 닫힘 2026-11-09 #998–#1001]** 못 읽는 원소 하나가 JWKS 전체를 버렸다 · 표는 #1000 본문
 - [x] `jwks-oct-key-usable-with-hs` **[M/S · 닫힘 2026-11-10 #1013]** 여덟이 oct 를 버린다(.NET 은 전역 플래그와 무관하게) · php 는 HS 서명을 거부(alg 없는 EC · OKP) · 표는 #1013 본문
-- [ ] `rust-mixed-family-algorithms-reject-all` **[M/S · 신규 2026-11-10]** 계열이 다른 알고리즘(RS256+ES256 · +EdDSA · +HS256)을 함께 허용하면 정상 RS256 토큰도 「algorithm not allowed」(RS384 · PS256 은 통과) · `rust/src/jwt.rs:113`
+- [x] `rust-mixed-family-algorithms-reject-all` **[M/S · 닫힘 2026-11-11 #1016]** 핀을 키 계열로 거른 부분집합만 넘긴다 — jsonwebtoken 은 목록 전부가 헤더 alg 의 계열이기를 요구해 섞은 핀은 모든 토큰을 거부했다
 - [ ] `hs-refusal-rests-on-libraries` **[L/S · 신규 2026-11-10]** HS 서명 거부를 일곱이 라이브러리의 키·알고리즘 묶음에 맡긴다(지금은 다 거부 · php 만 명시 #1013) — 핀 다음에 HS* 를 거부하면 갱신과 무관하다
 - [x] `response-read-deadline-divergent` **[M/S · 신규 2026-10-09 · 판정 2026-10-29 · 닫힘 2026-11-09 #992]** 응답 전체를 설정한 타임아웃 안에 — 아홉 다(마지막 칸 python HTTPS 프록시 · pyOpenSSL) · 옮긴 주석은 #992 본문 · `.claude/rules/security.md`
 - [x] `response-framing-unbounded` **[M/M · 신규 2026-10-05 · 닫힘 2026-11-04]** 아홉이 응답 틀을 묶인 메모리로 읽는다 — ruby #760 · go #742 · JVM #756·#761 · python #893 · php ext-curl. node 는 전제 거짓 — 1 GiB 청크 확장에도 최대 RSS 88 MB(기준 53, 함정 (mm)) · 상류 보고 안 함
