@@ -20,6 +20,17 @@
 # ⚠️ **거버넌스·계획 문서는 스코프 밖이다.** `docs/governance/`와 남은 진행 계획은
 # 소비자 문서가 아니라, 옛 값을 적어도 드리프트가 아니라 기록이다. 소비자가 복사해 가는
 # 문서만 겨눈다.
+#
+# ⚠️ **이 파일을 넓히는 법**(등록부 `guard-detection-surface-hand-narrowed` 를 닫으며 옮긴 규칙):
+#   - 새 축은 언어를 `$SD_LANGS`(트리 파생)로 돈다 — 언어·파일 손 목록을 두지 않는다. 손 목록은 새 언어·새
+#     자리를 조용히 건너뛴다(그 항목이 그렇게 열렸다).
+#   - 기존 언어에 생긴 **새 자리**(새 비밀 보유 타입 · 새 교환 경로)를 찾는 것은 이 파일이 아니라 언어 로컬의
+#     파생 걷기다 — `FacadeDump*`(공개 타입 덤프) · `HostilePathMatrix*`(공개 메서드 → 실제 요청)와 그 실행을
+#     확인하는 `scripts/check-hp-attest.mjs` · `scripts/check-canaries-ran.mjs`. 여기 남은 손 표(nonce · 백오프
+#     · 마스킹 둘 · 토큰타입)는 비공허한 구조 앵커다.
+#   - 손 표를 이 파일 안에서 파생으로 바꾸는 것은 **required 밖에서 오탐 0 을 먼저 잰 뒤**에만 한다 — 이 파일은
+#     `paths:` 필터 없는 required(`doc-facts`) 안이고 룰셋은 `bypass_actors: []` 라, 오탐 하나가 모든 PR 을
+#     막고 소유자도 못 푼다(언어 집합 축의 측정은 `scripts/measure-lang-universe-fp.sh`).
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
