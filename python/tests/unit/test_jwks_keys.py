@@ -33,10 +33,10 @@ def test_keeps_only_the_keys_it_can_read(unreadable_jwk: dict[str, object]) -> N
         ({"keys": []}, "no keys", False),
         (
             {"keys": list(UNREADABLE_JWKS.values())},
-            f"no usable keys ({len(UNREADABLE_JWKS)} unreadable, first: ",
+            f"no usable keys ({len(UNREADABLE_JWKS)} skipped, first: ",
             True,
         ),
-        ({"keys": [None, 1, "x", []]}, "no usable keys (4 unreadable, first: ", True),
+        ({"keys": [None, 1, "x", []]}, "no usable keys (4 skipped, first: ", True),
         ({}, "no 'keys' array", False),
         ({"keys": None}, "no 'keys' array", False),
         ({"keys": {"kty": "RSA"}}, "no 'keys' array", False),

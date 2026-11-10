@@ -639,7 +639,8 @@ final class JwksStoreTest extends TestCase
         $f = new HttpFactory();
         $store = new JwksStore('http://kc/certs', $this->http([['kty' => 'RSA']], $calls), $f, minRefetchIntervalSeconds: 0);
         $this->expectException(KeycloakTransportError::class);
-        $this->expectExceptionMessageMatches('/no keys/');
+        // 원소가 있었는데 다 버려졌으면 「쓸 수 있는 키 없음」이다(빈 배열의 「no keys」와 가른다).
+        $this->expectExceptionMessageMatches('/no usable keys/');
         $store->getKeyByKid('k1');
     }
 }

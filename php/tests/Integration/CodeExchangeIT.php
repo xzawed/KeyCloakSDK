@@ -231,8 +231,9 @@ final class CodeExchangeIT extends TestCase
     {
         // 알고리즘 핀이 먼저 거부한다.
         yield 'pinned to RS256' => [['RS256'], 'algorithm not allowed: HS256'];
-        // 핀을 열어도 그 키(realm 의 HMAC 비밀)는 JWKS 에 없다.
-        yield 'HS256 allowed' => [['RS256', 'HS256'], 'unknown kid'];
+        // 핀을 열어도 HS 서명은 키를 찾기 전에 거부한다(JWKS 는 공개키뿐이다 — #1013). 전에는 「unknown kid」였다: 그 키
+        // (realm 의 HMAC 비밀)는 JWKS 에 없다.
+        yield 'HS256 allowed' => [['RS256', 'HS256'], 'algorithm not allowed: HS256 (a JWKS holds public keys only)'];
     }
 
     /**
