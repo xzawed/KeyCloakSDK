@@ -37,6 +37,9 @@ const die = (msg) => {
 const EAGER = argv.includes('--eager')
 const unknown = argv.filter((a) => a !== '--dry-run' && a !== '--eager' && !a.startsWith('--root='))
 if (unknown.length) die(`모르는 인자 — ${unknown.join(' ')} (사용: [--root=<디렉터리>] [--dry-run] [--eager]) — 아무것도 쓰지 않았다`)
+// 빈 `--root=` 는 현재 디렉터리가 되고, 둘이면 첫째만 읽힌다 — 둘 다 조용히 다른 원장을 돌린다(Grok 레그).
+const roots = argv.filter((a) => a.startsWith('--root='))
+if (roots.length > 1 || roots.includes('--root=')) die(`--root= 는 값과 함께 한 번만 준다 — ${roots.join(' ')} — 아무것도 쓰지 않았다`)
 
 // 검사 8d 와 같은 눈으로 읽는다 — 줄 끝은 LF 로 맞춘다(쓰는 것도 LF 다).
 const readLF = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
@@ -77,6 +80,11 @@ function renderRoot(releaseTexts, monthsDesc) {
   return head + root.unreleased[0].text + releaseTexts.join('')
 }
 
+// 루트가 최신순이어야 한다 — 끝에서부터 날짜 묶음을 떼므로, 어긋나면 한 날짜가 루트와 보관본에 갈라진다(독립
+// 레그 실측: 11-03 · 10-31 · 11-03 에 --eager). 검사 8d 도 막지만 쓰기 전에 여기서 멈춘다.
+for (let i = 1; i < root.releases.length; i++) {
+  if (root.releases[i].date > root.releases[i - 1].date) die(`${ROOT_FILE}: 「${root.releases[i].heading}」 이 앞 절보다 새 날짜다 — 원장은 최신순이어야 날짜를 쪼개지 않는다. 아무것도 쓰지 않았다`)
+}
 const keep = root.releases.slice() // 최신순
 let moved = [] // 최신순
 const monthsDesc = () => [...new Set([...volumes.keys(), ...moved.map((b) => b.month)])].sort().reverse()
@@ -88,10 +96,10 @@ while ((EAGER || bytes(next) > ROOT_MAX_BYTES) && new Set(keep.map((b) => b.date
   moved = [...group, ...moved]
   next = renderRoot(keep.map((b) => b.text), monthsDesc())
 }
-// 남은 날짜가 하나뿐이면(--eager 의 두 번째 실행, 또는 최신 날짜 하나가 혼자 상한을 넘는다) 아무것도 쓰지
-// 않는다 — 다시 그려도 같은 바이트겠지만 빈 보관본 디렉터리를 만들었고, 무동작은 파일을 안 건드리는 쪽이
-// 확인하기 쉽다.
-if (!moved.length) {
+// 옮길 것이 없고 다시 그려도 같으면 아무것도 쓰지 않는다(--eager 의 두 번째 실행, 또는 최신 날짜 하나가 혼자
+// 상한을 넘는다) — 같은 바이트를 다시 쓰고 빈 보관본 디렉터리를 만들던 자리다. 다시 그린 것이 다르면(머리말의
+// 묵은 색인 줄) 아래로 가서 고쳐 쓴다 — 여기서 멈추면 상한 위의 원장이 막다른 길이 된다(Grok 레그 실측).
+if (!moved.length && next === rootText) {
   console.log(`ok   ${ROOT_FILE} ${before}B — 최신 날짜 말고는 옮길 것이 없다`)
   if (before > ROOT_MAX_BYTES) console.log(`⚠️  루트 ${before}B 가 상한을 넘는다 — 남은 것은 [Unreleased] 와 최신 날짜 하나라 회전으로 더 줄일 수 없다(날짜는 쪼개지 않는다)`)
   process.exit(0)
