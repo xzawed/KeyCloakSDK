@@ -94,7 +94,7 @@ impl JwtValidator {
             )));
         }
 
-        // (1) 헤더에서 kid만 추출(alg는 검증 선택에 미사용 — RS256 고정 핀).
+        // (1) 헤더에서 kid만 추출(alg는 검증 선택에 미사용 — 설정 핀, 아래 3).
         //     Algorithm enum에는 `none` 변형이 없어 alg="none" 헤더는 여기서 구조적으로 거부된다.
         let header = jsonwebtoken::decode_header(token)
             .map_err(|_| KeycloakError::TokenValidation("malformed JWT header".into()))?;
@@ -109,8 +109,17 @@ impl JwtValidator {
             .map_err(|_| KeycloakError::TokenValidation("invalid JWKS key".into()))?;
 
         // (3) 강화 Validation: config 알고리즘 핀·iss 정확·aud 포함·exp 필수·nbf·스큐.
+        //     ⚠️ 핀은 **키 계열로 거른 부분집합**으로 넘긴다 — jsonwebtoken 은 넘긴 알고리즘 전부가 헤더 alg 의 계열과 같기를
+        //     요구해, 계열을 섞은 설정(RS256 + ES256 …)이면 정상 토큰까지 거부했다. 헤더 alg 가 이 부분집합에 있어야 하므로
+        //     설정에 없는 alg · 키와 계열이 다른 alg(혼동) · none 은 그대로 거부되고, 키 계열의 alg 가 설정에 없어 부분집합이
+        //     비어도 jsonwebtoken 이 헤더 alg 를 못 찾아 거부한다(같은 InvalidAlgorithm).
         let mut v = Validation::new(self.algorithms[0]); // non-empty 보장(new에서 검증)
-        v.algorithms = self.algorithms.clone(); // 헤더 alg 무시하고 설정된 집합만 허용(confusion·none 차단)
+        v.algorithms = self
+            .algorithms
+            .iter()
+            .copied()
+            .filter(|a| a.family() == key.family())
+            .collect();
         v.set_issuer(&[self.issuer.as_str()]); // 정확 일치(부분/접두/후행슬래시 변형 거부)
         v.set_audience(&[audience]); // 집합 정확 포함(부분문자열 아님)
         v.validate_exp = true; // exp 검증
@@ -561,8 +570,8 @@ mod tests {
 
     /// ⚠️ JWKS 의 대칭(`oct`) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 안의 대칭 키는 비밀이 아니다. HS256 을 허용한
     /// 설정에서 그 키로 서명한 위조 토큰이 통과했다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). Keycloak 은
-    /// oct 를 내지 않는다. 칸은 `HS256` 만 허용한 설정이다 — `RS256+HS256` 처럼 계열을 섞으면 jsonwebtoken 의 계열 검사가 모든
-    /// 토큰을 거부한다. kid 없는 칸은 수정 전에도 거부됐다(이 SDK 는 kid 로 키를 고른다) — 아홉 언어가 같은 세 모양을 잰다.
+    /// oct 를 내지 않는다. 칸은 `HS256` 만 허용한 설정이다(계열을 섞은 설정은 `mixed_family_config_*` 가 잰다). kid 없는 칸은
+    /// 수정 전에도 거부됐다(이 SDK 는 kid 로 키를 고른다) — 아홉 언어가 같은 세 모양을 잰다.
     #[tokio::test]
     async fn jwks_oct_key_is_never_a_verification_key() {
         let secret = b"0123456789abcdef0123456789abcdef";
@@ -616,6 +625,116 @@ mod tests {
                 Err(KeycloakError::TokenValidation(_))
             ),
             "RSA 공개키를 HMAC 비밀로 쓴 HS256 토큰이 통과했다"
+        );
+    }
+
+    /// RFC 8032 §7.1 TEST 1 의 Ed25519 키 — 공개된 시험 벡터라 비밀이 아니다(EC · Ed 키 생성 의존을 더하지 않는다).
+    const ED25519_TEST1_SEED: &str =
+        "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+    const ED25519_TEST1_PUBLIC: &str =
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn ed_jwk() -> serde_json::Value {
+        json!({ "kty":"OKP","crv":"Ed25519","kid":"ed-kid","use":"sig","alg":"EdDSA",
+                "x": b64(&unhex(ED25519_TEST1_PUBLIC)) })
+    }
+
+    fn sign_ed(claims: serde_json::Value) -> String {
+        // PKCS#8 v1(RFC 8410 §7) — jsonwebtoken 의 `from_ed_der` 는 PKCS#8 DER 를 받는다.
+        let mut der = unhex("302e020100300506032b657004220420");
+        der.extend(unhex(ED25519_TEST1_SEED));
+        let mut h = Header::new(Algorithm::EdDSA);
+        h.kid = Some("ed-kid".into());
+        encode(&h, &claims, &EncodingKey::from_ed_der(&der)).unwrap()
+    }
+
+    fn cfg_with(algs: &[&str]) -> KeycloakConfig {
+        KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_signature_algorithms(algs.iter().map(|s| s.to_string()).collect())
+    }
+
+    /// ⚠️ 계열을 섞은 설정에서도 키 계열에 맞는 토큰은 통과한다 — jsonwebtoken 은 설정한 알고리즘 **전부**가 헤더 alg 의
+    /// 계열과 같기를 요구해, RS256 + ES256 · + EdDSA · + HS256 이면 정상 토큰까지 「algorithm not allowed」 였다(등록부
+    /// rust-mixed-family-algorithms-reject-all). RSA 키와 Ed25519 키 둘로 잰다 — 하나만 재면 계열을 상수로 박은 구현이
+    /// 통과한다.
+    #[tokio::test]
+    async fn mixed_family_config_validates_a_token_of_the_key_family() {
+        let fx = make_key();
+        for algs in [
+            &["RS256", "ES256"][..],
+            &["ES256", "RS256"],
+            &["RS256", "EdDSA"],
+            &["RS256", "HS256"],
+            &["HS256", "ES384", "EdDSA", "RS256"],
+        ] {
+            let v = validator_for_config(&fx, cfg_with(algs)).await;
+            let vt = v
+                .validate(&sign(&fx, good_claims(), "test-kid"))
+                .await
+                .unwrap_or_else(|e| panic!("RSA 키 · {algs:?}: {e}"));
+            assert_eq!(vt.subject, "s1");
+        }
+        for algs in [&["RS256", "EdDSA"][..], &["EdDSA", "ES256"], &["EdDSA"]] {
+            let v = validator_with_keys(cfg_with(algs), json!({"keys":[ed_jwk()]})).await;
+            let vt = v
+                .validate(&sign_ed(good_claims()))
+                .await
+                .unwrap_or_else(|e| panic!("Ed25519 키 · {algs:?}: {e}"));
+            assert_eq!(vt.subject, "s1");
+        }
+    }
+
+    /// 대조 — 계열로 거르는 것이 핀을 넓히지 않는다. 섞은 설정에서도 (a) 같은 계열이지만 설정에 없는 alg(RS384) ·
+    /// (b) 키와 계열이 다른 헤더 alg(HS256 — RSA 공개키 PEM 을 HMAC 비밀로 쓴 고전 혼동)는 거부하고, (c) 키 계열의 alg 가
+    /// 설정에 하나도 없으면(ES256 + EdDSA · RSA 키) 「algorithm not allowed」다.
+    #[tokio::test]
+    async fn mixed_family_config_keeps_the_algorithm_pin() {
+        let fx = make_key();
+        let not_allowed = "token verification failed: algorithm not allowed";
+
+        let v = validator_for_config(&fx, cfg_with(&["RS256", "ES256"])).await;
+        let mut h = Header::new(Algorithm::RS384);
+        h.kid = Some("test-kid".into());
+        let rs384 = encode(
+            &h,
+            &good_claims(),
+            &EncodingKey::from_rsa_pem(fx.priv_pem.as_bytes()).unwrap(),
+        )
+        .unwrap();
+        let got = v.validate(&rs384).await;
+        assert!(
+            matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+            "(a) {got:?}"
+        );
+
+        let v = validator_for_config(&fx, cfg_with(&["RS256", "HS256"])).await;
+        let mut h = Header::new(Algorithm::HS256);
+        h.kid = Some("test-kid".into());
+        let forged = encode(
+            &h,
+            &good_claims(),
+            &EncodingKey::from_secret(fx.pub_pem.as_bytes()),
+        )
+        .unwrap();
+        let got = v.validate(&forged).await;
+        assert!(
+            matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+            "(b) {got:?}"
+        );
+
+        let v = validator_for_config(&fx, cfg_with(&["ES256", "EdDSA"])).await;
+        let got = v.validate(&sign(&fx, good_claims(), "test-kid")).await;
+        assert!(
+            matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+            "(c) {got:?}"
         );
     }
 
