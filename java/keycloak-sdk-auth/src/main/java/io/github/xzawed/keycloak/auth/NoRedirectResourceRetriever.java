@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.auth;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.OctetSequenceKey;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
 import com.nimbusds.jose.util.JSONObjectUtils;
@@ -88,13 +89,16 @@ final class NoRedirectResourceRetriever extends DefaultResourceRetriever {
     List<JWK> usable = new ArrayList<>();
     for (Object key : keys) {
       JWK jwk = parseOrNull(key);
-      if (jwk != null) {
+      // ⚠️ 대칭(oct) 키는 읽혀도 넘기지 않는다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니고, HS 를 허용한 소비자에게 그 키로
+      // 서명한 위조 토큰이 통과했다({@code JWSVerificationKeySelector} 가 HS 에 oct 를 고른다, 실측 · {@code JwksOctKeyTest}).
+      // Keycloak 은 oct 를 내지 않는다.
+      if (jwk != null && !(jwk instanceof OctetSequenceKey)) {
         usable.add(jwk);
       }
     }
     if (usable.isEmpty()) {
       throw new IOException(keys.isEmpty() ? "JWKS response contains no keys"
-          : "JWKS response contains no usable keys (" + keys.size() + " unreadable)");
+          : "JWKS response contains no usable keys (" + keys.size() + " skipped)");
     }
     return usable.size() == keys.size() ? res : new Resource(new JWKSet(usable).toString(false), res.getContentType());
   }

@@ -52,7 +52,8 @@ import org.junit.jupiter.api.Test;
 class ResponseFramingBoundsTest {
   private static final int CAP = 1_048_576;
   private static final byte[] TOKEN = utf8("{\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300}");
-  private static final byte[] JWKS = utf8("{\"keys\":[{\"kty\":\"oct\",\"kid\":\"k1\",\"k\":\"AAAA\"}]}");
+  // 키 하나짜리 읽히는 키셋 — 비대칭이어야 한다(oct 는 키셋에서 버려져 「쓸 수 있는 키 없음」이 된다 · JwksOctKeyTest).
+  private static final byte[] JWKS = utf8("{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"k1\",\"n\":\"AQAB\",\"e\":\"AQAB\"}]}");
   /** 거부의 어느 표현에도 찍히면 안 되는 응답 바이트. */
   private static final String MARKER = "ZframeMARKER0123456789";
   /** 32 MiB 트레일러·한 줄 1 MiB 트레일러·16 MiB 헤더 줄·청크 확장을 거부하는 호출 하나가 써도 되는 할당 — 상한의 16 배. */

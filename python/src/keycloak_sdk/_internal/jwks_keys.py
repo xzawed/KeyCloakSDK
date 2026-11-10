@@ -18,11 +18,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from joserfc.jwk import JWKRegistry, Key, KeySet
+from joserfc.jwk import JWKRegistry, Key, KeySet, OctKey
 
 from ..exceptions import TokenValidationError
 
 _MALFORMED = "malformed JWKS from the identity provider"
+_SYMMETRIC = "symmetric (oct) key: a JWKS is public, so it is never a verification key"
 
 
 def import_usable_keys(certs: Any) -> KeySet:
@@ -36,12 +37,20 @@ def import_usable_keys(certs: Any) -> KeySet:
     first: Exception | None = None
     for data in keys:
         try:
-            usable.append(JWKRegistry.import_key(data))
+            key = JWKRegistry.import_key(data)
         except Exception as exc:  # 그 키 하나의 문제다(위 RFC 7517 §5)
             first = first or exc
+            continue
+        # ⚠️ 대칭(oct) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 비밀은 비밀이
+        # 아니고, HS 를 허용한 소비자에게 그 키로 서명한 위조 토큰이 통과했다(실측).
+        # Keycloak 은 oct 를 내지 않는다.
+        if isinstance(key, OctKey):
+            first = first or TokenValidationError(_SYMMETRIC)
+            continue
+        usable.append(key)
     if not usable:
         cause = f"{type(first).__name__}: {first}"
         raise TokenValidationError(
-            f"{_MALFORMED}: no usable keys ({len(keys)} unreadable, first: {cause})"
+            f"{_MALFORMED}: no usable keys ({len(keys)} skipped, first: {cause})"
         ) from first
     return KeySet(usable)

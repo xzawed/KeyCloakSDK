@@ -1,7 +1,7 @@
 //! DoS-safe JWKS: kid cache (key-set lifetime 300 seconds), within which only an unresolved kid triggers a refetch,
 //! rate-limit + single-flight.
 use crate::error::{KeycloakError, Result};
-use jsonwebtoken::jwk::{Jwk, JwkSet};
+use jsonwebtoken::jwk::{AlgorithmParameters, Jwk, JwkSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::Instant; // ⚠️ std 가 아니라 tokio 시계다 — `start_paused` 테스트가 백오프 창을
@@ -215,11 +215,14 @@ impl Source {
         let keys: Vec<Jwk> = raw
             .keys
             .into_iter()
-            .filter_map(|key| serde_json::from_value(key).ok())
+            .filter_map(|key| serde_json::from_value::<Jwk>(key).ok())
+            // ⚠️ 대칭(oct) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니고, HS 를 허용한 소비자에게
+            // 그 키로 서명한 위조 토큰이 통과했다(실측). Keycloak 은 oct 를 내지 않는다.
+            .filter(|jwk| !matches!(jwk.algorithm, AlgorithmParameters::OctetKey(_)))
             .collect();
         if keys.is_empty() {
             return Err(KeycloakError::Transport(format!(
-                "JWKS response contains no usable keys ({total} unreadable)"
+                "JWKS response contains no usable keys ({total} skipped)"
             )));
         }
         let set = JwkSet { keys };
@@ -413,7 +416,7 @@ mod tests {
             (r#"{"keys":"JWKS-BODY-CANARY-4T8W"}"#, "JWKS parse"),
             (
                 r#"{"keys":[{"kty":"RSA","kid":7,"n":"JWKS-BODY-CANARY-4T8W"}], "x": 1}"#,
-                "no usable keys (1 unreadable)",
+                "no usable keys (1 skipped)",
             ),
             ("JWKS-BODY-CANARY-4T8W", "JWKS parse"),
         ] {
@@ -869,6 +872,53 @@ mod tests {
         }
     }
 
+    // ⚠️ 대칭(oct) 원소는 `Jwk` 로 풀려도 남기지 않는다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니다(등록부
+    // jwks-oct-key-usable-with-hs). 검증 경로의 효과는 jwt.rs 의 `jwks_oct_key_is_never_a_verification_key` 가 잰다.
+    #[tokio::test]
+    async fn oct_element_is_dropped_and_the_rest_of_the_set_is_kept() {
+        let mut body = jwks_json("k1");
+        body["keys"].as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({ "kty": "oct", "kid": "hk", "k": "c2VjcmV0LXNlY3JldA" }),
+        );
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+        assert!(
+            store.get_key("hk").await.is_err(),
+            "oct 원소가 키셋에 남았다"
+        );
+        assert_eq!(
+            store.get_key("k1").await.unwrap().common.key_id.as_deref(),
+            Some("k1"),
+            "oct 를 버리는 것이 키셋 전체를 버렸다"
+        );
+    }
+
+    #[tokio::test]
+    async fn keyset_with_only_an_oct_key_has_no_usable_keys() {
+        let only_oct = serde_json::json!({ "keys": [{ "kty": "oct", "kid": "k1", "k": "c2VjcmV0LXNlY3JldA" }] });
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(only_oct))
+            .mount(&server)
+            .await;
+        let store = JwksStore::new(format!("{}/certs", server.uri()), reqwest::Client::new(), 0);
+        let err = store
+            .get_key("k1")
+            .await
+            .expect_err("oct 만 있는 키셋은 성공이 아니다");
+        assert!(
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (1 skipped)")),
+            "expected Transport('…no usable keys (1 skipped)…'), got {err:?}"
+        );
+    }
+
     // 대조 — `Jwk` 로 풀리는 원소가 하나도 없으면 빈 키셋과 같다: 콜드 스타트는 Transport 이고, 좋은 캐시는 덮지 않는다.
     // 건너뛰기가 「다 건너뛰고 빈 집합을 설치」로 새면 둘째 단언이 운다.
     #[tokio::test]
@@ -886,8 +936,8 @@ mod tests {
             .await
             .expect_err("쓸 수 있는 키가 없는 키셋은 성공이 아니다");
         assert!(
-            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (3 unreadable)")),
-            "expected Transport('…no usable keys (3 unreadable)…'), got {err:?}"
+            matches!(err, KeycloakError::Transport(ref m) if m.contains("no usable keys (3 skipped)")),
+            "expected Transport('…no usable keys (3 skipped)…'), got {err:?}"
         );
 
         let server = MockServer::start().await;

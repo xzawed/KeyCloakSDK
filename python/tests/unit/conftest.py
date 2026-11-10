@@ -4,13 +4,17 @@ IdP 의 자체 서명 인증서(`tls_cert` · `server_tls`)."""
 
 from __future__ import annotations
 
+import base64
 import datetime
 import gzip
+import hashlib
+import hmac
 import importlib
 import ipaddress
 import json
 import ssl
 import threading
+import time
 import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -246,6 +250,35 @@ UNREADABLE_JWKS: dict[str, dict[str, object]] = {
     "RSA without e": {"kty": "RSA", "kid": "noe", "n": "AQAB"},
     "RSA e out of range": {"kty": "RSA", "kid": "eaa", "n": "AQAB", "e": "AA"},
 }
+
+
+#: JWKS 의 대칭(oct) 키 세 모양 — (원소 멤버, 위조 토큰의 kid). 아홉 언어가 같은 세
+#: 모양을 잰다(등록부 jwks-oct-key-usable-with-hs). kid 없는 칸은 수정 전에도
+#: 거부됐다(joserfc 는 kid 로 키를 고른다).
+OCT_SHAPES = [
+    pytest.param({"kid": "hk", "alg": "HS256", "use": "sig"}, "hk", id="kid-alg"),
+    pytest.param({"kid": "hk"}, "hk", id="no-alg"),
+    pytest.param({"alg": "HS256", "use": "sig"}, None, id="no-kid"),
+]
+
+
+def b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def hs_token(secret: bytes, issuer: str, audience: str, kid: str | None) -> str:
+    """`secret` 으로 HS256 서명한 위조 토큰(sub=attacker).
+
+    ⚠️ joserfc 로 서명하지 않는다 — 새 joserfc 는 비대칭 공개키를 oct 키로 들이지 않아
+    (「Asymmetric public keys must not be used as oct keys」) RS→HS 위조 토큰을 못 만든다
+    (CI 실측 — 옛 판은 경고만 냈다). 공격자는 그 라이브러리를 쓰지 않는다."""
+    header: dict[str, object] = {"alg": "HS256", "typ": "JWT"}
+    if kid is not None:
+        header["kid"] = kid
+    claims = {"iss": issuer, "aud": audience, "sub": "attacker", "exp": int(time.time()) + 60}
+    signing_input = f"{b64u(json.dumps(header).encode())}.{b64u(json.dumps(claims).encode())}"
+    signature = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
+    return f"{signing_input}.{b64u(signature)}"
 
 
 def joserfc_reads(data: dict[str, object]) -> bool:

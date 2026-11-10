@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak
 
 import com.nimbusds.jose.jwk.JWK
 import com.nimbusds.jose.jwk.JWKSet
+import com.nimbusds.jose.jwk.OctetSequenceKey
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import com.nimbusds.jose.util.DefaultResourceRetriever
 import com.nimbusds.jose.util.JSONObjectUtils
@@ -141,13 +142,16 @@ internal class NoRedirectResourceRetriever(
                 } catch (_: java.text.ParseException) {
                     return res
                 } ?: return res
-            val usable = keys.mapNotNull(::parseOrNull)
+            // ⚠️ 대칭(oct) 키는 읽혀도 넘기지 않는다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니고, HS 를 허용한 소비자에게 그 키로
+            // 서명한 위조 토큰이 통과했다(`JWSVerificationKeySelector` 가 HS 에 oct 를 고른다, 실측 · `JwksOctKeyTest`). Keycloak 은
+            // oct 를 내지 않는다.
+            val usable = keys.mapNotNull(::parseOrNull).filterNot { it is OctetSequenceKey }
             if (usable.isEmpty()) {
                 throw IOException(
                     if (keys.isEmpty()) {
                         "JWKS response contains no keys"
                     } else {
-                        "JWKS response contains no usable keys (${keys.size} unreadable)"
+                        "JWKS response contains no usable keys (${keys.size} skipped)"
                     },
                 )
             }

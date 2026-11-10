@@ -41,7 +41,9 @@ import kotlin.test.assertTrue
 private const val TP_REALM = "r"
 private const val TP_TOKEN_PATH = "/realms/$TP_REALM/protocol/openid-connect/token"
 private val TP_TOKEN = """{"access_token":"AT","token_type":"Bearer","expires_in":300}""".toByteArray()
-private val TP_JWKS = """{"keys":[{"kty":"oct","kid":"k1","k":"AAAA"}]}""".toByteArray()
+
+// 키 하나짜리 읽히는 키셋 — 비대칭이어야 한다(oct 는 키셋에서 버려져 「쓸 수 있는 키 없음」이 된다 · JwksOctKeyTest).
+private val TP_JWKS = """{"keys":[{"kty":"RSA","kid":"k1","n":"AQAB","e":"AQAB"}]}""".toByteArray()
 private const val TP_MARKER = "ZparityMARKER0123"
 
 // 프록시가 CONNECT 를 거절했을 때 새 운송의 메시지(프록시의 응답은 인용하지 않는다).

@@ -65,7 +65,8 @@ class TransportParityTest {
   private static final String REALM = "r";
   private static final String TOKEN_PATH = "/realms/" + REALM + "/protocol/openid-connect/token";
   private static final byte[] TOKEN = utf8("{\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300}");
-  private static final byte[] JWKS = utf8("{\"keys\":[{\"kty\":\"oct\",\"kid\":\"k1\",\"k\":\"AAAA\"}]}");
+  // 키 하나짜리 읽히는 키셋 — 비대칭이어야 한다(oct 는 키셋에서 버려져 「쓸 수 있는 키 없음」이 된다 · JwksOctKeyTest).
+  private static final byte[] JWKS = utf8("{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"k1\",\"n\":\"AQAB\",\"e\":\"AQAB\"}]}");
   private static final String MARKER = "ZparityMARKER0123";
   /** 인증서의 이름(other.example)이 아니라 접속한 이름이 루프백이면 받아들이는 검증기 — 엄격한 검사 뒤에 묻는 자리를 잰다. */
   private static final HostnameVerifier ACCEPTS_LOOPBACK = (host, session) -> "127.0.0.1".equals(host);

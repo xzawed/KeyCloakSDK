@@ -326,8 +326,25 @@ RSpec.describe KeycloakSdk::JwksStore do
       expect(store.key_set["keys"].first["kid"]).to eq("k1") # 사전조건: 좋은 캐시
 
       expect { store.key_set(force: true) }
-        .to raise_error(KeycloakSdk::TransportError, /no usable keys \(6 unreadable\)/)
+        .to raise_error(KeycloakSdk::TransportError, /no usable keys \(6 skipped\)/)
       expect(store.key_set["keys"].first["kid"]).to eq("k1")
+    end
+
+    # ⚠️ 대칭(oct) 원소는 ruby-jwt 가 읽어도 남기지 않는다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니다. 검증 경로의 효과는
+    # `jwt_validator_spec.rb` 의 「JWKS 의 대칭(oct) 키」가 잰다.
+    it "대칭(oct) 원소는 남기지 않는다" do
+      oct = { kty: "oct", kid: "hk", k: "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0" }
+      mixed = { keys: [oct, { kty: "RSA", kid: "k1", n: "AQAB", e: "AQAB" }] }.to_json
+      stub_request(:get, jwks_url).to_return(status: 200, body: mixed,
+                                             headers: { "Content-Type" => "application/json" })
+      expect(store.key_set["keys"]).to eq([{ "kty" => "RSA", "kid" => "k1", "n" => "AQAB", "e" => "AQAB" }])
+    end
+
+    it "oct 만 있는 키셋은 쓸 수 있는 키가 없는 키셋이다" do
+      only_oct = { keys: [{ kty: "oct", kid: "k1", k: "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0" }] }.to_json
+      stub_request(:get, jwks_url).to_return(status: 200, body: only_oct,
+                                             headers: { "Content-Type" => "application/json" })
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /no usable keys \(1 skipped\)/)
     end
   end
 

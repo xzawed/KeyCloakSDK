@@ -8,6 +8,7 @@ sync `tests/unit/test_auth.py`와 동형(same coverage) — python-keycloak `a_*
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlparse
@@ -31,7 +32,7 @@ from keycloak_sdk.exceptions import (
 )
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
-from tests.unit.conftest import UNREADABLE_JWKS
+from tests.unit.conftest import OCT_SHAPES, UNREADABLE_JWKS, b64u, hs_token
 
 
 class _FakeClock:
@@ -805,6 +806,42 @@ async def test_jwks_with_only_keys_it_cannot_read_is_refused_and_keeps_the_cache
     assert ajwks.await_count == 2  # 강제 재조회가 정말 일어났다
 
     assert (await client.validate(good)).subject  # 신뢰 키 캐시가 그대로다
+
+
+@pytest.mark.parametrize(("member", "kid"), OCT_SHAPES)
+async def test_jwks_oct_key_is_never_a_verification_key(ajwks, member, kid):
+    """sync 미러와 같은 계약 — JWKS 의 대칭(`oct`) 키는 검증 키가 아니다(등록부
+    jwks-oct-key-usable-with-hs). 같은 키셋의 RSA 토큰은 그대로 통과한다(대조)."""
+    secret = os.urandom(32)
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    ajwks.return_value = {
+        "keys": [{"kty": "oct", "k": b64u(secret), **member}, rsa.as_dict(private=False)]
+    }
+    client = _client(MagicMock(), config=config)
+
+    with pytest.raises(TokenValidationError):
+        await client.validate(hs_token(secret, endpoints.issuer, config.client_id, kid))
+    assert (
+        await client.validate(
+            _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
+        )
+    ).subject
+
+
+async def test_jwks_with_only_an_oct_key_has_no_usable_keys(ajwks):
+    """sync 미러와 같은 대조 — oct 만 있는 키셋은 쓸 수 있는 키가 없는 키셋이다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    ajwks.return_value = {"keys": [{"kty": "oct", "kid": "k1", "k": b64u(os.urandom(32))}]}
+    client = _client(MagicMock(), config=config)
+
+    with pytest.raises(TokenValidationError, match="no usable keys"):
+        await client.validate(
+            _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
+        )
 
 
 # ⚠️ 콜드 캐시 + IdP 장애 축 — sync 미러와 **대칭으로** 둔다. 이 저장소는 「sync 에만 있는

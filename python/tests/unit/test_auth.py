@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import time
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
@@ -31,7 +32,7 @@ from keycloak_sdk.exceptions import (
 )
 from keycloak_sdk.oidc import OidcEndpoints
 from keycloak_sdk.tokens import IntrospectionResult, TokenSet, ValidatedToken
-from tests.unit.conftest import UNREADABLE_JWKS
+from tests.unit.conftest import OCT_SHAPES, UNREADABLE_JWKS, b64u, hs_token
 
 
 class _FakeClock:
@@ -1067,6 +1068,61 @@ def test_jwks_with_only_keys_it_cannot_read_is_refused_and_keeps_the_cached_set(
     assert jwks.call_count == 2  # 강제 재조회가 정말 일어났다
 
     assert client.validate(good).subject  # 신뢰 키 캐시가 그대로다
+
+
+@pytest.mark.parametrize(("member", "kid"), OCT_SHAPES)
+def test_jwks_oct_key_is_never_a_verification_key(jwks, member, kid):
+    """⚠️ JWKS 의 대칭(`oct`) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 안의 대칭 키는
+    비밀이 아니다. HS256 을 허용한 설정에서 그 키로 서명한 위조 토큰이 통과했다(등록부
+    jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). Keycloak 은 oct 를 내지 않는다.
+    같은 키셋의 RSA 토큰은 그대로 통과한다(대조 — oct 를 버리는 것이 키셋 전체를 버리지 않는다)."""
+    secret = os.urandom(32)
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    jwks.return_value = {
+        "keys": [{"kty": "oct", "k": b64u(secret), **member}, rsa.as_dict(private=False)]
+    }
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+
+    with pytest.raises(TokenValidationError):
+        client.validate(hs_token(secret, endpoints.issuer, config.client_id, kid))
+    assert client.validate(
+        _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
+    ).subject
+
+
+def test_jwks_with_only_an_oct_key_has_no_usable_keys(jwks):
+    """oct 만 있는 키셋은 쓸 수 있는 키가 없는 키셋이다 — 빈 키셋처럼 거부하고 설치하지 않는다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    jwks.return_value = {"keys": [{"kty": "oct", "kid": "k1", "k": b64u(os.urandom(32))}]}
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+
+    with pytest.raises(TokenValidationError, match="no usable keys"):
+        client.validate(_signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id))
+
+
+@pytest.mark.parametrize("encoding", ["pem", "der", "n"])
+def test_rsa_public_key_bytes_as_hmac_secret_are_rejected_even_with_hs_allowed(jwks, encoding):
+    """고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 고전 RS→HS 혼동은 거부된다
+    (joserfc 가 키 종류와 alg 를 묶는다). oct 를 버리는 것만으로 충분하다는 판정의
+    근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    public = rsa.as_dict(private=False)
+    secret = {
+        "pem": rsa.as_pem(private=False),
+        "der": rsa.as_der(private=False),
+        "n": base64.urlsafe_b64decode(str(public["n"]) + "=="),
+    }[encoding]
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    jwks.return_value = {"keys": [public]}
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+
+    with pytest.raises(TokenValidationError):
+        client.validate(hs_token(secret, endpoints.issuer, config.client_id, "k1"))
 
 
 # ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. 위 `test_forced_jwks_refetch_is_rate_limited`

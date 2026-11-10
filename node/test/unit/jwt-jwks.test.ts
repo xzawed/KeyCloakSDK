@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { generateKeyPair, exportJWK, SignJWT } from 'jose'
+import { generateKeyPair, exportJWK, exportSPKI, SignJWT } from 'jose'
 import { JwtValidator, type JwtValidatorOptions } from '../../src/jwt.js'
 import { KeycloakTokenValidationError, KeycloakTransportError } from '../../src/errors.js'
 
@@ -413,6 +413,83 @@ describe('JWKS 의 JWK 가 아닌 원소는 건너뛴다', () => {
       await expect(v.validate(k1)).resolves.toMatchObject({ subject: 'u' })
       await expect(v.validate(await sign('k1'))).resolves.toMatchObject({ subject: 'u' })
     })
+  })
+})
+
+// ⚠️ 고정 — JWKS 의 대칭(`oct`) 키는 검증 키가 아니다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). 일곱
+// 언어는 HS 를 허용하면 그 키로 서명한 위조 토큰을 받았지만, node 는 jose 가 JWKS 에서 HS 를 받지 않아(「Unsupported "alg"
+// value for a JSON Web Key Set」) 처음부터 거부한다 — 코드 변경 없이 그 동작을 고정한다. jose 갱신이 이것을 바꾸면 여기서 운다.
+describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
+  async function withKeys(
+    keys: (rsaJwk: Record<string, unknown>) => unknown[],
+    run: (v: JwtValidator, legit: () => Promise<string>, rsaPem: string) => Promise<void>,
+  ): Promise<void> {
+    const pair = await generateKeyPair('RS256', { extractable: true })
+    const rsaJwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', use: 'sig', alg: 'RS256' }
+    const body = JSON.stringify({ keys: keys(rsaJwk) })
+    const srv = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(body)
+    })
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+    try {
+      const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+      const v = JwtValidator.forJwksUri(uri, {
+        ...baseOpts,
+        allowedAlgs: ['RS256', 'HS256'],
+        jwksMinRefetchSeconds: 0,
+      })
+      const legit = () =>
+        new SignJWT({ sub: 'u', aud: 'my-client' })
+          .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+          .setIssuer(ISS)
+          .setIssuedAt()
+          .setExpirationTime('5m')
+          .sign(pair.privateKey)
+      await run(v, legit, await exportSPKI(pair.publicKey))
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()))
+    }
+  }
+
+  const hs = (secret: Uint8Array, kid: string | undefined) =>
+    new SignJWT({ sub: 'attacker', aud: 'my-client' })
+      .setProtectedHeader(kid === undefined ? { alg: 'HS256' } : { alg: 'HS256', kid })
+      .setIssuer(ISS)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(secret)
+
+  it.each([
+    ['kid · alg', { kid: 'hk', alg: 'HS256', use: 'sig' }, 'hk'],
+    ['alg 없음', { kid: 'hk' }, 'hk'],
+    ['kid 없음', { alg: 'HS256', use: 'sig' }, undefined],
+  ])(
+    '%s: 그 키로 서명한 위조 토큰은 거부되고 같은 키셋의 RSA 토큰은 통과한다',
+    async (_name, member, kid) => {
+      const secret = new Uint8Array(32).map((_, i) => (i * 37 + 11) & 0xff)
+      const oct = { kty: 'oct', k: Buffer.from(secret).toString('base64url'), ...member }
+      await withKeys(
+        (rsaJwk) => [oct, rsaJwk],
+        async (v, legit) => {
+          await expect(v.validate(await hs(secret, kid))).rejects.toBeInstanceOf(
+            KeycloakTokenValidationError,
+          )
+          await expect(v.validate(await legit())).resolves.toMatchObject({ subject: 'u' })
+        },
+      )
+    },
+  )
+
+  it('RSA 공개키(SPKI PEM)를 HMAC 비밀로 쓴 RS→HS 혼동도 거부된다', async () => {
+    await withKeys(
+      (rsaJwk) => [rsaJwk],
+      async (v, _legit, rsaPem) => {
+        await expect(
+          v.validate(await hs(new TextEncoder().encode(rsaPem), 'k1')),
+        ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+      },
+    )
   })
 })
 

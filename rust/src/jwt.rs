@@ -539,6 +539,86 @@ mod tests {
         );
     }
 
+    /// 키셋 본문을 그대로 내는 JWKS 로 검증기를 만든다(`validator_for_config` 의 키셋 주입 변형).
+    async fn validator_with_keys(cfg: KeycloakConfig, keys: serde_json::Value) -> JwtValidator {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/certs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(keys))
+            .mount(&server)
+            .await;
+        let endpoints = OidcEndpoints::new(&cfg);
+        let jwks_uri = format!("{}/certs", Box::leak(Box::new(server)).uri());
+        let store = JwksStore::new(jwks_uri, reqwest::Client::new(), 60);
+        JwtValidator::new(&cfg, &endpoints, store).unwrap()
+    }
+
+    fn hs_only() -> KeycloakConfig {
+        KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+            .unwrap()
+            .with_signature_algorithms(vec!["HS256".to_string()])
+    }
+
+    /// ⚠️ JWKS 의 대칭(`oct`) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 안의 대칭 키는 비밀이 아니다. HS256 을 허용한
+    /// 설정에서 그 키로 서명한 위조 토큰이 통과했다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). Keycloak 은
+    /// oct 를 내지 않는다. 칸은 `HS256` 만 허용한 설정이다 — `RS256+HS256` 처럼 계열을 섞으면 jsonwebtoken 의 계열 검사가 모든
+    /// 토큰을 거부한다. kid 없는 칸은 수정 전에도 거부됐다(이 SDK 는 kid 로 키를 고른다) — 아홉 언어가 같은 세 모양을 잰다.
+    #[tokio::test]
+    async fn jwks_oct_key_is_never_a_verification_key() {
+        let secret = b"0123456789abcdef0123456789abcdef";
+        for (name, member, kid) in [
+            (
+                "kid · alg",
+                json!({"kid":"hk","alg":"HS256","use":"sig"}),
+                Some("hk"),
+            ),
+            ("alg 없음", json!({"kid":"hk"}), Some("hk")),
+            ("kid 없음", json!({"alg":"HS256","use":"sig"}), None),
+        ] {
+            let fx = make_key();
+            let mut oct = json!({"kty":"oct","k":b64(secret)});
+            oct.as_object_mut()
+                .unwrap()
+                .extend(member.as_object().unwrap().clone());
+            let v = validator_with_keys(hs_only(), json!({"keys":[oct, fx.jwk]})).await;
+            let mut h = Header::new(Algorithm::HS256);
+            h.kid = kid.map(String::from);
+            let mut c = good_claims();
+            c["sub"] = json!("attacker");
+            let forged = encode(&h, &c, &EncodingKey::from_secret(secret)).unwrap();
+            assert!(
+                matches!(
+                    v.validate(&forged).await,
+                    Err(KeycloakError::TokenValidation(_))
+                ),
+                "{name}: JWKS 의 oct 키로 서명한 위조 토큰이 통과했다"
+            );
+        }
+    }
+
+    /// 고정 — HS 를 허용해도 RSA 공개키(PEM 텍스트)를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(jsonwebtoken 이 키 계열과 alg 를
+    /// 묶는다). oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+    #[tokio::test]
+    async fn rsa_public_key_as_hmac_secret_is_rejected_even_with_hs_allowed() {
+        let fx = make_key();
+        let v = validator_with_keys(hs_only(), json!({"keys":[fx.jwk]})).await;
+        let mut h = Header::new(Algorithm::HS256);
+        h.kid = Some("test-kid".into());
+        let forged = encode(
+            &h,
+            &good_claims(),
+            &EncodingKey::from_secret(fx.pub_pem.as_bytes()),
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                v.validate(&forged).await,
+                Err(KeycloakError::TokenValidation(_))
+            ),
+            "RSA 공개키를 HMAC 비밀로 쓴 HS256 토큰이 통과했다"
+        );
+    }
+
     /// alg="none" 무서명 토큰: 헤더를 직접 base64url 조립(jsonwebtoken은 none을 인코딩하지 않음).
     /// Algorithm enum에 none 변형이 없어 decode_header에서 구조적으로 거부된다.
     #[tokio::test]
