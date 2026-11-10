@@ -4,6 +4,7 @@ IdP 의 자체 서명 인증서(`tls_cert` · `server_tls`)."""
 
 from __future__ import annotations
 
+import base64
 import datetime
 import gzip
 import importlib
@@ -11,6 +12,7 @@ import ipaddress
 import json
 import ssl
 import threading
+import time
 import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -25,7 +27,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-from joserfc.jwk import JWKRegistry
+from joserfc import jwt as jjwt
+from joserfc.jwk import JWKRegistry, OctKey
 
 CLIENT_SECRET = "s3cret-must-not-leak"
 REFRESH_TOKEN = "refresh-must-not-leak"
@@ -246,6 +249,27 @@ UNREADABLE_JWKS: dict[str, dict[str, object]] = {
     "RSA without e": {"kty": "RSA", "kid": "noe", "n": "AQAB"},
     "RSA e out of range": {"kty": "RSA", "kid": "eaa", "n": "AQAB", "e": "AA"},
 }
+
+
+#: JWKS 의 대칭(oct) 키 세 모양 — (원소 멤버, 위조 토큰의 kid). 아홉 언어가 같은 세
+#: 모양을 잰다(등록부 jwks-oct-key-usable-with-hs). kid 없는 칸은 수정 전에도
+#: 거부됐다(joserfc 는 kid 로 키를 고른다).
+OCT_SHAPES = [
+    pytest.param({"kid": "hk", "alg": "HS256", "use": "sig"}, "hk", id="kid-alg"),
+    pytest.param({"kid": "hk"}, "hk", id="no-alg"),
+    pytest.param({"alg": "HS256", "use": "sig"}, None, id="no-kid"),
+]
+
+
+def b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def hs_token(secret: bytes, issuer: str, audience: str, kid: str | None) -> str:
+    """`secret` 으로 HS256 서명한 위조 토큰(sub=attacker)."""
+    header: dict[str, object] = {"alg": "HS256"} if kid is None else {"alg": "HS256", "kid": kid}
+    claims = {"iss": issuer, "aud": audience, "sub": "attacker", "exp": int(time.time()) + 60}
+    return jjwt.encode(header, claims, OctKey.import_key(secret))
 
 
 def joserfc_reads(data: dict[str, object]) -> bool:

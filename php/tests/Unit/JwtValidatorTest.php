@@ -13,6 +13,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Xzawed\Keycloak\Exception\KeycloakConfigError;
+use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\TokenValidationError;
 use Xzawed\Keycloak\Jwks\JwksStore;
 use Xzawed\Keycloak\JwtValidator;
@@ -435,6 +436,90 @@ final class JwtValidatorTest extends TestCase
         $validator = new JwtValidator($cfg, new OidcEndpoints($cfg), $store);
         $this->expectException(TokenValidationError::class);
         $validator->validate($this->sign($this->goodClaims()));
+    }
+
+    /** @param list<array<string,mixed>> $keys */
+    private function hsAllowedValidator(array $keys): JwtValidator
+    {
+        $cfg = new KeycloakConfig(
+            serverUrl: 'https://kc:8080',
+            realm: 'it-realm',
+            clientId: 'it-client',
+            signatureAlgorithms: ['RS256', 'HS256'],
+        );
+        $http = new class ($keys) implements ClientInterface {
+            /** @param list<array<string,mixed>> $keys */
+            public function __construct(private array $keys) {}
+
+            public function sendRequest(RequestInterface $r): ResponseInterface
+            {
+                return new Response(200, [], json_encode(['keys' => $this->keys], JSON_THROW_ON_ERROR));
+            }
+        };
+        $store = new JwksStore('https://kc:8080/realms/it-realm/protocol/openid-connect/certs', $http, new HttpFactory());
+
+        return new JwtValidator($cfg, new OidcEndpoints($cfg), $store);
+    }
+
+    /**
+     * ⚠️ JWKS 의 대칭(`oct`) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 안의 대칭 키는 비밀이 아니다. HS256 을 허용한
+     * 설정에서 그 키로 서명한 위조 토큰이 통과했다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). Keycloak 은
+     * oct 를 내지 않는다. kid 없는 칸은 수정 전에도 거부됐다(이 SDK 는 kid 로만 키를 고른다) — 아홉 언어가 같은 세 모양을 잰다.
+     *
+     * @return iterable<string, array{array<string,string>, ?string}>
+     */
+    public static function octShapes(): iterable
+    {
+        yield 'kid · alg' => [['kid' => 'hk', 'alg' => 'HS256', 'use' => 'sig'], 'hk'];
+        yield 'no alg' => [['kid' => 'hk'], 'hk'];
+        yield 'no kid' => [['alg' => 'HS256', 'use' => 'sig'], null];
+    }
+
+    /** @param array<string,string> $member */
+    #[DataProvider('octShapes')]
+    public function testAJwksOctKeyIsNeverAVerificationKey(array $member, ?string $kid): void
+    {
+        $secret = random_bytes(32);
+        $oct = ['kty' => 'oct', 'k' => rtrim(strtr(base64_encode($secret), '+/', '-_'), '=')] + $member;
+        $validator = $this->hsAllowedValidator([$oct, $this->key['jwk']]);
+        $forged = FbJwt::encode(['sub' => 'attacker'] + $this->goodClaims(), $secret, 'HS256', $kid);
+        try {
+            $validator->validate($forged);
+            self::fail('JWKS 의 oct 키로 서명한 위조 토큰이 통과했다');
+        } catch (TokenValidationError) {
+            // 기대한 거부
+        }
+        // 대조 — 같은 키셋의 RSA 토큰은 통과한다(oct 를 버리는 것이 키셋 전체를 버리지 않는다).
+        self::assertSame('s1', $validator->validate($this->sign($this->goodClaims()))->subject);
+    }
+
+    /** oct 만 있는 키셋은 쓸 수 있는 키가 없는 키셋이다 — 빈 키셋처럼 조회 실패로 닫는다. */
+    public function testAJwksWithOnlyAnOctKeyHasNoUsableKeys(): void
+    {
+        $validator = $this->hsAllowedValidator([['kty' => 'oct', 'kid' => 'test-kid', 'k' => 'c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0']]);
+        $this->expectException(KeycloakTransportError::class);
+        $this->expectExceptionMessage('JWKS response contains no keys');
+        $validator->validate($this->sign($this->goodClaims()));
+    }
+
+    /**
+     * 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(firebase/php-jwt 가 키 종류와 alg 를
+     * 묶는다). oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+     */
+    public function testRsaPublicKeyBytesAsHmacSecretAreRejectedEvenWithHsAllowed(): void
+    {
+        $validator = $this->hsAllowedValidator([$this->key['jwk']]);
+        $pem = $this->publicPem();
+        $der = base64_decode(preg_replace('/-----[^-]+-----|\s+/', '', $pem) ?? '', true);
+        self::assertIsString($der);
+        foreach (['SPKI PEM' => $pem, 'SPKI DER' => $der] as $name => $secret) {
+            try {
+                $validator->validate(FbJwt::encode($this->goodClaims(), $secret, 'HS256', 'test-kid'));
+                self::fail("RSA 공개키({$name})를 HMAC 비밀로 쓴 HS256 토큰이 통과했다");
+            } catch (TokenValidationError) {
+                // 기대한 거부
+            }
+        }
     }
 
     public function testMalformedJwksModulusMappedToTokenValidationError(): void

@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,9 @@ const jwtMaxBytes = 256000
 //
 // ⚠️ A plain decimal literal on purpose — the nine SDKs share this value and a cross-language guard reads it.
 const jwksMaxAgeSeconds = 300
+
+// errSymmetricJWK is why a JWKS oct element is skipped — see fetch.
+var errSymmetricJWK = errors.New("symmetric (oct) key: a JWKS is public, so it is never a verification key")
 
 // Backoff for *failed* JWKS fetches — a different axis from minRefetch.
 //
@@ -419,6 +423,15 @@ func (v *Validator) fetch(ctx context.Context) error {
 		if err := json.Unmarshal(r, &k); err != nil {
 			if firstErr == nil {
 				firstErr = err
+			}
+			continue
+		}
+		// ⚠️ A symmetric (oct) key is never a verification key: the JWKS is public, so its secret is no secret — with
+		// HS256 allowed, a token HMAC-signed with it verified for anyone who had read the set (measured; a kid-less
+		// token pairs with a kid-less key). Keycloak never publishes one. go-jose reads oct, and only oct, as []byte.
+		if _, symmetric := k.Key.([]byte); symmetric {
+			if firstErr == nil {
+				firstErr = errSymmetricJWK
 			}
 			continue
 		}

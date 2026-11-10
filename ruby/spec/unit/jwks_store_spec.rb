@@ -329,6 +329,23 @@ RSpec.describe KeycloakSdk::JwksStore do
         .to raise_error(KeycloakSdk::TransportError, /no usable keys \(6 unreadable\)/)
       expect(store.key_set["keys"].first["kid"]).to eq("k1")
     end
+
+    # ⚠️ 대칭(oct) 원소는 ruby-jwt 가 읽어도 남기지 않는다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니다. 검증 경로의 효과는
+    # `jwt_validator_spec.rb` 의 「JWKS 의 대칭(oct) 키」가 잰다.
+    it "대칭(oct) 원소는 남기지 않는다" do
+      oct = { kty: "oct", kid: "hk", k: "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0" }
+      mixed = { keys: [oct, { kty: "RSA", kid: "k1", n: "AQAB", e: "AQAB" }] }.to_json
+      stub_request(:get, jwks_url).to_return(status: 200, body: mixed,
+                                             headers: { "Content-Type" => "application/json" })
+      expect(store.key_set["keys"]).to eq([{ "kty" => "RSA", "kid" => "k1", "n" => "AQAB", "e" => "AQAB" }])
+    end
+
+    it "oct 만 있는 키셋은 쓸 수 있는 키가 없는 키셋이다" do
+      only_oct = { keys: [{ kty: "oct", kid: "k1", k: "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0" }] }.to_json
+      stub_request(:get, jwks_url).to_return(status: 200, body: only_oct,
+                                             headers: { "Content-Type" => "application/json" })
+      expect { store.key_set }.to raise_error(KeycloakSdk::TransportError, /no usable keys \(1 unreadable\)/)
+    end
   end
 
   # 키셋 수명(300 초)은 아홉 언어가 함께 움직이는 내부 값이다 — 나머지 여덟 언어에서도 비공개다(go 소문자 · .NET·kotlin

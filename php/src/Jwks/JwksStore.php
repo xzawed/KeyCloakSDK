@@ -163,6 +163,12 @@ final class JwksStore
                 continue;
             }
             $jwk = self::stringKeyed($key);
+            // ⚠️ 대칭(oct) 키는 검증 키가 아니다 — JWKS 는 공개 문서라 그 비밀은 비밀이 아니고, HS 를 허용한 소비자에게 그 키로
+            // 서명한 위조 토큰이 통과했다(실측). Keycloak 은 oct 를 내지 않는다. 아래 「스키마 검사로 번지지 않는다」와 다른
+            // 축이다 — 읽을 수 있느냐가 아니라 공개 문서의 키를 비밀 키로 쓰느냐다.
+            if (($jwk['kty'] ?? null) === 'oct') {
+                continue;
+            }
             $kid = $jwk['kid'] ?? null;
             if (is_string($kid)) {
                 $map[$kid] = $jwk;

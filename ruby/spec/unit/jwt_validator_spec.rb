@@ -241,6 +241,44 @@ RSpec.describe KeycloakSdk::JwtValidator do
     end
   end
 
+  # ⚠️ **JWKS 의 대칭(`oct`) 키는 검증 키가 아니다** — JWKS 는 공개 문서라 그 안의 대칭 키는 비밀이 아니다. HS256 을 허용한
+  # 설정에서 그 키로 서명한 위조 토큰이 통과했다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). Keycloak 은
+  # oct 를 내지 않는다. kid 없는 칸은 수정 전에도 거부됐다(ruby-jwt 는 kid 로 키를 고른다) — 아홉 언어가 같은 세 모양을 잰다.
+  describe "JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정" do
+    subject(:hs_validator) { described_class.from_config(config: hs_config, jwks_store: jwks_store) }
+
+    let(:hs_config) do
+      KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: audience,
+                              clock_skew: 30, signature_algorithms: %w[RS256 HS256])
+    end
+    let(:secret) { OpenSSL::Random.random_bytes(32) }
+
+    {
+      "kid · alg" => [{ "kid" => "hk", "alg" => "HS256", "use" => "sig" }, "hk"],
+      "alg 없음" => [{ "kid" => "hk" }, "hk"],
+      "kid 없음" => [{ "alg" => "HS256", "use" => "sig" }, nil]
+    }.each do |name, (member, oct_kid)|
+      it "#{name}: 그 키로 서명한 위조 토큰은 거부되고 같은 키셋의 RSA 토큰은 통과한다" do
+        oct = { "kty" => "oct", "k" => [secret].pack("m0").tr("+/", "-_").delete("=") }.merge(member)
+        stub_request(:get, jwks_url).to_return(status: 200, body: { keys: [oct, jwk_hash] }.to_json,
+                                               headers: { "Content-Type" => "application/json" })
+        forged = JWT.encode(base_claims("sub" => "attacker"), secret, "HS256", oct_kid ? { kid: oct_kid } : {})
+        expect { hs_validator.validate(forged) }.to raise_error(KeycloakSdk::TokenValidationError)
+        expect(hs_validator.validate(sign(base_claims)).subject).to eq("user-1")
+      end
+    end
+
+    # 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(ruby-jwt 가 키 종류와 alg 를 묶는다).
+    # oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+    { "SPKI PEM" => :to_pem, "SPKI DER" => :to_der }.each do |name, encoding|
+      it "RSA 공개키(#{name})를 HMAC 비밀로 쓴 토큰은 거부된다" do
+        secret = rsa.public_key.public_send(encoding)
+        forged = JWT.encode(base_claims("sub" => "attacker"), secret, "HS256", { kid: kid })
+        expect { hs_validator.validate(forged) }.to raise_error(KeycloakSdk::TokenValidationError)
+      end
+    end
+  end
+
   describe "constructor guards (defense-in-depth against silent verify_iss/verify_aud no-ops)" do
     it "raises ConfigError when issuer is nil" do
       expect do
