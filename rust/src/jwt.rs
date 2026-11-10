@@ -1,4 +1,4 @@
-//! Self-hardened JWT validation: RS256 pin (header alg not trusted) · none structurally rejected · exact iss · aud
+//! Self-hardened JWT validation: configured algorithm pin ∩ the key's family (default RS256) · none structurally rejected · exact iss · aud
 //! containment · exp required · nbf · skew · DoS-safe JWKS.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result};
@@ -94,7 +94,8 @@ impl JwtValidator {
             )));
         }
 
-        // (1) 헤더에서 kid만 추출(alg는 검증 선택에 미사용 — 설정 핀, 아래 3).
+        // (1) 헤더에서 kid 를 꺼낸다 — 키는 kid 로 고르고 허용 alg 는 설정 핀 ∩ 키 계열이다(아래 3). 헤더 alg 는 그 집합 안에서
+        //     검증 알고리즘만 고른다(예: RSA 키에 RS256 · PS256 을 둘 다 허용했으면 어느 쪽으로 검증할지).
         //     Algorithm enum에는 `none` 변형이 없어 alg="none" 헤더는 여기서 구조적으로 거부된다.
         let header = jsonwebtoken::decode_header(token)
             .map_err(|_| KeycloakError::TokenValidation("malformed JWT header".into()))?;
@@ -111,8 +112,8 @@ impl JwtValidator {
         // (3) 강화 Validation: config 알고리즘 핀·iss 정확·aud 포함·exp 필수·nbf·스큐.
         //     ⚠️ 핀은 **키 계열로 거른 부분집합**으로 넘긴다 — jsonwebtoken 은 넘긴 알고리즘 전부가 헤더 alg 의 계열과 같기를
         //     요구해, 계열을 섞은 설정(RS256 + ES256 …)이면 정상 토큰까지 거부했다. 헤더 alg 가 이 부분집합에 있어야 하므로
-        //     설정에 없는 alg · 키와 계열이 다른 alg(혼동) · none 은 그대로 거부되고, 키 계열의 alg 가 설정에 없어 부분집합이
-        //     비어도 jsonwebtoken 이 헤더 alg 를 못 찾아 거부한다(같은 InvalidAlgorithm).
+        //     설정에 없는 alg · 키와 계열이 다른 alg(혼동)는 그대로 거부되고, 키 계열의 alg 가 설정에 없어 부분집합이 비어도
+        //     jsonwebtoken 이 헤더 alg 를 못 찾아 거부한다(같은 InvalidAlgorithm). none 은 여기까지 오지 않는다((1) 의 헤더 해석).
         let mut v = Validation::new(self.algorithms[0]); // non-empty 보장(new에서 검증)
         v.algorithms = self
             .algorithms
@@ -529,8 +530,8 @@ mod tests {
     // ── 보안 프로브 5개: 실제 공격 토큰을 구성해 거부를 증명(보안리뷰 선반영) ──────────
 
     /// RS256→HS256 알고리즘 혼동 공격: 서버 공개키(PEM 텍스트)를 HMAC 비밀로 삼아
-    /// HS256으로 유효 서명한 토큰. RS256 핀(v.algorithms=[RS256])이 서명검증 이전에
-    /// 헤더 alg를 거부해야 한다(jsonwebtoken decode.rs L283 — alg 미포함 시 InvalidAlgorithm).
+    /// HS256으로 유효 서명한 토큰. 기본 핀(RS256)이 서명검증 이전에 헤더 alg를 거부해야 한다(jsonwebtoken 11.1
+    /// `decoding.rs` 의 `decode` 첫 검사 — 허용 목록에 헤더 alg 가 없으면 InvalidAlgorithm).
     #[tokio::test]
     async fn rejects_alg_confusion_hs256_with_rsa_pubkey() {
         let fx = make_key();
@@ -655,6 +656,30 @@ mod tests {
         encode(&h, &claims, &EncodingKey::from_ed_der(&der)).unwrap()
     }
 
+    /// RFC 7515 부록 A.3 의 P-256 예시 키 — 공개된 예시라 비밀이 아니다(d 만으로 계산한 공개점이 x · y 와 같다 — 대조군
+    /// 있는 측정으로 확인).
+    const EC_P256_X: &str = "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU";
+    const EC_P256_Y: &str = "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0";
+    const EC_P256_D: &str = "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI";
+
+    fn ec_jwk() -> serde_json::Value {
+        json!({ "kty":"EC","crv":"P-256","kid":"ec-kid","use":"sig","alg":"ES256","x":EC_P256_X,"y":EC_P256_Y })
+    }
+
+    fn sign_ec(claims: serde_json::Value) -> String {
+        // PKCS#8(RFC 5208) 안의 ECPrivateKey(RFC 5915, 공개키 생략) — jsonwebtoken 의 `from_ec_der` 는 PKCS#8 DER 를 받는다.
+        let mut der =
+            unhex("3041020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420");
+        der.extend(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(EC_P256_D)
+                .unwrap(),
+        );
+        let mut h = Header::new(Algorithm::ES256);
+        h.kid = Some("ec-kid".into());
+        encode(&h, &claims, &EncodingKey::from_ec_der(&der)).unwrap()
+    }
+
     fn cfg_with(algs: &[&str]) -> KeycloakConfig {
         KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
             .unwrap()
@@ -663,8 +688,8 @@ mod tests {
 
     /// ⚠️ 계열을 섞은 설정에서도 키 계열에 맞는 토큰은 통과한다 — jsonwebtoken 은 설정한 알고리즘 **전부**가 헤더 alg 의
     /// 계열과 같기를 요구해, RS256 + ES256 · + EdDSA · + HS256 이면 정상 토큰까지 「algorithm not allowed」 였다(등록부
-    /// rust-mixed-family-algorithms-reject-all). RSA 키와 Ed25519 키 둘로 잰다 — 하나만 재면 계열을 상수로 박은 구현이
-    /// 통과한다.
+    /// rust-mixed-family-algorithms-reject-all). RSA · Ed25519 · P-256 세 키로 잰다 — 하나만 재면 계열을 상수로 박은
+    /// 구현이나 한 계열만 예외로 둔 구현이 통과한다(레그 실측: EC 칸이 없을 때 EC 만 되돌린 변이가 살았다).
     #[tokio::test]
     async fn mixed_family_config_validates_a_token_of_the_key_family() {
         let fx = make_key();
@@ -691,11 +716,25 @@ mod tests {
                 .unwrap_or_else(|e| panic!("Ed25519 키 · {algs:?}: {e}"));
             assert_eq!(vt.subject, "s1");
         }
+        for algs in [
+            &["RS256", "ES256"][..],
+            &["ES256", "RS256"],
+            &["RS256", "EdDSA", "HS256", "ES384", "ES256"],
+        ] {
+            let v = validator_with_keys(cfg_with(algs), json!({"keys":[ec_jwk()]})).await;
+            let vt = v
+                .validate(&sign_ec(good_claims()))
+                .await
+                .unwrap_or_else(|e| panic!("P-256 키 · {algs:?}: {e}"));
+            assert_eq!(vt.subject, "s1");
+        }
     }
 
     /// 대조 — 계열로 거르는 것이 핀을 넓히지 않는다. 섞은 설정에서도 (a) 같은 계열이지만 설정에 없는 alg(RS384) ·
     /// (b) 키와 계열이 다른 헤더 alg(HS256 — RSA 공개키 PEM 을 HMAC 비밀로 쓴 고전 혼동)는 거부하고, (c) 키 계열의 alg 가
-    /// 설정에 하나도 없으면(ES256 + EdDSA · RSA 키) 「algorithm not allowed」다.
+    /// 설정에 하나도 없으면(ES256 + EdDSA · RSA 키) 「algorithm not allowed」다. (d) Ed25519 키도 핀에 EdDSA 가 없으면 ·
+    /// (e) P-256 키도 핀 밖 ES256(RS256 만 · ES384 + RS256)이면 · (f) 기본 핀(RS256)에서 같은 계열의 PS256 · RS384 도
+    /// 거부한다 — (d)–(f) 는 레그가 「모든 시험을 통과하며 핀을 넓히는 변이」로 찾은 자리다.
     #[tokio::test]
     async fn mixed_family_config_keeps_the_algorithm_pin() {
         let fx = make_key();
@@ -737,6 +776,40 @@ mod tests {
             matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
             "(c) {got:?}"
         );
+
+        let v =
+            validator_with_keys(cfg_with(&["RS256", "ES256"]), json!({"keys":[ed_jwk()]})).await;
+        let got = v.validate(&sign_ed(good_claims())).await;
+        assert!(
+            matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+            "(d) {got:?}"
+        );
+
+        for algs in [&["RS256"][..], &["ES384", "RS256"]] {
+            let v = validator_with_keys(cfg_with(algs), json!({"keys":[ec_jwk()]})).await;
+            let got = v.validate(&sign_ec(good_claims())).await;
+            assert!(
+                matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+                "(e) {algs:?} {got:?}"
+            );
+        }
+
+        let v = validator_for(&fx).await;
+        for alg in [Algorithm::PS256, Algorithm::RS384] {
+            let mut h = Header::new(alg);
+            h.kid = Some("test-kid".into());
+            let t = encode(
+                &h,
+                &good_claims(),
+                &EncodingKey::from_rsa_pem(fx.priv_pem.as_bytes()).unwrap(),
+            )
+            .unwrap();
+            let got = v.validate(&t).await;
+            assert!(
+                matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+                "(f) {alg:?} {got:?}"
+            );
+        }
     }
 
     /// alg="none" 무서명 토큰: 헤더를 직접 base64url 조립(jsonwebtoken은 none을 인코딩하지 않음).
