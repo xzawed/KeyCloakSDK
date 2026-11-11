@@ -133,6 +133,7 @@ final class MalformedTokenResponseTest extends TestCase
      * @var array<string, array{0:string,1:?string,2:?string}>
      */
     private const DEBUG_INFO = [
+        'c expires_in string|clientCredentialsToken' => ['token response has an unusable expires_in', null, null],
         'd short non-JSON body|clientCredentialsToken' => ['token endpoint returned unexpected response', null,
             'UnexpectedValueException: Failed to parse JSON response: Syntax error'],
         // The cause carries no code — it cannot see what the request sent; the SDK error above it carries the vetted one.
@@ -151,10 +152,23 @@ final class MalformedTokenResponseTest extends TestCase
         'e6 error code ends in CRLF|clientCredentialsToken' => ['token request rejected', null,
             'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
         'e6 error code ends in CRLF|provider.getToken' => ['client-credentials failed', null, null],
+        'e7 400 error array|clientCredentialsToken' => ['token request rejected', null,
+            'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
+        'e7 400 error array|provider.getToken' => ['client-credentials failed', null, null],
         'f3 401 error_description echo|introspect' => ['introspection failed', null,
             'GuzzleHttp\Exception\ClientException: HTTP 401 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
         'u2 introspect handler RuntimeException|introspect' => ['introspection failed unexpectedly', null,
             'RuntimeException: (message withheld: thrown outside the audited libraries)'],
+        // 응답이 없다(transport) · 끝까지 온 응답을 못 쓴다(auth) — 2026-11-11 에 계급이 바뀐 자리들의 문구.
+        'x2 introspect TLS failure|introspect' => ['introspection request failed', null,
+            'GuzzleHttp\Exception\RequestException: (message withheld: thrown outside the audited libraries)'],
+        'x3 logout TLS failure|logout' => ['logout request failed', null,
+            'GuzzleHttp\Exception\RequestException: (message withheld: thrown outside the audited libraries)'],
+        'y token undecodable content|clientCredentialsToken' => ['token response could not be decoded', null, null],
+        'y token undecodable content|provider.getToken' => ['client-credentials failed: the token response could not be decoded', null,
+            'GuzzleHttp\Exception\RequestException: HTTP 200 from POST https://kc.test/realms/r/protocol/openid-connect/token (response body withheld)'],
+        'y2 introspect undecodable content|introspect' => ['introspection failed', null,
+            'GuzzleHttp\Exception\RequestException: HTTP 200 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
     ];
 
     /**

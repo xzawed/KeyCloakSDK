@@ -27,11 +27,15 @@ final class ResponseFailure
     /** CURLE_BAD_CONTENT_ENCODING — by value: without ext-curl Guzzle picks `StreamHandler`, and the constant is undefined. */
     private const BAD_CONTENT_ENCODING = 61;
 
-    /** Whether the response arrived — head and body — but its content coding could not be decoded. */
+    /**
+     * Whether the response arrived — head and body — but its content coding could not be decoded. curl decodes after the head,
+     * so Guzzle attaches the response to that failure. ⚠️ `StreamHandler` reports the same body as a bare "Unable to read from
+     * stream" — no response, no errno — exactly as a socket read that failed, so there it stays a transport failure (measured
+     * 2026-11-11: it cannot be told apart).
+     */
     public static function undecodable(#[\SensitiveParameter] \Throwable $e): bool
     {
-        return $e instanceof RequestException && $e->getResponse() !== null
-            && ($e->getHandlerContext()['errno'] ?? null) === self::BAD_CONTENT_ENCODING;
+        return $e instanceof RequestException && ($e->getHandlerContext()['errno'] ?? null) === self::BAD_CONTENT_ENCODING;
     }
 
     /**
