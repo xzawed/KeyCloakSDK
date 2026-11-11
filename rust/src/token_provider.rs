@@ -110,11 +110,12 @@ impl ClientCredentialsTokenProvider {
             .and_then(serde_json::Value::as_str)
             .and_then(sendable_bearer);
         let Some(access_token) = access_token.filter(|_| status.is_success()) else {
-            // 코드 모양일 때만 옮긴다 — `auth.rs` 의 `map_token_err` 와 같은 계약(`oauth_error_code`).
+            // 코드 모양이고 보낸 시크릿과 겹치지 않을 때만 옮긴다 — `auth.rs` 의 `map_token_err` 와 같은 계약(`oauth_error_code`).
+            let secret = self.config.client_secret.as_deref().unwrap_or_default();
             let oauth = body
                 .get("error")
                 .and_then(|v| v.as_str())
-                .and_then(oauth_error_code);
+                .and_then(|v| oauth_error_code(v, &[secret]));
             return Err(KeycloakError::Auth {
                 message: "client-credentials failed".into(),
                 oauth_error: oauth,

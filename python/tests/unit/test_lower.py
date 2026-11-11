@@ -15,6 +15,7 @@ from keycloak.exceptions import KeycloakConnectionError, KeycloakPostError
 from keycloak_sdk._internal.lower import (
     LowerLibraryError,
     auth_failure,
+    carried_code,
     is_lower_failure,
     oauth_error,
     refused_body,
@@ -101,11 +102,47 @@ def test_summary_without_python_keycloak_frames_has_no_origin() -> None:
         (b'["invalid_grant"]', None),
         (b'{"error_description": "x"}', None),
         (b'{"error": "invalid_grant"}', "invalid_grant"),
-        (b'{"error": 7}', "7"),
+        (b'{"error": 7}', 7),
     ],
 )
-def test_oauth_error_is_best_effort(body: bytes | None, expected: str | None) -> None:
+def test_oauth_error_is_best_effort(body: bytes | None, expected: object) -> None:
+    """The value as it came — what gets carried is `carried_code`'s call."""
     assert oauth_error(KeycloakPostError("x", response_code=400, response_body=body)) == expected
+
+
+# --- carried_code ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "sent", "expected"),
+    [
+        ("invalid_grant", ("s3cret-Value",), "invalid_grant"),
+        ("a" * 64, (), "a" * 64),
+        ("a" * 65, (), None),
+        ("Invalid_grant", (), None),
+        ("invalid grant", (), None),
+        ("invalid_grant\n", (), None),
+        ("", (), None),
+        (7, (), None),
+        (["invalid_grant"], (), None),
+        (None, (), None),
+        # overlap with a non-empty value the request sent, either way round
+        ("mysecret", ("mysecret",), None),
+        ("mysecret_x", ("mysecret",), None),
+        ("x_mysecret", ("mysecret",), None),
+        ("mysec", ("mysecret",), None),
+        ("secret", ("mysecret",), None),  # a suffix piece — not only a prefix
+        ("yse", ("mysecret",), None),  # a middle piece
+        ("mysecret", (None, "", "other", "mysecret"), None),
+        ("fresh", ("zzz", "myrefresh"), None),  # a piece of a later value, not only the first
+        # an absent or empty secret is not compared — "" is a piece of every code
+        ("invalid_grant", (None, ""), "invalid_grant"),
+        # the price: a secret that is a piece of a registered code withholds it
+        ("invalid_client", ("client",), None),
+    ],
+)
+def test_carried_code(value: object, sent: tuple[str | None, ...], expected: str | None) -> None:
+    assert carried_code(value, sent) == expected
 
 
 # --- auth_failure ------------------------------------------------------------------------
@@ -122,11 +159,19 @@ def test_http_failure_message_is_status_and_code_not_the_body(lower_post_error: 
 def test_a_code_that_is_not_shaped_like_an_oauth_code_stays_out_of_the_message(
     lower_post_error: Any,
 ) -> None:
-    """`error` 자리에 토큰을 실어 온 응답 — 메시지로 밀어 넣지 못한다. 필드는 예전대로 보존한다."""
+    """`error` 자리에 토큰을 실어 온 응답 — 메시지에도 필드에도 싣지 않는다(예전에는 필드에
+    남겼다 — 등록부 `oauth-error-field-echo-unmasked`)."""
     error = auth_failure(lower_post_error(400, b'{"error": "' + TOKEN.encode() + b'"}'))
 
     assert str(error) == "Keycloak request failed: HTTP 400"
-    assert isinstance(error, KeycloakAuthError) and error.error == TOKEN
+    assert isinstance(error, KeycloakAuthError) and error.error is None
+
+
+def test_a_code_shaped_echo_of_a_sent_value_stays_out_of_both(lower_post_error: Any) -> None:
+    error = auth_failure(lower_post_error(400, b'{"error": "mysecret"}'), sent=(None, "mysecret"))
+
+    assert str(error) == "Keycloak request failed: HTTP 400"
+    assert isinstance(error, KeycloakAuthError) and error.error is None
 
 
 def test_no_response_is_a_transport_error_with_the_upstream_reason() -> None:

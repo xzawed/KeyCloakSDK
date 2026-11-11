@@ -411,9 +411,8 @@ RSpec.describe KeycloakSdk::AuthClient do
       run = ->(key, call) { HostileTokenResponseSpec::Scene.new(key).run(call) }
       oauth = run.call("e1", "auth.refresh")
       expect([oauth.message, oauth.oauth_error]).to eq(["refresh failed: invalid_grant (HTTP 400)", "invalid_grant"])
-      odd = run.call("e5", "auth.refresh") # 코드 모양이 아니면 메시지에서만 뺀다 — 프로그램용 속성은 그대로
-      expect([odd.message, odd.oauth_error])
-        .to eq(["refresh failed: non-standard error code (HTTP 400)", "eER7k-error-field-canary"])
+      odd = run.call("e5", "auth.refresh") # 코드 모양이 아니면 메시지에서도 속성에서도 뺀다(oauth_error_code_echo_spec)
+      expect([odd.message, odd.oauth_error]).to eq(["refresh failed: non-standard error code (HTTP 400)", nil])
       parse = run.call("d1", "auth.client_credentials_token") # 끝까지 온 응답 — AuthError 이되 해석기의 클래스는 남는다
       expect(parse.message).to eq("token response is not valid JSON")
       expect(parse.cause.lower_classes).to eq(%w[Faraday::ParsingError JSON::ParserError])

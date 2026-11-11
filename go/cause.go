@@ -47,8 +47,8 @@ const withheldNote = " (detail withheld: it can quote the IdP's response)"
 // Transport failures (*url.Error) and errors from beneath HTTP stay as they are — wireScrubTransport
 // already withheld what net/http quotes, and keeping them keeps errors.Is(err, context.DeadlineExceeded)
 // and errors.As(err, &net.Error) working. The OAuth error code is read from the original before this
-// (AuthError.OAuthError), so nothing the caller relies on is lost.
-func scrubCause(err error) error {
+// (AuthError.OAuthError, vetted against what the request sent), so nothing the caller relies on is lost.
+func scrubCause(err error, sent ...string) error {
 	var ue *url.Error
 	var re *oauth2.RetrieveError
 	switch {
@@ -59,8 +59,10 @@ func scrubCause(err error) error {
 		if re.Response != nil {
 			msg += " HTTP " + strconv.Itoa(re.Response.StatusCode)
 		}
-		if oauthCodeShaped(re.ErrorCode) {
-			msg += ", error " + strconv.Quote(re.ErrorCode)
+		// The same rule as the field (oauthErrorCode against what the request sent) — the shape alone let a code-shaped
+		// echo of the secret ride here (measured 2026-11-11).
+		if code := oauthErrorCode(re.ErrorCode, sent...); code != "" {
+			msg += ", error " + strconv.Quote(code)
 		}
 		return &responseFreeError{typ: fmt.Sprintf("%T", re), msg: msg + " (response body and error_description withheld)"}
 	}
@@ -123,20 +125,25 @@ func oauthCodeShaped(s string) bool {
 	return true
 }
 
-// oauthErrorCode is what AuthError.OAuthError carries for the server's `error` value s: s itself when it is an OAuth
-// error code in the RFC 6749 §5.2 grammar — error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E — and "" (no
-// code) otherwise. It never trims a value into a code ("invalid_client\r\n" is no code, not "invalid_client"). Before,
-// the field carried every value verbatim — CR/LF and every other control character, '"', '\', anything past ASCII —
-// into whatever logged it (measured: oauth_error_grammar_test.go). A space-only value is a code (%x20 is NQSCHAR) and
-// the grammar sets no length (the token-response cap bounds it) — both as .NET #710.
-// ⚠️ This is the field's rule. What an SDK error's text or `%#v` shows of a code is the stricter oauthCodeShaped.
-func oauthErrorCode(s string) string {
-	for i := 0; i < len(s); i++ {
-		if c := s[i]; c < 0x20 || c > 0x7e || c == '"' || c == '\\' {
+// oauthErrorCode is what AuthError.OAuthError carries for the server's `error` value s: s itself when it is shaped like
+// an OAuth error code (oauthCodeShaped) and overlaps no non-empty secret the request sent — neither contains the other,
+// so a truncated or extended echo is withheld too — and "" (no code) otherwise. It never trims a value into a code
+// ("invalid_client\r\n" is no code). ⚠️ `error` is response body too: an endpoint that echoes what it got puts the
+// client secret, the refresh token or the code there. The field used to take the RFC 6749 §5.2 grammar (1*NQSCHAR, as
+// .NET #710), which a Keycloak-style secret, a JWT and a form-encoded secret all are, and a lowercase-only secret has
+// the code shape itself (measured 2026-11-11: oauth_error_code_echo_test.go). The price of the overlap: a secret that is
+// a piece of a registered code ("client") withholds that code. An absent secret ("") is not compared — it is a piece
+// of every code.
+func oauthErrorCode(s string, sent ...string) string {
+	if !oauthCodeShaped(s) {
+		return ""
+	}
+	for _, secret := range sent {
+		if secret != "" && (strings.Contains(s, secret) || strings.Contains(secret, s)) {
 			return ""
 		}
 	}
-	return s // an empty value stays empty: no code
+	return s
 }
 
 // belowHTTP reports whether err failed beneath HTTP — socket, DNS, TLS, timeout, cancellation, EOF.
@@ -318,11 +325,12 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 // read as "the user is gone" with no admin request sent (measured 2026-11-05 — TestAdminTokenFailureNeverMatchesAdminSentinels;
 // it was *AdminError for a status and *TransportError without one, a refused redirect included). gocloak flattens a failed
 // token response into APIError.Message as "<status line>: <error>: <errorMessage>: <error_description>", so the parts cannot
-// be told apart; the message is rebuilt from the status code and the first code-shaped part — in Msg only, never in
-// OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect target, which the
-// IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept in below when gocloak
-// dropped it (a deadline that ended the exchange), so errors.Is still finds it.
-func loginError(err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot) error {
+// be told apart; the message is rebuilt from the status code and the first part oauthErrorCode lets through against what
+// the login sent (sent — an echoed lowercase secret is code-shaped: it reached Msg, measured 2026-11-11) — in Msg only,
+// never in OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect
+// target, which the IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept
+// in below when gocloak dropped it (a deadline that ended the exchange), so errors.Is still finds it.
+func loginError(err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot, sent ...string) error {
 	typ := fmt.Sprintf("%T", err)
 	// A 2xx body that is not UTF-8 arrived and is unusable (tokencap.go) — checked first, because the check withheld the
 	// EOF that below's arrival mark waits for.
@@ -335,7 +343,7 @@ func loginError(err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot) e
 		msg := "client-credentials login failed: HTTP " + strconv.Itoa(apiErr.Code) + " " + http.StatusText(apiErr.Code)
 		if parts := strings.Split(apiErr.Message, ": "); len(parts) > 1 {
 			for _, p := range parts[1:] {
-				if oauthCodeShaped(p) {
+				if oauthErrorCode(p, sent...) != "" {
 					msg += ": " + p
 					break
 				}

@@ -187,7 +187,8 @@ public sealed class TokenResponseClassTests
                 or "r9s 203 invalid UTF-8 (a 2xx other than 200)" => Auth($"{p}: response is not valid UTF-8"),
             "401 invalid_client" => Coded("Unauthorized", "invalid_client"),
             "403 access_denied" => Coded("Forbidden", "access_denied"),
-            "404 realm missing" => Coded("Not Found", "Realm does not exist"),
+            // Keycloak's prose is no code ([a-z_]{1,64} only — OAuthErrorCodeEchoTests), so OAuthError is the reason.
+            "404 realm missing" => Coded("Not Found", "Not Found"),
             "409 conflict" => Coded("Conflict", "conflict"),
             "t over the cap" or "t over the cap, invalid UTF-8 first" => Transport($"{p}: response exceeds a size limit"),
             "t cut short" or "t cut short after invalid UTF-8" => Transport($"{p} (transport)"),

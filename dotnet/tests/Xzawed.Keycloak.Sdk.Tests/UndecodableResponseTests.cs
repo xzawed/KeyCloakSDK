@@ -30,7 +30,7 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 public sealed class UndecodableResponseTests : IDisposable
 {
     private const string Oidc = "/realms/r/protocol/openid-connect";
-    private const string NotACode = "error is not an RFC 6749 error code";
+    private const string NotACode = "error value withheld";
     private const string IntrospectionUndecodable = "Token introspection failed: response body is not a decodable JSON object";
 
     /// <summary>The escape text as it travels — JSON, not a .NET surrogate.</summary>

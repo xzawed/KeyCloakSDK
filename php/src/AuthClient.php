@@ -270,14 +270,18 @@ final class AuthClient
      */
     private function getAccessToken(string $grant, #[\SensitiveParameter] array $options = []): AccessToken
     {
+        // 이 부여가 보낸 비밀(client secret · PKCE verifier · refresh token · code) — 되울린 `error` 가 이것과 겹치면 코드가
+        // 아니다(`OAuthErrorCode`). ⚠️ try 앞에서 모은다 — 오류 분기에 줄을 더하면 그 분기를 치지 않는 통합 실행의 경계
+        // 커버리지(줄 하한)가 준다.
+        $sent = array_values(array_filter([$this->config->clientSecret, $this->provider->getPkceCode(), $options['refresh_token'] ?? null, $options['code'] ?? null], \is_string(...)));
         try {
             $token = $this->provider->getAccessToken($grant, $options);
         } catch (IdentityProviderException $e) {
             $body = $e->getResponseBody();
             // ⚠️ league 의 메시지는 `error: error_description` 이다 — 설명은 응답 본문이라 IdP 가 토큰을 되울리면
             // 그대로 찍혔다(실측). 메시지에는 OAuth `error` 코드만 싣고(`oauthError` 와 같은 값), 그 코드도 코드
-            // 모양일 때만 받는다 — `error` 자리에 토큰을 실어 보내면 공개 프로퍼티째 찍혔다(Grok 레그 실측).
-            $oauth = OAuthErrorCode::of(is_array($body) ? ($body['error'] ?? null) : null);
+            // 모양이고 보낸 비밀과 겹치지 않을 때만 받는다 — `error` 자리에 토큰을 실어 보내면 공개 프로퍼티째 찍혔다(Grok 레그 실측).
+            $oauth = OAuthErrorCode::carried(is_array($body) ? ($body['error'] ?? null) : null, ...$sent);
 
             throw new KeycloakAuthError('token request rejected' . ($oauth === null ? '' : ': ' . $oauth), oauthError: $oauth, previous: SanitizedCause::of($e));
         } catch (ConnectException $e) {

@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 
 from keycloak.exceptions import KeycloakError
 
 from ..exceptions import KeycloakAuthError, KeycloakTransportError
 from .token_cap import ResponseRefused
 
-#: 등록된 OAuth 오류 코드의 모양(`invalid_grant` 등). 이 모양만 메시지에 싣는다 — `error` 자리에
-#: 다른 것을 실어 온 응답이 그 값을 메시지로 밀어 넣지 못하게. 값 자체는 `KeycloakAuthError.error`
-#: 에 예전대로 남는다(찍히지 않는 필드다).
+#: 등록된 OAuth 오류 코드의 모양(`invalid_grant` 등 — RFC 6749 §5.2 · IANA 레지스트리 · Keycloak 의
+#: 코드가 전부 이렇다). `carried_code` 가 쓴다.
 _OAUTH_ERROR_CODE = re.compile(r"[a-z_]{1,64}")
 _LOWER_PACKAGE = "keycloak"
 _OWN_PACKAGE = __name__.partition(".")[0]
@@ -74,8 +74,9 @@ def summarize(exc: BaseException) -> LowerLibraryError:
     return LowerLibraryError(text)
 
 
-def oauth_error(exc: BaseException) -> str | None:
-    """오류 응답 JSON 의 `error` 코드(best-effort). 본문이 JSON 객체가 아니면 `None`."""
+def oauth_error(exc: BaseException) -> object:
+    """오류 응답 JSON 의 `error` 값 그대로(best-effort) — 본문이 JSON 객체가 아니면 `None`.
+    무엇을 싣는지는 `carried_code` 가 정한다."""
     body = getattr(exc, "response_body", None)
     if not body:
         return None
@@ -85,8 +86,25 @@ def oauth_error(exc: BaseException) -> str | None:
         return None
     if not isinstance(data, dict):
         return None
-    error = data.get("error")
-    return str(error) if error is not None else None
+    return data.get("error")
+
+
+def carried_code(value: object, sent: Iterable[str | None]) -> str | None:
+    """`KeycloakAuthError.error` 와 메시지가 싣는 OAuth 코드 — 문자열이고 `[a-z_]{1,64}` 이며 그
+    요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때)만.
+
+    ⚠️ `error` 도 응답 본문이다 — 보낸 것을 되울리는 IdP(나 그 앞의 프록시)는 client secret ·
+    refresh token · introspect 한 토큰을 거기 싣는다. 예전에는 값이 무엇이든 `str()` 해 필드에
+    실었다(Keycloak 모양 시크릿 · JWT 가 `vars(e)` 에, 소문자뿐인 시크릿은 메시지와 traceback 에도
+    — 실측, 등록부 `token-error-code-secret-echo`). 겹침은 잘린 · 덧붙은 되울림도 막는다. 그 값:
+    비밀이 등록 코드의 조각이면(`client`) 그 코드를 잃는다 — 상태는 메시지에 남고 새는 것은 없다.
+    빈 비밀(공개 클라이언트)은 비교하지 않는다 — 빈 문자열은 모든 코드의 조각이다.
+    """
+    if not isinstance(value, str) or _OAUTH_ERROR_CODE.fullmatch(value) is None:
+        return None
+    if any(secret and (secret in value or value in secret) for secret in sent):
+        return None
+    return value
 
 
 def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError | None:
@@ -109,15 +127,15 @@ def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
 
 
 def auth_failure(
-    exc: BaseException, *, carry_code: bool = True
+    exc: BaseException, *, carry_code: bool = True, sent: Iterable[str | None] = ()
 ) -> KeycloakAuthError | KeycloakTransportError:
     """auth 경계의 분류 — HTTP 응답을 받았으면 `KeycloakAuthError`, 못 받았으면 전송 오류.
 
     응답을 받았지만 python-keycloak 이 쓸 수 없다고 던진 실패(`TypeError` 등)도 응답을 받은
     쪽이다 — `TokenSet.from_response` 가 쓸 수 없는 토큰 JSON 을 `KeycloakAuthError` 로 내는 것과
     같은 자리다. 응답 본문이 상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`).
-    `carry_code` 가 거짓이면 오류 본문의 OAuth 코드를 메시지에도 `error` 에도 싣지 않는다
-    (`grant_failure`)."""
+    OAuth 코드는 `carried_code` 가 허락한 것만 메시지와 `error` 에 함께 싣는다 — `sent` 는 그
+    요청이 보낸 비밀 값이다. `carry_code` 가 거짓이면 싣지 않는다(`grant_failure`)."""
     refused = refused_body(exc)
     if refused is not None:
         return refused
@@ -126,8 +144,8 @@ def auth_failure(
         if status is None:
             # 응답을 못 받았다 — 실을 본문이 없으므로 상류 메시지(연결 실패 사유)를 그대로 둔다.
             return KeycloakTransportError(str(exc))
-        code = oauth_error(exc) if carry_code else None
-        shown = f" ({code})" if code is not None and _OAUTH_ERROR_CODE.fullmatch(code) else ""
+        code = carried_code(oauth_error(exc), sent) if carry_code else None
+        shown = f" ({code})" if code is not None else ""
         return KeycloakAuthError(f"Keycloak request failed: HTTP {status}{shown}", error=code)
     return unusable_response(exc)
 

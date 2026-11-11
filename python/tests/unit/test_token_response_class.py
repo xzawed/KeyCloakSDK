@@ -99,7 +99,8 @@ S1: dict[str, _Verdict] = {
     "r8u 400 invalid UTF-8 in the error body": _auth(f"{_HTTP} 400"),
     "401 invalid_client": _auth(f"{_HTTP} 401 (invalid_client)", "invalid_client"),
     "403 access_denied": _auth(f"{_HTTP} 403 (access_denied)", "access_denied"),
-    "404 realm missing": _auth(f"{_HTTP} 404", "Realm does not exist"),
+    # Keycloak's prose is no code — `error` is `[a-z_]{1,64}` only (test_oauth_error_code_echo).
+    "404 realm missing": _auth(f"{_HTTP} 404"),
     "409 conflict": _auth(f"{_HTTP} 409 (conflict)", "conflict"),
 }
 

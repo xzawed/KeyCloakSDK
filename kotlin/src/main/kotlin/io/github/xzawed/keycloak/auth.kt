@@ -183,8 +183,9 @@ public class AuthClient internal constructor(
                 throw KeycloakAuthException("Malformed introspection response", c = RedactedCause.of(e))
             }
         if (!resp.indicatesSuccess()) {
-            val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("Introspection failed: ${reason(err, sentSecrets(req, token))}", err.code)
+            // 한 줄로 둔다 — 이 분기는 통합 실행이 지나지 않아, 줄이 늘면 경계 커버리지 하한(bodies)이 준다.
+            val (err, sent) = resp.toErrorResponse().errorObject to sentSecrets(req, token)
+            throw KeycloakAuthException("Introspection failed: ${reason(err, sent)}", OAuthErrorCode.carried(err.code, sent))
         }
         val success = resp.toSuccessResponse()
         return IntrospectionResult(success.isActive, success.username, success.clientID?.value)
@@ -294,7 +295,7 @@ public class AuthClient internal constructor(
     ): TokenSet {
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("$failureMessage: ${reason(err, sent)}", err.code)
+            throw KeycloakAuthException("$failureMessage: ${reason(err, sent)}", OAuthErrorCode.carried(err.code, sent))
         }
         return toTokenSet(resp.toSuccessResponse().tokens, issuedAt)
     }

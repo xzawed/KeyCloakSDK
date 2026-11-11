@@ -143,7 +143,7 @@ public class AuthClient {
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Authorization code exchange failed: "
-            + reason(err, req, config.getClientSecret()), err.getCode(), null);
+            + reason(err, req, config.getClientSecret()), OAuthErrorCode.carried(err.getCode(), sentValues(req, config.getClientSecret())), null);
       }
       tokenSet = toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
@@ -212,7 +212,7 @@ public class AuthClient {
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Client credentials failed: "
-            + reason(err, req, config.getClientSecret()), err.getCode(), null);
+            + reason(err, req, config.getClientSecret()), OAuthErrorCode.carried(err.getCode(), sentValues(req, config.getClientSecret())), null);
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
@@ -233,7 +233,7 @@ public class AuthClient {
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Token refresh failed: "
-            + reason(err, req, config.getClientSecret()), err.getCode(), null);
+            + reason(err, req, config.getClientSecret()), OAuthErrorCode.carried(err.getCode(), sentValues(req, config.getClientSecret())), null);
       }
       return toTokenSet(resp.toSuccessResponse().getTokens(), issuedAt);
     } catch (java.io.IOException e) {
@@ -300,7 +300,7 @@ public class AuthClient {
       if (!tir.indicatesSuccess()) {
         var err = tir.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Introspection failed: "
-            + reason(err, req, config.getClientSecret()), err.getCode(), null);
+            + reason(err, req, config.getClientSecret()), OAuthErrorCode.carried(err.getCode(), sentValues(req, config.getClientSecret())), null);
       }
       return toIntrospectionResult(tir.toSuccessResponse());
     } catch (java.io.IOException e) {
