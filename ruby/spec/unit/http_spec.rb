@@ -46,4 +46,42 @@ RSpec.describe KeycloakSdk::Http do
       expect(decoded.body["a"].valid_encoding?).to be(false)
     end
   end
+
+  # 스트리밍 본문의 빈 자리표시를 커넥션의 json 미들웨어가 파싱하다 낸 ParsingError(어댑터가 dummy 인코딩 charset 으로 바꾼
+  # 자리표시의 `strip` — token_response_class_spec r11 · r12 가 실소켓으로 잰다)는 아무것도 판정하지 않았다: 그 응답에 흘려
+  # 받은 본문을 실어 돌려준다. 그 응답이 Faraday::Response 가 아니면(요청 데이터를 뺀 Hash) 실을 자리가 없어 그대로 던진다.
+  describe ".read_capped when the connection's json middleware fails on the streamed placeholder" do
+    # 본문을 on_data 로 흘린 뒤 `failure` 를 던지는 커넥션 — 어댑터 · 미들웨어 순서 그대로다.
+    def connection(failure)
+      Class.new do
+        define_method(:run_request) do |_method, _url, _body, _headers, &block|
+          req = Faraday::Request.create(:post) { |r| r.options = Faraday::RequestOptions.new }
+          block.call(req)
+          req.options.on_data.call("{\"a\":".b, 5)
+          req.options.on_data.call("1}".b, 7)
+          raise failure
+        end
+      end.new
+    end
+
+    def env
+      Faraday::Env.from(status: 200, body: "", response_headers: Faraday::Utils::Headers.new(
+        "Content-Type" => "application/json; charset=utf-16"
+      ))
+    end
+
+    it "returns that response carrying the streamed body" do
+      failure = Faraday::ParsingError.new(Encoding::CompatibilityError.new("x"), Faraday::Response.new(env))
+      resp = described_class.read_capped(connection(failure), :post, "https://k/t", max_bytes: 64, what: "token")
+      expect(resp.status).to eq(200)
+      expect(resp.body).to eq('{"a":1}'.b)
+    end
+
+    it "re-raises it when its response is not a Faraday::Response" do
+      failure = Faraday::ParsingError.new(Encoding::CompatibilityError.new("x"), { status: 200 })
+      expect do
+        described_class.read_capped(connection(failure), :post, "https://k/t", max_bytes: 64, what: "token")
+      end.to raise_error(Faraday::ParsingError)
+    end
+  end
 end
