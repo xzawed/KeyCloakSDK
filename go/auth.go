@@ -46,14 +46,14 @@ func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	}
 }
 
-// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, the token-response cap and the UTF-8
-// check (tokencap.go), and the slot that keeps an error x/oauth2 would flatten (cause.go). The two flags report
-// whether the cap or the check refused the response.
-func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool, *atomic.Bool, *belowHTTPSlot) {
+// oauthCtx is the context every grant hands to x/oauth2: the SDK's HTTP client, the token-response cap and the strict
+// body checks (tokencap.go), and the slot that keeps an error x/oauth2 would flatten (cause.go). The flag and the record
+// report whether the cap or a check refused the response.
+func (a *AuthClient) oauthCtx(ctx context.Context) (context.Context, *atomic.Bool, *bodyRefusal, *belowHTTPSlot) {
 	ctx, capped := withTokenCap(ctx)
-	ctx, notUTF8 := withStrictUTF8(ctx)
+	ctx, refused := withStrictBody(ctx)
 	ctx, below := withBelowHTTP(ctx)
-	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped, notUTF8, below
+	return context.WithValue(ctx, oauth2.HTTPClient, a.client), capped, refused, below
 }
 
 func (a *AuthClient) scope() string {
@@ -96,10 +96,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 		ClientID: a.cfg.ClientID, ClientSecret: a.cfg.ClientSecret,
 		TokenURL: a.ep.token, Scopes: a.cfg.Scopes, AuthStyle: oauth2.AuthStyleInParams,
 	}
-	octx, capped, notUTF8, below := a.oauthCtx(ctx)
+	octx, capped, refused, below := a.oauthCtx(ctx)
 	tok, err := cc.Token(octx)
 	if err != nil {
-		return nil, grantFailed("client credentials grant failed", err, capped, notUTF8, below, a.cfg.ClientSecret)
+		return nil, grantFailed("client credentials grant failed", err, capped, refused, below, a.cfg.ClientSecret)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -115,10 +115,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // validation failure all fail closed. An empty expectedNonce skips id_token
 // validation (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
-	octx, capped, notUTF8, below := a.oauthCtx(ctx)
+	octx, capped, refused, below := a.oauthCtx(ctx)
 	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
-		return nil, grantFailed("authorization code exchange failed", err, capped, notUTF8, below,
+		return nil, grantFailed("authorization code exchange failed", err, capped, refused, below,
 			a.cfg.ClientSecret, code, codeVerifier)
 	}
 	ts := tokenSetFromToken(tok)
@@ -150,11 +150,11 @@ func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce str
 
 // Refresh obtains a new access token from a refresh token.
 func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSet, error) {
-	octx, capped, notUTF8, below := a.oauthCtx(ctx)
+	octx, capped, refused, below := a.oauthCtx(ctx)
 	src := a.codeConfig("").TokenSource(octx, &oauth2.Token{RefreshToken: refreshToken})
 	tok, err := src.Token()
 	if err != nil {
-		return nil, grantFailed("token refresh failed", err, capped, notUTF8, below, a.cfg.ClientSecret, refreshToken)
+		return nil, grantFailed("token refresh failed", err, capped, refused, below, a.cfg.ClientSecret, refreshToken)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -173,6 +173,11 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	// never sent (RFC 8259 §8.1; registry token-response-class-divergent D1, measured 2026-11-10).
 	if !utf8.Valid(body) {
 		return nil, &AuthError{Msg: "introspection response is not valid UTF-8"}
+	}
+	// encoding/json turns an unpaired surrogate escape into U+FFFD without an error too — anywhere in the body, the whole
+	// response is unusable (registry token-response-class-residue Q2, measured 2026-11-11: accepted).
+	if holdsUnpairedSurrogate(body) {
+		return nil, &AuthError{Msg: "introspection response holds an unpaired surrogate escape"}
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -235,7 +240,10 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	defer func() { _ = resp.Body.Close() }()
 	// Bounded like the JWKS read (jwt.go): never more than cap+1 bytes, the extra one telling a longer body apart.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, tokenResponseMaxBytes+1))
-	if err != nil {
+	// A gzip coding that does not decode: the bytes arrived, so the response is unusable rather than cut short (decision
+	// Q1, tokencap.go — it was *TransportError). An error status still names its status below.
+	garbled := undecodable(err)
+	if err != nil && !garbled {
 		return nil, &TransportError{Msg: err.Error(), Cause: err}
 	}
 	// Over the cap the response was not read in full — the same class as a body cut short (#935; it used to be *AuthError).
@@ -248,6 +256,9 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	// nil while the session was still alive, and Introspect parsed an empty body.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &AuthError{Msg: "request to " + endpoint + " failed (HTTP " + strconv.Itoa(resp.StatusCode) + ")"}
+	}
+	if garbled {
+		return nil, &AuthError{Msg: "response from " + endpoint + " could not be decoded"}
 	}
 	return body, nil
 }

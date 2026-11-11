@@ -35,23 +35,86 @@ func TestUTF8BodyFollowsASequenceAcrossReads(t *testing.T) {
 		{"surrogate half", "{\"u\":\"\xed\xa0\x80\"}", false},
 	}
 	for _, c := range cases {
-		bad := new(atomic.Bool)
-		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), bad: bad}
+		refused := new(bodyRefusal)
+		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), refused: refused}
 		got, err := io.ReadAll(b)
 		if c.ok {
-			if err != nil || string(got) != c.body || bad.Load() {
-				t.Errorf("%s: must pass whole: %q, err %v, flag %v", c.name, got, err, bad.Load())
+			if err != nil || string(got) != c.body || refused.reason() != nil {
+				t.Errorf("%s: must pass whole: %q, err %v, refusal %v", c.name, got, err, refused.reason())
 			}
-		} else if !errors.Is(err, errTokenResponseNotUTF8) || !bad.Load() {
-			t.Errorf("%s: must be refused: err %v, flag %v", c.name, err, bad.Load())
+		} else if !errors.Is(err, errTokenResponseNotUTF8) || refused.reason() != errTokenResponseNotUTF8 {
+			t.Errorf("%s: must be refused: err %v, refusal %v", c.name, err, refused.reason())
 		}
 	}
 }
 
-// TestStrictUTF8WrapsOnlyMarkedSuccessBodies — 오류 상태(3xx 이상)의 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은
+// TestUTF8BodyRefusesAnUnpairedSurrogateAtEOF — 짝 없는 서로게이트 이스케이프는 본문이 끝까지 온 뒤에 거부한다(등록부
+// token-response-class-residue 판정 Q2). 한 바이트씩 읽어 이스케이프가 읽기 사이에서 잘려도 같은 판정이다. 끝에 닿기 전의
+// 읽기 오류(잘린 본문)는 그대로 지나간다 — 다 오지 않은 응답이다.
+func TestUTF8BodyRefusesAnUnpairedSurrogateAtEOF(t *testing.T) {
+	u := `\` + "u"
+	for _, c := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"in a value", `{"access_token":"at` + u + `d800"}`, errTokenResponseUnpairedSurrogate},
+		{"in a member name", `{"access_token":"at","` + u + `dc00":1}`, errTokenResponseUnpairedSurrogate},
+		{"a valid pair", `{"access_token":"at","x":"` + u + `d83d` + u + `de00"}`, nil},
+		{"not UTF-8 wins", "{\"access_token\":\"a\xff\",\"x\":\"" + u + "d800\"}", errTokenResponseNotUTF8},
+	} {
+		refused := new(bodyRefusal)
+		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), refused: refused}
+		got, err := io.ReadAll(b)
+		if c.want == nil {
+			if err != nil || string(got) != c.body || refused.reason() != nil {
+				t.Errorf("%s: must pass whole: %q, err %v, refusal %v", c.name, got, err, refused.reason())
+			}
+		} else if !errors.Is(err, c.want) || refused.reason() != c.want {
+			t.Errorf("%s: must be refused with %v: err %v, refusal %v", c.name, c.want, err, refused.reason())
+		}
+	}
+	cut := errors.New("cut short")
+	refused := new(bodyRefusal)
+	b := &utf8Body{ReadCloser: io.NopCloser(io.MultiReader(strings.NewReader(`{"x":"`+u+`d800"`), iotest.ErrReader(cut))), refused: refused}
+	if _, err := io.ReadAll(b); !errors.Is(err, cut) || refused.reason() != nil {
+		t.Errorf("a body cut short must pass its error through unjudged: err %v, refusal %v", err, refused.reason())
+	}
+}
+
+// TestHoldsUnpairedSurrogateJudgesEscapesNotText — 이스케이프를 판정한다, 글자가 아니라. JVM
+// `holdsUnpairedSurrogate judges escapes, not text` · python `test_the_unpaired_surrogate_scan_judges_escapes_not_text` 와
+// 같은 칸이다.
+func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
+	u := `\` + "u"
+	for json, want := range map[string]bool{
+		`{"a":"` + u + `d800"}`:                     true,
+		`{"a":"` + u + `dc00"}`:                     true,
+		`{"` + u + `d800":1}`:                       true,
+		`{"a":"x` + u + `D800"}`:                    true,
+		`{"a":"` + u + `d800` + u + `0041"}`:        true,
+		`{"a":"` + u + `dbff"}`:                     true,
+		`{"a":["ok","` + u + `dfff"]}`:              true,
+		`{"a":"` + u + `ZZZZ","b":"` + u + `DC00"}`: true, // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그)
+		`{"x":"a\"b","y":"` + u + `dc00"}`:          true, // 이스케이프된 따옴표가 문자열을 닫지 않는다(JVM 실행 레그)
+		`{"a":"` + u + `d83d` + u + `de00"}`:        false,
+		`{"a":"\\` + `ud800"}`:                      false,
+		`{"a":"` + u + `0041"}`:                     false,
+		`{"a":"plain"}`:                             false,
+		`{"a":"` + u + `zz00"}`:                     false,
+		`{"a":1} ` + u + `d800`:                     false,
+		`{"a":"\"` + u + `d83d` + u + `de00"}`:      false,
+	} {
+		if got := holdsUnpairedSurrogate([]byte(json)); got != want {
+			t.Errorf("%s: %v, want %v", json, got, want)
+		}
+	}
+}
+
+// TestStrictBodyWrapsOnlyMarkedSuccessBodies — 오류 상태(3xx 이상)의 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은
 // 감싸지 않는다.
-func TestStrictUTF8WrapsOnlyMarkedSuccessBodies(t *testing.T) {
-	marked, _ := withStrictUTF8(context.Background())
+func TestStrictBodyWrapsOnlyMarkedSuccessBodies(t *testing.T) {
+	marked, _ := withStrictBody(context.Background())
 	body := io.NopCloser(strings.NewReader("x"))
 	for _, c := range []struct {
 		ctx     context.Context
@@ -61,7 +124,7 @@ func TestStrictUTF8WrapsOnlyMarkedSuccessBodies(t *testing.T) {
 		{marked, 200, true}, {marked, 204, true}, {marked, 302, false}, {marked, 400, false}, {marked, 503, false},
 		{context.Background(), 200, false},
 	} {
-		if _, got := strictUTF8(c.ctx, c.status, body).(*utf8Body); got != c.wrapped {
+		if _, got := strictBody(c.ctx, c.status, body).(*utf8Body); got != c.wrapped {
 			t.Errorf("status %d (marked %v): wrapped %v, want %v", c.status, c.ctx != context.Background(), got, c.wrapped)
 		}
 	}

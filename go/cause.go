@@ -272,7 +272,7 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		slot.keep(ctx, err)
 		return resp, err
 	}
-	resp.Body = strictUTF8(ctx, resp.StatusCode, capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot})))
+	resp.Body = strictBody(ctx, resp.StatusCode, capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot})))
 	if slot != nil {
 		slot.arrived.Store(true)
 		slot.status.Store(int64(resp.StatusCode))
@@ -310,9 +310,14 @@ type wireScrubBody struct {
 	slot *belowHTTPSlot
 }
 
-// Read returns io.EOF itself (belowHTTP), so callers comparing err == io.EOF still see the end.
+// Read returns io.EOF itself (belowHTTP), so callers comparing err == io.EOF still see the end. A gzip decoder's verdict on
+// the bytes (net/http's reader sits below this body) passes as it is too — its text is the decoder's own and quotes nothing
+// the server sent, and the token cap above turns it into errTokenResponseUndecodable (tokencap.go, decision Q1).
 func (b wireScrubBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
+	if undecodable(err) {
+		return n, err
+	}
 	err = scrubWire(err)
 	b.slot.keep(b.ctx, err)
 	return n, err
@@ -330,12 +335,12 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 // never in OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect
 // target, which the IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept
 // in below when gocloak dropped it (a deadline that ended the exchange), so errors.Is still finds it.
-func loginError(err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot, sent ...string) error {
+func loginError(err error, capped *atomic.Bool, strict *bodyRefusal, below *belowHTTPSlot, sent ...string) error {
 	typ := fmt.Sprintf("%T", err)
-	// A 2xx body that is not UTF-8 arrived and is unusable (tokencap.go) — checked first, because the check withheld the
-	// EOF that below's arrival mark waits for.
-	if notUTF8.Load() && !capped.Load() {
-		msg := "client-credentials login failed: " + errTokenResponseNotUTF8.Error()
+	// A body that is not UTF-8, holds an unpaired surrogate escape or does not decode arrived and is unusable (tokencap.go)
+	// — checked first, because the check withheld the EOF that below's arrival mark waits for.
+	if why := strict.reason(); why != nil && !capped.Load() {
+		msg := "client-credentials login failed: " + why.Error()
 		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
 	}
 	var apiErr *gocloak.APIError
