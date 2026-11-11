@@ -53,10 +53,16 @@ sd_token_type_anchor() {
               'hook|ruby/lib/tokens.rb|raise ArgumentError' ;;
   esac
 }
-# 호출 자리 — 검사기는 `sd_canary_ok "$ROOT/…` 를 세기만 한다(축 다섯 = 자리 다섯).
+sd_empty_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
+# 호출 자리 — 검사기는 `sd_canary_ok "$ROOT/…` 를 세기만 한다(축 여섯 = 자리 여섯).
 _a="$(sd_canary_ok "$ROOT/$f1" "$c1")"
 _b="$(sd_canary_ok "$ROOT/$f2" "$c2")"
 _c="$(sd_canary_ok "$ROOT/$f3" "$c3")"
 _d="$(sd_canary_ok "$ROOT/$f4" "$c4")"
 _e="$(sd_canary_ok "$ROOT/$f5" "$c5")"
+_f="$(sd_canary_ok "$ROOT/$f6" "$c6")"
 # 주석 속 자리는 세지 않는다: sd_canary_ok "$ROOT/$x" "$y"

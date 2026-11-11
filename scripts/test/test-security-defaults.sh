@@ -660,7 +660,7 @@ assert_eq "GREW" "$SD_BTP" \
 # ✅ **아홉 전부라 손 목록을 두지 않고 `SD_LANGS` 를 돈다** — 열 번째 언어는 아래 표에 행이 없으면 운다.
 # python 은 「joserfc 가 빈 키셋에서 막는다 — 거부 지점이 우리 코드에 없다」로 빠져 있었는데 #999 이후로는
 # 거짓이다: `_internal/jwks_keys.py` 가 `no keys` 로 거부하고 호출자는 거부된 키셋을 저장하지 않는다.
-# 손 목록에 분할을 단언하자 드러났다(2026-11-10). 시험은 sync 미러를 겨눈다(aio 에 같은 이름이 있다).
+# 손 목록에 분할을 단언하자 드러났다(2026-11-10).
 # java·kotlin·dotnet·node 도 캐시는 라이브러리 것이지만 **거부 지점은 우리 코드다**(JWKS 전용
 # 리트리버 · ConfigurationManager 의 설정 검증기 · jose `[customFetch]` 래퍼). dotnet 은 표지가
 # 메시지가 아니라 검증기 설정이다. node 는 jose 가 fetch 가 던지면 옛 캐시를 남기는 데 기댄다.
@@ -677,38 +677,52 @@ sd_empty_reject() {
     python) printf '%s\t%s\n' "python/src/keycloak_sdk/_internal/jwks_keys.py" "{_MALFORMED}: no keys" ;;
   esac
 }
-sd_empty_test() {
+# 행위 카나리아 — 빈 200 을 받은 재조회가 거부되고 좋은 캐시가 남는 것을 **실행으로** 치는 테스트(`파일|선언`, 한 줄에
+# 하나). ⚠️ 첫 판은 이름 조각을 `grep -c ≥ 1` 로 셌고 주석 · 다른 예제 · skip 이 그 자리를 채웠다(probe.sh SILENT
+# 2026-11-11 — ruby 조각 「좋은 캐시를 덮지 않는다」는 예제 둘에 걸려 진짜 예제를 지워도 초록 · go 함수를 꺼 이름이 주석에만
+# 남아도 · node `it.skip` · python 수집 안 되는 이름). 그래서 다른 행위 축과 같은 모형이다 — 주석 밖 정확히 1 회
+# (`sd_canary_ok`), 그 실행에서 돌아 통과했는지는 레인의 `check-canaries-ran.mjs`(AXES `empty`)가 보고, 아홉 행렬의 W1
+# 이 이 모양을 읽는다(`"파일" "이름"` 모양은 여섯 행렬이 못 읽었다). python 은 두 미러 다(nonce · 백오프와 같다).
+sd_empty_canary() {
   case "$1" in
-    go) printf '%s\t%s\n' "go/jwt_test.go" "TestValidateJWKSEmpty200DoesNotPoisonCache" ;;
-    rust) printf '%s\t%s\n' "rust/src/jwks.rs" "empty_keyset_200_does_not_clobber_a_good_cache" ;;
-    ruby) printf '%s\t%s\n' "ruby/spec/unit/jwks_store_spec.rb" "좋은 캐시를 덮지 않는다" ;;
-    php) printf '%s\t%s\n' "php/tests/Unit/Jwks/JwksStoreTest.php" "testEmptyKeySetDoesNotClobberAGoodCache" ;;
-    java) printf '%s\t%s\n' "java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/JwksEmptyKeysetTest.java" "empty200_doesNotPoisonGoodCache" ;;
-    kotlin) printf '%s\t%s\n' "kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksEmptyKeysetTest.kt" "empty200DoesNotPoisonGoodCache" ;;
-    dotnet) printf '%s\t%s\n' "dotnet/tests/Xzawed.Keycloak.Sdk.Tests/JwksEmptyKeysetTests.cs" "Empty_200_does_not_poison_good_cache" ;;
-    node) printf '%s\t%s\n' "node/test/unit/jwt-jwks.test.ts" "빈 키셋을 받아도 기존 k1 검증은 유지된다" ;;
-    python) printf '%s\t%s\n' "python/tests/unit/test_auth.py" "test_empty_jwks_is_refused_and_keeps_the_cached_set" ;;
+    go)     printf '%s\n' 'go/jwt_test.go|func TestValidateJWKSEmpty200DoesNotPoisonCache(' ;;
+    rust)   printf '%s\n' 'rust/src/jwks.rs|async fn empty_keyset_200_does_not_clobber_a_good_cache(' ;;
+    ruby)   printf '%s\n' 'ruby/spec/unit/jwks_store_spec.rb|it "빈 200 이 이미 올라간 좋은 캐시를 덮지 않는다"' ;;
+    php)    printf '%s\n' 'php/tests/Unit/Jwks/JwksStoreTest.php|public function testEmptyKeySetDoesNotClobberAGoodCache(' ;;
+    java)   printf '%s\n' 'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/JwksEmptyKeysetTest.java|void empty200_doesNotPoisonGoodCache(' ;;
+    kotlin) printf '%s\n' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksEmptyKeysetTest.kt|fun empty200DoesNotPoisonGoodCache(' ;;
+    dotnet) printf '%s\n' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/JwksEmptyKeysetTests.cs|public async Task Empty_200_does_not_poison_good_cache(' ;;
+    node)   printf '%s\n' "node/test/unit/jwt-jwks.test.ts|it('미해결 kid 재조회가 200 빈 키셋을 받아도 기존 k1 검증은 유지된다'" ;;
+    python) printf '%s\n' \
+              'python/tests/unit/test_auth.py|def test_empty_jwks_is_refused_and_keeps_the_cached_set(' \
+              'python/tests/unit/aio/test_auth.py|async def test_empty_jwks_is_refused_and_keeps_the_cached_set(' ;;
   esac
 }
 
 sd_empty_seen=0
 for L in $SD_LANGS; do
   _r="$(sd_empty_reject "$L")"
-  if [ -z "$_r" ] || [ -z "$(sd_empty_test "$L")" ]; then
+  _ec="$(sd_empty_canary "$L")"
+  if [ -z "$_r" ] || [ -z "$_ec" ]; then
     assert_eq "ok" "MISSING" \
-      "[빈 키셋] $L 의 행이 표에 없다 — 거부 지점(sd_empty_reject)과 그것을 잡는 테스트(sd_empty_test)를 함께 적는다"
+      "[빈 키셋] $L 의 행이 표에 없다 — 거부 지점(sd_empty_reject)과 그것을 잡는 테스트(sd_empty_canary)를 함께 적는다"
     continue
   fi
   _src="${_r%%	*}"; _mark="${_r##*	}"
   _n="$(sd_code_lines "$ROOT/$_src" | grep -c -F -- "$_mark" || true)"
   assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
     "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 '$_mark' 가 없다(go #380 의 나머지 절반)"
-  _t="$(sd_empty_test "$L")"
-  _tf="${_t%%	*}"; _tn="${_t##*	}"
-  _tn_hits="$(grep -c -- "$_tn" "$ROOT/$_tf" 2>/dev/null || printf '0')"
-  assert_eq "ok" "$(ok_if "$([ "$_tn_hits" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
-    "[빈 키셋] $L 의 회귀 테스트가 사라졌다 — $_tf 에 '$_tn' 이 없다(코드만 남고 증명이 없다)"
-  [ "$_n" -ge 1 ] && [ "$_tn_hits" -ge 1 ] && sd_empty_seen=$((sd_empty_seen + 1))
+  _ebad=0
+  while IFS='|' read -r _etf _etc; do
+    [ -n "$_etc" ] || continue
+    _eok="$(sd_canary_ok "$ROOT/$_etf" "$_etc")"
+    assert_eq "ok" "$_eok" \
+      "[빈 키셋] $L 의 회귀 테스트가 주석 밖에 정확히 하나가 아니다(코드만 남고 증명이 없다) — 기대: $_etc ($_etf)"
+    [ "$_eok" = ok ] || _ebad=1
+  done <<EOF
+$_ec
+EOF
+  [ "$_n" -ge 1 ] && [ "$_ebad" = 0 ] && sd_empty_seen=$((sd_empty_seen + 1))
 done
 # 대조군 — 루프가 아무것도 안 보면 어서션이 0건 실행되고 조용히 통과한다.
 assert_eq "9" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 9가 아니다 — 추출 표가 낡았나?"
