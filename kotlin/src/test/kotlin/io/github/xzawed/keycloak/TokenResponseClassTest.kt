@@ -433,15 +433,32 @@ internal class TokenResponseClassTest {
             if ((errorBody.thrown as? KeycloakAuthException)?.oauthError != "invalid_grant") {
                 wrong += "S1 400 오류 본문의 잘못된 UTF-8: invalid_grant 인증 오류여야 한다 — $errorBody"
             }
-            // logout 은 본문을 쓰지 않는다 — 그대로 성공
+            // logout 의 성공은 204 뿐이다 — 200 은 본문이 무엇이든 auth 실패(등록부 logout-2xx-html-false-success, 2026-11-12 판정 —
+            // 전에는 2xx 를 모두 받아 가로챈 200 로그인 페이지도 성공이었다). 본문은 판정에 쓰지 않는다. Java 동형.
             tokens(trxJson(200, trxToken("AT")))
-            logoutReply = TrxReply(200, "application/json", trxConcat("""{"x":"""".toByteArray(), TRX_INVALID, "\"}".toByteArray()))
+            for (reply in listOf(
+                TrxReply(200, "application/json", trxConcat("""{"x":"""".toByteArray(), TRX_INVALID, "\"}".toByteArray())),
+                TrxReply(200, "text/html", "<html><body><form action=\"/login\"></form></body></html>".toByteArray()),
+                TrxReply(200, null, null),
+                TrxReply(302, null, null),
+            )) {
+                logoutReply = reply
+                val failed =
+                    call { kc ->
+                        kc.auth.logout("rt-1")
+                        "logged out"
+                    }
+                if ((failed.thrown as? KeycloakAuthException)?.message?.startsWith("Logout failed (HTTP ") != true) {
+                    wrong += "logout $reply: auth 실패(Logout failed (HTTP N))여야 한다 — $failed"
+                }
+            }
+            logoutReply = TrxReply(204, null, null)
             val logout =
                 call { kc ->
                     kc.auth.logout("rt-1")
                     "logged out"
                 }
-            if (logout.value != "logged out") wrong += "logout 2xx 잘못된 UTF-8: 그대로 성공해야 한다 — $logout"
+            if (logout.value != "logged out") wrong += "logout 204: 성공해야 한다 — $logout"
             // 다 오지 않은 응답 — 전송 오류
             tokens(TrxReply(200, "application/json", trxPadTo(trxToken("AT-big"), TRX_CAP + 1)))
             trxExpect(

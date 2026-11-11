@@ -116,6 +116,10 @@ final class MalformedTokenResponseTest extends TestCase
         'f5 200 JSON wrong types' => ['introspect' => 'auth'],
         'f6 200 JSON without active' => ['introspect' => 'auth'],
         'g 400 error_description echo' => ['logout' => 'auth'],
+        'g2 200 login page' => ['logout' => 'auth'],
+        'g3 200 empty body' => ['logout' => 'auth'],
+        'g4 201 empty body' => ['logout' => 'auth'],
+        'g5 302 to a login page' => ['logout' => 'auth'],
         't token endpoint unreachable' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
         't2 token handler RuntimeException' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
         'u introspect unreachable' => ['introspect' => 'transport'],
@@ -174,6 +178,12 @@ final class MalformedTokenResponseTest extends TestCase
             'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
         'f3 401 error_description echo|introspect' => ['introspection failed', null,
             'GuzzleHttp\Exception\ClientException: HTTP 401 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
+        // logout 의 실패는 상태를 싣는다 — 204 가 아닌 답 · 오류 상태 · 풀 수 없는 본문의 답(등록부 logout-2xx-html-false-success).
+        'g 400 error_description echo|logout' => ['logout failed (HTTP 400)', null,
+            'GuzzleHttp\Exception\ClientException: HTTP 400 from POST https://kc.test/realms/r/protocol/openid-connect/logout (response body withheld)'],
+        'g2 200 login page|logout' => ['logout failed (HTTP 200)', null, null],
+        'g4 201 empty body|logout' => ['logout failed (HTTP 201)', null, null],
+        'g5 302 to a login page|logout' => ['logout failed (HTTP 302)', null, null],
         'u2 introspect handler RuntimeException|introspect' => ['introspection failed unexpectedly', null,
             'RuntimeException: (message withheld: thrown outside the audited libraries)'],
         // 응답이 없다(transport) · 끝까지 온 응답을 못 쓴다(auth) — 2026-11-11 에 계급이 바뀐 자리들의 문구.
@@ -186,6 +196,8 @@ final class MalformedTokenResponseTest extends TestCase
             'GuzzleHttp\Exception\RequestException: HTTP 200 from POST https://kc.test/realms/r/protocol/openid-connect/token (response body withheld)'],
         'y2 introspect undecodable content|introspect' => ['introspection failed', null,
             'GuzzleHttp\Exception\RequestException: HTTP 200 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
+        'y3 logout undecodable content|logout' => ['logout failed (HTTP 200)', null,
+            'GuzzleHttp\Exception\RequestException: HTTP 200 from POST https://kc.test/realms/r/protocol/openid-connect/logout (response body withheld)'],
     ];
 
     /**
@@ -398,6 +410,13 @@ final class MalformedTokenResponseTest extends TestCase
             'g 400 error_description echo' => ['ep' => 'logout', 'status' => 400, 'type' => $json, 'body' => $enc([
                 'error' => 'invalid_grant', 'error_description' => 'LKg1ECHO-echoed-refresh-token',
             ]), 'canaries' => ['g.ECHO' => ['LKg1ECHO-echoed-refresh-token', true]]],
+            // logout 은 204 만 성공이다(등록부 logout-2xx-html-false-success · 판정 2026-11-12) — 가로챈 200 로그인 페이지 · 빈 200 ·
+            // 그 밖의 2xx · 따라가지 않는 302 는 로그아웃이 아니다(전: 넷 다 정상 반환). 본문은 판정에 쓰지 않는다.
+            'g2 200 login page' => ['ep' => 'logout', 'status' => 200, 'type' => 'text/html', 'body' => '<html>LKg2PAGE-login-page</html>',
+                'canaries' => ['g2.PAGE' => ['LKg2PAGE-login-page', true]]],
+            'g3 200 empty body' => ['ep' => 'logout', 'status' => 200, 'type' => $json, 'body' => '', 'canaries' => []],
+            'g4 201 empty body' => ['ep' => 'logout', 'status' => 201, 'type' => $json, 'body' => '', 'canaries' => []],
+            'g5 302 to a login page' => ['ep' => 'logout', 'status' => 302, 'type' => 'text/html', 'body' => '', 'canaries' => []],
             // 전송 실패 — 응답은 없지만 하위 예외의 **트레이스 인자**가 호출 입력(refresh·code·Basic·시크릿)을 쥔다.
             // 감싸는 자리마다 하나씩: connect = ConnectException 갈래, runtime = Guzzle 밖 예외(`\Throwable` 갈래),
             // tls = 응답 없는 RequestException(연결 아닌 GuzzleException · PSR-18 비-네트워크 갈래). 핸들러 예외의

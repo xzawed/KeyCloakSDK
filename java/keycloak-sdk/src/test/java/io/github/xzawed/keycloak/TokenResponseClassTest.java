@@ -420,14 +420,28 @@ class TokenResponseClassTest {
     if (!(errorBody.thrown() instanceof KeycloakAuthException e) || !"invalid_grant".equals(e.getError())) {
       wrong.add("S1 400 오류 본문의 잘못된 UTF-8: invalid_grant 인증 오류여야 한다 — " + errorBody);
     }
-    // logout 은 본문을 쓰지 않는다 — 그대로 성공
+    // logout 의 성공은 204 뿐이다 — 200 은 본문이 무엇이든 auth 실패(등록부 logout-2xx-html-false-success, 2026-11-12 판정 —
+    // 전에는 2xx 를 모두 받아 가로챈 200 로그인 페이지도 성공이었다). 본문은 판정에 쓰지 않는다.
     tokens(json(200, token("AT")));
-    logoutReply = typed(200, "application/json", concat(utf8("{\"x\":\""), INVALID, utf8("\"}")));
+    for (Reply reply : List.of(
+        typed(200, "application/json", concat(utf8("{\"x\":\""), INVALID, utf8("\"}"))),
+        typed(200, "text/html", utf8("<html><body><form action=\"/login\"></form></body></html>")),
+        new Reply(200, null, null, 0), new Reply(302, null, null, 0))) {
+      logoutReply = reply;
+      Outcome logout = call(kc -> {
+        kc.auth().logout("rt-1");
+        return "logged out";
+      });
+      if (!(logout.thrown() instanceof KeycloakAuthException e) || !e.getMessage().startsWith("Logout failed (HTTP ")) {
+        wrong.add("logout " + reply + ": auth 실패(Logout failed (HTTP N))여야 한다 — " + logout);
+      }
+    }
+    logoutReply = new Reply(204, null, null, 0);
     Outcome logout = call(kc -> {
       kc.auth().logout("rt-1");
       return "logged out";
     });
-    if (!"logged out".equals(logout.value())) wrong.add("logout 2xx 잘못된 UTF-8: 그대로 성공해야 한다 — " + logout);
+    if (!"logged out".equals(logout.value())) wrong.add("logout 204: 성공해야 한다 — " + logout);
     // 다 오지 않은 응답 — 전송 오류
     tokens(typed(200, "application/json", padTo(token("AT-big"), CAP + 1)));
     expect("S1 상한+1", call(CC), KeycloakTransportException.class,

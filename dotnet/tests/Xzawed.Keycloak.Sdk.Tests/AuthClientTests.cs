@@ -183,6 +183,29 @@ public class AuthClientTests : IDisposable
         Assert.Equal("c", ir.ClientId);
     }
 
+    /// <summary>Keycloak 의 성공은 204 뿐이다 — IsSuccessStatusCode(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다(등록부
+    /// logout-2xx-html-false-success, 2026-11-12 판정: 204 밖은 전부 KeycloakAuthException, 상태를 메시지에).</summary>
+    [Theory]
+    [InlineData(200, null, "")]
+    [InlineData(200, "application/json", "{}")]
+    [InlineData(200, "text/html", "<html><body><form action=\"/login\"></form></body></html>")]
+    [InlineData(201, null, "")]
+    [InlineData(202, null, "")]
+    public async Task Logout_succeeds_on_204_only(int status, string? contentType, string body)
+    {
+        var auth = Build(out _);
+        var answer = Response.Create().WithStatusCode(status).WithBody(body);
+        if (contentType is not null) answer = answer.WithHeader("Content-Type", contentType);
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/logout").UsingPost()).RespondWith(answer);
+        var e = await Assert.ThrowsAsync<KeycloakAuthException>(() => auth.LogoutAsync("rt"));
+        Assert.Equal($"Logout failed (HTTP {status})", e.Message);
+
+        _mock.Reset();
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/logout").UsingPost())
+             .RespondWith(Response.Create().WithStatusCode(204));
+        await auth.LogoutAsync("rt");
+    }
+
     [Fact]
     public async Task Logout_posts_and_errors_on_non_2xx()
     {

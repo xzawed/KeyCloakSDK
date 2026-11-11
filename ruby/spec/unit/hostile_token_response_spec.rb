@@ -62,8 +62,9 @@ module HostileTokenResponseSpec
     auth = KeycloakSdk::AuthError
     transport = KeycloakSdk::TransportError
     # 끝까지 온 토큰·introspection 응답을 못 읽으면 AuthError 다(등록부 token-response-class-divergent · 판정 2026-11-10 —
-    # 전: TransportError). logout 은 그 판정 밖이라 JSON 이라면서 JSON 이 아닌 본문이 그대로 TransportError 다.
-    arrived = expect_all(TOKEN + ["auth.introspect"], auth).merge("auth.logout" => transport)
+    # 전: TransportError). logout 은 204 만 성공이고 본문을 판정에 쓰지 않는다(등록부 logout-2xx-html-false-success ·
+    # 판정 2026-11-12 — 전: JSON 이라면서 JSON 이 아닌 본문이 TransportError, 그 밖의 2xx 는 성공).
+    arrived = expect_all(ALL, auth)
     header = "aHD8k-decoded-header-canary"
     payload = "aPL8k-decoded-payload-canary"
     infinite = '{"access_token":"cAT9k-access-token-canary","token_type":"Bearer","expires_in":1e400}'
@@ -107,9 +108,9 @@ module HostileTokenResponseSpec
                 reply: { status: 200, headers: JSON_TYPE, body: LONG_BODY },
                 canaries: { "d2.BODY" => "dL7k-long-non-json-body-canary" },
                 expect: arrived },
-      "d3" => { note: "200 text/plain — 본문이 짧은 카나리아(logout 은 본문을 쓰지 않아 받아들인다)",
+      "d3" => { note: "200 text/plain — 본문이 짧은 카나리아(logout 은 204 가 아니라서 실패한다 — 전: 받아들였다)",
                 reply: { status: 200, headers: { "Content-Type" => "text/plain" }, body: "dT7k-plain-body" },
-                expect: expect_all(TOKEN + ["auth.introspect"], auth) },
+                expect: expect_all(ALL, auth) },
       "e1" => { note: "400 JSON — error_description 이 토큰을 되울린다",
                 reply: json(400, error: "invalid_grant",
                                  error_description: "Token is not active: eEC7k-echoed-token-canary"),
@@ -132,7 +133,7 @@ module HostileTokenResponseSpec
       "f1" => { note: "200 JSON — 본문이 객체가 아니라 배열",
                 reply: { status: 200, headers: JSON_TYPE, body: ["fAR7k-array-body-canary"].to_json },
                 canaries: { "f1.BODY" => "fAR7k-array-body-canary" },
-                expect: expect_all(ALL - ["auth.logout"], auth) },
+                expect: expect_all(ALL, auth) },
       # 연결 계층 실패도 응답을 인용한다 — Net::HTTP 는 깨진 상태 줄을 메시지에 dump 하고 어댑터가 ConnectionFailed 로 감싼다.
       "g1" => { note: "상태 줄이 깨졌다(Net::HTTPBadResponse → Faraday::ConnectionFailed)",
                 raise: Net::HTTPBadResponse.new('wrong status line: "HTTP/1.1 gSL7k-status-line-canary"'),

@@ -443,9 +443,8 @@ module KeycloakSdk
     # ⚠️ A string in the parsed value that is invalid UTF-8 is a parse failure (Faraday::ParsingError ←
     # JSON::ParserError — the same shape json 3 raises for an unpaired surrogate escape). It is not rewritten — such
     # a value turns into a raw exception as it passes through the SDK.
-    # `check_utf8: false` leaves only the middleware's verdict — logout (it uses none of the parsed value) and
-    # `TokenResponse` (it judges the strings itself, so that a 2xx it cannot read is an AuthError, not this
-    # ParsingError).
+    # `check_utf8: false` leaves only the middleware's verdict — for `TokenResponse`, which judges the strings itself,
+    # so that a 2xx it cannot read is an AuthError, not this ParsingError. (Logout parses nothing: its status decides.)
     def decode_json(resp, check_utf8: true)
       JSON_RESPONSE.on_complete(resp.env)
       return resp if !check_utf8 || utf8?(resp.body)
@@ -487,8 +486,8 @@ module KeycloakSdk
   #     OAuth 코드는 쓰지 않는다).
   # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). 커넥션의 json 미들웨어가
   # utf-16 · utf-32 같은 charset 에서 스트리밍 본문의 자리표시를 파싱하다 낸 실패는 `Http.read_capped` 가 받아낸다(2026-11-11 —
-  # 전에는 그것이 이 규칙보다 먼저 TransportError 였다). logout 은 본문을 쓰지 않아 이 규칙 밖이다
-  # (`Http.decode_json(…, check_utf8: false)`).
+  # 전에는 그것이 이 규칙보다 먼저 TransportError 였다). logout 은 본문을 해석하지 않아 이 규칙 밖이다 — 204 만 성공이다
+  # (등록부 logout-2xx-html-false-success · 판정 2026-11-12).
   # ⚠️ 해석 실패는 `RedactedCause` 로만 단다 — `Faraday::ParsingError#inspect` 는 요청(클라이언트 시크릿)까지 찍는다. 메시지는
   # 상수 문장이다(본문을 싣지 않는다). ⚠️ 공개 API 를 늘리지 않으려고 `Http` 의 모듈 함수가 아니라 비공개 상수다.
   module TokenResponse

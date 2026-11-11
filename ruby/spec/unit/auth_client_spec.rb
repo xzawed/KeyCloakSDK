@@ -90,6 +90,18 @@ RSpec.describe KeycloakSdk::AuthClient do
                                      .to_return(status: 204, body: "")
       expect(auth.logout(refresh_token: "RT")).to be_nil
     end
+
+    # Keycloak 의 logout 성공은 204 뿐이다 — 가로챈 200 로그인 페이지 · 그 밖의 2xx · 3xx 는 로그아웃이 아니다
+    # (등록부 logout-2xx-html-false-success · 판정 2026-11-12). 본문은 판정에 쓰지 않는다.
+    [[200, "text/html", "<html>login</html>"], [200, "application/json", "{}"], [200, nil, ""],
+     [201, nil, ""], [202, nil, ""], [302, "text/html", ""]].each do |status, type, body|
+      it "raises AuthError naming the status on HTTP #{status} #{type.inspect} #{body.inspect}" do
+        headers = type ? { "Content-Type" => type } : {}
+        stub_request(:post, logout_url).to_return(status: status, headers: headers, body: body)
+        expect { auth.logout(refresh_token: "RT") }
+          .to raise_error(KeycloakSdk::AuthError, "logout failed: HTTP #{status}")
+      end
+    end
   end
 
   describe "#validate" do

@@ -54,8 +54,16 @@ public sealed class TokenResponseCapTests
             async (kc, token) => (await kc.Auth.IntrospectAsync(token)).Claims["token_len"]?.ToString() ?? "null"),
         new("AdminAsync (its token fetch)", $"{Prefix}/token", "Client credentials grant failed",
             async (kc, _) => (await (await kc.AdminAsync()).Realms.ListAsync())[0].Realm ?? "null"),
+        // The cap IdP answers every lane 200 with a body, and logout succeeds on 204 only (registry
+        // logout-2xx-html-false-success): within the cap the read passes and the status decides — "Logout failed (HTTP 200)".
+        // Over the cap the read fails first, so the cap's error is what this lane measures.
         new("LogoutAsync", $"{Prefix}/logout", "Logout failed",
-            async (kc, token) => { await kc.Auth.LogoutAsync(token); return "logged out"; }),
+            async (kc, token) =>
+            {
+                try { await kc.Auth.LogoutAsync(token); }
+                catch (KeycloakAuthException e) when (e.Message == "Logout failed (HTTP 200)") { }
+                return "logged out";
+            }),
     };
 
     public static IEnumerable<object[]> LaneNames => Lanes.Select(l => new object[] { l.Name });

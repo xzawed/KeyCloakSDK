@@ -21,7 +21,7 @@ RSpec.describe KeycloakSdk::Http do
   end
 
   # 공개 헬퍼의 계약은 그대로다 — 토큰·introspection 레인은 이제 그 판정을 쓰지 않고 끝까지 온 응답의 규칙(AuthError)을 건다
-  # (token_response_class_spec). logout 은 `check_utf8: false` 로 미들웨어의 판정만 쓴다.
+  # (token_response_class_spec). logout 은 본문을 해석하지 않는다 — 상태(204)만 본다.
   describe ".decode_json" do
     def response(body)
       env = Faraday::Env.from(status: 200, body: body.b,

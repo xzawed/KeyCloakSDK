@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -638,6 +639,53 @@ func TestClientCredentialsErrorMapping(t *testing.T) {
 	}
 	if ae.OAuthError != "invalid_client" {
 		t.Fatalf("OAuthError = %q, want invalid_client", ae.OAuthError)
+	}
+}
+
+// TestLogoutSucceedsOn204Only — Keycloak 은 백채널 logout 의 성공을 204 로만 답한다. 2xx 를 모두 성공으로 보면
+// 가로챈 200 페이지(프록시의 로그인 폼)도 성공이라 세션이 살아 있는데 nil 이었다(등록부 logout-2xx-html-false-success ·
+// 판정 2026-11-12: 204 밖은 전부 *AuthError, 상태를 메시지에). 본문은 판정에 쓰지 않는다.
+func TestLogoutSucceedsOn204Only(t *testing.T) {
+	cells := []struct {
+		name   string
+		status int
+		ctype  string
+		body   string
+	}{
+		{"204", http.StatusNoContent, "", ""},
+		{"200 empty", http.StatusOK, "", ""},
+		{"200 {}", http.StatusOK, "application/json", "{}"},
+		{"200 html login page", http.StatusOK, "text/html", `<html><body><form action="/login"></form></body></html>`},
+		{"200 error json", http.StatusOK, "application/json", `{"error":"invalid_grant"}`},
+		{"201", http.StatusCreated, "", ""},
+		{"202", http.StatusAccepted, "", ""},
+	}
+	for _, c := range cells {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if c.ctype != "" {
+					w.Header().Set("Content-Type", c.ctype)
+				}
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			t.Cleanup(srv.Close)
+			cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "sekret-canary"}.withDefaults()
+			err := newAuthClient(cfg, nil).Logout(context.Background(), "RT-canary")
+			if c.status == http.StatusNoContent {
+				if err != nil {
+					t.Fatalf("204 is Keycloak's success: %v", err)
+				}
+				return
+			}
+			var ae *AuthError
+			if !errors.As(err, &ae) || !strings.Contains(err.Error(), "failed (HTTP "+strconv.Itoa(c.status)+")") {
+				t.Fatalf("HTTP %d must be *AuthError naming the status, got %T %v", c.status, err, err)
+			}
+			if s := fmt.Sprintf("%+v %#v", err, err); strings.Contains(s, "canary") {
+				t.Fatalf("the error quotes a sent secret: %s", s)
+			}
+		})
 	}
 }
 

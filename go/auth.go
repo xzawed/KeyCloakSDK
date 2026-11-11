@@ -164,7 +164,7 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	if a.cfg.ClientSecret != "" {
 		form.Set("client_secret", a.cfg.ClientSecret)
 	}
-	body, err := a.postForm(ctx, a.ep.introspection, form)
+	body, err := a.postForm(ctx, a.ep.introspection, form, statusIs2xx)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (a *AuthClient) Logout(ctx context.Context, refreshToken string) error {
 	if a.cfg.ClientSecret != "" {
 		form.Set("client_secret", a.cfg.ClientSecret)
 	}
-	_, err := a.postForm(ctx, a.ep.endSession, form)
+	_, err := a.postForm(ctx, a.ep.endSession, form, statusIs204)
 	return err
 }
 
@@ -221,7 +221,7 @@ func (a *AuthClient) Close() error {
 	return nil
 }
 
-func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Values) ([]byte, error) {
+func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Values, ok func(int) bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, &TransportError{Msg: err.Error(), Cause: err}
@@ -242,10 +242,10 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 		return nil, &TransportError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes),
 			Cause: errTokenResponseTooLarge}
 	}
-	// Success is 2xx. `>= 400` alone read a 3xx as success, and the SDK deliberately does not follow
-	// redirects (noFollowRedirect surfaces the 3xx here), so that path was reachable: Logout returned
-	// nil while the session was still alive, and Introspect parsed an empty body.
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	// Success is the caller's (`ok` — statusIs2xx · statusIs204 in tokencap.go). `>= 400` alone read a 3xx as success,
+	// and the SDK deliberately does not follow redirects (noFollowRedirect surfaces the 3xx here), so that path was
+	// reachable: Logout returned nil while the session was still alive, and Introspect parsed an empty body.
+	if !ok(resp.StatusCode) {
 		return nil, &AuthError{Msg: "request to " + endpoint + " failed (HTTP " + strconv.Itoa(resp.StatusCode) + ")"}
 	}
 	return body, nil

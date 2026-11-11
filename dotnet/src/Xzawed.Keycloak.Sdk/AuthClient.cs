@@ -230,7 +230,9 @@ public sealed class AuthClient : ITokenSource
         }
         using (resp)
         {
-            if (!resp.IsSuccessStatusCode)
+            // Keycloak 의 성공은 204 뿐이다 — IsSuccessStatusCode(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
+            // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
+            if (resp.StatusCode != System.Net.HttpStatusCode.NoContent)
                 throw new KeycloakAuthException($"Logout failed (HTTP {(int)resp.StatusCode})");
         }
     }

@@ -89,19 +89,17 @@ module KeycloakSdk
     end
 
     # The body is not used, but it is read — only up to `TOKEN_RESPONSE_MAX_BYTES` (past that, TransportError
-    # regardless of status). Parsing stays exactly as the connection's json middleware did it: a body that claims to be
-    # JSON but is not is a TransportError, as now. No UTF-8 check is applied (`check_utf8: false`) — no value is used,
-    # so there is nothing to protect, and with the check a 400 would turn from AuthError into TransportError depending
-    # on the bytes of the error body (u2 in hostile_token_response_spec). Parsing comes before the status check.
-    # ⚠️ This is not the token · introspection rule (`TokenResponse`, where a response that arrived but cannot be read
-    # is an AuthError): the 2026-11-10 decision of registry token-response-class-divergent covers those two endpoints
-    # only, so logout's classes stay as they were (d1 · d2 · e4 in hostile_token_response_spec).
+    # regardless of status). Success is HTTP 204 only (registry logout-2xx-html-false-success, decision 2026-11-12):
+    # Keycloak answers a logout with 204, and `success?` (any 2xx) took an intercepted 200 login page for a logout.
+    # Every other status — another 2xx, 3xx, 4xx, 5xx — is an AuthError naming the status, and the body never decides,
+    # so it is not parsed: a body that claims to be JSON but is not is no longer a TransportError (d1 · d2 · e4 in
+    # hostile_token_response_spec).
     def logout(refresh_token:)
       form = form!("logout", client_id: @config.client_id, client_secret: @config.client_secret,
                              refresh_token: refresh_token)
       resp = Http.read_capped(@http, :post, @endpoints.end_session,
                               body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "logout")
-      raise AuthError, "logout failed: HTTP #{resp.status}" unless Http.decode_json(resp, check_utf8: false).success?
+      raise AuthError, "logout failed: HTTP #{resp.status}" unless resp.status == 204
 
       nil
     rescue Error

@@ -293,8 +293,36 @@ describe('logout (백채널 — refresh_token revoke)', () => {
     fetchSpy.mockRestore()
   })
 
+  // Keycloak 의 성공은 204 뿐이다 — `response.ok`(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다(등록부
+  // logout-2xx-html-false-success, 2026-11-12 판정: 204 밖은 전부 KeycloakAuthError, 상태를 메시지에).
+  it.each([
+    ['200 빈 본문', new Response(null, { status: 200 })],
+    [
+      '200 {}',
+      new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    ],
+    [
+      '200 로그인 페이지',
+      new Response('<html><body><form action="/login"></form></body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    ],
+    ['201', new Response(null, { status: 201 })],
+    ['202', new Response(null, { status: 202 })],
+  ])('204 밖의 2xx 는 실패다 — %s', async (_cell, response) => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response)
+    const got = await new AuthClient(cfg).logout('RT').then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(got).toBeInstanceOf(KeycloakAuthError)
+    expect((got as Error).message).toBe(`Logout failed (HTTP ${response.status})`)
+    fetchSpy.mockRestore()
+  })
+
   it('3xx를 성공으로 오인하지 않는다 — 302는 KeycloakAuthError다', async () => {
-    // 'manual'이 3xx를 그대로 표면화하면 `!response.ok`가 실패로 처리한다는 계약을 고정한다.
+    // 'manual'이 3xx를 그대로 표면화하면 아래 상태 검사가 실패로 처리한다는 계약을 고정한다.
     // ⚠️ fetch가 목이라 이 케이스만으로는 옵션 유무를 가리지 못한다 — 대조군은 위 단언이다.
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

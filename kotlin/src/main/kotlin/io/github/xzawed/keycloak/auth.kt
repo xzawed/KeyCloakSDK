@@ -203,7 +203,8 @@ public class AuthClient internal constructor(
             } catch (e: IOException) {
                 throw KeycloakTransportException("Logout request failed", e)
             }
-        if (!resp.indicatesSuccess()) {
+        // Keycloak 의 성공은 204 뿐이다 — 2xx 전부를 받으면 가로챈 200 로그인 페이지도 성공이었다(등록부 logout-2xx-html-false-success)
+        if (resp.statusCode != java.net.HttpURLConnection.HTTP_NO_CONTENT) {
             throw KeycloakAuthException("Logout failed (HTTP ${resp.statusCode})")
         }
     }
