@@ -126,6 +126,11 @@ TOKEN_CELLS: dict[str, _Answer] = {
     ),
     "r16r 200 raw deflate": (200, f"{_JSON}\nContent-Encoding: deflate", _raw_deflate(_GOOD_TOKEN)),
     "r13c 201 unpaired surrogate": (201, _JSON, _with(_GOOD_TOKEN, b'"x":"' + _U + b'd800"')),
+    "r13d 200 unpaired surrogate after 70 KB": (
+        200,
+        _JSON,
+        _with(_GOOD_TOKEN, b'"pad":"' + b"x" * 70_000 + b'","x":"' + _U + b'd800"'),
+    ),
     "r16t4 400 truncated gzip error body": (
         400,
         f"{_JSON}{_GZIP}",
@@ -190,6 +195,9 @@ S1: dict[str, _Verdict] = {
     "r16i 200 gzip with a bad length": _auth("token response could not be decoded"),
     "r16r 200 raw deflate": OK,
     "r13c 201 unpaired surrogate": _auth("token response holds an unpaired surrogate escape"),
+    "r13d 200 unpaired surrogate after 70 KB": _auth(
+        "token response holds an unpaired surrogate escape"
+    ),
     "r16t4 400 truncated gzip error body": _auth(f"{_HTTP} 400 (invalid_grant)", "invalid_grant"),
     "r17 200 valid surrogate pair": OK,
     "r8u 400 invalid UTF-8 in the error body": _auth(f"{_HTTP} 400"),
