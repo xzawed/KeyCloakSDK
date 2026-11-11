@@ -16,7 +16,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { KeycloakAuthError, KeycloakClient, KeycloakTransportError } from '../../src/index.js'
 import { holdsUnpairedSurrogate } from '../../src/token-response-cap.js'
 
-type Answer = { status: number; body: Buffer; encoding?: string }
+/** `cut` 이면 Content-Length 를 본문보다 100 바이트 길게 적고, 본문을 쓴 뒤 연결을 끊는다 — 다 오지 않은 응답. */
+type Answer = { status: number; body: Buffer; encoding?: string; cut?: boolean }
 
 const json = 'application/json'
 const U = '\\u'
@@ -39,6 +40,8 @@ const badCrc = (body: string): Buffer => {
 
 let token: Answer = ok(GOOD_TOKEN)
 let introspection: Answer = ok(GOOD_INTROSPECTION)
+/** 있으면 discovery 문서 대신 이것을 보낸다. */
+let discovery: Answer | undefined
 let server: Server
 let origin = ''
 
@@ -46,7 +49,14 @@ beforeAll(async () => {
   server = createServer((req, res) => {
     req.on('end', () => {
       const path = new URL(req.url ?? '/', origin).pathname
-      if (path.endsWith('/.well-known/openid-configuration')) {
+      const isDiscovery = path.endsWith('/.well-known/openid-configuration')
+      if (isDiscovery && discovery !== undefined) {
+        res.setHeader('content-type', json)
+        if (discovery.encoding !== undefined) res.setHeader('content-encoding', discovery.encoding)
+        res.end(discovery.body)
+        return
+      }
+      if (isDiscovery) {
         const issuer = `${origin}/realms/r`
         res.setHeader('content-type', json)
         res.end(
@@ -69,6 +79,11 @@ beforeAll(async () => {
       res.statusCode = answer.status
       res.setHeader('content-type', json)
       if (answer.encoding !== undefined) res.setHeader('content-encoding', answer.encoding)
+      if (answer.cut === true) {
+        res.setHeader('content-length', answer.body.length + 100)
+        res.write(answer.body, () => res.socket?.destroy())
+        return
+      }
       res.end(answer.body)
     })
     req.resume()
@@ -186,6 +201,44 @@ describe('끝까지 온 토큰 응답을 쓸 수 없으면 KeycloakAuthError', (
       token: { status: 200, body: Buffer.from(truncated), encoding: 'gzip' },
     })
     expect(got).not.toBeInstanceOf(Error)
+  })
+})
+
+/** 판정 밖 — 해제기의 판정이 아닌 실패와 토큰 응답이 아닌 응답은 전과 같다. */
+describe('대조군', () => {
+  it.each([
+    ['평문', Buffer.from('{"access_token":"a","token'), undefined],
+    ['gzip', gzipped(GOOD_TOKEN).subarray(0, 12), 'gzip'],
+  ])(
+    '본문 중간에 연결이 끊긴 토큰 응답(%s)은 다 오지 않았다 — transport',
+    async (_cell, body, encoding) => {
+      const got = await outcome((kc) => kc.auth.clientCredentialsToken(), {
+        token: { status: 200, body: Buffer.from(body), encoding, cut: true },
+      })
+      expect(got).toBeInstanceOf(KeycloakTransportError)
+      expect((got as Error).message).not.toContain('could not be decoded')
+    },
+  )
+
+  it('discovery 문서의 깨진 gzip — 토큰 응답이 아니라 판정 밖이다(전처럼 transport)', async () => {
+    discovery = { status: 200, body: CORRUPT_DEFLATE, encoding: 'gzip' }
+    const kc = KeycloakClient.create({
+      serverUrl: origin,
+      realm: 'r',
+      clientId: 'c',
+      clientSecret: 's',
+    })
+    try {
+      const got = await kc.auth.clientCredentialsToken().then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(got).toBeInstanceOf(KeycloakTransportError)
+      expect((got as Error).message).not.toContain('could not be decoded')
+    } finally {
+      discovery = undefined
+      await kc.close()
+    }
   })
 })
 
