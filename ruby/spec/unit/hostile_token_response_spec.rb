@@ -247,18 +247,22 @@ module HostileTokenResponseSpec
 
     def self.expect_all(calls, klass) = Table.expect_all(calls, klass)
 
-    auth = KeycloakSdk::AuthError
     transport = KeycloakSdk::TransportError
+    # 응답이 오지 않은 실패다 — 그랜트도 transport(2026-11-11 전에는 그랜트 경계의 마지막 rescue 가 AuthError 로 불렀다).
     VARIANTS = {
       "n1" => { note: "응답 헤더 이름 검증(net-http 0.10) — 토큰·introspect·logout 엔드포인트",
                 raise: ArgumentError.new("header field name cannot include control characters or colon: " \
                                          '"nHN9k-header-name-canary"'),
-                expect: expect_all(RACK, auth).merge(expect_all(PROVIDER + ["auth.introspect", "auth.logout"],
-                                                                transport)) },
+                expect: expect_all(RACK + PROVIDER + ["auth.introspect", "auth.logout"], transport) },
       "n2" => { note: "응답 헤더 이름 검증(net-http 0.10) — admin 응답(토큰 발급은 정상)",
                 reply: json(200, access_token: "nAT9k-admin-bearer-canary", token_type: "Bearer", expires_in: 300),
                 admin_raise: ArgumentError.new('too long (2000 bytes) header: "nHL9k-long-header-name-canary"...'),
-                expect: { "admin.users.get(token via provider)" => transport } }
+                expect: { "admin.users.get(token via provider)" => transport } },
+      # Faraday 가 바꾸지 않은 다른 하위 예외 — 그랜트의 전송 단계 변환은 ArgumentError 만이 아니다(독립 레그가 살린 축소 편집
+      # 「rescue ArgumentError」, 2026-11-11). Errno 의 메시지는 OS 가 만든다(RedactedCause 가 싣는 부류) — 카나리아를 넣지 않는다.
+      "n3" => { note: "전송 중 Faraday 밖 하위 예외(Errno) — 그랜트",
+                raise: Errno::EHOSTDOWN.new,
+                expect: expect_all(RACK, transport) }
     }.freeze
   end
   VARIANTS = Table::VARIANTS.merge(Wave4::VARIANTS, NetHttp010::VARIANTS).freeze

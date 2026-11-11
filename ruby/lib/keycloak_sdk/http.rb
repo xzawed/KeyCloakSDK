@@ -376,15 +376,27 @@ module KeycloakSdk
     # allocated to the cap up front).
     # ⚠️ Looking only at `Content-Length` misses a response whose header is absent or false — the check uses the
     # running total.
+    # ⚠️ A json response middleware on `conn` judges nothing here: it parses the streamed body's placeholder, which
+    # is always empty — after the adapter forced it to the declared charset (faraday-net_http `encoded_body`). A
+    # charset Ruby keeps as a dummy encoding (utf-16 · utf-32 · utf-7 · iso-2022-jp) makes the placeholder's `strip`
+    # raise, so a usable token labelled `charset=utf-16` was a TransportError (measured 2026-11-11, every lane). Its
+    # `Faraday::ParsingError` carries the response the body was streamed for; the caller judges the body
+    # (`TokenResponse`).
     def read_capped(conn, method, url, max_bytes:, what:, body: nil, headers: {})
       buf = String.new(encoding: Encoding::BINARY)
-      resp = conn.run_request(method, url, body, IDENTITY.merge(headers)) do |req|
-        req.options.on_data = proc do |chunk, _received|
-          over = buf.bytesize + chunk.bytesize > max_bytes
-          raise TransportError, "#{what} response exceeds #{max_bytes} bytes" if over
+      resp = begin
+        conn.run_request(method, url, body, IDENTITY.merge(headers)) do |req|
+          req.options.on_data = proc do |chunk, _received|
+            over = buf.bytesize + chunk.bytesize > max_bytes
+            raise TransportError, "#{what} response exceeds #{max_bytes} bytes" if over
 
-          buf << chunk
+            buf << chunk
+          end
         end
+      rescue Faraday::ParsingError => e
+        raise unless e.response.is_a?(Faraday::Response)
+
+        e.response
       end
       resp.env.body = buf
       resp
@@ -473,14 +485,28 @@ module KeycloakSdk
   #     전에는 `Faraday::ParsingError` 가 경계에서 TransportError 였다.
   #   · 오류 상태의 본문이 그러면 날 바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의
   #     OAuth 코드는 쓰지 않는다).
-  # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). ⚠️ 단 Faraday 의 json
-  # 미들웨어가 그보다 먼저 돈다 — utf-16 · utf-32 같은 charset 을 선언하면 거기서 `Encoding::CompatibilityError` 로 실패해
-  # 이 규칙에 닿지 않는다(기존부터, 독립 레그가 짚음 — 등록부 후보). logout 은 본문을 쓰지 않아 이 규칙
-  # 밖이다(`Http.decode_json(…, check_utf8: false)`).
+  # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). 커넥션의 json 미들웨어가
+  # utf-16 · utf-32 같은 charset 에서 스트리밍 본문의 자리표시를 파싱하다 낸 실패는 `Http.read_capped` 가 받아낸다(2026-11-11 —
+  # 전에는 그것이 이 규칙보다 먼저 TransportError 였다). logout 은 본문을 쓰지 않아 이 규칙 밖이다
+  # (`Http.decode_json(…, check_utf8: false)`).
   # ⚠️ 해석 실패는 `RedactedCause` 로만 단다 — `Faraday::ParsingError#inspect` 는 요청(클라이언트 시크릿)까지 찍는다. 메시지는
   # 상수 문장이다(본문을 싣지 않는다). ⚠️ 공개 API 를 늘리지 않으려고 `Http` 의 모듈 함수가 아니라 비공개 상수다.
   module TokenResponse
     module_function
+
+    # Sends a token grant and reads its response (`Http.read_capped`) — a lower exception raised meanwhile is a response
+    # that did not arrive: net-http 0.10's response header validation raises an ArgumentError that Faraday does not
+    # convert, and the grant boundary's last rescue called it "unusable token response" (AuthError — measured
+    # 2026-11-11; introspect · logout · admin were TransportError since #798). Only what fails after the read is the
+    # boundary's.
+    def read(conn, url, body:, headers:)
+      Http.read_capped(conn, :post, url, body: body, headers: headers,
+                                         max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token")
+    rescue Error, Faraday::Error
+      raise
+    rescue StandardError => e
+      raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+    end
 
     def decode(resp, what:)
       raw = resp.body

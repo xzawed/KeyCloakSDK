@@ -29,7 +29,10 @@ module NetHttpHeaderValidationSpec
   }.freeze
   # 레인 => [공격을 싣는 경로, 호출, net-http 0.10 에서 기대하는 SDK 오류]. admin REST 는 토큰을 정상으로 준 뒤 /users 가 싣는다.
   LANES = {
-    "client_credentials_token" => [TOKEN, ->(kc) { kc.auth.client_credentials_token }, KeycloakSdk::AuthError],
+    # 깨진 응답 머리는 다 오지 않은 응답이다 — 그랜트도 transport(2026-11-11 전에는 「unusable token response
+    # (ArgumentError)」 AuthError 였다: 그랜트 경계의 마지막 rescue 가 응답을 읽다 난 것과 보내다 난 것을 가리지 않았다).
+    "client_credentials_token" => [TOKEN, ->(kc) { kc.auth.client_credentials_token }, KeycloakSdk::TransportError],
+    "refresh" => [TOKEN, ->(kc) { kc.auth.refresh(refresh_token: "rt") }, KeycloakSdk::TransportError],
     "introspect" => ["#{OIDC}/token/introspect", ->(kc) { kc.auth.introspect("T") }, KeycloakSdk::TransportError],
     "logout" => ["#{OIDC}/logout", ->(kc) { kc.auth.logout(refresh_token: "rt") }, KeycloakSdk::TransportError],
     "admin token" => [TOKEN, ->(kc) { kc.admin.users.list }, KeycloakSdk::TransportError],

@@ -163,9 +163,8 @@ module KeycloakSdk
       form = form!(operation, **params).reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) }
       pair = [@config.client_id, @config.client_secret].map { |v| URI.encode_www_form_component(v) }.join(":")
       basic = { "Authorization" => "Basic #{Base64.strict_encode64(pair)}" }
-      TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.token,
-                                            body: form, headers: basic,
-                                            max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"), what: "token")
+      # 보내다 · 읽다 난 하위 예외는 `TokenResponse.read` 가 TransportError 로 바꾼다(응답이 오지 않았다).
+      TokenResponse.decode(TokenResponse.read(@http, @endpoints.token, body: form, headers: basic), what: "token")
     end
 
     # rack-oauth2 의 응답 규칙(`Client#handle_response` — 2.3.0 client.rb:205-240)을 SDK 가 읽은 본문에 그대로 건다:
