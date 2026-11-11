@@ -35,8 +35,14 @@ sd_token_type_anchor() {
     none) ;;
   esac
 }
+sd_empty_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
 _a="$(sd_canary_ok "$ROOT/$f1" "$c1")"
 _b="$(sd_canary_ok "$ROOT/$f2" "$c2")"
 _c="$(sd_canary_ok "$ROOT/$f3" "$c3")"
 _d="$(sd_canary_ok "$ROOT/$f4" "$c4")"
 _e="$(sd_canary_ok "$ROOT/$f5" "$c5")"
+_f="$(sd_canary_ok "$ROOT/$f6" "$c6")"

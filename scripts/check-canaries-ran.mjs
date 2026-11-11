@@ -51,6 +51,7 @@ export const AXES = [
   { axis: 'mask', file: 'sd_mask_test', rows: 'sd_mask_canary', shape: 'canary' },
   { axis: 'mask2', file: 'sd_mask2_test', rows: 'sd_mask2_canary', shape: 'canary' },
   { axis: 'token-type', rows: 'sd_token_type_anchor', shape: 'kind|file|canary' },
+  { axis: 'empty', rows: 'sd_empty_canary', shape: 'file|canary' },
 ]
 const CALL_SITE = /^[^#]*\bsd_canary_ok\s+"\$ROOT\//
 

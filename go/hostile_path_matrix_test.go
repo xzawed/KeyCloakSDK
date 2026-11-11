@@ -727,15 +727,16 @@ var hpHandTargets = []struct{ label, class, axis, anchor, call string }{
 	{"(*Client).Admin", hpTokenGrant, "a", "malformed_response_cause_test.go|causeRun", "Admin"},
 	{"(*AuthClient).Introspect", hpOther, "row", "malformed_response_cause_test.go|causeRun", "Introspect"},
 	{"(*AuthClient).Logout", hpOther, "row", "malformed_response_cause_test.go|causeRun", "Logout"},
-	// 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 Go 행위 앵커 — nonce · 토큰 타입 · 백오프.
+	// 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 Go 행위 앵커 — nonce · 토큰 타입 · 백오프 · 빈 키셋.
 	{"(*AuthClient).ExchangeCode", hpCodeExchange, "b", "auth_test.go|TestExchangeCodeNonceValidation", "ExchangeCode"},
 	{"(*AuthClient).ClientCredentialsToken", hpTokenGrant, "a", "auth_test.go|TestClientCredentialsRejectsNonStringAccessToken", "ClientCredentialsToken"},
 	{"(*Validator).Validate", hpJWKSFetch, "c", "jwt_test.go|TestJWKSFailedFetchBackoffBoundsColdRetries", "resolveKey"},
 	{"(*Validator).Validate", hpJWKSFetch, "c", "jwt_test.go|TestJWKSBackoffExpiresAndAllowsRetry", "resolveKey"},
 	{"(*Validator).Validate", hpJWKSFetch, "c", "jwt_test.go|TestJWKSSuccessResetsFailureCounter", "resolveKey"},
+	{"(*Validator).Validate", hpJWKSFetch, "c", "jwt_test.go|TestValidateJWKSEmpty200DoesNotPoisonCache", "Validate"},
 }
 
-// 보안 기본값 가드가 Go 행위 앵커를 적는 모양(`go/<파일>|func <이름>(`) — nonce·백오프·토큰 타입 세 축이 이 모양이다.
+// 보안 기본값 가드가 Go 행위 앵커를 적는 모양(`go/<파일>|func <이름>(`) — nonce·백오프·토큰 타입·빈 키셋 네 축이 이 모양이다.
 var hpScriptAnchorRE = regexp.MustCompile(`go/([A-Za-z0-9_]+_test\.go)\|func ([A-Za-z0-9_]+)\(`)
 
 // hpCheckHand 는 실패 사유와, 보안 기본값 가드 대조까지 **실제로 돌았는지**를 낸다(뒤의 것이 attest 의 w1 이다).

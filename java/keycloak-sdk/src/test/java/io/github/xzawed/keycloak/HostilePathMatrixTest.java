@@ -1233,9 +1233,9 @@ class HostilePathMatrixTest {
       new Hand("JwtValidator.validate(String)", JWKS_FETCH, "c", "JwksColdCacheOutageTest.java|coldCacheDuringIdpOutage_isBounded",
           "run>validate"));
 
-  /** 가드가 Java 행위 앵커를 적는 두 모양 — {@code java/…/X.java|void m(} 와 {@code "java/…/X.java" "m"}. */
+  /** 가드가 Java 행위 앵커를 적는 모양 — {@code java/…/X.java|void m(}(nonce · 토큰 타입 · 빈 JWKS · 백오프 면제 증거). */
   private static final Pattern SCRIPT_ANCHOR = Pattern.compile(
-      "java/[A-Za-z0-9_./-]*/([A-Za-z0-9_]+Test\\.java)(?:\\|void ([A-Za-z0-9_]+)\\(|\"\\s+\"([A-Za-z0-9_]+)\")");
+      "java/[A-Za-z0-9_./-]*/([A-Za-z0-9_]+Test\\.java)\\|void ([A-Za-z0-9_]+)\\(");
 
   private List<String> checkHand(Map<String, Row> byLabel, Map<String, List<Row>> tgt, Map<String, String> callClass)
       throws IOException {
@@ -1308,7 +1308,7 @@ class HostilePathMatrixTest {
     int found = 0;
     while (m.find()) {
       found++;
-      String anchor = m.group(1) + "|" + (m.group(2) != null ? m.group(2) : m.group(3));
+      String anchor = m.group(1) + "|" + m.group(2);
       if (!anchors.contains(anchor)) why.add("W1 보안 기본값 가드의 Java 앵커 " + anchor + " 가 HAND 에 없다");
     }
     if (found == 0) why.add("W1 test-security-defaults.sh 에서 Java 행위 앵커를 하나도 못 읽었다 — 적는 모양이 바뀌었나?");

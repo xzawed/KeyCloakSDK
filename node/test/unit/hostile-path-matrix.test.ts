@@ -1689,7 +1689,7 @@ const HAND: ReadonlyArray<{
     anchor: MALFORMED_ANCHOR,
     call: 'create',
   },
-  // 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 node 행위 앵커 — 토큰 타입 · nonce · 백오프.
+  // 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 node 행위 앵커 — 토큰 타입 · nonce · 백오프 · 빈 키셋.
   {
     label: 'AuthClient#clientCredentialsToken',
     cls: TOKEN_GRANT,
@@ -1740,6 +1740,14 @@ const HAND: ReadonlyArray<{
     axis: 'c',
     anchor:
       "jwt-jwks.test.ts|it('대조군 — 성공하면 카운터가 돌아간다: 회복 뒤 다시 낡아 실패하면 창은 처음(0.2 초)부터다'",
+    call: 'validate',
+  },
+  {
+    label: 'JwtValidator#validate',
+    cls: JWKS_FETCH,
+    axis: 'c',
+    anchor:
+      "jwt-jwks.test.ts|it('미해결 kid 재조회가 200 빈 키셋을 받아도 기존 k1 검증은 유지된다'",
     call: 'validate',
   },
 ]

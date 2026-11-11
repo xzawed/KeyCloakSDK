@@ -932,19 +932,19 @@ module HostilePathMatrixSpec
       Target.new("Admin::Users#get", TOKEN_GRANT, "a", "#{HOSTILE}|CALLS[admin.users.get(token via provider)]"),
       Target.new("AuthClient#introspect", OTHER, "row", "#{HOSTILE}|CALLS[auth.introspect]"),
       Target.new("AuthClient#logout", OTHER, "row", "#{HOSTILE}|CALLS[auth.logout]"),
-      # 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 Ruby 행위 앵커 — nonce · 백오프 · 토큰 타입.
+      # 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 Ruby 행위 앵커 — nonce · 백오프 · 토큰 타입 · 빈 키셋.
       Target.new("AuthClient#exchange_code", CODE_EXCHANGE, "b", 'auth_client_spec.rb|it "rejects a mismatched nonce"'),
       Target.new("AuthClient#exchange_code", CODE_EXCHANGE, "b",
                  'auth_client_spec.rb|it "rejects a response missing the id_token when a nonce is expected"'),
-      Target.new("JwksStore#key_set", JWKS_FETCH, "c",
-                 'jwks_store_spec.rb|it "bounds retries while the IdP is failing — 20회 시도가 요청 1건이 된다"'),
-      Target.new("JwksStore#key_set", JWKS_FETCH, "c", 'jwks_store_spec.rb|it "백오프가 지나면 다시 시도한다 (대조군)"'),
-      Target.new("JwksStore#key_set", JWKS_FETCH, "c", 'jwks_store_spec.rb|it "성공하면 실패 카운터가 0으로 돌아간다 (대조군)"'),
+      # 백오프 셋 · 빈 키셋 하나 — 넷 다 JwksStore#key_set 을 친다.
+      *["bounds retries while the IdP is failing — 20회 시도가 요청 1건이 된다", "백오프가 지나면 다시 시도한다 (대조군)",
+        "성공하면 실패 카운터가 0으로 돌아간다 (대조군)", "빈 200 이 이미 올라간 좋은 캐시를 덮지 않는다"]
+        .map { |d| Target.new("JwksStore#key_set", JWKS_FETCH, "c", %(jwks_store_spec.rb|it "#{d}")) },
       # 토큰 타입 앵커는 파서(TokenSet.from_response)를 직접 부른다 — 교환 입구는 provider 다.
       Target.new("ClientCredentialsTokenProvider#access_token", TOKEN_GRANT, "a",
                  "tokens_spec.rb|it \"rejects a non-string access_token (\#{bad.inspect})\"", "from_response")
     ].freeze
-    # 보안 기본값 가드가 Ruby 행위 앵커를 적는 모양(`ruby/spec/unit/<파일>|it "<설명>"`) — nonce·백오프·토큰 타입 세 축.
+    # 보안 기본값 가드가 Ruby 행위 앵커를 적는 모양(`ruby/spec/unit/<파일>|it "<설명>"`) — nonce·백오프·토큰 타입·빈 키셋 네 축.
     SCRIPT = File.expand_path("../../../scripts/test/test-security-defaults.sh", __dir__)
     SCRIPT_ANCHOR = %r{ruby/spec/unit/([a-z_]+_spec\.rb)\|(it "[^"]*")}
 
