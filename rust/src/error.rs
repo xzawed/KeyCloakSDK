@@ -49,16 +49,24 @@ impl KeycloakError {
     }
 }
 
-/// 서버 오류 본문의 `error` 를 **코드 모양일 때만** `oauth_error` 로 옮긴다(토큰·provider 두 경로 공용).
-/// RFC 6749 §5.2 와 등록된 확장 코드는 전부 소문자를 `_` 로 이은 것이다(`invalid_grant`·`slow_down`).
+/// 서버 오류 본문의 `error` 를 **코드 모양이고 그 요청이 보낸 비밀(`sent`)과 겹치지 않을 때만** `oauth_error` 로
+/// 옮긴다(토큰·provider 두 경로 공용). RFC 6749 §5.2 와 등록된 확장 코드는 전부 소문자를 `_` 로 이은 것이다
+/// (`invalid_grant`·`slow_down`).
 /// ⚠️ 그 모양이 아닌 값은 코드가 아니라 서버의 자유 서술이다 — 받은 토큰을 `error` 자리에 되울린 응답이
-/// `{:?}` 로 원문 그대로 찍혔다(실측 2026-09-26, `tests/hostile_token_response.rs` 의 `e3`).
-pub(crate) fn oauth_error_code(raw: &str) -> Option<String> {
+/// `{:?}` 로 원문 그대로 찍혔다(실측 2026-09-26, `tests/hostile_token_response.rs` 의 `e3`). ⚠️ 소문자뿐인 시크릿은
+/// 그 모양이다 — 되울린 `echoedlowersecret` 이 `oauth_error` 와 `{:?}` 에 실렸다(실측 2026-11-11,
+/// `tests/oauth_error_code_echo.rs`). 겹침(어느 쪽도 다른 쪽을 품지 않음)은 잘린 · 덧붙은 되울림도 막고, 그 값은
+/// 비밀이 등록 코드의 조각일 때(`client`) 그 코드를 잃는 것이다. 빈 비밀(공개 클라이언트)은 비교하지 않는다 —
+/// 빈 문자열은 모든 코드의 조각이다.
+pub(crate) fn oauth_error_code(raw: &str, sent: &[&str]) -> Option<String> {
     let code_shaped = raw.len() <= 64
         && raw
             .split('_')
             .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase()));
-    code_shaped.then(|| raw.to_string())
+    let echoed = sent
+        .iter()
+        .any(|secret| !secret.is_empty() && (raw.contains(secret) || secret.contains(raw)));
+    (code_shaped && !echoed).then(|| raw.to_string())
 }
 
 /// 토큰·introspection 레인의 reqwest 오류 → 계급(auth 와 provider 두 경로 공용). 리다이렉트 실패(소비자가 준 클라이언트가
@@ -94,7 +102,7 @@ mod tests {
             "invalid_dpop_proof",
             "consent_required",
         ] {
-            assert_eq!(oauth_error_code(code).as_deref(), Some(code));
+            assert_eq!(oauth_error_code(code, &[]).as_deref(), Some(code));
         }
         for not_code in [
             "",
@@ -107,7 +115,27 @@ mod tests {
             "abc123",
             &"a".repeat(65),
         ] {
-            assert_eq!(oauth_error_code(not_code), None, "{not_code:?}");
+            assert_eq!(oauth_error_code(not_code, &[]), None, "{not_code:?}");
+        }
+    }
+
+    #[test]
+    fn oauth_error_code_withholds_a_value_that_overlaps_a_secret_the_request_sent() {
+        let cases: [(&str, &[&str], Option<&str>); 7] = [
+            ("invalid_grant", &["s3cret-Value"], Some("invalid_grant")),
+            ("mysecret", &["mysecret"], None),
+            ("mysecret_x", &["mysecret"], None), // extended echo
+            ("mysec", &["mysecret"], None),      // truncated echo
+            ("mysecret", &["", "other", "mysecret"], None),
+            ("invalid_grant", &["", ""], Some("invalid_grant")), // an empty secret is not compared
+            ("invalid_client", &["client"], None), // the price: a secret that is a piece of the code
+        ];
+        for (raw, sent, want) in cases {
+            assert_eq!(
+                oauth_error_code(raw, sent).as_deref(),
+                want,
+                "{raw:?} {sent:?}"
+            );
         }
     }
 

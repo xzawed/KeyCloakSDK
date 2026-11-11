@@ -275,10 +275,11 @@ impl AuthClient {
         if let Some(uri) = redirect_uri {
             req = req.set_redirect_uri(std::borrow::Cow::Owned(uri));
         }
+        let sent = [self.sent_secret(), code, code_verifier];
         let resp = req
             .request_async(&self.capped("token response"))
             .await
-            .map_err(map_token_err)?;
+            .map_err(|e| map_token_err(e, &sent))?;
         let token_set = to_token_set(&resp)?;
         if let Some(nonce) = expected_nonce {
             self.verify_nonce(token_set.id_token.as_deref(), nonce)
@@ -325,6 +326,12 @@ impl AuthClient {
 
     /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(authz-url·client-credentials 공용).
     /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
+    /// The client secret this client sends (empty for a public client) — what an echoed `error` is compared against
+    /// (`oauth_error_code`).
+    fn sent_secret(&self) -> &str {
+        self.config.client_secret.as_deref().unwrap_or_default()
+    }
+
     fn scopes(&self) -> Vec<Scope> {
         if self.config.scopes.is_empty() {
             vec![Scope::new("openid".to_string())]
@@ -341,25 +348,27 @@ impl AuthClient {
     /// (without that, custom scopes would be ignored and an under-scoped token issued — isomorphic with authz-url and
     /// token_provider).
     pub async fn client_credentials_token(&self) -> Result<TokenSet> {
+        let sent = [self.sent_secret()];
         let resp = self
             .oidc
             .exchange_client_credentials()
             .add_scopes(self.scopes())
             .request_async(&self.capped("token response"))
             .await
-            .map_err(map_token_err)?;
+            .map_err(|e| map_token_err(e, &sent))?;
         to_token_set(&resp)
     }
 
     /// Refresh Token → a new token set.
     pub async fn refresh(&self, refresh_token: &str) -> Result<TokenSet> {
         let rt = RefreshToken::new(refresh_token.to_string());
+        let sent = [self.sent_secret(), refresh_token];
         let resp = self
             .oidc
             .exchange_refresh_token(&rt)
             .request_async(&self.capped("token response"))
             .await
-            .map_err(map_token_err)?;
+            .map_err(|e| map_token_err(e, &sent))?;
         to_token_set(&resp)
     }
 
@@ -378,12 +387,13 @@ impl AuthClient {
     /// `IntrospectionResult`.
     pub async fn introspect(&self, token: &str) -> Result<IntrospectionResult> {
         let at = AccessToken::new(token.to_string());
+        let sent = [self.sent_secret(), token];
         let resp = self
             .oidc
             .introspect(&at)
             .request_async(&self.capped("introspection response"))
             .await
-            .map_err(map_token_err)?;
+            .map_err(|e| map_token_err(e, &sent))?;
         Ok(IntrospectionResult {
             active: resp.active(),
             username: resp.username().map(str::to_string),
@@ -474,14 +484,16 @@ fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
 /// 오류는 틀린 타입의 문자열 값을 인용하고 원 본문을 품으므로 그 문구도 옮기지 않는다.
 fn map_token_err(
     e: RequestTokenError<HttpClientError<reqwest::Error>, TokenErrorResponse>,
+    sent: &[&str],
 ) -> KeycloakError {
     use openidconnect::RequestTokenError as RTE;
     match e {
         RTE::ServerResponse(resp) => KeycloakError::Auth {
             message: "token endpoint rejected".into(),
             // RFC 6749 §5.2 의 `error` — 코드다. description·uri 는 서버의 자유 서술이라 싣지 않는다.
-            // 코드 자리에 코드 아닌 값(되울린 토큰)이 오면 그것도 싣지 않는다(`oauth_error_code`).
-            oauth_error: oauth_error_code(resp.error().as_ref()),
+            // 코드 자리에 코드 아닌 값(되울린 토큰)이나 그 요청이 보낸 비밀(`sent`)과 겹치는 값이 오면 그것도 싣지
+            // 않는다(`oauth_error_code`).
+            oauth_error: oauth_error_code(resp.error().as_ref(), sent),
         },
         // `Other` 는 `CappedHttp` 만 만든다 — 고정 문구 둘이라 그대로 옮긴다. 값 뒤 바이트는 끝까지 온 쓸 수 없는 응답이라
         // 아래 `Parse` 와 같은 `Auth` 다. 상한 초과는 다 받지 않은 응답이라 `Transport` 다(admin 레인과 같다).
@@ -1307,7 +1319,7 @@ mod tests {
     #[test]
     fn map_token_err_other_is_transport_only_for_an_unsent_request() {
         use openidconnect::RequestTokenError as RTE;
-        let class = |msg: &str| match map_token_err(RTE::Other(msg.into())) {
+        let class = |msg: &str| match map_token_err(RTE::Other(msg.into()), &[]) {
             KeycloakError::Transport(_) => "Transport",
             KeycloakError::Auth {
                 oauth_error: None, ..
