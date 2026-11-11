@@ -626,6 +626,8 @@ class TokenResponseGuardTest {
   @Test void codingGuard_turnsAHeaderZipExceptionIntoTheSameRejection() throws IOException {
     FaultyCloseBody raw = new FaultyCloseBody();
     ReaderInterceptorContext ctx = readContext(Boolean.TRUE, raw);
+    org.apache.http.client.methods.HttpPost post = new org.apache.http.client.methods.HttpPost(TOKEN);
+    when(ctx.getProperty(AdminEngine.EXCHANGE)).thenReturn(new AdminEngine.Exchange(post, 1000));
     when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
     when(ctx.proceed()).thenThrow(new java.util.zip.ZipException("Not in GZIP format"));
     TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
@@ -634,6 +636,7 @@ class TokenResponseGuardTest {
     assertEquals(200, e.status());
     assertNull(e.getCause());
     assertEquals(1, raw.closes, "거부 전에 스트림을 닫아야 한다");
+    assertTrue(post.isAborted(), "거부 전에 교환을 끊어야 한다 — 닫기만 하면 HttpCore 가 나머지를 EOF 까지 비운다");
 
     java.io.EOFException cut = new java.io.EOFException("Unexpected end of ZLIB input stream");
     ReaderInterceptorContext truncated = readContext(Boolean.TRUE, bytes("x"));

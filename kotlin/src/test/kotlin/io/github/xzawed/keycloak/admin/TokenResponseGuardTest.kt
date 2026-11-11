@@ -680,6 +680,10 @@ internal class TokenResponseGuardTest {
                 }
             }
         val ctx = readContext(true, raw)
+        val post =
+            org.apache.http.client.methods
+                .HttpPost(TRG_TOKEN)
+        every { ctx.getProperty(AdminEngine.EXCHANGE) } returns AdminEngine.Exchange(post, 1000)
         every { ctx.getProperty(TokenResponseGuard.STATUS) } returns 200
         every { ctx.proceed() } throws java.util.zip.ZipException("Not in GZIP format")
         val e = assertFailsWith<UnusableTokenResponse> { TokenCodingGuard().aroundReadFrom(ctx) }
@@ -687,6 +691,7 @@ internal class TokenResponseGuardTest {
         assertEquals(200, e.status)
         assertNull(e.cause)
         assertEquals(1, closes, "거부 전에 스트림을 닫아야 한다")
+        assertTrue(post.isAborted, "거부 전에 교환을 끊어야 한다 — 닫기만 하면 HttpCore 가 나머지를 EOF 까지 비운다")
 
         val cut = java.io.EOFException("Unexpected end of ZLIB input stream")
         val truncated = readContext(true, bytes("x"))
