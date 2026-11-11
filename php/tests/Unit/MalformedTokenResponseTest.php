@@ -100,6 +100,7 @@ final class MalformedTokenResponseTest extends TestCase
         // 400 의 `error` 가 문자열이 아니다 — stevenmaguire 의 checkResponse 가 배열을 예외 메시지로 넘겨 `\TypeError` 였고 transport 로 샜다.
         'e7 400 error array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'e8 400 error array with description' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        'e9 400 error empty array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'f short non-JSON body' => ['introspect' => 'auth'],
         'f2 long non-JSON body' => ['introspect' => 'auth'],
         'f3 401 error_description echo' => ['introspect' => 'auth'],
@@ -155,6 +156,8 @@ final class MalformedTokenResponseTest extends TestCase
         'e7 400 error array|clientCredentialsToken' => ['token request rejected', null,
             'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
         'e7 400 error array|provider.getToken' => ['client-credentials failed', null, null],
+        'e9 400 error empty array|clientCredentialsToken' => ['token request rejected', null,
+            'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
         'f3 401 error_description echo|introspect' => ['introspection failed', null,
             'GuzzleHttp\Exception\ClientException: HTTP 401 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
         'u2 introspect handler RuntimeException|introspect' => ['introspection failed unexpectedly', null,
@@ -344,6 +347,7 @@ final class MalformedTokenResponseTest extends TestCase
             ]), 'canaries' => [
                 'e8.ARR' => ['LKe8ARR-error-array-member', true], 'e8.DESC' => ['LKe8DESC-description-beside-array', true],
             ]],
+            'e9 400 error empty array' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => '{"error":[]}', 'canaries' => []],
             // (f) introspect 의 같은 모양.
             'f short non-JSON body' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => 'LKf1SHORTbody',
                 'canaries' => ['f.SHORT' => ['LKf1SHORTbody', true]]],

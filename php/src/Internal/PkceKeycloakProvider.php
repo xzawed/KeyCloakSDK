@@ -57,13 +57,14 @@ final class PkceKeycloakProvider extends Keycloak
      * → `KeycloakTransportError`), and with an `error_description` beside it an "Array to string conversion" warning. The
      * response arrived and its status decided: an IdP rejection, and no code (`OAuthErrorCode` carries only a string).
      *
-     * An empty array stays upstream's (it skips an empty `error`).
+     * An empty array is one too — upstream skipped it as an empty `error`, so a 400 `{"error":[]}` went on to fail as "no usable
+     * access_token", a reason that was not the one (.NET also refuses any `error` member that is present).
      *
      * @param mixed $data
      */
     protected function checkResponse(ResponseInterface $response, $data): void
     {
-        if (\is_array($data) && \is_array($data['error'] ?? null) && $data['error'] !== []) {
+        if (\is_array($data) && \is_array($data['error'] ?? null)) {
             throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
         }
         parent::checkResponse($response, $data);
