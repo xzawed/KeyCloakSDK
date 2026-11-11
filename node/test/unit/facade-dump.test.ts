@@ -53,6 +53,10 @@ import {
 
 /** 걷기에 안 닿아도 되는 클래스와 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다. */
 const EXEMPT: Readonly<Record<string, string>> = {
+  ResponseUnusableError:
+    '내부 신호(token-response-cap.ts) — 상한 fetch 가 끝까지 온 토큰 · introspection 응답을 쓸 수 없으면(짝 없는 ' +
+    '서로게이트 · 풀 수 없는 content-coding — ResponseNotUtf8Error 의 부모) 던지고 openid-client 가 ClientError 로 ' +
+    '감싸며, auth.ts 가 KeycloakAuthError 로 바꾼다. 인스턴스는 공개 API 로 나오지 않는다(auth-token-response-residue.test.ts)',
   ResponseNotUtf8Error:
     '내부 신호(token-response-cap.ts) — 상한 fetch 가 2xx 토큰 · introspection 본문이 UTF-8 이 아니면 던지고 ' +
     'openid-client 가 ClientError 로 감싸며, auth.ts 가 KeycloakAuthError 로 바꾼다. KeycloakError 생성자가 cause 를 ' +

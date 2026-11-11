@@ -54,32 +54,110 @@ export function responseTooLarge(error: unknown): ResponseTooLargeError | undefi
 }
 
 /**
- * The signal of a 2xx token or introspection body that is not UTF-8 (RFC 8259 §8.1) — the response arrived but cannot
- * be used, so the boundary (`auth.ts`) reports it as `KeycloakAuthError` (registry `token-response-class-divergent`,
- * decision D1). oauth4webapi reads the body with `response.json()`, whose decoder turns a byte that is not UTF-8 into
- * U+FFFD without an error — the grants and introspection returned a token or a claim the IdP never sent as a success
- * (measured 2026-11-10).
+ * The signal of a token or introspection response that arrived but cannot be used as it came, so the boundary
+ * (`auth.ts`) reports it as `KeycloakAuthError`, not as a transport failure: a 2xx body that is not UTF-8
+ * ({@link ResponseNotUtf8Error}), a 2xx body holding an unpaired surrogate escape ({@link holdsUnpairedSurrogate}), or —
+ * at any status — a content coding that does not decode ({@link fetchTokenEndpointBounded}; registry
+ * `token-response-class-residue`, decisions Q2 · Q1, 2026-11-11).
  */
-export class ResponseNotUtf8Error extends Error {
+export class ResponseUnusableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ResponseUnusableError'
+  }
+}
+
+/**
+ * The signal of a 2xx token or introspection body that is not UTF-8 (RFC 8259 §8.1) — the response arrived but cannot
+ * be used (registry `token-response-class-divergent`, decision D1). oauth4webapi reads the body with `response.json()`,
+ * whose decoder turns a byte that is not UTF-8 into U+FFFD without an error — the grants and introspection returned a
+ * token or a claim the IdP never sent as a success (measured 2026-11-10).
+ */
+export class ResponseNotUtf8Error extends ResponseUnusableError {
   constructor(kind: string) {
     super(`${kind} is not valid UTF-8`)
     this.name = 'ResponseNotUtf8Error'
   }
 }
 
-/** Finds the UTF-8 signal in the cause chain — `undefined` if there is none. */
-export function responseNotUtf8(error: unknown): ResponseNotUtf8Error | undefined {
+/** Finds the signal of an unusable response in the cause chain — `undefined` if there is none. */
+export function responseUnusable(error: unknown): ResponseUnusableError | undefined {
   let link: unknown = error
   for (let depth = 0; depth < 8 && link instanceof Error; depth += 1) {
-    if (link instanceof ResponseNotUtf8Error) return link
+    if (link instanceof ResponseUnusableError) return link
     link = link.cause
   }
   return undefined
 }
 
 /**
- * Whose 2xx body must be UTF-8 — the token and introspection responses. Discovery and logout keep what they had: an
- * error status is judged by its status, and logout reads no body.
+ * Whether a JSON text holds a `\u` escape of a UTF-16 surrogate without its pair — a low one with no high one before
+ * it, or a high one not followed at once by a low one — in a string value or a member name (RFC 8259 §8.2 allows the
+ * grammar, I-JSON §2.1 forbids it). `JSON.parse` turns it into a lone surrogate without an error, so the grants and
+ * introspection returned a token or a claim that cannot be sent back as UTF-8 (measured 2026-11-11, decision Q2: anywhere
+ * in the body, the whole response). It scans the bytes: escapes are ASCII and no byte of a multi-byte UTF-8 sequence
+ * equals `"` or `\`. An escaped `\` is not an escape, and a malformed escape is skipped and the scan goes on (the
+ * parser's to refuse — stopping there would miss what follows). The same scanner as the other eight languages.
+ */
+export function holdsUnpairedSurrogate(json: Uint8Array): boolean {
+  let inString = false
+  for (let i = 0; i < json.length; i += 1) {
+    const c = json[i]
+    if (!inString) {
+      inString = c === QUOTE
+    } else if (c === QUOTE) {
+      inString = false
+    } else if (c === BACKSLASH && i + 1 < json.length) {
+      if (json[i + 1] !== LOWER_U) {
+        i += 1 // a two-character escape — skip the escaped character
+        continue
+      }
+      const unit = hex4(json, i + 2)
+      if (unit < 0) {
+        i += 1 // a malformed escape — go on past its two characters
+        continue
+      }
+      i += 5
+      if (unit >= 0xdc00 && unit <= 0xdfff) return true // a low surrogate with no high one before it
+      if (unit >= 0xd800 && unit <= 0xdbff) {
+        const paired = i + 2 < json.length && json[i + 1] === BACKSLASH && json[i + 2] === LOWER_U
+        const low = paired ? hex4(json, i + 3) : -1
+        if (low < 0xdc00 || low > 0xdfff) return true
+        i += 6
+      }
+    }
+  }
+  return false
+}
+
+const QUOTE = 0x22
+const BACKSLASH = 0x5c
+const LOWER_U = 0x75
+
+/** The value of the four hex digits (either case) at `json[at]`, or -1. */
+function hex4(json: Uint8Array, at: number): number {
+  if (at + 4 > json.length) return -1
+  let value = 0
+  for (let k = at; k < at + 4; k += 1) {
+    const d = json[k] ?? -1
+    const digit =
+      d >= 0x30 && d <= 0x39
+        ? d - 0x30
+        : d >= 0x61 && d <= 0x66
+          ? d - 0x57
+          : d >= 0x41 && d <= 0x46
+            ? d - 0x37
+            : -1
+    if (digit < 0) return -1
+    value = (value << 4) | digit
+  }
+  return value
+}
+
+/**
+ * Whose body is judged — the token and introspection responses: a 2xx body must be UTF-8 without an unpaired surrogate
+ * escape, and no body's content coding may fail to decode. Discovery and logout keep what they had: an error status is
+ * judged by its status, and logout reads no body.
  */
 function utf8Kind(url: string): string | undefined {
   const path = new URL(url).pathname.replace(/\/+$/, '')
@@ -174,6 +252,36 @@ async function readCappedChunks(
 }
 
 /**
+ * {@link readCapped} — and for a token or introspection response (`kind`), a content coding that does not decode becomes
+ * {@link ResponseUnusableError}: every byte arrived (decision Q1, 2026-11-11; it was a transport failure — undici errors
+ * the body with `TypeError('terminated')` whose cause is zlib's `Z_DATA_ERROR`, measured Node 22.18: not gzip, corrupt
+ * deflate, bad CRC, bytes after a member). Truncation is not mapped: undici reports none for a gzip that is merely
+ * missing its CRC/length trailer (it is accepted), and anything else it throws stays what it was.
+ */
+async function readDecoded(
+  body: ReadableStream<Uint8Array>,
+  kind: string | undefined,
+): Promise<Uint8Array> {
+  try {
+    return await readCapped(body, TOKEN_RESPONSE_MAX_BYTES)
+  } catch (e) {
+    if (kind !== undefined && zlibDataError(e))
+      throw new ResponseUnusableError(`${kind} could not be decoded`)
+    throw e
+  }
+}
+
+/** Whether zlib's `Z_DATA_ERROR` is in the cause chain (at most 8 links). */
+function zlibDataError(error: unknown): boolean {
+  let link: unknown = error
+  for (let depth = 0; depth < 8 && link instanceof Error; depth += 1) {
+    if ((link as { code?: unknown }).code === 'Z_DATA_ERROR') return true
+    link = link.cause
+  }
+  return false
+}
+
+/**
  * A fetch that reads the response body only up to {@link TOKEN_RESPONSE_MAX_BYTES} and hands it back as a new
  * `Response` with the same status and headers — plugged into openid-client's `[customFetch]` slot. A response that
  * passes through this fetch is entirely in memory, within the cap.
@@ -189,9 +297,13 @@ export async function fetchTokenEndpointBounded(
 ): Promise<Response> {
   const response = await fetch(url, init)
   if (response.body === null || response.status < 200 || response.status > 599) return response
-  const body = await readCapped(response.body, TOKEN_RESPONSE_MAX_BYTES)
-  const kind = response.status < 300 ? utf8Kind(url) : undefined
-  if (kind !== undefined && !isUtf8(body)) throw new ResponseNotUtf8Error(kind)
+  const kind = utf8Kind(url)
+  const body = await readDecoded(response.body, kind)
+  if (kind !== undefined && response.status < 300) {
+    if (!isUtf8(body)) throw new ResponseNotUtf8Error(kind)
+    if (holdsUnpairedSurrogate(body))
+      throw new ResponseUnusableError(`${kind} holds an unpaired surrogate escape`)
+  }
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,

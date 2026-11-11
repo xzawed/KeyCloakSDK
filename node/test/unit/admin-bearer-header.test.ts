@@ -86,9 +86,16 @@ const UNSENDABLE: ReadonlyArray<readonly [label: string, jsonLiteral: string]> =
   ['CR 이 안에 있다', '"SECRETabc\\rdef"'],
   ['NUL 이 있다', '"SECRETabc\\u0000def"'],
   ['U+0100(> U+00FF)', '"SECRETabc\\u0100def"'],
-  ['짝 없는 서로게이트 U+D800', '"SECRETabc\\ud800def"'],
   ['U+FFFD(잘못된 UTF-8 이 풀린 값)', '"SECRETabc\\ufffddef"'],
 ]
+
+/**
+ * 짝 없는 서로게이트 이스케이프(`\ud800`)는 Bearer 규칙에 닿기 전에 **토큰 응답째** 거부된다 — 본문 어디에 있든 그 응답을
+ * 쓸 수 없다(등록부 token-response-class-residue 판정 Q2, 2026-11-11). 그래서 메시지는 규칙의 것이 아니라 그랜트의 것이다.
+ */
+const SURROGATE_LITERAL = '"SECRETabc\\ud800def"'
+const WHOLE_RESPONSE =
+  'Client credentials grant failed: token response holds an unpaired surrogate escape'
 
 /**
  * 아홉 언어 같은 표(결정 2026-10-29, 등록부 `bearer-token-grammar-divergent`) — 앞뒤의 SP·HTAB·CR·LF 넷만 떼고,
@@ -290,6 +297,32 @@ describe('admin — 헤더에 실을 수 없는 Bearer 는 토큰 없는 SDK 오
       expect(idp.counts.admin).toBe(before)
     },
   )
+
+  it('짝 없는 서로게이트 이스케이프 U+D800 — 규칙에 닿기 전에 토큰 응답째 거부한다(판정 Q2)', async () => {
+    serveToken(SURROGATE_LITERAL)
+    const before = idp.counts.admin
+    const refused = await refusal(client().admin())
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused.message).toBe(WHOLE_RESPONSE)
+    expect(idp.counts.admin).toBe(before)
+    for (const text of renderings(refused)) expect(text).not.toContain('SECRET')
+
+    serveToken('"first"', 10) // 곧 만료 — 다음 호출이 다시 받는다
+    const admin = await client().admin()
+    serveToken(SURROGATE_LITERAL)
+    const again = idp.counts.admin
+    for (const call of [
+      () => admin.realms.list(),
+      () => admin.users.search('u'),
+      () => admin.raw().realms.find(),
+    ]) {
+      const refusedAgain = await refusal(call())
+      expect(refusedAgain).toBeInstanceOf(KeycloakAuthError)
+      expect(refusedAgain.message).toBe(WHOLE_RESPONSE)
+      for (const text of renderings(refusedAgain)) expect(text).not.toContain('SECRET')
+    }
+    expect(idp.counts.admin).toBe(again)
+  })
 
   it('소비자가 주입한 TokenProvider 도 같은 자리를 지난다', async () => {
     const config = defineConfig({
