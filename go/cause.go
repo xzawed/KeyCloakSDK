@@ -180,9 +180,10 @@ type belowHTTPSlot struct {
 	// sent: the call reached the transport at all — a failure without it (x/oauth2 refusing an empty refresh token) sent
 	// nothing, and stays *AuthError. arrived: the last request got a response (status line and headers). cut: a Read of
 	// that response's body ended in an error that is not io.EOF — the transport, a deadline, broken framing, the size cap,
-	// or a gzip body that does not decode. ⚠️ gzip is decoded by this stack (net/http or decodedGzip), so its failure is
-	// framing-like and counts as cut (*TransportError); deflate and br are not decoded and arrive as raw bytes that fail as
-	// JSON (*AuthError) — rust draws the same line (#951/#952 independent legs). status: the last response's code.
+	// or a gzip stream cut short. ⚠️ A gzip body that does not decode is NOT counted here as the decider: a token request
+	// records it as a refusal (tokencap.go errTokenResponseUndecodable — *AuthError, decision Q1, 2026-11-11), which
+	// grantFailed · loginError read first. deflate and br are not decoded and arrive as raw bytes that fail as JSON
+	// (*AuthError) — rust draws the same line (#951/#952 independent legs). status: the last response's code.
 	sent, arrived, cut atomic.Bool
 	status             atomic.Int64
 }
@@ -272,7 +273,7 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		slot.keep(ctx, err)
 		return resp, err
 	}
-	resp.Body = strictUTF8(ctx, resp.StatusCode, capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot})))
+	resp.Body = strictBody(ctx, resp.StatusCode, capTokenResponse(ctx, decodedGzip(resp, wireScrubBody{ReadCloser: resp.Body, ctx: ctx, slot: slot})))
 	if slot != nil {
 		slot.arrived.Store(true)
 		slot.status.Store(int64(resp.StatusCode))
@@ -310,9 +311,14 @@ type wireScrubBody struct {
 	slot *belowHTTPSlot
 }
 
-// Read returns io.EOF itself (belowHTTP), so callers comparing err == io.EOF still see the end.
+// Read returns io.EOF itself (belowHTTP), so callers comparing err == io.EOF still see the end. A gzip decoder's verdict on
+// the bytes (net/http's reader sits below this body) passes as it is too — its text is the decoder's own and quotes nothing
+// the server sent, and the token cap above turns it into errTokenResponseUndecodable (tokencap.go, decision Q1).
 func (b wireScrubBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
+	if undecodable(err) {
+		return n, err
+	}
 	err = scrubWire(err)
 	b.slot.keep(b.ctx, err)
 	return n, err
@@ -330,12 +336,12 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 // never in OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect
 // target, which the IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept
 // in below when gocloak dropped it (a deadline that ended the exchange), so errors.Is still finds it.
-func loginError(err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot, sent ...string) error {
+func loginError(err error, capped *atomic.Bool, strict *bodyRefusal, below *belowHTTPSlot, sent ...string) error {
 	typ := fmt.Sprintf("%T", err)
-	// A 2xx body that is not UTF-8 arrived and is unusable (tokencap.go) — checked first, because the check withheld the
-	// EOF that below's arrival mark waits for.
-	if notUTF8.Load() && !capped.Load() {
-		msg := "client-credentials login failed: " + errTokenResponseNotUTF8.Error()
+	// A body that is not UTF-8, holds an unpaired surrogate escape or does not decode arrived and is unusable (tokencap.go)
+	// — checked first, because the check withheld the EOF that below's arrival mark waits for.
+	if why := strict.reason(); why != nil && !capped.Load() {
+		msg := "client-credentials login failed: " + why.Error()
 		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
 	}
 	var apiErr *gocloak.APIError

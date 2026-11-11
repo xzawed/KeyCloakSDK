@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -35,23 +36,135 @@ func TestUTF8BodyFollowsASequenceAcrossReads(t *testing.T) {
 		{"surrogate half", "{\"u\":\"\xed\xa0\x80\"}", false},
 	}
 	for _, c := range cases {
-		bad := new(atomic.Bool)
-		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), bad: bad}
+		refused := new(bodyRefusal)
+		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), refused: refused}
 		got, err := io.ReadAll(b)
 		if c.ok {
-			if err != nil || string(got) != c.body || bad.Load() {
-				t.Errorf("%s: must pass whole: %q, err %v, flag %v", c.name, got, err, bad.Load())
+			if err != nil || string(got) != c.body || refused.reason() != nil {
+				t.Errorf("%s: must pass whole: %q, err %v, refusal %v", c.name, got, err, refused.reason())
 			}
-		} else if !errors.Is(err, errTokenResponseNotUTF8) || !bad.Load() {
-			t.Errorf("%s: must be refused: err %v, flag %v", c.name, err, bad.Load())
+		} else if !errors.Is(err, errTokenResponseNotUTF8) || refused.reason() != errTokenResponseNotUTF8 {
+			t.Errorf("%s: must be refused: err %v, refusal %v", c.name, err, refused.reason())
 		}
 	}
 }
 
-// TestStrictUTF8WrapsOnlyMarkedSuccessBodies — 오류 상태(3xx 이상)의 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은
+// TestUTF8BodyRefusesAnUnpairedSurrogateAtEOF — 짝 없는 서로게이트 이스케이프는 본문이 끝까지 온 뒤에 거부한다(등록부
+// token-response-class-residue 판정 Q2). 한 바이트씩 읽어 이스케이프가 읽기 사이에서 잘려도 같은 판정이다. 끝에 닿기 전의
+// 읽기 오류(잘린 본문)는 그대로 지나간다 — 다 오지 않은 응답이다.
+func TestUTF8BodyRefusesAnUnpairedSurrogateAtEOF(t *testing.T) {
+	u := `\` + "u"
+	for _, c := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"in a value", `{"access_token":"at` + u + `d800"}`, errTokenResponseUnpairedSurrogate},
+		{"in a member name", `{"access_token":"at","` + u + `dc00":1}`, errTokenResponseUnpairedSurrogate},
+		{"a valid pair", `{"access_token":"at","x":"` + u + `d83d` + u + `de00"}`, nil},
+		{"not UTF-8 wins", "{\"access_token\":\"a\xff\",\"x\":\"" + u + "d800\"}", errTokenResponseNotUTF8},
+	} {
+		refused := new(bodyRefusal)
+		b := &utf8Body{ReadCloser: io.NopCloser(iotest.OneByteReader(strings.NewReader(c.body))), refused: refused}
+		got, err := io.ReadAll(b)
+		if c.want == nil {
+			if err != nil || string(got) != c.body || refused.reason() != nil {
+				t.Errorf("%s: must pass whole: %q, err %v, refusal %v", c.name, got, err, refused.reason())
+			}
+		} else if !errors.Is(err, c.want) || refused.reason() != c.want {
+			t.Errorf("%s: must be refused with %v: err %v, refusal %v", c.name, c.want, err, refused.reason())
+		}
+	}
+	cut := errors.New("cut short")
+	refused := new(bodyRefusal)
+	b := &utf8Body{ReadCloser: io.NopCloser(io.MultiReader(strings.NewReader(`{"x":"`+u+`d800"`), iotest.ErrReader(cut))), refused: refused}
+	if _, err := io.ReadAll(b); !errors.Is(err, cut) || refused.reason() != nil {
+		t.Errorf("a body cut short must pass its error through unjudged: err %v, refusal %v", err, refused.reason())
+	}
+}
+
+// TestHoldsUnpairedSurrogateJudgesEscapesNotText — 이스케이프를 판정한다, 글자가 아니라. JVM
+// `holdsUnpairedSurrogate judges escapes, not text` · python `test_the_unpaired_surrogate_scan_judges_escapes_not_text` 와
+// 같은 칸이다. 배치 판정과 utf8Body 의 상태 기계(통째로 · 한 바이트씩) 둘 다 잰다 — 한쪽만 재면 다른 쪽의 축소 편집
+// (`<= 0xDBFF` → `<`, 짝의 범위 검사 없앰)이 살아남았다(변이 g-17 · g-20, 2026-11-11).
+func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
+	u := `\` + "u"
+	for json, want := range map[string]bool{
+		`{"a":"` + u + `d800` + u + `d800"}`: true, // 높은 것 뒤의 높은 것
+		`{"a":"` + u + `dbff` + u + `e000"}`: true, // 높은 것 뒤의 서로게이트 아닌 것
+		`{"a":"` + u + `d800` + u + `dc0"}`:  true, // 높은 것 뒤의 잘린 이스케이프
+		`{"a":"` + u + `d800\"`:              true, // 높은 것 뒤의 두 글자 이스케이프
+		`{"a":"` + u + `dbff` + u + `dfff"}`: false,
+		// 짝의 낮은 쪽 첫 값 · 짝 앞에 와야 할 `\` 와 `u` — 실행 레그가 살린 축소 편집 넷(2026-11-11)
+		`{"a":"` + u + `d800` + u + `dc00"}`: false,
+		`{"a":"` + u + `d800xudc00"}`:        true,
+		`{"a":"` + u + `d800\ndc00"}`:        true,
+		// node 실행 레그가 살린 편집들 — 짝 뒤 다음 문자열의 홀로 선 것 · 대문자 F · 짝 앞의 `\"` 와 `\\`
+		`{"a":"` + u + `d83d` + u + `de00","b":"` + u + `d800"}`: true,
+		`{"a":"` + u + `DBFF"}`:                                  true,
+		`{"a":"` + u + `DFFF"}`:                                  true,
+		`{"a":"` + u + `d800\"dc00"}`:                            true,
+		`{"a":"` + u + `d800\\dc00"}`:                            true,
+		`{"a":"` + u + `d800"}`:                                  true,
+		`{"a":"` + u + `dc00"}`:                                  true,
+		`{"` + u + `d800":1}`:                                    true,
+		`{"a":"x` + u + `D800"}`:                                 true,
+		`{"a":"` + u + `d800` + u + `0041"}`:                     true,
+		`{"a":"` + u + `dbff"}`:                                  true,
+		`{"a":["ok","` + u + `dfff"]}`:                           true,
+		`{"a":"` + u + `ZZZZ","b":"` + u + `DC00"}`:              true, // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그)
+		`{"x":"a\"b","y":"` + u + `dc00"}`:                       true, // 이스케이프된 따옴표가 문자열을 닫지 않는다(JVM 실행 레그)
+		`{"a":"` + u + `d83d` + u + `de00"}`:                     false,
+		`{"a":"\\` + `ud800"}`:                                   false,
+		`{"a":"` + u + `0041"}`:                                  false,
+		`{"a":"plain"}`:                                          false,
+		`{"a":"` + u + `zz00"}`:                                  false,
+		`{"a":1} ` + u + `d800`:                                  false,
+		`{"a":"\"` + u + `d83d` + u + `de00"}`:                   false,
+	} {
+		if got := holdsUnpairedSurrogate([]byte(json)); got != want {
+			t.Errorf("batch %s: %v, want %v", json, got, want)
+		}
+		var whole, bytewise surrogateScan
+		whole.feed([]byte(json))
+		for i := range len(json) {
+			bytewise.feed([]byte(json[i : i+1]))
+		}
+		if whole.ended() != want || bytewise.ended() != want {
+			t.Errorf("stream %s: whole %v, byte by byte %v, want %v", json, whole.ended(), bytewise.ended(), want)
+		}
+	}
+}
+
+// TestSurrogateScanAgreesWithTheBatchScanner — utf8Body 의 상태 기계(surrogateScan)는 같은 바이트를 어떻게 잘라 먹이든 배치
+// 판정(holdsUnpairedSurrogate — 여덟 언어와 같은 스캐너)과 같은 답이다. 텍스트는 이스케이프 토막(높은 · 낮은 · 범위 끝 ·
+// 서로게이트 아닌 것 · 형식이 틀린 것 · 두 글자)과 따옴표 · 글자를 무작위로 잇고, 무작위로 잘라 먹인다(고정 시드). 글자 단위로
+// 지으면 「높은 것 뒤의 서로게이트 아닌 이스케이프」 같은 모양이 거의 안 나와 스트림 쪽 축소 편집이 살아남았다(변이 g-17).
+func TestSurrogateScanAgreesWithTheBatchScanner(t *testing.T) {
+	rng := rand.New(rand.NewPCG(20261111, 2))
+	pieces := []string{`"`, `"`, `\`, `\"`, `\\`, `\u`, `\ud800`, `\udbff`, `\udc00`, `\udfff`, `\uD83D`, `\uDE00`,
+		`\u` + "0041", `\u` + "e000", `\u` + "d7ff", `\u` + "d800" + `\u` + "dc00", `\uzz`, `\ud8`, `u`, `d8`, `00`, `dc00`, `dfff`, `udc00`, `\n`, `x`, `:`, `{`}
+	for n := 0; n < 200000; n++ {
+		var text []byte
+		for k := rng.IntN(10); k > 0; k-- {
+			text = append(text, pieces[rng.IntN(len(pieces))]...)
+		}
+		var s surrogateScan
+		for rest := text; len(rest) > 0; {
+			k := 1 + rng.IntN(len(rest))
+			s.feed(rest[:k])
+			rest = rest[k:]
+		}
+		if got, want := s.ended(), holdsUnpairedSurrogate(text); got != want {
+			t.Fatalf("%q: stream %v, batch %v", text, got, want)
+		}
+	}
+}
+
+// TestStrictBodyWrapsOnlyMarkedSuccessBodies — 오류 상태(3xx 이상)의 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은
 // 감싸지 않는다.
-func TestStrictUTF8WrapsOnlyMarkedSuccessBodies(t *testing.T) {
-	marked, _ := withStrictUTF8(context.Background())
+func TestStrictBodyWrapsOnlyMarkedSuccessBodies(t *testing.T) {
+	marked, _ := withStrictBody(context.Background())
 	body := io.NopCloser(strings.NewReader("x"))
 	for _, c := range []struct {
 		ctx     context.Context
@@ -61,7 +174,7 @@ func TestStrictUTF8WrapsOnlyMarkedSuccessBodies(t *testing.T) {
 		{marked, 200, true}, {marked, 204, true}, {marked, 302, false}, {marked, 400, false}, {marked, 503, false},
 		{context.Background(), 200, false},
 	} {
-		if _, got := strictUTF8(c.ctx, c.status, body).(*utf8Body); got != c.wrapped {
+		if _, got := strictBody(c.ctx, c.status, body).(*utf8Body); got != c.wrapped {
 			t.Errorf("status %d (marked %v): wrapped %v, want %v", c.status, c.ctx != context.Background(), got, c.wrapped)
 		}
 	}

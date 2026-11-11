@@ -11,6 +11,8 @@ package keycloak
 // (TestAdminTokenFailureNeverMatchesAdminSentinels). 칸 하나를 바꾸면 등록부 `token-response-class-divergent` 도 본다.
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -31,6 +33,7 @@ type classRow struct {
 	status   int
 	ctype    string
 	body     string
+	encoding string // 있으면 Content-Encoding 으로 단다(body 는 그 코딩의 바이트다)
 	toSelf   bool   // Location 이 같은 token 주소다 — 따라가지 않는 SDK 는 3xx 를 그대로 받는다
 	raw      string // 있으면 소켓이 이 바이트를 그대로 쓴다(newRawIdP)
 	nowhere  bool   // 닿지 않는 IdP
@@ -91,7 +94,74 @@ var classRows = []classRow{
 		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
 	{name: "n-unreachable", nowhere: true,
 		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
+	// 2026-11-11(등록부 token-response-class-residue). 짝 없는 서로게이트 이스케이프는 어디에 있든 응답 전체를 쓸 수 없다(판정 Q2) —
+	// encoding/json 이 U+FFFD 로 바꾸고 받아들였다(그랜트 셋 · Introspect 성공, admin 은 토큰 칸만 bearer 규칙이 거부). 짝을 이룬 것은
+	// 받는다(대조군).
+	{name: "r13-surrogate-in-extension", status: 200, ctype: "application/json",
+		body: classWith(`"x_ext":"\ud800"`), contains: "unpaired surrogate escape",
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r14-surrogate-in-member-name", status: 200, ctype: "application/json",
+		body: classWith(`"\udc00":1`), contains: "unpaired surrogate escape",
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r15-surrogate-as-access-token", status: 200, ctype: "application/json",
+		body:     `{"access_token":"\ud800","token_type":"Bearer","expires_in":300,"refresh_token":"rt","active":true}`,
+		contains: "unpaired surrogate escape",
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r17-valid-surrogate-pair", status: 200, ctype: "application/json", body: classWith(`"scope":"a\ud83d` + `\ude00b"`),
+		expected: [6]string{"ok", "ok", "ok", "ok", "ok", "ok"}},
+	// 깨진 gzip — 머리와 길이는 온전하고 끝까지 온 바이트를 풀지 못했다(판정 Q1 — 전에는 해제기의 오류가 끊긴 본문으로 세어져
+	// transport). 오류 상태도 그 상태가 판정한다(auth). 잘린 gzip(io.ErrUnexpectedEOF)은 끊긴 연결과 가를 수 없어 transport 다.
+	{name: "r16-valid-gzip", status: 200, ctype: "application/json", encoding: "gzip", body: classGzip(classUsable),
+		expected: [6]string{"ok", "ok", "ok", "ok", "ok", "ok"}},
+	{name: "r16-corrupt-deflate", status: 200, ctype: "application/json", encoding: "gzip", body: classCorruptGzip,
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r16-not-gzip", status: 200, ctype: "application/json", encoding: "gzip", body: strings.Repeat("x", 40),
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r16-corrupt-deflate-400", status: 400, ctype: "application/json", encoding: "gzip", body: classCorruptGzip,
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	// 꼬리의 CRC-32 · 길이가 틀렸다(gzip.ErrChecksum) — 실행 레그: 이 칸이 없어 ErrChecksum 을 빼는 편집이 살아남았다.
+	{name: "r16-bad-checksum", status: 200, ctype: "application/json", encoding: "gzip", body: classFlip(classUsable, 8),
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r16-bad-length", status: 200, ctype: "application/json", encoding: "gzip", body: classFlip(classUsable, 4),
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	// 멤버 뒤의 바이트는 다음 gzip 멤버의 머리로 읽힌다 — 머리가 아니면 풀지 못한다(gzip.ErrHeader). 푼 본문이 정확히 상한이면 그
+	// 판정은 상한 너머 한 바이트를 보는 읽기(cappedBody.lookPast)에서 난다. ⚠️ 머리 열 바이트에 못 미치는 꼬리는 잘린 머리
+	// (io.ErrUnexpectedEOF)라 transport 다 — 위 잘린 gzip 과 같은 모양이다(실측).
+	{name: "r16-garbage-after-member", status: 200, ctype: "application/json", encoding: "gzip",
+		body: classGzip(classUsable) + strings.Repeat("x", 40), contains: "could not be decoded",
+		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r16-garbage-after-a-member-of-exactly-the-cap", status: 200, ctype: "application/json", encoding: "gzip",
+		body:     classGzip(classUsable+strings.Repeat(" ", tokenResponseMaxBytes-len(classUsable))) + strings.Repeat("x", 40),
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r16-truncated-gzip", status: 200, ctype: "application/json", encoding: "gzip",
+		body:     classGzip(classUsable)[:len(classGzip(classUsable))-8],
+		expected: [6]string{"Transport", "Transport", "Transport", "Transport", "Transport", "Transport"}},
 }
+
+// classWith is classUsable with one more member.
+func classWith(member string) string {
+	return strings.TrimSuffix(classUsable, "}") + "," + member + "}"
+}
+
+// classGzip is s gzip-coded.
+func classGzip(s string) string {
+	var b bytes.Buffer
+	w := gzip.NewWriter(&b)
+	_, _ = w.Write([]byte(s))
+	_ = w.Close()
+	return b.String()
+}
+
+// classFlip is s gzip-coded with one byte of its 8-byte trailer flipped — back 8 is in the CRC-32, back 4 in the length.
+func classFlip(s string, back int) string {
+	b := []byte(classGzip(s))
+	b[len(b)-back] ^= 0xff
+	return string(b)
+}
+
+// classCorruptGzip is a gzip header followed by bytes that are not a deflate stream (a stored block whose lengths do not
+// match) — every byte arrives, none decodes.
+const classCorruptGzip = "\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff" + "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 func classKind(err error) string {
 	var ae *AuthError
@@ -125,6 +195,9 @@ func classServer(t *testing.T, r classRow) string {
 			w.Header().Set("Location", srv.URL+req.URL.Path)
 		}
 		w.Header().Set("Content-Type", r.ctype)
+		if r.encoding != "" {
+			w.Header().Set("Content-Encoding", r.encoding)
+		}
 		w.WriteHeader(r.status)
 		_, _ = w.Write([]byte(r.body))
 	}))
