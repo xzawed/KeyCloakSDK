@@ -25,6 +25,7 @@ use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\SanitizedCause;
 use Xzawed\Keycloak\Internal\BearerToken;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
+use Xzawed\Keycloak\Internal\ResponseFailure;
 use Xzawed\Keycloak\Internal\TokenResponseCap;
 
 /**
@@ -67,6 +68,9 @@ final class ErrorTranslation
      * 파서로 먼저 풀어 거부하므로 fschmtt 0.44 에서는 닿지 않는다. 어느 토큰인지 모르므로 메시지는 그것을 가리키지 않는다.
      */
     private const GRANT_NOT_A_JWT = 'admin token request failed: a token in the token response cannot be read as a JWT';
+
+    /** 부여 응답의 머리와 본문은 왔는데 content-coding 을 풀 수 없다(curl 61 — `ResponseFailure`) — 끝까지 온 응답이 쓸 수 없다. */
+    private const GRANT_UNDECODABLE = 'admin token request failed: the token response could not be decoded';
 
     /**
      * ⚠️ `$fn` is a closure that captures the representation being sent (password, client secret) — it is an argument of
@@ -116,6 +120,10 @@ final class ErrorTranslation
                 // fschmtt 가 받아 두기 전에 거부해 캐시되지 않았고 admin REST 요청은 나가지 않았다. 끝까지 온 응답이라 auth 계급이다 —
                 // auth 클라이언트의 같은 칸과 같다(등록부 token-response-class-divergent). ⚠️ 원인을 달지 않는다 — 위와 같은 이유.
                 throw new KeycloakAuthError($e->getMessage());
+            }
+            if (self::isTokenGrant($e->getRequest()) && ResponseFailure::undecodable($e)) {
+                // 부여 응답만 — admin REST 응답의 계급은 이 규칙 밖이다(그것은 admin 오류다).
+                throw new KeycloakAuthError(self::GRANT_UNDECODABLE, previous: SanitizedCause::of($e));
             }
             throw new KeycloakTransportError('admin request failed', previous: SanitizedCause::of($e));
         } catch (BuilderException $e) {

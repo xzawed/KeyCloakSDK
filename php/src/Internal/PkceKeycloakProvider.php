@@ -6,6 +6,7 @@ namespace Xzawed\Keycloak\Internal;
 
 use GuzzleHttp\Psr7\Utils;
 use League\OAuth2\Client\Grant\AbstractGrant;
+use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Token\AccessTokenInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -42,8 +43,30 @@ final class PkceKeycloakProvider extends Keycloak
         if (!\is_string($access) || $access === '' || $access === '0') {
             throw new TokenResponseUnusable();
         }
+        try {
+            return parent::createAccessToken($response, $grant);
+        } catch (\InvalidArgumentException) {
+            // Its one other refusal — an `expires_in` that is not numeric — fell into the same catch-all (measured 2026-11-11).
+            throw new TokenResponseRefused('has an unusable expires_in');
+        }
+    }
 
-        return parent::createAccessToken($response, $grant);
+    /**
+     * An OAuth error whose `error` is not a scalar (a JSON array or object): upstream passed it on as the exception message — a
+     * `\TypeError` that `AuthClient` could only call a transport failure (measured 2026-11-11: 400 `{"error":["invalid_grant"]}`
+     * → `KeycloakTransportError`), and with an `error_description` beside it an "Array to string conversion" warning. The
+     * response arrived and its status decided: an IdP rejection, and no code (`OAuthErrorCode` carries only a string).
+     *
+     * An empty array stays upstream's (it skips an empty `error`).
+     *
+     * @param mixed $data
+     */
+    protected function checkResponse(ResponseInterface $response, $data): void
+    {
+        if (\is_array($data) && \is_array($data['error'] ?? null) && $data['error'] !== []) {
+            throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
+        }
+        parent::checkResponse($response, $data);
     }
 
     /**
@@ -60,6 +83,9 @@ final class PkceKeycloakProvider extends Keycloak
         } catch (\Throwable $e) {
             if (TokenResponseCap::overflowed($sink)) {
                 throw new ResponseTooLarge('token response');
+            }
+            if (ResponseFailure::undecodable($e)) {
+                throw new TokenResponseRefused('could not be decoded');   // its head and body arrived (`ResponseFailure`)
             }
             throw $e;
         }

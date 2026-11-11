@@ -16,9 +16,11 @@ use Xzawed\Keycloak\Exception\SanitizedCause;
 use Xzawed\Keycloak\Exception\TokenValidationError;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
 use Xzawed\Keycloak\Internal\PkceKeycloakProvider;
+use Xzawed\Keycloak\Internal\ResponseFailure;
 use Xzawed\Keycloak\Internal\ResponseStalled;
 use Xzawed\Keycloak\Internal\ResponseTooLarge;
 use Xzawed\Keycloak\Internal\TokenResponseCap;
+use Xzawed\Keycloak\Internal\TokenResponseRefused;
 use Xzawed\Keycloak\Internal\TokenResponseUnusable;
 use Xzawed\Keycloak\Token\AuthorizationRequest;
 use Xzawed\Keycloak\Token\IntrospectionResult;
@@ -182,7 +184,7 @@ final class AuthClient
             if (TokenResponseCap::overflowed($sink)) {
                 throw self::introspectionTooLarge();   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR) — 오류 상태의 본문 포함
             }
-            throw new KeycloakAuthError('introspection failed', previous: SanitizedCause::of($e));
+            throw ResponseFailure::of($e, 'introspection');   // 서버가 준 답이면 auth, 응답이 없으면(TLS · 깨진 머리) transport
         } catch (KeycloakException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -239,7 +241,7 @@ final class AuthClient
             if (TokenResponseCap::overflowed($sink)) {
                 throw self::logoutTooLarge();   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR) — 오류 상태의 본문 포함
             }
-            throw new KeycloakAuthError('logout failed', previous: SanitizedCause::of($e));
+            throw ResponseFailure::of($e, 'logout');   // 서버가 준 답이면 auth, 응답이 없으면(TLS · 깨진 머리) transport
         } catch (KeycloakException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -295,9 +297,10 @@ final class AuthClient
         } catch (ResponseStalled) {
             // 토큰 응답이 끝을 알리기 전에 막혔다(`TokenResponseCap::read` — 앞부분으로 판정하지 않는다). 원인을 달지 않는 까닭은 위와 같다.
             throw new KeycloakTransportError('token response stalled before its end');
-        } catch (TokenResponseUnusable) {
-            // JSON 객체인데 쓸 access_token 이 없다(`PkceKeycloakProvider::createAccessToken`). 원인을 달지 않는 까닭은 위 둘과 같다.
-            throw new KeycloakAuthError('token response has no usable access_token');
+        } catch (TokenResponseUnusable|TokenResponseRefused $e) {
+            // 끝까지 온 응답을 쓸 수 없다 — 쓸 access_token 이 없거나, league 가 거부한 값 · 풀 수 없는 content-coding
+            // (`PkceKeycloakProvider`). 메시지는 SDK 가 만든 것이다. 원인을 달지 않는 까닭은 위 둘과 같다.
+            throw new KeycloakAuthError($e->getMessage());
         } catch (\UnexpectedValueException $e) {
             // league는 토큰 엔드포인트가 비-JSON/파싱불가 응답을 줄 때 SPL \UnexpectedValueException을
             // 던진다(IdentityProviderException이 아님 — OAuth 에러 바디가 아니라 응답 자체가 깨진 경우).

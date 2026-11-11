@@ -82,7 +82,8 @@ final class MalformedTokenResponseTest extends TestCase
         'b2 access_token object' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'b3 refresh_token int' => ['clientCredentialsToken' => 'ok', 'refresh' => 'ok', 'exchangeCode' => 'ok', 'provider.getToken' => 'ok'],
         'b4 access_token absent' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
-        'c expires_in string' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'ok'],
+        // league 의 AccessToken 이 `expires_in` 을 거부한다 — 끝까지 온 응답이라 auth 다(전에는 `\Throwable` 그물의 transport).
+        'c expires_in string' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'ok'],
         'c2 token_type array' => ['clientCredentialsToken' => 'ok', 'refresh' => 'ok', 'exchangeCode' => 'ok', 'provider.getToken' => 'ok'],
         'c3 expires_in float' => ['clientCredentialsToken' => 'ok', 'refresh' => 'ok', 'exchangeCode' => 'ok', 'provider.getToken' => 'ok'],
         'd short non-JSON body' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
@@ -96,6 +97,9 @@ final class MalformedTokenResponseTest extends TestCase
         'e4 error code ends in LF' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'e5 error code ends in CR' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'e6 error code ends in CRLF' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        // 400 의 `error` 가 문자열이 아니다 — stevenmaguire 의 checkResponse 가 배열을 예외 메시지로 넘겨 `\TypeError` 였고 transport 로 샜다.
+        'e7 400 error array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        'e8 400 error array with description' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'f short non-JSON body' => ['introspect' => 'auth'],
         'f2 long non-JSON body' => ['introspect' => 'auth'],
         'f3 401 error_description echo' => ['introspect' => 'auth'],
@@ -113,8 +117,13 @@ final class MalformedTokenResponseTest extends TestCase
         'w JWKS unreachable' => ['exchangeCode+nonce' => 'transport'],
         'w2 JWKS handler RuntimeException' => ['exchangeCode+nonce' => 'transport'],
         'x token TLS failure' => ['clientCredentialsToken' => 'transport', 'refresh' => 'transport', 'exchangeCode' => 'transport', 'exchangeCode+nonce' => 'transport', 'provider.getToken' => 'transport'],
-        'x2 introspect TLS failure' => ['introspect' => 'auth'],
-        'x3 logout TLS failure' => ['logout' => 'auth'],
+        // 응답이 없는 RequestException(TLS · 깨진 응답 머리)은 다 오지 않은 응답이다 — introspect · logout 도 transport(전에는 auth).
+        'x2 introspect TLS failure' => ['introspect' => 'transport'],
+        'x3 logout TLS failure' => ['logout' => 'transport'],
+        'x4 introspect broken response head' => ['introspect' => 'transport'],
+        // 머리는 끝까지 왔는데 content-coding 을 풀 수 없다(curl 61) — 끝까지 온 응답이 쓸 수 없다: auth.
+        'y token undecodable content' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        'y2 introspect undecodable content' => ['introspect' => 'auth'],
     ];
 
     /**
@@ -311,6 +320,16 @@ final class MalformedTokenResponseTest extends TestCase
             'e6 error code ends in CRLF' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
                 'error' => "invalid_client\r\n", 'error_description' => 'x',
             ]), 'canaries' => []],
+            // e7 = 설명 없이 배열 하나(upstream 이 배열을 예외 메시지로 넘겨 `\TypeError`) · e8 = 설명이 붙은 배열(upstream 이 "Array" 로
+            // 이어 붙여 경고를 내던 모양).
+            'e7 400 error array' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
+                'error' => ['LKe7ARR-error-array-member'],
+            ]), 'canaries' => ['e7.ARR' => ['LKe7ARR-error-array-member', true]]],
+            'e8 400 error array with description' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
+                'error' => ['LKe8ARR-error-array-member'], 'error_description' => 'LKe8DESC-description-beside-array',
+            ]), 'canaries' => [
+                'e8.ARR' => ['LKe8ARR-error-array-member', true], 'e8.DESC' => ['LKe8DESC-description-beside-array', true],
+            ]],
             // (f) introspect 의 같은 모양.
             'f short non-JSON body' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => 'LKf1SHORTbody',
                 'canaries' => ['f.SHORT' => ['LKf1SHORTbody', true]]],
@@ -347,6 +366,11 @@ final class MalformedTokenResponseTest extends TestCase
             'x token TLS failure' => ['ep' => 'token', 'fail' => 'tls'] + $none,
             'x2 introspect TLS failure' => ['ep' => 'introspect', 'fail' => 'tls'] + $none,
             'x3 logout TLS failure' => ['ep' => 'logout', 'fail' => 'tls'] + $none,
+            // head = Guzzle 이 받은 머리로 응답을 만들지 못했다(RFC 7230 밖 헤더 이름 — 응답 없는 RequestException) · coding = 머리는
+            // 왔는데 본문을 풀지 못했다(curl 61 — 응답 있는 RequestException).
+            'x4 introspect broken response head' => ['ep' => 'introspect', 'fail' => 'head'] + $none,
+            'y token undecodable content' => ['ep' => 'token', 'fail' => 'coding'] + $none,
+            'y2 introspect undecodable content' => ['ep' => 'introspect', 'fail' => 'coding'] + $none,
         ];
     }
 
@@ -367,6 +391,20 @@ final class MalformedTokenResponseTest extends TestCase
                     'connect' => Create::rejectionFor(new ConnectException('connection refused ' . self::HANDLER_ECHO, $req)),
                     'runtime' => Create::rejectionFor(new \RuntimeException('handler failed ' . self::HANDLER_ECHO)),
                     'tls' => Create::rejectionFor(new RequestException('TLS handshake failed ' . self::HANDLER_ECHO, $req)),
+                    // Guzzle CurlFactory 의 모양 그대로 — 머리로 응답을 못 만들면 응답 없이 원인을 달고, curl 오류면 handler context 에 errno.
+                    'head' => Create::rejectionFor(new RequestException(
+                        'An error was encountered while creating the response',
+                        $req,
+                        null,
+                        new \InvalidArgumentException('Header name must be an RFC 7230 compatible string. ' . self::HANDLER_ECHO),
+                    )),
+                    'coding' => Create::rejectionFor(new RequestException(
+                        'cURL error 61: Error while processing content unencoding ' . self::HANDLER_ECHO,
+                        $req,
+                        new Response(200, ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip']),
+                        null,
+                        ['errno' => 61],
+                    )),
                     default => Create::promiseFor(new Response(self::$reply['status'], ['Content-Type' => self::$reply['type']], self::$reply['body'])),
                 };
             }

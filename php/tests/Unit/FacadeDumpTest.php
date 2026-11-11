@@ -69,6 +69,9 @@ final class FacadeDumpTest extends TestCase
         \Xzawed\Keycloak\Internal\TokenResponseUnusable::class => 'access_token 없는 토큰 응답의 운반체 — league 스택 안'
             . '(PkceKeycloakProvider::createAccessToken)에서만 던지고 SDK 경계(AuthClient::getAccessToken)가 받아 원인 없는 KeycloakAuthError 로 '
             . '바꾼다. 그 프로바이더는 AuthClient 가 private 로만 쥐어 소비자가 쥘 수 없다(MalformedTokenResponseTest 의 b4 행이 네 호출의 분류를 잰다).',
+        \Xzawed\Keycloak\Internal\TokenResponseRefused::class => '끝까지 왔지만 거부한 토큰 응답의 운반체(league 가 받지 않는 expires_in · '
+            . '풀 수 없는 content-coding) — TokenResponseUnusable 과 같은 자리(PkceKeycloakProvider 의 createAccessToken · getResponse)에서만 '
+            . '던지고 같은 경계가 원인 없는 KeycloakAuthError 로 바꾼다. 소비자가 쥘 수 없다(MalformedTokenResponseTest 의 c · y 행이 분류를 잰다).',
     ];
 
     /**
