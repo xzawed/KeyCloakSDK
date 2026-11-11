@@ -17,17 +17,23 @@
 //    (rust) · 정의 줄(ruby `line_number`) · 파일(php).
 //  · 항목이 없으면 FAIL(이 실행에서 돌지 않았다 — 필터·제외·이름 바뀜), 건너뛰었거나 실패한 항목이 하나라도 있으면 FAIL.
 //    매개변수 테스트(항목 여럿)는 전부 통과해야 한다. go 는 최상위 항목이 있어야 하고, `t.Run(` 을 여는 테스트는 서브테스트도
-//    하나 이상 보고돼야 한다. 뒤집힌 테스트(`it.fails` · `#[should_panic]`)는 통과가 곧 단언 실패라 FAIL 이다.
+//    하나 이상 보고돼야 한다. 뒤집힌 테스트(`it.fails` · vitest 옵션 `{ fails: true }` · `#[should_panic]`)는 통과가 곧 단언
+//    실패라 FAIL 이다.
 //  · 보고서 형식은 언어가 정한다(FORMAT) — JUnit XML · TRX · `go test -v` · libtest 출력 · RSpec JSON.
 //  · ⚠️ **이름을 정할 수 없는 모양은 추측하지 않고 판정 불가(2)다** — 추측은 건강한 실행을 FAIL 로 냈다(독립 레그 2 실측).
 //    리터럴이 아닌 describe(`.each` · 식별자 · `${}`) · 함수 안의 python def · 패키지 수준 go 표 · `#[path]` rust 모듈 ·
-//    표시 이름을 바꾸는 kotlin 어노테이션(`@ParameterizedTest` 등). 오늘의 카나리아는 전부 받는 모양이다 — 그 밖의 모양을
+//    표시 이름을 바꾸는 kotlin 어노테이션(`@ParameterizedTest` 등) · 가릴 수 없는 vitest 옵션(변수 · 펼침 · 리터럴 아닌
+//    `fails`). 오늘의 카나리아는 전부 받는 모양이다 — 그 밖의 모양을
 //    들이는 PR 이 그 레인에서 이유와 함께 운다.
 // ⚠️ 못 보는 것(독립 레그 실측 · 기대 개수나 내용의 원천이 보고서 밖이다): 매개변수 행·서브테스트 **일부만** 빼는 필터
 //    (pytest `--deselect 'x[None]'` · go `-skip 'TestX/one'`) · 헬퍼 함수가 여는 go 서브테스트를 전부 빼는 필터 · 카나리아를
 //    필터로 빼고 **다른 패키지(go)·같은 파일의 다른 클래스(php)** 에 같은 이름을 둔 경우(그냥 skip 이면 두 항목이 다 잡혀
 //    FAIL 이다) · 본문 바꿔치기(이름 재바인딩 · 단언 삭제 — 실행 증명이 아니라 행위 테스트·변이의 몫이다). go `(cached)` 재생과
 //    RSpec `--dry-run` 은 받는다 — 앞은 같은 입력의 같은 결과이고(레인은 `-count=1`), 뒤는 레인 전체를 비워 attest 가 운다.
+//    소스로 뒤집힘을 숨기는 꼴(#1018 레그 실측 — 리터럴 밖이라 추측해야 하는 것): 별칭(`const t = it.fails; t(…)`) · 실행
+//    중 task 변경(`Object.assign(task, { fails: true })`) · vitest 태그 옵션(`tags` 가 fails 를 싣는다) · 옵션 변수에 함수
+//    참조 테스트(`it(제목, opts, fnRef)` 는 `it(제목, fn, SLOW_MS)` 와 못 가른다) · go 표준 출력에 찍은 가짜 `--- PASS:` 줄 ·
+//    ruby 같은 줄의 미끼 예제. W1 행렬이 덮는 카나리아는 앞의 둘 중 일부를 레인에서 따로 잡는다(앵커 블록이 사라진다).
 // 판정: 통과 0 · FAIL 1 · 판정 불가 2.
 //  ⚠️ 보고서가 **없는** 것은 2 가 아니라 1 이다 — 시험 단계가 보고서를 쓰지 않았다는 바로 그 사건이다(attest 와 같은 이유).
 //  판정 불가: 인자 · 가드의 표 함수를 못 찾음 · 호출 자리 수가 AXES 와 다름 · 카나리아 0 개 · 카나리아 줄이 0 개이거나 둘
@@ -187,8 +193,129 @@ export function canaryLine(lang, lines, canary, file) {
   })
   if (at.length !== 1)
     throw new Unreadable(`${file}: 카나리아 ${JSON.stringify(canary)} 가 주석 밖 ${at.length} 줄에 있다 — 정확히 하나여야 한다`)
+  // 선언 꼴 카나리아는 그 선언 자체여야 한다 — 문자열 안의 같은 글자를 받으면 그 문자열을 담은 **다른** 테스트가 카나리아
+  // 대신 돌아 통과로 읽혔다(#1017 레그 실측: go 는 감싼 함수로 · node 는 제목이 `it('…'` 인 가짜 시험으로, 진짜 선언은
+  // 공백 · `.skip` 으로 비켜 두고). node 는 파일 단위로 비운 글(maskJs — 여러 줄 템플릿 · 줄 중간 주석까지)에서 보고
+  // (#1018 레그: 템플릿 속 가짜 줄), go · ruby 는 줄 단위다. go 의 선언은 줄 머리다(gofmt) — 따옴표 없는 줄의 들여쓴
+  // 글자를 막는다. 0 열의 raw 문자열 줄은 못 막지만 go 는 이름으로 항목을 찾아 진짜 시험의 항목에 닿는다. 이름으로 보고서
+  // 항목을 찾는 언어(JVM · .NET · php · python · rust)는 같은 이름의 진짜 항목에 닿아 해당 없다.
+  const decl = DECL_SHAPED[lang]
+  if (decl && decl.test(canary)) {
+    const { at: i, span } = at[0]
+    const code = lang === 'node' ? maskJs(lines.join('\n')).split('\n')[i] : blankStrings(lines[i])
+    if (code[span[0]] !== lines[i][span[0]] || (lang === 'go' && span[0] !== 0))
+      throw new Unreadable(`${file}:${i + 1}: 선언 꼴 카나리아 ${JSON.stringify(canary)} 가 선언 자리가 아니다(문자열 · 주석 안 · 줄 머리 밖) — 그 자리를 담은 다른 테스트를 카나리아로 읽게 된다`)
+  }
   return at[0]
 }
+
+const REGEX_KEYWORDS = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'instanceof', 'new', 'delete', 'void', 'throw', 'yield', 'await', 'of'])
+// JS/TS 를 **파일 단위로** 훑어 문자열 · 템플릿(`${}` 안까지) · 주석 · 정규식 리터럴의 안을 공백으로 비운다 — 줄바꿈은
+// 그대로라 줄 · 열이 원문과 맞는다. 줄 단위 blankStrings 는 여러 줄 템플릿과 주석을 못 봤다(#1018 레그 실측: 템플릿 속
+// 가짜 선언 줄 · `{ /* } */ fails: true }` · 인자 사이 주석의 오탐 · 감싼 함수 속 템플릿의 괄호). `keepStrings` 면 주석 ·
+// 정규식만 비운다(옵션 객체에서 `fails` 가 문자열에도 나오는지 셀 때). 정규식은 앞 글자로 가른다(`(,=:[!&|?{};` 뒤) —
+// 나눗셈과 헷갈리면 덜 비울 뿐 더 비우지 않는다.
+export function maskJs(text, keepStrings = false) {
+  const out = text.split('')
+  const n = text.length
+  const blank = (a, b) => {
+    for (let k = a; k < b; k++) if (out[k] !== '\n' && out[k] !== '\r') out[k] = ' '
+  }
+  const quoted = (i) => {
+    const q = text[i]
+    let k = i + 1
+    while (k < n && text[k] !== q && text[k] !== '\n') k += text[k] === '\\' ? 2 : 1
+    return Math.min(k + 1, n)
+  }
+  const template = (i) => {
+    let k = i + 1
+    while (k < n && text[k] !== '`') {
+      if (text[k] === '\\') k += 2
+      else if (text[k] === '$' && text[k + 1] === '{') k = expr(k + 2)
+      else k++
+    }
+    return Math.min(k + 1, n)
+  }
+  // `${` 뒤의 식 — 짝 `}` 다음 자리. 식 안의 문자열 · 템플릿 · 주석은 건너뛴다.
+  const expr = (i) => {
+    let depth = 1
+    let k = i
+    while (k < n) {
+      const c = text[k]
+      if (c === "'" || c === '"') k = quoted(k)
+      else if (c === '`') k = template(k)
+      else if (c === '/' && text[k + 1] === '*') k = blockEnd(k)
+      else if (c === '/' && text[k + 1] === '/') k = lineEnd(k)
+      else {
+        if (c === '{') depth++
+        else if (c === '}' && --depth === 0) return k + 1
+        k++
+      }
+    }
+    return n
+  }
+  const blockEnd = (i) => {
+    const e = text.indexOf('*/', i + 2)
+    return e < 0 ? n : e + 2
+  }
+  const lineEnd = (i) => {
+    const e = text.indexOf('\n', i)
+    return e < 0 ? n : e
+  }
+  const regex = (i) => {
+    let k = i + 1
+    let cls = false
+    while (k < n && text[k] !== '\n') {
+      if (text[k] === '\\') k += 2
+      else if (cls) {
+        if (text[k] === ']') cls = false
+        k++
+      } else if (text[k] === '[') {
+        cls = true
+        k++
+      } else if (text[k] === '/') break
+      else k++
+    }
+    k = Math.min(k + 1, n)
+    while (k < n && /[a-z]/i.test(text[k])) k++
+    return k
+  }
+  // 정규식이 올 수 있는 자리 — 연산자 · 여는 괄호 뒤, 또는 식을 여는 키워드 뒤(`return /}/` 를 나눗셈으로 읽으면 그 `}` 가
+  // 옵션 객체를 일찍 닫아 `fails: true` 를 숨겼다 — Grok 레그 Q1). `)` · 다른 식별자 뒤는 나눗셈으로 본다.
+  const regexStart = (i) => {
+    if (prev === '' || '(,=:[!&|?{};'.includes(prev)) return true
+    const w = /([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(Math.max(0, i - 24), i))
+    return !!w && REGEX_KEYWORDS.has(w[1])
+  }
+  let prev = ''
+  for (let i = 0; i < n; ) {
+    const c = text[i]
+    let end = -1
+    let isString = false
+    if (c === '/' && text[i + 1] === '*') end = blockEnd(i)
+    else if (c === '/' && text[i + 1] === '/') end = lineEnd(i)
+    else if (c === "'" || c === '"') {
+      end = quoted(i)
+      isString = true
+    } else if (c === '`') {
+      end = template(i)
+      isString = true
+    } else if (c === '/' && regexStart(i)) end = regex(i)
+    if (end < 0) {
+      if (!/\s/.test(c)) prev = c
+      i++
+      continue
+    }
+    const isComment = c === '/' && (text[i + 1] === '*' || text[i + 1] === '/')
+    // 주석은 구분자까지 통째로 비운다(공백과 같다). 문자열 · 템플릿 · 정규식은 여는 글자를 남긴다(토큰이 있었다는 표시).
+    if (isComment) blank(i, end)
+    else if (!(isString && keepStrings)) blank(i + 1, end - 1 > i ? end - 1 : end)
+    if (!isComment) prev = isString ? c : '/'
+    i = end
+  }
+  return out.join('')
+}
+const DECL_SHAPED = { go: /^func\s/, node: /^(?:it|test)\s*\(/, ruby: /^it\s*[("']/ }
 
 // 줄 위로 올라가며 들여쓰기가 더 얕은 선언(클래스 · describe · mod)을 모은다(바깥 → 안쪽 순서). `stop` 이 더 얕은 들여쓰기에서
 // 먼저 나오면 판정 불가다 — 함수 안에 놓인 테스트는 러너가 모으지 않거나 다른 이름으로 모은다(python: 독립 레그 실측 —
@@ -230,12 +357,13 @@ function declAt(ctx, re, what) {
   )
 }
 
-// 줄의 문자열 리터럴(따옴표 셋) 중 카나리아 자리와 겹치는 첫 것 — node·ruby 의 테스트 제목.
+// 줄의 문자열 리터럴(따옴표 셋) 중 카나리아 자리와 겹치는 첫 것 — node·ruby 의 테스트 제목(`end` = 닫는 따옴표 뒤 자리).
 function titleAt(ctx, quotes, what) {
   const line = ctx.lines[ctx.at]
   const re = new RegExp(`([${quotes}])((?:\\\\.|(?!\\1)[^\\\\])*)\\1`, 'g')
   for (const m of line.matchAll(re)) {
-    if (overlaps([m.index, m.index + m[0].length], ctx.span)) return { q: m[1], body: m[2].replace(/\\(['"`\\])/g, '$1') }
+    if (overlaps([m.index, m.index + m[0].length], ctx.span))
+      return { q: m[1], body: m[2].replace(/\\(['"`\\])/g, '$1'), start: m.index, end: m.index + m[0].length }
   }
   throw new Unreadable(`${ctx.file}:${ctx.at + 1}: 카나리아 자리와 겹치는 ${what} 문자열이 없다`)
 }
@@ -270,22 +398,116 @@ const blankStrings = (l) => l.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, (m) => m
 // 건강한 실행을 FAIL 로 낸다(독립 레그 2 실측).
 const DESCRIBE_LIT = /^\s*(?:describe|suite)(?:\.(?:only|skip|todo|concurrent|sequential|shuffle))*\(\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`$\\]|\$(?!\{))*)`)\s*,/
 const NODE_INTERP = /%%|%\$|%[sdifjoOc#]|\$[A-Za-z_][\w.]*/
-const JS_COMMENT = /^\s*(\/\/|\/\*|\*)/
+// vitest 의 옵션 인자도 뒤집는다 — `it(제목, { fails: true }, fn)` · `describe(제목, { fails: true }, fn)` 은 본문이 실패해야
+// 통과하고 JUnit 은 그 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측: 한 줄 · 여러 줄 · describe · 변수 옵션 넷 다 —
+// #1017 레그가 카나리아 하나를 그렇게 바꾸고 회귀를 넣어 초록을 냈다). 셋째 인자 꼴 `it(제목, fn, 옵션)` 은 vitest 4 가
+// 없앴다(TypeError). 제목 뒤 인자가 리터럴 객체면 그 안의 `fails: true|false` 만 읽고, 가릴 수 없는 꼴(변수 옵션 · 펼침 ·
+// 리터럴 아닌 값 · 문자열 키)은 추측하지 않고 판정 불가다. 둘째 인자가 식별자 · 호출(`retried(fn)`)이면 마지막 인자일 때
+// 테스트 함수이고, 뒤에 셋째 인자가 오면 그것이 함수 꼴일 때만 옵션 변수다(아니면 `it(제목, fn, SLOW_MS)` 의 타임아웃 —
+// Grok 레그 Q2 · #1018 레그). 읽기는 파일 단위로 비운 줄(src.M — 문자열 · 템플릿 · 주석 · 정규식이 빈칸)에서 한다.
+// `start` = 제목 리터럴의 닫는 따옴표 뒤(`,` 앞).
+function optionsFail(src, at, start, file, what) {
+  const { M, K } = src
+  let i = at
+  let c = start
+  const unread = (why) => {
+    throw new Unreadable(`${file}:${i + 1}: ${what} 의 vitest 옵션 — ${why}`)
+  }
+  // 공백 · 줄바꿈을 건너뛴 다음 글자(주석은 M 에서 이미 빈칸이다).
+  const next = () => {
+    for (; i < M.length; i++, c = 0) {
+      while (c < M[i].length && /\s/.test(M[i][c])) c++
+      if (c < M[i].length) return M[i][c]
+    }
+    return null
+  }
+  // 여는 괄호 자리에서 짝 괄호 다음 자리로(줄을 넘는다). `take` 면 지나온 글을 [M, K] 로 모은다.
+  const skip = (take) => {
+    let depth = 0
+    const got = ['', '']
+    for (; i < M.length; i++, c = 0) {
+      for (; c < M[i].length; c++) {
+        const x = M[i][c]
+        if ('{[('.includes(x)) depth++
+        else if ('}])'.includes(x)) depth--
+        if (take) {
+          got[0] += x
+          got[1] += K[i][c]
+        }
+        if (depth === 0) {
+          c++
+          return got
+        }
+      }
+      got[0] += '\n'
+      got[1] += '\n'
+    }
+    return unread('괄호가 닫히지 않았다')
+  }
+  const fnStart = (s) => /^(?:async\b|function\b|\(|[A-Za-z_$][\w$]*\s*=>)/.test(s)
+  const sep = next()
+  if (sep === ')') return false
+  if (sep !== ',') unread('제목 뒤가 `,` 도 `)` 도 아니다')
+  c++
+  const head = next()
+  if (head === null) unread('인자 목록이 끝나지 않았다')
+  if (head === '{') {
+    // 리터럴 객체. 코드(M)에서 키를 읽고, 문자열을 살린 글(K)에서 `fails` 를 한 번 더 센다 — 문자열 키(`'fails'`) ·
+    // 계산된 키(`['fails']`)는 코드에 안 보여서 둘이 어긋나면 판정 불가다. 주석 속 글자는 둘 다 빈칸이다.
+    const [code, kept] = skip(true)
+    if (code.includes('...')) unread('옵션 객체에 펼침(...)이 있다 — fails 를 가릴 수 없다')
+    const said = kept.match(/\bfails\b/g) ?? []
+    if (said.length === 0) return false
+    const keys = code.match(/\bfails\b/g) ?? []
+    const kv = /\bfails\s*:\s*(true|false)\b/.exec(code)
+    if (said.length !== 1 || keys.length !== 1 || !kv) unread('fails 값이 true/false 리터럴이 아니다(또는 문자열 · 계산된 키 · 둘 이상)')
+    return kv[1] === 'true'
+  }
+  if (fnStart(M[i].slice(c))) return false
+  const id = /^[A-Za-z_$][\w$]*/.exec(M[i].slice(c))
+  if (!id) unread('둘째 인자를 읽지 못했다')
+  c += id[0].length
+  // 식별자 뒤의 멤버 · 호출 사슬(`a.b`, `retried(…)`, `x[0]`)을 건너뛴다.
+  for (let t = next(); t === '.' || t === '(' || t === '['; t = next()) {
+    if (t === '.') {
+      c++
+      next()
+      const m = /^[A-Za-z_$][\w$]*/.exec(M[i].slice(c))
+      if (!m) unread(`\`${id[0]}\` 뒤 사슬을 읽지 못했다`)
+      c += m[0].length
+    } else skip(false)
+  }
+  const after = next()
+  if (after === ')') return false
+  if (after === ',') {
+    c++
+    if (next() === null) unread('인자 목록이 끝나지 않았다')
+    if (fnStart(M[i].slice(c))) unread(`옵션이 리터럴 객체가 아니다(\`${id[0]}\`) — fails 를 가릴 수 없다`)
+    return false
+  }
+  return unread(`\`${id[0]}\` 뒤를 읽지 못했다`)
+}
 // 위로 올라가며 처음 만나는 더 얕은 줄이 감싸는 블록이다(prettier 들여쓰기) — 그 줄마다 한계를 낮춘다. 클래스 사슬처럼
-// describe 에서만 낮추면 닫힌 형제 블록(`for` 위의 describe)을 감싼 것으로 읽었다.
-function describeChain(lines, from, file) {
+// describe 에서만 낮추면 닫힌 형제 블록(`for` 위의 describe)을 감싼 것으로 읽었다. `inverted` = 감싼 describe 중 하나가
+// vitest 옵션 `fails: true` 다(그 안의 테스트가 전부 뒤집힌다). 빈 줄 · 주석 줄 · 여러 줄 템플릿 · 주석의 안은 src.M 에서
+// 빈칸이라 건너뛰고, describe 의 제목은 주석만 비운 줄(src.K)에서 읽는다 — `/**/ describe(…, { fails: true }` 줄을 주석
+// 줄로 건너뛰던 것(#1018 레그)이 이것으로 닫힌다.
+function describeChain(src, from, file) {
+  const { lines, M, K } = src
   const chain = []
+  let inverted = false
   let limit = indentOf(lines[from])
   for (let i = from - 1; i >= 0 && limit > 0; i--) {
-    const l = lines[i]
-    if (l.trim() === '' || JS_COMMENT.test(l) || indentOf(l) >= limit) continue
-    limit = indentOf(l)
-    if (!/^\s*(?:describe|suite)\b/.test(blankStrings(l))) continue
-    const m = DESCRIBE_LIT.exec(l)
+    if (M[i].trim() === '' || indentOf(lines[i]) >= limit) continue
+    limit = indentOf(lines[i])
+    if (!/^\s*(?:describe|suite)\b/.test(M[i])) continue
+    const m = DESCRIBE_LIT.exec(K[i])
     if (!m) throw new Unreadable(`${file}:${i + 1}: describe 제목이 리터럴이 아니다(\`.each\` · \`.skipIf\` · 식별자 · \${} 템플릿) — 보고서 이름을 정할 수 없다`)
+    // DESCRIBE_LIT 은 제목 뒤 `,` 까지 먹는다 — 옵션 판독은 그 `,` 자리에서 시작한다.
+    if (optionsFail(src, i, m.index + m[0].length - 1, file, 'describe')) inverted = true
     chain.unshift(titlePattern((m[1] ?? m[2] ?? m[3]).replace(/\\(['"`\\])/g, '$1'), NODE_INTERP))
   }
-  return chain
+  return { chain, inverted }
 }
 
 // RESOLVE[lang](ctx) → { label, match(entry), top? } · ctx = { file, rel, lines, text, at, span }
@@ -316,27 +538,35 @@ export const RESOLVE = {
   },
   node(ctx) {
     const lit = titleAt(ctx, `'"\``, 'it/test 제목')
-    // 제목을 가진 호출 — 카나리아 줄부터 위로, 문자열 안을 비운 줄의 첫 `it`/`test` 호출(창을 두지 않는다 — `it.fails.each([`
-    // 뒤 행이 스물둘이면 20 줄 창 밖이었고, 제목 속 `it (` 를 호출로 읽었다 — 독립 레그 2 실측). 그보다 먼저 describe 를
-    // 만나거나 못 찾으면 판정 불가.
+    // 파일 단위로 비운 글 — M: 문자열 · 템플릿 · 주석 · 정규식이 빈칸 · K: 주석 · 정규식만 빈칸(줄 · 열은 원문과 같다).
+    const text = ctx.lines.join('\n')
+    const src = { lines: ctx.lines, M: maskJs(text).split('\n'), K: maskJs(text, true).split('\n') }
+    // 제목을 가진 호출 — 카나리아 줄부터 위로, 비운 줄의 첫 `it`/`test` 호출(창을 두지 않는다 — `it.fails.each([` 뒤 행이
+    // 스물둘이면 20 줄 창 밖이었고, 제목 속 `it (` 를 호출로 읽었다 — 독립 레그 2 실측). 그보다 먼저 describe 를 만나거나
+    // 못 찾으면 판정 불가.
     let callAt = -1
-    let mods = ''
+    let callCol = -1
     for (let i = ctx.at; i >= 0; i--) {
-      const code = blankStrings(ctx.lines[i])
-      const call = /\b(?:it|test)((?:\.\w+)*)\s*\(/.exec(code)
+      const call = /\b(?:it|test)(?:\.\w+)*\s*\(/.exec(src.M[i])
       if (call) {
         callAt = i
-        mods = call[1]
+        callCol = call.index
         break
       }
-      if (i < ctx.at && /\b(?:describe|suite)\b/.test(code)) break
+      if (i < ctx.at && /\b(?:describe|suite)\b/.test(src.M[i])) break
     }
     if (callAt < 0) throw new Unreadable(`${ctx.file}:${ctx.at + 1}: 제목을 가진 it/test 호출을 찾지 못했다`)
-    // `it.fails` · `test.fails` 는 본문이 실패해야 통과한다 — 보고서의 통과가 곧 카나리아 단언의 실패다.
-    const inverted = /\.fails\b/.test(mods)
+    // `it.fails` · `test.fails` · 옵션 `{ fails: true }`(제목 뒤 인자 · 감싼 describe) 는 본문이 실패해야 통과한다 — 보고서의
+    // 통과가 곧 카나리아 단언의 실패다. 사슬은 `it` 부터 제목 앞까지 전부 본다 — 첫 `(` 에서 멈추면
+    // `it.skipIf(false).fails(` 의 `.fails` 를 못 봤다(#1018 레그).
+    const head =
+      callAt === ctx.at
+        ? src.M[callAt].slice(callCol, lit.start)
+        : [src.M[callAt].slice(callCol), ...src.M.slice(callAt + 1, ctx.at), src.M[ctx.at].slice(0, lit.start)].join('\n')
     // describe 경로까지 맞춘다(호출 줄에서 시작) — 제목 끝만 보면 다른 describe 의 같은 제목이 빠진 카나리아 대신 통과로
     // 읽혔다(독립 레그 실측). 제목만 있는 줄에서 시작하면 더 깊은 들여쓰기 탓에 닫힌 형제 describe 를 감싼 것으로 읽었다(레그 2).
-    const chain = describeChain(ctx.lines, callAt, ctx.file)
+    const { chain, inverted: underFails } = describeChain(src, callAt, ctx.file)
+    const inverted = /\.fails\b/.test(head) || optionsFail(src, ctx.at, lit.end, ctx.file, 'it/test') || underFails
     const re = new RegExp(`^${[...chain, titlePattern(lit.body, NODE_INTERP)].join(' > ')}$`)
     return { label: `${ctx.rel} › ${lit.body}`, inverted, match: (e) => e.classname === ctx.rel && re.test(e.name) }
   },
@@ -615,7 +845,7 @@ export function loadReports(lang, paths) {
 // ─── 4. 판정 ─────────────────────────────────────────────────────────────────────────────────────────
 // → { ok, why }
 export function judge(t, entries) {
-  const INVERTED = '뒤집혔다(it.fails · should_panic) — 통과가 곧 카나리아 단언의 실패다'
+  const INVERTED = '뒤집혔다(it.fails · { fails: true } · should_panic) — 통과가 곧 카나리아 단언의 실패다'
   if (t.inverted) return { ok: false, why: INVERTED }
   const hit = entries.filter(t.match)
   if (hit.length === 0) return { ok: false, why: '보고서에 없다 — 이 실행에서 돌지 않았다(필터 · 제외 · 이름 바뀜)' }
