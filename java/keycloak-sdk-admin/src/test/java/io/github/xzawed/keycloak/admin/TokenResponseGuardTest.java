@@ -597,24 +597,26 @@ class TokenResponseGuardTest {
   @Test void reader_rejectsANulASurrogateAndACorruptCoding() throws IOException {
     String usable = "{\"access_token\":\"AT\",\"expires_in\":300}";
     String lone = "\\" + "ud800";
-    Object[][] rows = {
-        {new ByteArrayInputStream(usable.getBytes(StandardCharsets.UTF_16LE)), TokenResponseGuard.REJECTED},
-        {bytes("{\"access_token\":\"AT\",\"x\":\"" + lone + "\"}"), TokenResponseGuard.UNPAIRED_SURROGATE},
-        {bytes("{\"access_token\":\"AT\",\"" + lone + "\":1}"), TokenResponseGuard.UNPAIRED_SURROGATE},
-        {new InputStream() {
+    try (InputStream corrupt = new InputStream() {
           @Override public int read() throws IOException {
             throw new java.util.zip.ZipException("invalid code lengths set");
           }
-        }, TokenResponseGuard.UNDECODABLE}};
-    for (Object[] row : rows) {
-      ReaderInterceptorContext ctx = readContext(Boolean.TRUE, (InputStream) row[0]);
-      when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
-      TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
-          () -> new TokenResponseGuard().aroundReadFrom(ctx));
-      assertEquals(row[1], e.getMessage());
-      assertEquals(200, e.status());
-      assertNull(e.getCause());
-      verify(ctx, never()).proceed();
+        }) {
+      Object[][] rows = {
+          {new ByteArrayInputStream(usable.getBytes(StandardCharsets.UTF_16LE)), TokenResponseGuard.REJECTED},
+          {bytes("{\"access_token\":\"AT\",\"x\":\"" + lone + "\"}"), TokenResponseGuard.UNPAIRED_SURROGATE},
+          {bytes("{\"access_token\":\"AT\",\"" + lone + "\":1}"), TokenResponseGuard.UNPAIRED_SURROGATE},
+          {corrupt, TokenResponseGuard.UNDECODABLE}};
+      for (Object[] row : rows) {
+        ReaderInterceptorContext ctx = readContext(Boolean.TRUE, (InputStream) row[0]);
+        when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
+        TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+            () -> new TokenResponseGuard().aroundReadFrom(ctx));
+        assertEquals(row[1], e.getMessage());
+        assertEquals(200, e.status());
+        assertNull(e.getCause());
+        verify(ctx, never()).proceed();
+      }
     }
   }
 
