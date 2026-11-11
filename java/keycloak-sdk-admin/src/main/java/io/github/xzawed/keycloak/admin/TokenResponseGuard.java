@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import io.github.xzawed.keycloak.core.ResponseLimits;
 import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.ClientRequestContext;
 import jakarta.ws.rs.client.ClientResponseContext;
 import jakarta.ws.rs.client.ClientResponseFilter;
@@ -44,10 +45,11 @@ import java.util.zip.ZipException;
  * ReaderInterceptor 사슬을 거쳐 결합에 넘기고, 그 사슬이 바이트를 바꿀 수 있다: 소비자가 {@code resteasy.allowGzip=true} 를
  * 켜면 GZIPDecodingInterceptor 가 {@code Content-Encoding: gzip} 을 푼다. 원시 바이트를 판정하던 때는 gzip 으로 온 쓸 수 있는
  * 토큰을 거부해 admin 이 통째로 멈췄다(실측 — 가드 없이는 성공). 그래서 범위 안의 응답은 이 객체를 <b>가장 안쪽</b>
- * ReaderInterceptor 로도 등록해({@link #READ_PRIORITY}) 결합 직전의 스트림을 판정한다. 예외는 하나 — 미디어 타입이 없는
- * 2xx 는 결합이 아예 읽지 않으므로(RESTEasy {@code ClientInvocation.extractResult} 는 200 이면 ResponseProcessingException 을
- * 던지고 그 밖의 2xx 면 null 을 돌려줘 TokenManager 가 NPE 로 멈춘다 — 그 사슬은 ProcessingException 이 그대로다) 응답
- * 필터에서 원시 바이트로 판정한다.
+ * ReaderInterceptor 로도 등록해({@link #READ_PRIORITY}) 결합 직전의 스트림을 판정한다. 예외는 둘 — 미디어 타입이 없는
+ * 2xx 와 본문이 없는 2xx(204 · 205)는 결합이 아예 읽지 않으므로(RESTEasy {@code ClientInvocation.extractResult} 는 200 이면
+ * ResponseProcessingException 을 던지고 그 밖의 2xx 면 null 을 돌려줘 TokenManager 가 NPE 로 멈춘다 — 그 사슬은
+ * ProcessingException 이 그대로다) 응답 필터에서 원시 바이트로 판정한다. 해제기가 스트림을 감쌀 때 읽는 gzip 머리의 손상은 가장
+ * 안쪽에 닿지 않으므로 해제기 바깥의 {@link CodingGuard} 가 받는다.
  *
  * <p>거부는 상수 메시지의 {@link IOException} 이다. 응답 필터에서 던지면 RESTEasy 가 {@code ResponseProcessingException} 으로,
  * 엔티티 읽기에서 던지면 {@code ProcessingException} 을 거쳐 {@code ResponseProcessingException} 으로 감싸고(그래서 TokenManager
@@ -79,6 +81,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   static final String TOKEN_PATH_SUFFIX = "/protocol/openid-connect/token";
   /** ReaderInterceptor 로서의 우선순위 — 오름차순으로 도므로 가장 큰 값이 결합(MessageBodyReader) 바로 앞이다. */
   static final int READ_PRIORITY = Integer.MAX_VALUE;
+  /** {@link CodingGuard} 의 우선순위 — 해제기(GZIPDecodingInterceptor · {@link Priorities#ENTITY_CODER})보다 바깥이다. */
+  static final int CODING_PRIORITY = Priorities.ENTITY_CODER - 1;
   /** 응답 필터가 범위 안의 교환에 다는 요청 속성 — ReaderInterceptor 가 이것이 있는 엔티티만 판정한다. */
   static final String JUDGE_ENTITY = TokenResponseGuard.class.getName() + ".judgeEntity";
   /** {@link #JUDGE_ENTITY} 와 함께 다는 그 응답의 상태 — ReaderInterceptor 는 상태를 모른다({@link Unusable} 이 싣는다). */
@@ -116,14 +120,16 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       if (in != null) response.setEntityStream(withinCapOrReject(in, exchange));
       return;
     }
-    if (response.getMediaType() != null) {
+    int status = response.getStatus();
+    if (response.getMediaType() != null && status != 204 && status != 205) {
       request.setProperty(JUDGE_ENTITY, Boolean.TRUE); // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
-      request.setProperty(STATUS, response.getStatus());
+      request.setProperty(STATUS, status);
       return;
     }
-    // 미디어 타입이 없는 2xx 는 결합이 읽지 않는다 — 판정을 통과해도 RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의
-    // 2xx → TokenManager 의 NPE)로 끝내 전송 실패로 나갔다(등록부 token-response-class-residue, 2026-11-11 실측). 끝까지 온 응답을 쓸
-    // 수 없다 — auth 레인(Nimbus)도 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다.
+    // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
+    // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx → TokenManager 의 NPE)로 끝내 전송 실패로 나갔다(등록부
+    // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
+    // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다.
     usableOrReject(response.getEntityStream(), exchange, response.getStatus());
     throw new Unusable(response.getStatus(), UNBOUND, null);
   }
@@ -143,6 +149,28 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       return context.proceed();
     } catch (IOException | RuntimeException unbound) {
       throw new Unusable(status, UNBOUND, unbound);
+    }
+  }
+
+  /**
+   * 해제기 바깥의 판정 — {@code resteasy.allowGzip} 의 GZIPDecodingInterceptor 는 스트림을 감쌀 때 gzip 머리를 읽어, 거기서 난
+   * {@link ZipException}(gzip 이 아님 · 지원하지 않는 압축 방법 · 머리 CRC)은 가장 안쪽 판정({@link #aroundReadFrom})에 닿지 않고
+   * 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터 — 본문 · 꼬리의 손상은 안쪽이 이미 거부한다). 끝까지 온 본문을 풀지
+   * 못한 것이라 같은 거부다(등록부 판정 Q1). 잘린 머리의 EOFException 은 끊긴 연결과 가를 수 없어 그대로다. 표시가 없는 엔티티는
+   * 건드리지 않는다.
+   */
+  static final class CodingGuard implements ReaderInterceptor {
+    @Override
+    public Object aroundReadFrom(ReaderInterceptorContext context) throws IOException {
+      if (!Boolean.TRUE.equals(context.getProperty(JUDGE_ENTITY))) {
+        return context.proceed();
+      }
+      try {
+        return context.proceed();
+      } catch (ZipException corrupt) {
+        release(context.getInputStream(), context.getProperty(AdminEngine.EXCHANGE));
+        throw new Unusable(context.getProperty(STATUS) instanceof Integer s ? s : 0, UNDECODABLE, null);
+      }
     }
   }
 

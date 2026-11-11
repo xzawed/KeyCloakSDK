@@ -85,14 +85,15 @@ internal class TokenResponseGuard :
             return
         }
         if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
-        if (response.mediaType != null) {
+        if (response.mediaType != null && response.status != 204 && response.status != 205) {
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             request.setProperty(STATUS, response.status)
             return
         }
-        // 미디어 타입이 없는 2xx 는 결합이 읽지 않는다 — 판정을 통과해도 RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의
-        // 2xx)로 끝내 전송 실패로 나갔다(등록부 token-response-class-residue, 2026-11-11 실측). 끝까지 온 응답을 쓸 수 없다 — auth
-        // 레인(Nimbus)도 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
+        // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
+        // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx)로 끝내 전송 실패로 나갔다(등록부
+        // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
+        // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
         throw unbound(response.status, usableOrReject(response.entityStream, exchange, response.status))
     }
 

@@ -243,6 +243,27 @@ class TokenResponseGuardTest {
     verify(res, never()).setEntityStream(any());
   }
 
+  /**
+   * 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 미디어 타입이 붙어도 결합이 읽지 않는다 — 표시만 달면 아무도 판정하지
+   * 않아 TokenManager 가 null 로 NPE 를 내 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 응답 필터가 판정한다.
+   */
+  @Test void noContentTokenResponseWithAMediaType_isJudgedByTheFilter() {
+    for (Response.Status status : List.of(Response.Status.NO_CONTENT, Response.Status.RESET_CONTENT)) {
+      for (InputStream body : new InputStream[] {null, bytes("")}) {
+        ClientRequestContext req = request("POST", TOKEN);
+        ClientResponseContext res = response(status, body);
+        when(res.getMediaType()).thenReturn(MediaType.APPLICATION_JSON_TYPE);
+        when(res.getStatus()).thenReturn(status.getStatusCode());
+        TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+            () -> new TokenResponseGuard().filter(req, res));
+        assertEquals(TokenResponseGuard.REJECTED, e.getMessage());
+        assertEquals(status.getStatusCode(), e.status());
+        assertNull(e.getCause());
+        verify(req, never()).setProperty(any(), any());
+      }
+    }
+  }
+
   @Test void unusableTokenResponse_isRejectedWithoutQuotingIt() {
     for (InputStream body : new InputStream[] {bytes(NUMBER), bytes("{\"access_token\":\"\"}"), null}) {
       ClientResponseContext res = response(Response.Status.CREATED, body);
@@ -597,6 +618,41 @@ class TokenResponseGuardTest {
     }
   }
 
+  /**
+   * 머리가 깨진 gzip — {@code resteasy.allowGzip} 의 GZIPDecodingInterceptor 는 스트림을 감쌀 때 머리를 읽어, 그 ZipException 은
+   * 가장 안쪽 판정에 닿지 않는다. 그 바깥의 {@link TokenResponseGuard.CodingGuard} 가 같은 거부로 바꾸고 스트림을 닫는다. 잘린 머리의
+   * EOFException 은 그대로다(끊긴 연결과 가를 수 없다 — 등록부 판정 Q1). 표시가 없는 엔티티(admin 자원)는 건드리지 않는다.
+   */
+  @Test void codingGuard_turnsAHeaderZipExceptionIntoTheSameRejection() throws IOException {
+    FaultyCloseBody raw = new FaultyCloseBody();
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, raw);
+    when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
+    when(ctx.proceed()).thenThrow(new java.util.zip.ZipException("Not in GZIP format"));
+    TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+        () -> new TokenResponseGuard.CodingGuard().aroundReadFrom(ctx));
+    assertEquals(TokenResponseGuard.UNDECODABLE, e.getMessage());
+    assertEquals(200, e.status());
+    assertNull(e.getCause());
+    assertEquals(1, raw.closes, "거부 전에 스트림을 닫아야 한다");
+
+    java.io.EOFException cut = new java.io.EOFException("Unexpected end of ZLIB input stream");
+    ReaderInterceptorContext truncated = readContext(Boolean.TRUE, bytes("x"));
+    when(truncated.proceed()).thenThrow(cut);
+    assertSame(cut, assertThrows(java.io.EOFException.class,
+        () -> new TokenResponseGuard.CodingGuard().aroundReadFrom(truncated)));
+
+    for (Object mark : new Object[] {null, Boolean.FALSE, "true"}) {
+      ReaderInterceptorContext other = readContext(mark, bytes("x"));
+      java.util.zip.ZipException admin = new java.util.zip.ZipException("Not in GZIP format");
+      when(other.proceed()).thenThrow(admin);
+      assertSame(admin, assertThrows(java.util.zip.ZipException.class,
+          () -> new TokenResponseGuard.CodingGuard().aroundReadFrom(other)));
+    }
+    ReaderInterceptorContext bound = readContext(Boolean.TRUE, bytes("x"));
+    assertEquals("bound", new TokenResponseGuard.CodingGuard().aroundReadFrom(bound));
+    assertTrue(TokenResponseGuard.CODING_PRIORITY < Priorities.ENTITY_CODER, "해제기보다 바깥이어야 한다");
+  }
+
   /** 짝 없는 서로게이트 이스케이프의 판정 — 자리 · 짝 · 이스케이프된 역슬래시 · 대소문자 · 형식이 틀린 이스케이프. */
   @Test void holdsUnpairedSurrogate_judgesEscapesNotText() {
     String u = "\\" + "u";
@@ -604,7 +660,9 @@ class TokenResponseGuardTest {
         "{\"a\":\"" + u + "d800\"}", "{\"a\":\"" + u + "dc00\"}", "{\"" + u + "d800\":1}", "{\"a\":\"x" + u + "D800\"}",
         "{\"a\":\"" + u + "d800" + u + "0041\"}", "{\"a\":\"" + u + "dbff\"}", "{\"a\":[\"ok\",\"" + u + "dfff\"]}",
         // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그, 2026-11-11)
-        "{\"a\":\"" + u + "ZZZZ\",\"b\":\"" + u + "DC00\"}"}) {
+        "{\"a\":\"" + u + "ZZZZ\",\"b\":\"" + u + "DC00\"}",
+        // 이스케이프된 따옴표가 문자열을 닫지 않는다 — `\\` 만 건너뛰면 여기서 어긋난다(JVM 실행 레그, 2026-11-11)
+        "{\"x\":\"a\\\"b\",\"y\":\"" + u + "dc00\"}"}) {
       assertTrue(TokenResponseGuard.holdsUnpairedSurrogate(json.getBytes(StandardCharsets.UTF_8)), json);
     }
     for (String json : new String[] {

@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.KeycloakConfig
+import io.github.xzawed.keycloak.TokenCodingGuard
 import io.github.xzawed.keycloak.holdsUnpairedSurrogate
 import io.mockk.every
 import io.mockk.just
@@ -304,6 +305,24 @@ internal class TokenResponseGuardTest {
         assertEquals(200, e.status)
         assertNull(e.cause)
         verify(exactly = 0) { res.entityStream = any() }
+    }
+
+    // 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 미디어 타입이 붙어도 결합이 읽지 않는다 — 표시만 달면 아무도 판정하지
+    // 않아 TokenManager 가 null 로 NPE 를 내 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 응답 필터가 판정한다. Java 동형.
+    @Test
+    fun `no-content token response with a media type is judged by the filter`() {
+        for (status in listOf(Response.Status.NO_CONTENT, Response.Status.RESET_CONTENT)) {
+            for (body in listOf(null, bytes(""))) {
+                val req = request("POST", TRG_TOKEN)
+                val res = response(status, body, MediaType.APPLICATION_JSON_TYPE)
+                every { res.status } returns status.statusCode
+                val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().filter(req, res) }
+                assertEquals(TokenResponseGuard.REJECTED, e.message)
+                assertEquals(status.statusCode, e.status)
+                assertNull(e.cause)
+                verify(exactly = 0) { req.setProperty(any(), any()) }
+            }
+        }
     }
 
     @Test
@@ -627,6 +646,8 @@ internal class TokenResponseGuardTest {
             "{\"a\":[\"ok\",\"${u}dfff\"]}",
             // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그, 2026-11-11)
             "{\"a\":\"${u}ZZZZ\",\"b\":\"${u}DC00\"}",
+            // 이스케이프된 따옴표가 문자열을 닫지 않는다 — `\\` 만 건너뛰면 여기서 어긋난다(JVM 실행 레그, 2026-11-11)
+            "{\"x\":\"a\\\"b\",\"y\":\"${u}dc00\"}",
         )) {
             assertTrue(holdsUnpairedSurrogate(json.toByteArray()), json)
         }
@@ -641,6 +662,45 @@ internal class TokenResponseGuardTest {
         )) {
             assertFalse(holdsUnpairedSurrogate(json.toByteArray()), json)
         }
+    }
+
+    // 머리가 깨진 gzip — resteasy.allowGzip 의 GZIPDecodingInterceptor 는 스트림을 감쌀 때 머리를 읽어, 그 ZipException 은 가장 안쪽
+    // 판정에 닿지 않는다. 그 바깥의 TokenCodingGuard 가 같은 거부로 바꾸고 스트림을 닫는다. 잘린 머리의 EOFException 은 그대로다(끊긴
+    // 연결과 가를 수 없다 — 등록부 판정 Q1). 표시가 없는 엔티티(admin 자원)는 건드리지 않는다. Java 동형.
+    @Test
+    fun `coding guard turns a header ZipException into the same rejection`() {
+        var closes = 0
+        val raw =
+            object : InputStream() {
+                override fun read(): Int = -1
+
+                override fun close() {
+                    closes++
+                    throw IOException("Bad chunk header")
+                }
+            }
+        val ctx = readContext(true, raw)
+        every { ctx.getProperty(TokenResponseGuard.STATUS) } returns 200
+        every { ctx.proceed() } throws java.util.zip.ZipException("Not in GZIP format")
+        val e = assertFailsWith<UnusableTokenResponse> { TokenCodingGuard().aroundReadFrom(ctx) }
+        assertEquals(TokenResponseGuard.UNDECODABLE, e.message)
+        assertEquals(200, e.status)
+        assertNull(e.cause)
+        assertEquals(1, closes, "거부 전에 스트림을 닫아야 한다")
+
+        val cut = java.io.EOFException("Unexpected end of ZLIB input stream")
+        val truncated = readContext(true, bytes("x"))
+        every { truncated.proceed() } throws cut
+        assertSame(cut, assertFailsWith<java.io.EOFException> { TokenCodingGuard().aroundReadFrom(truncated) })
+
+        for (mark in listOf(null, false, "true")) {
+            val other = readContext(mark, bytes("x"))
+            val admin = java.util.zip.ZipException("Not in GZIP format")
+            every { other.proceed() } throws admin
+            assertSame(admin, assertFailsWith<java.util.zip.ZipException> { TokenCodingGuard().aroundReadFrom(other) })
+        }
+        assertEquals("bound", TokenCodingGuard().aroundReadFrom(readContext(true, bytes("x"))))
+        assertTrue(TokenCodingGuard.PRIORITY < Priorities.ENTITY_CODER, "해제기보다 바깥이어야 한다")
     }
 
     // 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다).

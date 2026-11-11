@@ -434,12 +434,15 @@ class CappedResponseSenderTest {
     String u = "\\" + "u";
     for (String json : new String[] {
         "{\"a\":\"" + u + "d800\"}", "{\"a\":\"" + u + "dc00\"}", "{\"" + u + "d800\":1}", "{\"a\":\"x" + u + "D800\"}",
-        "{\"a\":\"" + u + "d800" + u + "0041\"}", "{\"a\":\"" + u + "ZZZZ\",\"b\":\"" + u + "DC00\"}"}) {
+        "{\"a\":\"" + u + "d800" + u + "0041\"}", "{\"a\":\"" + u + "ZZZZ\",\"b\":\"" + u + "DC00\"}",
+        // 범위의 끝 — 높은 쪽 · 낮은 쪽 마지막 값, 그리고 이스케이프된 따옴표 뒤(`\\` 만 건너뛰면 문자열 추적이 어긋난다 — JVM
+        // 실행 레그가 살린 축소 편집 셋, 2026-11-11)
+        "{\"a\":\"" + u + "dbff\"}", "{\"a\":[\"ok\",\"" + u + "dfff\"]}", "{\"x\":\"a\\\"b\",\"y\":\"" + u + "dc00\"}"}) {
       assertTrue(CappedResponseSender.holdsUnpairedSurrogate(utf8(json)), json);
     }
     for (String json : new String[] {
         "{\"a\":\"" + u + "d83d" + u + "de00\"}", "{\"a\":\"\\\\" + "ud800\"}", "{\"a\":\"" + u + "0041\"}", "{\"a\":\"plain\"}",
-        "{\"a\":\"" + u + "zz00\"}", "{\"a\":1} " + u + "d800"}) {
+        "{\"a\":\"" + u + "zz00\"}", "{\"a\":1} " + u + "d800", "{\"a\":\"\\\"" + u + "d83d" + u + "de00\"}"}) {
       assertFalse(CappedResponseSender.holdsUnpairedSurrogate(utf8(json)), json);
     }
   }

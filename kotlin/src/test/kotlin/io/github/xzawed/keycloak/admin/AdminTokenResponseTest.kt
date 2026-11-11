@@ -259,7 +259,9 @@ internal class AdminTokenResponseTest {
         pad: Long = 0,
     ) {
         if (typed) ex.responseHeaders.add("Content-Type", "application/json")
-        ex.sendResponseHeaders(status, bytes.size + pad)
+        // 204 · 205 는 본문이 없다(RFC 9110 §15.3.5 · §15.3.6) — 길이 0 을 주면 JDK 서버는 청크로 보내 클라이언트가 읽지 않는 끝 청크가
+        // 연결에 남는다. Java 동형.
+        ex.sendResponseHeaders(status, if (status == 204 || status == 205) -1 else bytes.size + pad)
         try {
             ex.responseBody.use { out ->
                 out.write(bytes)
@@ -405,6 +407,12 @@ internal class AdminTokenResponseTest {
                 val corrupt = byteArrayOf(0x1f, 0x8b.toByte(), 8, 0, 0, 0, 0, 0, 0, 0xff.toByte()) + ByteArray(30) { 'x'.code.toByte() }
                 reset(Reply(200, corrupt, "gzip"))
                 table += callExpectingRejection("gzip 깨짐", wrong, AtrExpected.unusable(200))
+                // 머리가 깨진 gzip — GZIPDecodingInterceptor 는 스트림을 감쌀 때 머리를 읽어, 그 ZipException 은 가장 안쪽 판정에 닿지
+                // 않고 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). gzip 이 아닌 본문 · 지원하지 않는 압축 방법(7). Java 동형.
+                reset(Reply(200, ByteArray(40) { 'x'.code.toByte() }, "gzip"))
+                table += callExpectingRejection("gzip 머리 아님", wrong, AtrExpected.unusable(200))
+                reset(Reply(200, byteArrayOf(0x1f, 0x8b.toByte(), 7) + ByteArray(37), "gzip"))
+                table += callExpectingRejection("gzip 방법 7", wrong, AtrExpected.unusable(200))
 
                 // 갱신(refresh_token 그랜트) 응답도 같은 자리에서 판정한다 — 푼 바이트가 쓸 수 있으면 새 토큰으로 나아간다.
                 reset(Reply(200, ATR_REFRESHABLE), Reply(200, atrGzip(atrTokenBody("\"AT-2\"")), "gzip"))
@@ -432,6 +440,12 @@ internal class AdminTokenResponseTest {
             for (status in listOf(200, 201)) {
                 reset(Reply(status, atrTokenBody("12345", canary).toByteArray(), typed = false))
                 table += callExpectingRejection("Content-Type 없음 $status 12345", wrong, AtrExpected.unusable(status))
+            }
+            // 본문이 없는 2xx(204 · 205)는 미디어 타입이 붙어도 결합이 읽지 않는다 — TokenManager 가 null 로 NPE 를 내 전송 실패로
+            // 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 판정은 응답 필터가 한다. Java 동형.
+            for (status in listOf(204, 205)) {
+                reset(Reply(status, ByteArray(0)))
+                table += callExpectingRejection("본문 없음 $status (JSON)", wrong, AtrExpected.unusable(status))
             }
             println("[AdminTokenResponseTest 내용 코딩]\n  " + table.joinToString("\n  "))
             assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
