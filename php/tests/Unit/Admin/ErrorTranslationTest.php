@@ -232,17 +232,20 @@ final class ErrorTranslationTest extends TestCase
      */
     public function testUndecodableTokenGrantResponseIsAuth(): void
     {
-        $coded = static fn (string $method, string $url): RequestException => new RequestException(
+        $coded = static fn (string $method, string $url, int $status = 200): RequestException => new RequestException(
             'cURL error 61: Error while processing content unencoding',
             new Request($method, $url),
-            new Response(200, ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip']),
+            new Response($status, ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip']),
             null,
             ['errno' => 61],
         );
-        $grant = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw $coded('POST', self::TOKEN_URL)));
-        self::assertSame(KeycloakAuthError::class, $grant::class);
-        self::assertSame('admin token request failed: the token response could not be decoded', $grant->getMessage());
-        self::assertNull($grant->oauthError);
+        // 오류 상태여도 같다 — 상태가 계급을 정하고 그것은 auth 다(리뷰 레그가 살린 축소 편집 「400 미만일 때만」, 2026-11-11)
+        foreach ([200, 400] as $status) {
+            $grant = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw $coded('POST', self::TOKEN_URL, $status)));
+            self::assertSame(KeycloakAuthError::class, $grant::class);
+            self::assertSame('admin token request failed: the token response could not be decoded', $grant->getMessage());
+            self::assertNull($grant->oauthError);
+        }
 
         $admin = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw $coded('GET', self::ADMIN_URL)));
         self::assertSame(KeycloakTransportError::class, $admin::class);

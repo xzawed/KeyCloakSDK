@@ -60,14 +60,16 @@ final class PkceKeycloakProvider extends Keycloak
      *
      * Which bodies are errors stays upstream's (a non-empty `error` — `"0"`, `0` and `false` are none), plus any array: upstream
      * skipped an empty one, so a 400 `{"error":[]}` went on to fail as "no usable access_token", a reason that was not the one
-     * (.NET also refuses any `error` member that is present).
+     * (.NET also refuses any `error` member that is present). And the status decides first: a 3xx · 4xx · 5xx that carried an
+     * `access_token` and no `error` went on to `createAccessToken` and the three grants succeeded with it (review leg, on
+     * `origin/main` too — the provider and the admin grant already refused it).
      *
      * @param mixed $data
      */
     protected function checkResponse(ResponseInterface $response, $data): void
     {
         $error = \is_array($data) ? $data['error'] ?? null : null;
-        if (\is_array($error) || (bool) $error) {
+        if ($response->getStatusCode() >= 300 || \is_array($error) || (bool) $error) {
             throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
         }
         parent::checkResponse($response, $data);

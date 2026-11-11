@@ -19,8 +19,7 @@ use Xzawed\Keycloak\Exception\SanitizedCause;
  *
  * ⚠️ Introspection and logout called every non-connect Guzzle failure auth — so a TLS failure, or a response head Guzzle
  * could not build into a response (a header name outside RFC 7230), was an IdP rejection (measured 2026-11-11). And every
- * lane called a body whose content coding curl could not decode (CURLE_BAD_CONTENT_ENCODING) a transport failure, though its
- * head and every byte of its body arrived.
+ * lane called a body whose content coding curl could not decode (CURLE_BAD_CONTENT_ENCODING) a transport failure.
  */
 final class ResponseFailure
 {
@@ -28,10 +27,12 @@ final class ResponseFailure
     private const BAD_CONTENT_ENCODING = 61;
 
     /**
-     * Whether the response arrived — head and body — but its content coding could not be decoded. curl decodes after the head,
-     * so Guzzle attaches the response to that failure. ⚠️ `StreamHandler` reports the same body as a bare "Unable to read from
-     * stream" — no response, no errno — exactly as a socket read that failed, so there it stays a transport failure (measured
-     * 2026-11-11: it cannot be told apart).
+     * Whether the head arrived and the body bytes that arrived could not be decoded — a corrupt content coding, the IdP's and
+     * no retry's to fix (registry decision Q1, 2026-11-11). ⚠️ It does not mean the whole body arrived: curl decodes as it
+     * reads and stops at the first bytes it cannot decode, so a corrupt start with the rest never sent is the same errno 61
+     * (review leg: `size_download=0` of 1000). A clean cut inside a valid stream is curl 18 or 28 — transport. ⚠️
+     * `StreamHandler` reports a corrupt body as a bare "Unable to read from stream" — no response, no errno — exactly as a
+     * socket read that failed, so there it stays a transport failure (measured: it cannot be told apart).
      */
     public static function undecodable(#[\SensitiveParameter] \Throwable $e): bool
     {

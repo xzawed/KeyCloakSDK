@@ -86,6 +86,8 @@ final class MalformedTokenResponseTest extends TestCase
         'c expires_in string' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'ok'],
         'c2 token_type array' => ['clientCredentialsToken' => 'ok', 'refresh' => 'ok', 'exchangeCode' => 'ok', 'provider.getToken' => 'ok'],
         'c3 expires_in float' => ['clientCredentialsToken' => 'ok', 'refresh' => 'ok', 'exchangeCode' => 'ok', 'provider.getToken' => 'ok'],
+        // league 는 숫자 문자열을 받는다 — 거부는 league 의 판정이지 SDK 의 형 검사가 아니다(리뷰 레그가 살린 축소 편집, 2026-11-11).
+        'c4 expires_in numeric string' => ['clientCredentialsToken' => 'ok', 'refresh' => 'ok', 'exchangeCode' => 'ok', 'provider.getToken' => 'ok'],
         'd short non-JSON body' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'd2 long non-JSON body' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'd3 non-JSON body text/plain' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
@@ -103,6 +105,9 @@ final class MalformedTokenResponseTest extends TestCase
         'e9 400 error empty array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         // 문자열 error 옆의 배열 error_description — upstream 이 이어 붙여 "Array to string conversion" 경고였다(Grok 레그, 2026-11-11).
         'e10 400 error_description array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        // 오류 상태 · 리다이렉트가 access_token 을 실었다 — 세 그랜트가 그 토큰으로 성공했다(main 부터, 리뷰 레그). 상태가 판정한다.
+        'e11 400 with an access_token' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        'e12 302 with an access_token' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'f short non-JSON body' => ['introspect' => 'auth'],
         'f2 long non-JSON body' => ['introspect' => 'auth'],
         'f3 401 error_description echo' => ['introspect' => 'auth'],
@@ -124,9 +129,16 @@ final class MalformedTokenResponseTest extends TestCase
         'x2 introspect TLS failure' => ['introspect' => 'transport'],
         'x3 logout TLS failure' => ['logout' => 'transport'],
         'x4 introspect broken response head' => ['introspect' => 'transport'],
+        // 응답이 달렸어도 errno 가 61 이 아니면(curl 18 — 끊긴 본문) 다 오지 않은 응답이다(리뷰 레그가 살린 축소 편집 「응답이 있으면 auth」).
+        'x5 introspect cut body' => ['introspect' => 'transport'],
+        'x6 logout cut body' => ['logout' => 'transport'],
         // 머리는 끝까지 왔는데 content-coding 을 풀 수 없다(curl 61) — 끝까지 온 응답이 쓸 수 없다: auth.
         'y token undecodable content' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'y2 introspect undecodable content' => ['introspect' => 'auth'],
+        // logout 도 · 오류 상태도 같다(리뷰 레그가 살린 축소 편집 「logout 인라인」 · 「400 미만일 때만」).
+        'y3 logout undecodable content' => ['logout' => 'auth'],
+        'y4 token undecodable content on a 400' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        'y5 introspect undecodable content on a 400' => ['introspect' => 'auth'],
     ];
 
     /**
@@ -180,7 +192,7 @@ final class MalformedTokenResponseTest extends TestCase
      * SDK 가 **받아들이는** 변형 — 오류가 없으니 누출 검사 대상도 없다. 그 밖의 변형은 적어도 한 호출을 실패시켜야 한다
      * (전부 `ok` 인 표는 아무것도 재지 않으면서 초록이다). b3·c3 은 수정 전 `\TypeError` 였다(`TokenSet::fromArray` 와 같은 규칙).
      */
-    private const ACCEPTED = ['b3 refresh_token int', 'c2 token_type array', 'c3 expires_in float'];
+    private const ACCEPTED = ['b3 refresh_token int', 'c2 token_type array', 'c3 expires_in float', 'c4 expires_in numeric string'];
 
     /** @var array<string, array{0:string,1:bool}> 이름 => [값, 앞 10 자도 찾는가] */
     private static array $canaries = [];
@@ -301,6 +313,12 @@ final class MalformedTokenResponseTest extends TestCase
             ]), 'canaries' => [
                 'c3.AT' => ['LKc3AT-access-token-canary', true], 'c3.RT' => ['LKc3RT-refresh-token-canary', true],
             ], 'calls' => $noNonce],
+            'c4 expires_in numeric string' => ['ep' => 'token', 'status' => 200, 'type' => $json, 'body' => $enc([
+                'access_token' => 'LKc4AT-access-token-canary', 'token_type' => 'Bearer', 'expires_in' => '300',
+                'refresh_token' => 'LKc4RT-refresh-token-canary',
+            ]), 'canaries' => [
+                'c4.AT' => ['LKc4AT-access-token-canary', true], 'c4.RT' => ['LKc4RT-refresh-token-canary', true],
+            ], 'calls' => $noNonce],
             // (d) 200 에 JSON 이 아닌 본문 — 짧은 카나리아(≤ 20 자) 하나, 카나리아로 시작하는 긴 본문 하나.
             'd short non-JSON body' => ['ep' => 'token', 'status' => 200, 'type' => $json, 'body' => 'LKd1SHORTbody',
                 'canaries' => ['d.SHORT' => ['LKd1SHORTbody', true]]],
@@ -353,6 +371,12 @@ final class MalformedTokenResponseTest extends TestCase
             'e10 400 error_description array' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
                 'error' => 'invalid_grant', 'error_description' => ['LKe10DESC-description-array-member'],
             ]), 'canaries' => ['e10.DESC' => ['LKe10DESC-description-array-member', true]]],
+            'e11 400 with an access_token' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
+                'access_token' => 'LKe11AT-token-on-an-error-status', 'token_type' => 'Bearer', 'expires_in' => 300,
+            ]), 'canaries' => ['e11.AT' => ['LKe11AT-token-on-an-error-status', true]]],
+            'e12 302 with an access_token' => ['ep' => 'token', 'status' => 302, 'type' => $json, 'body' => $enc([
+                'access_token' => 'LKe12AT-token-on-a-redirect', 'token_type' => 'Bearer', 'expires_in' => 300,
+            ]), 'canaries' => ['e12.AT' => ['LKe12AT-token-on-a-redirect', true]]],
             // (f) introspect 의 같은 모양.
             'f short non-JSON body' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => 'LKf1SHORTbody',
                 'canaries' => ['f.SHORT' => ['LKf1SHORTbody', true]]],
@@ -392,8 +416,13 @@ final class MalformedTokenResponseTest extends TestCase
             // head = Guzzle 이 받은 머리로 응답을 만들지 못했다(RFC 7230 밖 헤더 이름 — 응답 없는 RequestException) · coding = 머리는
             // 왔는데 본문을 풀지 못했다(curl 61 — 응답 있는 RequestException).
             'x4 introspect broken response head' => ['ep' => 'introspect', 'fail' => 'head'] + $none,
+            'x5 introspect cut body' => ['ep' => 'introspect', 'fail' => 'cut'] + $none,
+            'x6 logout cut body' => ['ep' => 'logout', 'fail' => 'cut'] + $none,
             'y token undecodable content' => ['ep' => 'token', 'fail' => 'coding'] + $none,
             'y2 introspect undecodable content' => ['ep' => 'introspect', 'fail' => 'coding'] + $none,
+            'y3 logout undecodable content' => ['ep' => 'logout', 'fail' => 'coding'] + $none,
+            'y4 token undecodable content on a 400' => ['ep' => 'token', 'fail' => 'coding400'] + $none,
+            'y5 introspect undecodable content on a 400' => ['ep' => 'introspect', 'fail' => 'coding400'] + $none,
         ];
     }
 
@@ -427,6 +456,21 @@ final class MalformedTokenResponseTest extends TestCase
                         new Response(200, ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip']),
                         null,
                         ['errno' => 61],
+                    )),
+                    'coding400' => Create::rejectionFor(new RequestException(
+                        'cURL error 61: Error while processing content unencoding ' . self::HANDLER_ECHO,
+                        $req,
+                        new Response(400, ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip']),
+                        null,
+                        ['errno' => 61],
+                    )),
+                    // 머리는 왔는데 본문이 Content-Length 전에 끊겼다(curl 18) — 응답이 달렸어도 다 오지 않았다.
+                    'cut' => Create::rejectionFor(new RequestException(
+                        'cURL error 18: transfer closed with outstanding read data remaining ' . self::HANDLER_ECHO,
+                        $req,
+                        new Response(200, ['Content-Type' => 'application/json']),
+                        null,
+                        ['errno' => 18],
                     )),
                     default => Create::promiseFor(new Response(self::$reply['status'], ['Content-Type' => self::$reply['type']], self::$reply['body'])),
                 };
