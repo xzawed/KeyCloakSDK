@@ -253,10 +253,13 @@ async function readCappedChunks(
 
 /**
  * {@link readCapped} — and for a token or introspection response (`kind`), a content coding that does not decode becomes
- * {@link ResponseUnusableError}: every byte arrived (decision Q1, 2026-11-11; it was a transport failure — undici errors
- * the body with `TypeError('terminated')` whose cause is zlib's `Z_DATA_ERROR`, measured Node 22.18: not gzip, corrupt
- * deflate, bad CRC, bytes after a member). Truncation is not mapped: undici reports none for a gzip that is merely
- * missing its CRC/length trailer (it is accepted), and anything else it throws stays what it was.
+ * {@link ResponseUnusableError} (decision Q1, 2026-11-11; it was a transport failure). The verdict is on the bytes that
+ * came, at the first bad one, not on whether the rest of the body then arrives: no cut produces these codes, and bytes
+ * that do not decode stay so on a retry — the reading of PHP's curl 61 (#1021), the JVM's ZipException, Python's
+ * zlib.error and Go's gzip errors. undici errors the body with `TypeError('terminated')` whose cause carries the code
+ * ({@link undecodableCoding}). Truncation is not mapped: undici reports none — a gzip or br stream cut short hands on
+ * what decoded (the JSON parse then fails), and a gzip missing only its CRC/length trailer is accepted (measured
+ * Node 22.18 · undici 6.21; registry `gzip-trailer-lenience-divergent`).
  */
 async function readDecoded(
   body: ReadableStream<Uint8Array>,
@@ -265,21 +268,31 @@ async function readDecoded(
   try {
     return await readCapped(body, TOKEN_RESPONSE_MAX_BYTES)
   } catch (e) {
-    if (kind !== undefined && zlibDataError(e))
+    if (kind !== undefined && undecodableCoding(e))
       throw new ResponseUnusableError(`${kind} could not be decoded`)
     throw e
   }
 }
 
-/** Whether zlib's `Z_DATA_ERROR` is in the cause chain (at most 8 links). */
-function zlibDataError(error: unknown): boolean {
+/** Whether a decoder's verdict on the bytes ({@link UNDECODABLE}) is in the cause chain (at most 8 links). */
+function undecodableCoding(error: unknown): boolean {
   let link: unknown = error
   for (let depth = 0; depth < 8 && link instanceof Error; depth += 1) {
-    if ((link as { code?: unknown }).code === 'Z_DATA_ERROR') return true
+    const code = (link as { code?: unknown }).code
+    if (typeof code === 'string' && UNDECODABLE.test(code)) return true
     link = link.cause
   }
   return false
 }
+
+/**
+ * The decoder codes that judge the bytes themselves: zlib's corrupt data (gzip · deflate) and a zlib stream that needs
+ * a preset dictionary nobody gave, and brotli's format and dictionary errors (`ERR__ERROR_FORMAT_*`) — measured Node
+ * 22.18 · undici 6.21 (independent review leg: corrupt br and `Z_NEED_DICT` stayed transport without them). Allocation
+ * and other resource errors are not about the bytes and stay what they were.
+ */
+const UNDECODABLE =
+  /^(?:Z_DATA_ERROR|Z_NEED_DICT|ERR__ERROR_FORMAT_[A-Z0-9_]+|ERR__ERROR_DICTIONARY_NOT_SET)$/
 
 /**
  * A fetch that reads the response body only up to {@link TOKEN_RESPONSE_MAX_BYTES} and hands it back as a new

@@ -11,7 +11,7 @@
  */
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { gzipSync } from 'node:zlib'
+import { deflateRawSync, gzipSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { KeycloakAuthError, KeycloakClient, KeycloakTransportError } from '../../src/index.js'
 import { holdsUnpairedSurrogate } from '../../src/token-response-cap.js'
@@ -171,6 +171,32 @@ const UNUSABLE_TOKENS: Array<[string, Answer, string]> = [
     { status: 400, body: CORRUPT_DEFLATE, encoding: 'gzip' },
     'could not be decoded',
   ],
+  // 상태와 무관하다 — 401 · 500 도(실행 레그: 상태로 자르는 편집이 살아남았다)
+  [
+    '401 의 깨진 gzip',
+    { status: 401, body: CORRUPT_DEFLATE, encoding: 'gzip' },
+    'could not be decoded',
+  ],
+  [
+    '500 의 깨진 gzip',
+    { status: 500, body: CORRUPT_DEFLATE, encoding: 'gzip' },
+    'could not be decoded',
+  ],
+  // brotli 의 형식 오류(ERR__ERROR_FORMAT_*)와 사전이 필요한 zlib(Z_NEED_DICT)도 바이트의 판정이다 — 실행 레그가 찾음
+  ['깨진 br', { status: 200, body: Buffer.alloc(40, 'x'), encoding: 'br' }, 'could not be decoded'],
+  [
+    '사전이 필요한 deflate',
+    {
+      status: 200,
+      body: Buffer.concat([
+        Buffer.from([0x78, 0x20, 0, 0, 0, 1]),
+        deflateRawSync(GOOD_TOKEN),
+        Buffer.alloc(4),
+      ]),
+      encoding: 'deflate',
+    },
+    'could not be decoded',
+  ],
 ]
 
 describe('끝까지 온 토큰 응답을 쓸 수 없으면 KeycloakAuthError', () => {
@@ -219,6 +245,31 @@ describe('대조군', () => {
       expect((got as Error).message).not.toContain('could not be decoded')
     },
   )
+
+  it('discovery 문서의 짝 없는 서로게이트 — 토큰 응답이 아니라 판정 밖이다(받는다)', async () => {
+    const issuer = `${origin}/realms/r`
+    const doc = JSON.stringify({
+      issuer,
+      token_endpoint: `${issuer}/protocol/openid-connect/token`,
+      introspection_endpoint: `${issuer}/protocol/openid-connect/token/introspect`,
+      jwks_uri: `${issuer}/protocol/openid-connect/certs`,
+      response_types_supported: ['code'],
+    })
+    discovery = { status: 200, body: Buffer.from(withMember(doc, `"x":"${U}d800"`)) }
+    const kc = KeycloakClient.create({
+      serverUrl: origin,
+      realm: 'r',
+      clientId: 'c',
+      clientSecret: 's',
+    })
+    try {
+      token = ok(GOOD_TOKEN)
+      await expect(kc.auth.clientCredentialsToken()).resolves.toBeDefined()
+    } finally {
+      discovery = undefined
+      await kc.close()
+    }
+  })
 
   it('discovery 문서의 깨진 gzip — 토큰 응답이 아니라 판정 밖이다(전처럼 transport)', async () => {
     discovery = { status: 200, body: CORRUPT_DEFLATE, encoding: 'gzip' }
@@ -282,6 +333,14 @@ describe('holdsUnpairedSurrogate', () => {
     [`{"x":"a\\"b","y":"${U}dc00"}`, true], // 이스케이프된 따옴표가 문자열을 닫지 않는다(JVM 실행 레그)
     [`{"a":"${U}d800${U}d800"}`, true],
     [`{"a":"${U}d800\\"`, true],
+    // 실행 레그가 살린 축소 편집들 — 범위 위의 비-low · 짝 뒤 다음 문자열 · 대문자 F · 짝 앞의 `\` 와 `u`
+    [`{"a":"${U}d800${U}e000"}`, true],
+    [`{"a":"${U}d83d${U}de00","b":"${U}d800"}`, true],
+    [`{"a":"${U}DBFF"}`, true],
+    [`{"a":"${U}DFFF"}`, true],
+    [`{"a":"${U}d800xudc00"}`, true],
+    [`{"a":"${U}d800\\"dc00"}`, true],
+    [`{"a":"${U}d800\\\\dc00"}`, true],
     [`{"a":"${U}d83d${U}de00"}`, false],
     [`{"a":"\\\\ud800"}`, false],
     [`{"a":"${U}0041"}`, false],
