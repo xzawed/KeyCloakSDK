@@ -7,6 +7,8 @@
         </testcase>
         <testcase classname="test/unit/o.test.ts" name="O &gt; o3 function reference" time="0.001">
         </testcase>
+        <testcase classname="test/unit/o.test.ts" name="O &gt; o3b function reference and timeout" time="0.001">
+        </testcase>
         <testcase classname="test/unit/o.test.ts" name="O &gt; o4 fails true" time="0.001">
         </testcase>
         <testcase classname="test/unit/o.test.ts" name="O &gt; o5 fails multi-line" time="0.001">

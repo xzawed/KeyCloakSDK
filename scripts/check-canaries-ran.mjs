@@ -342,7 +342,13 @@ function optionsFail(lines, at, start, file, what) {
   const after = next()
   if (after === ')') return false
   if (after === '=' && blankStrings(lines[i])[c + 1] === '>') return false
-  if (after === ',') unread(`옵션이 리터럴 객체가 아니다(\`${id[0]}\`) — fails 를 가릴 수 없다`)
+  if (after === ',') {
+    // 셋째 인자가 숫자면 식별자는 테스트 함수이고 숫자는 타임아웃이다(`it(제목, fn, 5000)` — vitest 5 가 받는다, Grok 레그
+    // Q2 · 실측). 그 밖이면 식별자는 옵션 변수다.
+    c++
+    if (next() !== null && /^\d/.test(blankStrings(lines[i]).slice(c))) return false
+    unread(`옵션이 리터럴 객체가 아니다(\`${id[0]}\`) — fails 를 가릴 수 없다`)
+  }
   return unread(`\`${id[0]}\` 뒤를 읽지 못했다`)
 }
 // 위로 올라가며 처음 만나는 더 얕은 줄이 감싸는 블록이다(prettier 들여쓰기) — 그 줄마다 한계를 낮춘다. 클래스 사슬처럼

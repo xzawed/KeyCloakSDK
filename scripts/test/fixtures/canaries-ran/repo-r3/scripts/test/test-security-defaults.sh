@@ -8,6 +8,7 @@ sd_nonce_canary() {
             "node/test/unit/o.test.ts|it('o1 timeout options'" \
             "node/test/unit/o.test.ts|it('o2 fails false'" \
             "node/test/unit/o.test.ts|it('o3 function reference'" \
+            "node/test/unit/o.test.ts|it('o3b function reference and timeout'" \
             "node/test/unit/o.test.ts|it('o4 fails true'" \
             "node/test/unit/o.test.ts|it('o5 fails multi-line'" \
             "node/test/unit/o.test.ts|it('o6 inside a fails describe'" ;;

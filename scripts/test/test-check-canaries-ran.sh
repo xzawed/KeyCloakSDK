@@ -211,10 +211,13 @@ expect r2-kotlin-param 2 "표시 이름을 바꾸는 어노테이션"
 # ═══ vitest 옵션 인자의 fails — JUnit 은 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측 · #1017 레그) ═══════
 # 건강 셋(timeout 옵션 · fails: false · 함수 참조)과 뒤집힘 셋(한 줄 · 여러 줄 · describe 옵션).
 run --lang node --report "$REP/node-r3.xml" --root "$FIX/repo-r3"
-expect r3-node 1 "통과 3 · FAIL 3"
+expect r3-node 1 "통과 4 · FAIL 3"
 assert_contains "$OUT" "o1 timeout options — 1 통과" "[r3-node] timeout 옵션을 뒤집힘으로 읽었다 — 출력: $OUT"
 assert_contains "$OUT" "o2 fails false — 1 통과" "[r3-node] fails: false 를 뒤집힘으로 읽었다 — 출력: $OUT"
 assert_contains "$OUT" "o3 function reference — 1 통과" "[r3-node] 함수 참조를 옵션으로 읽었다 — 출력: $OUT"
+# 함수 참조 + 숫자 타임아웃(`it(제목, fn, 5000)`)은 vitest 5 가 받는 건강한 꼴이다 — 식별자 뒤 `,` 를 옵션 변수로 읽으면
+# 판정 불가가 된다(Grok 레그 Q2 · vitest 5.1 실측).
+assert_contains "$OUT" "o3b function reference and timeout — 1 통과" "[r3-node] 함수 참조 + 타임아웃을 옵션 변수로 읽었다 — 출력: $OUT"
 assert_contains "$OUT" "o4 fails true — 뒤집혔다" "[r3-node] 옵션 인자의 fails: true 를 놓쳤다 — 출력: $OUT"
 assert_contains "$OUT" "o5 fails multi-line — 뒤집혔다" "[r3-node] 여러 줄 옵션의 fails 를 놓쳤다 — 출력: $OUT"
 assert_contains "$OUT" "o6 inside a fails describe — 뒤집혔다" "[r3-node] describe 옵션의 fails 를 놓쳤다 — 출력: $OUT"

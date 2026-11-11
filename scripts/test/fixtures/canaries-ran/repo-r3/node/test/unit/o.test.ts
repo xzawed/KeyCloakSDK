@@ -4,6 +4,7 @@ describe('O', () => {
   it('o1 timeout options', { timeout: 5000 }, () => {})
   it('o2 fails false', { fails: false }, () => {})
   it('o3 function reference', handler)
+  it('o3b function reference and timeout', handler, 5000)
   it('o4 fails true', { fails: true }, () => {
     throw new Error('the canary assertion failed')
   })
