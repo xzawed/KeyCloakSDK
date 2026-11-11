@@ -22,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import gzip
 import threading
+import zlib
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,6 +59,19 @@ _CORRUPT_GZIP = b"\x1f\x8b\x08\x00not-a-deflate-stream-at-all-xxxxxxxxxxxx"
 def _with(body: bytes, member: bytes) -> bytes:
     """JSON 객체 `body` 끝에 멤버 하나를 더한다."""
     return body[:-1] + b"," + member + b"}"
+
+
+def _flip(stream: bytes, back: int) -> bytes:
+    """gzip 꼬리의 한 바이트를 뒤집는다 — 끝에서 8 이면 CRC-32, 4 면 길이."""
+    out = bytearray(stream)
+    out[-back] ^= 0xFF
+    return bytes(out)
+
+
+def _raw_deflate(body: bytes) -> bytes:
+    """zlib 래퍼 없는 날 deflate."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
+    return comp.compress(body) + comp.flush()
 
 
 _Answer = tuple[int, str, bytes]
@@ -100,6 +114,23 @@ TOKEN_CELLS: dict[str, _Answer] = {
     "r16 200 corrupt gzip": (200, f"{_JSON}{_GZIP}", _CORRUPT_GZIP),
     "r16t 200 truncated gzip": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_TOKEN)[:-8]),
     "r16e 200 empty body labelled gzip": (200, f"{_JSON}{_GZIP}", b""),
+    # 실행 레그(2026-11-11)가 살린 편집들의 칸 — 머리만 온 gzip · CRC · 길이 꼬리 · 날 deflate ·
+    # 201 ·
+    # 오류 상태의 잘린 gzip(상태가 판정한다).
+    "r16h 200 gzip header only": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_TOKEN)[:10]),
+    "r16c 200 gzip with a bad CRC": (200, f"{_JSON}{_GZIP}", _flip(gzip.compress(_GOOD_TOKEN), 8)),
+    "r16i 200 gzip with a bad length": (
+        200,
+        f"{_JSON}{_GZIP}",
+        _flip(gzip.compress(_GOOD_TOKEN), 4),
+    ),
+    "r16r 200 raw deflate": (200, f"{_JSON}\nContent-Encoding: deflate", _raw_deflate(_GOOD_TOKEN)),
+    "r13c 201 unpaired surrogate": (201, _JSON, _with(_GOOD_TOKEN, b'"x":"' + _U + b'd800"')),
+    "r16t4 400 truncated gzip error body": (
+        400,
+        f"{_JSON}{_GZIP}",
+        gzip.compress(b'{"error":"invalid_grant"}')[:-8],
+    ),
     "r17 200 valid surrogate pair": (
         200,
         _JSON,
@@ -154,6 +185,12 @@ S1: dict[str, _Verdict] = {
     # 같다). 전에는 받아들였다. gzip 이라 적은 빈 본문은 빈 본문이다(잘림이 아니다).
     "r16t 200 truncated gzip": ("KeycloakTransportError", "token response was cut short"),
     "r16e 200 empty body labelled gzip": _auth(f"{_UNUSABLE} (TypeError)"),
+    "r16h 200 gzip header only": ("KeycloakTransportError", "token response was cut short"),
+    "r16c 200 gzip with a bad CRC": _auth("token response could not be decoded"),
+    "r16i 200 gzip with a bad length": _auth("token response could not be decoded"),
+    "r16r 200 raw deflate": OK,
+    "r13c 201 unpaired surrogate": _auth("token response holds an unpaired surrogate escape"),
+    "r16t4 400 truncated gzip error body": _auth(f"{_HTTP} 400 (invalid_grant)", "invalid_grant"),
     "r17 200 valid surrogate pair": OK,
     "r8u 400 invalid UTF-8 in the error body": _auth(f"{_HTTP} 400"),
     "401 invalid_client": _auth(f"{_HTTP} 401 (invalid_client)", "invalid_client"),
@@ -469,6 +506,14 @@ _UNPAIRED_SCAN: dict[bytes, bool] = {
     b'{"a":"' + _U + b"d800" + b'\\"' + b'dc00"}': True,
     b'{"a":"' + _U + b"d800" + b"\\\\" + b'dc00"}': True,
     b'{"a":"' + _U + b"d800" + _U + b'dc00"}': False,
+    # python 실행 레그가 살린 편집들 — 높은 것 뒤의 높은 것 · 범위 끝의 짝 · 끝에서 잘린
+    # 이스케이프 ·
+    # 64 KiB 너머
+    b'{"a":"' + _U + b"d800" + _U + b'd800"}': True,
+    b'{"a":"' + _U + b"dbff" + _U + b'dfff"}': False,
+    b'{"a":"x' + _U: False,
+    b'{"a":"x' + _U + b"12": False,
+    b'{"a":"' + b"x" * 70_000 + _U + b'd800"}': True,
     b'{"a":"' + _U + b"d83d" + _U + b'de00"}': False,
     b'{"a":"' + b"\\\\" + b'ud800"}': False,
     b'{"a":"' + _U + b'0041"}': False,

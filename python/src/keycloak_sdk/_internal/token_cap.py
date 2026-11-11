@@ -229,16 +229,19 @@ def _read(response: requests.Response, kind: str, check: Callable[[], None]) -> 
     while data := read(min(_CHUNK, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body)), decode_content=False):
         fed = True
         _keep(body, inflate, data, kind)
-    _whole(kind, ended, fed)
+    _whole(response.status_code, kind, ended, fed)
     return bytes(body)
 
 
-def _whole(kind: str, ended: _Ended | None, fed: bool) -> None:
-    """원문이 끝났는데 그 압축 스트림은 끝나지 않았다 — 잘린 gzip · deflate(꼬리 — CRC · 길이 —
-    만 없는 것 포함)는 끊긴 연결과 가를 수 없어 다 오지 않은 응답이다(`KeycloakTransportError` ·
-    등록부 token-response-class-residue 판정 Q1 — Go · JVM 의 해제기도 그렇게 낸다). 전에는 꼬리가
-    없는 gzip 토큰 응답을 받아들였다(실측 2026-11-11). 원문이 아예 없으면 빈 본문이다(httpx ·
-    net/http 와 같다)."""
+def _whole(status: int, kind: str, ended: _Ended | None, fed: bool) -> None:
+    """2xx 토큰 · introspection 의 원문이 끝났는데 그 압축 스트림은 끝나지 않았다 — 잘린 gzip ·
+    deflate(꼬리 — CRC · 길이 — 만 없는 것 포함)는 Go · JVM 의 해제기처럼 다 오지 않은 응답으로
+    본다(`KeycloakTransportError` · 등록부 token-response-class-residue 판정 Q1 — 틀이 연결의 끝인
+    응답에서는 끊긴 연결과 가를 수 없다). 전에는 꼬리가 없는 gzip 토큰 응답을 받아들였다(실측
+    2026-11-11). 오류 상태는 상태가 판정하고(독립 레그: 401 의 코드가 그 판정에 가려졌다), logout 은
+    본문을 쓰지 않는다. 원문이 아예 없으면 빈 본문이다(httpx · net/http 와 같다)."""
+    if not 200 <= status < 300 or kind not in _JSON_KINDS:
+        return
     if ended is not None and fed and not ended():
         raise ResponseRefused(f"{kind} was cut short", incomplete=True)
 
@@ -304,23 +307,28 @@ def _decoder(codings: list[str], kind: str) -> tuple[_Inflate, _Ended | None]:
         return (lambda data, limit: b"" if gzip.eof else gzip.decompress(data, limit)), (
             lambda: gzip.eof
         )
-    # deflate 는 zlib 래퍼가 표준이지만 날 deflate 를 보내는 서버가 있다 — httpx 처럼 첫 조각이
-    # 실패하면 날 deflate 로 다시 푼다.
+    # deflate 는 zlib 래퍼가 표준이지만 날 deflate 를 보내는 서버가 있다 — zlib 머리(두 바이트)에서
+    # 실패하면 그때까지 받은 입력을 날 deflate 로 다시 푼다(urllib3 와 같다). 첫 조각만 보던 때는 한
+    # 바이트로 온 첫 조각 뒤의 완전한 날 deflate 응답을 거부했다 — zlib 은 두 바이트가 와야 머리를
+    # 판정한다(독립 레그 실측 2026-11-11).
     inflater = zlib.decompressobj()
-    first = True
+    held: bytearray | None = bytearray()  # 머리를 지나기 전까지 받은 입력 — 지나면 None
 
     def deflate(data: bytes, limit: int) -> bytes:
-        nonlocal inflater, first
+        nonlocal inflater, held
         if inflater.eof:
             return b""
-        was_first, first = first, False
+        if held is None:
+            return inflater.decompress(data, limit)
+        held += data
         try:
-            return inflater.decompress(data, limit)
+            out = inflater.decompress(data, limit)
         except zlib.error:
-            if not was_first:
-                raise
-            inflater = zlib.decompressobj(-zlib.MAX_WBITS)
-            return inflater.decompress(data, limit)
+            inflater, replay, held = zlib.decompressobj(-zlib.MAX_WBITS), bytes(held), None
+            return inflater.decompress(replay, limit)
+        if len(held) >= 2:
+            held = None
+        return out
 
     # 날 deflate 로 갈아탄 뒤의 객체를 본다 — `deflate` 가 같은 이름을 다시 묶는다.
     return deflate, lambda: inflater.eof
@@ -334,7 +342,7 @@ async def _aread(response: httpx.Response, kind: str) -> bytes:
     async for data in response.aiter_raw():
         fed = True
         _keep(body, inflate, data, kind)
-    _whole(kind, ended, fed)
+    _whole(response.status_code, kind, ended, fed)
     return bytes(body)
 
 

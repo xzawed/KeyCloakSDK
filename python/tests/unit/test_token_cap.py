@@ -23,6 +23,7 @@ from keycloak_sdk._internal import token_cap
 from keycloak_sdk._internal.token_cap import (
     TOKEN_RESPONSE_MAX_BYTES,
     ResponseRefused,
+    _decoder,
     _inflater,
     _kind,
     acapped_send,
@@ -111,6 +112,19 @@ def test_deflate_inflates_zlib_and_raw_streams_within_the_limit(wbits: int) -> N
 
     assert inflate(payload[:10], 10_000) + inflate(payload[10:], 10_000) == b"x" * 5000
     assert len(_inflater(["deflate"], "token response")(_BOMB, 777)) == 777
+
+
+@pytest.mark.parametrize("wbits", [zlib.MAX_WBITS, -zlib.MAX_WBITS], ids=["zlib", "raw"])
+def test_deflate_decides_the_wrapper_on_its_header_not_on_the_first_piece(wbits: int) -> None:
+    """zlib 은 두 바이트가 와야 머리를 판정한다 — 첫 조각만 보던 때는 한 바이트로 온 첫 조각 뒤의
+    완전한 날 deflate 응답을 「풀 수 없다」로 거부했다(독립 레그 실측 2026-11-11). 끝났는지 묻는
+    함수는 갈아탄 뒤의 해제기를 본다(옛 해제기를 붙들면 모든 날 deflate 가 「잘림」이다)."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, wbits)
+    payload = comp.compress(b'{"access_token": "x"}') + comp.flush()
+    inflate, ended = _decoder(["deflate"], "token response")
+
+    assert inflate(payload[:1], 10_000) + inflate(payload[1:], 10_000) == b'{"access_token": "x"}'
+    assert ended is not None and ended()
 
 
 def test_a_broken_deflate_stream_after_the_first_piece_is_a_decoding_error() -> None:
