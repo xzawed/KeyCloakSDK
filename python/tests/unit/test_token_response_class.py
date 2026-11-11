@@ -20,6 +20,7 @@ S5 의 기대는 손으로 적지 않는다 — 같은 칸에서 S1 이 낸 판�
 from __future__ import annotations
 
 import contextlib
+import gzip
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
@@ -97,6 +98,8 @@ TOKEN_CELLS: dict[str, _Answer] = {
         b'{"access_token":"' + _U + b'd800","token_type":"Bearer","expires_in":300}',
     ),
     "r16 200 corrupt gzip": (200, f"{_JSON}{_GZIP}", _CORRUPT_GZIP),
+    "r16t 200 truncated gzip": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_TOKEN)[:-8]),
+    "r16e 200 empty body labelled gzip": (200, f"{_JSON}{_GZIP}", b""),
     "r17 200 valid surrogate pair": (
         200,
         _JSON,
@@ -147,6 +150,10 @@ S1: dict[str, _Verdict] = {
         "token response holds an unpaired surrogate escape"
     ),
     "r16 200 corrupt gzip": _auth("token response could not be decoded"),
+    # 꼬리(CRC · 길이)가 없는 gzip — 잘린 압축은 끊긴 연결과 가를 수 없다(판정 Q1, Go · JVM 과
+    # 같다). 전에는 받아들였다. gzip 이라 적은 빈 본문은 빈 본문이다(잘림이 아니다).
+    "r16t 200 truncated gzip": ("KeycloakTransportError", "token response was cut short"),
+    "r16e 200 empty body labelled gzip": _auth(f"{_UNUSABLE} (TypeError)"),
     "r17 200 valid surrogate pair": OK,
     "r8u 400 invalid UTF-8 in the error body": _auth(f"{_HTTP} 400"),
     "401 invalid_client": _auth(f"{_HTTP} 401 (invalid_client)", "invalid_client"),
@@ -183,6 +190,7 @@ INTROSPECTION_CELLS: dict[str, _Answer] = {
         _with(_GOOD_INTRO, b'"x_ext":"' + _U + b'd800"'),
     ),
     "r16 200 corrupt gzip": (200, f"{_JSON}{_GZIP}", _CORRUPT_GZIP),
+    "r16t 200 truncated gzip": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_INTRO)[:-8]),
     "r17 200 valid surrogate pair": (
         200,
         _JSON,
@@ -206,6 +214,7 @@ INTRO: dict[str, _Verdict] = {
         "introspection response holds an unpaired surrogate escape"
     ),
     "r16 200 corrupt gzip": _auth("introspection response could not be decoded"),
+    "r16t 200 truncated gzip": ("KeycloakTransportError", "introspection response was cut short"),
     "r17 200 valid surrogate pair": OK,
 }
 

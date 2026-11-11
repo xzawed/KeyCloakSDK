@@ -90,9 +90,9 @@ _Ended = Callable[[], bool]
 
 class ResponseRefused(Exception):
     """세션이 응답 본문을 거부했다 — 경계가 같은 메시지의 SDK 오류로 바꾸는 신호. `incomplete` 면
-    본문을 다 읽지 않았다(상한 초과 → `KeycloakTransportError`), 아니면 끝까지 온 응답을 쓸 수
-    없다(두 번 압축 — 본문을 읽기 전 · 풀 수 없는 압축 · 2xx 본문이 UTF-8 JSON 텍스트가 아니거나
-    짝 없는 서로게이트 이스케이프를 품음 → `KeycloakAuthError`)."""
+    본문을 다 읽지 않았다(상한 초과 · 잘린 압축 → `KeycloakTransportError`), 아니면 끝까지 온
+    응답을 쓸 수 없다(두 번 압축 — 본문을 읽기 전 · 풀 수 없는 압축 · 2xx 본문이 UTF-8 JSON 텍스트가
+    아니거나 짝 없는 서로게이트 이스케이프를 품음 → `KeycloakAuthError`)."""
 
     def __init__(self, message: str, *, incomplete: bool = False) -> None:
         super().__init__(message)
@@ -222,12 +222,25 @@ def _keep(body: bytearray, inflate: _Inflate, data: bytes, kind: str) -> None:
 def _read(response: requests.Response, kind: str, check: Callable[[], None]) -> bytes:
     """원문을 와 있는 만큼 cap+1 까지만 청해 읽고(`decode_content=False` — urllib3 에 풀기를 맡기지
     않는다) 여기서 상한 안에서 푼다. 읽기마다 앞뒤로 마감(`check`)을 본다."""
-    inflate = _inflater(response.headers.get("content-encoding", "").split(","), kind)
+    inflate, ended = _decoder(response.headers.get("content-encoding", "").split(","), kind)
     read = reader(response, check)
     body = bytearray()
+    fed = False
     while data := read(min(_CHUNK, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body)), decode_content=False):
+        fed = True
         _keep(body, inflate, data, kind)
+    _whole(kind, ended, fed)
     return bytes(body)
+
+
+def _whole(kind: str, ended: _Ended | None, fed: bool) -> None:
+    """원문이 끝났는데 그 압축 스트림은 끝나지 않았다 — 잘린 gzip · deflate(꼬리 — CRC · 길이 —
+    만 없는 것 포함)는 끊긴 연결과 가를 수 없어 다 오지 않은 응답이다(`KeycloakTransportError` ·
+    등록부 token-response-class-residue 판정 Q1 — Go · JVM 의 해제기도 그렇게 낸다). 전에는 꼬리가
+    없는 gzip 토큰 응답을 받아들였다(실측 2026-11-11). 원문이 아예 없으면 빈 본문이다(httpx ·
+    net/http 와 같다)."""
+    if ended is not None and fed and not ended():
+        raise ResponseRefused(f"{kind} was cut short", incomplete=True)
 
 
 def capped_send(send: _SyncSend) -> _SyncSend:
@@ -262,7 +275,8 @@ def capped_send(send: _SyncSend) -> _SyncSend:
 
 
 def _inflater(codings: list[str], kind: str) -> _Inflate:
-    """`_decoder` 의 푸는 함수 — 토큰 응답은 스트림의 끝을 묻지 않는다(꼬리는 읽어서 버린다)."""
+    """`_decoder` 의 푸는 함수 — JWKS 읽기(`jwks_fetch.py`)가 쓴다. 토큰 응답은 스트림의 끝까지
+    묻는다(`_whole`)."""
     return _decoder(codings, kind)[0]
 
 
@@ -313,10 +327,14 @@ def _decoder(codings: list[str], kind: str) -> tuple[_Inflate, _Ended | None]:
 
 
 async def _aread(response: httpx.Response, kind: str) -> bytes:
-    inflate = _inflater(response.headers.get_list("content-encoding", split_commas=True), kind)
+    codings = response.headers.get_list("content-encoding", split_commas=True)
+    inflate, ended = _decoder(codings, kind)
     body = bytearray()
+    fed = False
     async for data in response.aiter_raw():
+        fed = True
         _keep(body, inflate, data, kind)
+    _whole(kind, ended, fed)
     return bytes(body)
 
 
