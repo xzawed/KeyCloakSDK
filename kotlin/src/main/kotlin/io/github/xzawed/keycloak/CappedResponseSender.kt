@@ -65,7 +65,60 @@ internal class ResponseTooLargeException(
  */
 internal class ResponseNotUtf8Exception(
     what: String,
-) : IOException("$what is not valid UTF-8")
+    why: String = "is not valid UTF-8",
+) : IOException("$what $why")
+
+/**
+ * JSON 텍스트가 짝 없는 UTF-16 서로게이트의 `\\u` 이스케이프를 품는가 — 문자열 값이든 멤버 이름이든(RFC 8259 §8.2 의 문법은 싣지만 I-JSON
+ * §2.1 은 금한다). 그 값은 어떤 UTF-8 로도 보낼 수 없다: 받아 둔 refresh token 을 다시 보내면 `?`(`%3F`)로 바뀌어 나갔다(등록부
+ * token-response-class-residue 판정 Q2, 2026-11-11 실측). 엄격한 UTF-8 인 바이트를 그대로 훑는다 — 이스케이프는 ASCII 이고 여러 바이트
+ * 글자의 바이트는 `"` 나 `\` 와 겹치지 않는다. 이스케이프된 역슬래시 뒤의 `u` 는 이스케이프가 아니다. 형식이 틀린 이스케이프는 여기서
+ * 판정하지 않는다(파서가 거부한다). auth 레인과 admin 가드가 함께 쓴다. Java `CappedResponseSender.holdsUnpairedSurrogate` 동형.
+ */
+internal fun holdsUnpairedSurrogate(json: ByteArray): Boolean {
+    var inString = false
+    var i = 0
+    while (i < json.size) {
+        val b = json[i].toInt()
+        if (!inString) {
+            inString = b == '"'.code
+        } else if (b == '"'.code) {
+            inString = false
+        } else if (b == '\\'.code && i + 1 < json.size) {
+            if (json[i + 1].toInt() != 'u'.code) {
+                i += 2 // 두 글자 이스케이프 — 이스케이프된 글자를 건너뛴다
+                continue
+            }
+            val unit = hex4(json, i + 2)
+            if (unit < 0) return false
+            i += 5
+            if (unit in 0xDC00..0xDFFF) return true // 앞에 높은 서로게이트가 없는 낮은 서로게이트
+            if (unit in 0xD800..0xDBFF) {
+                val low =
+                    if (i + 2 < json.size && json[i + 1].toInt() == '\\'.code && json[i + 2].toInt() == 'u'.code) hex4(json, i + 3) else -1
+                if (low !in 0xDC00..0xDFFF) return true
+                i += 6
+            }
+        }
+        i++
+    }
+    return false
+}
+
+// [at] 의 16진 넷(대소문자 무관)의 값, 아니면 -1.
+private fun hex4(
+    json: ByteArray,
+    at: Int,
+): Int {
+    if (at + 4 > json.size) return -1
+    var value = 0
+    for (k in at until at + 4) {
+        val digit = Character.digit(json[k].toInt(), 16)
+        if (digit < 0) return -1
+        value = value shl 4 or digit
+    }
+    return value
+}
 
 /**
  * 엄격한 UTF-8 인가 — 잘못된 바이트(끝에서 잘린 열 · 겹침 꼴 · 서로게이트 포함)를 대체하지 않고 보고하는 디코더로 잰다. 입력의 끝을 알리고
@@ -156,6 +209,9 @@ internal class CappedResponseSender(
         val bytes = readWithinCap(body) ?: throw ResponseTooLargeException(what)
         val status = head.statusLine.statusCode
         if (strict && status in 200..299 && !isUtf8(bytes)) throw ResponseNotUtf8Exception(what)
+        if (strict && status in 200..299 && holdsUnpairedSurrogate(bytes)) {
+            throw ResponseNotUtf8Exception(what, "holds an unpaired surrogate escape")
+        }
         val response = HTTPResponse(status)
         response.statusMessage = head.statusLine.reasonPhrase
         for ((name, values) in BoundedTransport.grouped(head)) response.setHeader(name, *values.toTypedArray())

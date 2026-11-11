@@ -72,6 +72,21 @@ private fun trxJson(
 private fun trxToken(accessToken: String): String =
     """{"access_token":"$accessToken","token_type":"Bearer","expires_in":300,"refresh_token":"$TRX_RT_CANARY"}"""
 
+// JSON 의 여섯 글자 이스케이프 — 문자열 리터럴의 이스케이프 처리를 피해 이어 붙인다.
+private fun trxEsc(unit: Int): String = "\\" + "u" + "%04x".format(unit)
+
+// 쓸 수 있는 멤버 뒤에 붙이는 자리 — 짝 없는 서로게이트 이스케이프가 그 안 어딘가에 있다(Java TokenResponseClassTest.UNPAIRED 동형).
+private val TRX_UNPAIRED: Map<String, String> =
+    mapOf(
+        "확장 멤버 값" to "\"x_ext\":\"${trxEsc(0xD800)}\"",
+        "멤버 이름" to "\"${trxEsc(0xD800)}\":1",
+        "여럿 중 하나인 배열 원소" to "\"x_ext\":[\"ok\",\"${trxEsc(0xD800)}\"]",
+        "중첩 객체의 이름" to "\"x_ext\":{\"a\":1,\"${trxEsc(0xDC00)}\":2}",
+        "읽는 멤버의 낮은 서로게이트" to "\"scope\":\"ab${trxEsc(0xDC00)}cd\"",
+        "대문자 16진" to "\"x_ext\":\"" + "\\" + "uD800\"",
+        "높은 서로게이트 뒤 다른 이스케이프" to "\"x_ext\":\"${trxEsc(0xD800)}${trxEsc(0x41)}\"",
+    )
+
 // access_token 안에 잘못된 UTF-8 이 든 200 토큰 응답.
 private fun trxTokenWithInvalidUtf8(): TrxReply = trxTokenWith("ok", TRX_INVALID)
 
@@ -309,6 +324,48 @@ internal class TokenResponseClassTest {
             assertNone(wrong)
         }
 
+    // 짝 없는 UTF-16 서로게이트 이스케이프(RFC 8259 §8.2 의 문법은 싣지만 I-JSON §2.1 은 금한다)가 2xx 토큰 · introspection 본문 어디에
+    // 있든 끝까지 온 응답을 쓸 수 없다 — 그 레인의 인증 오류(등록부 token-response-class-residue 판정 Q2, 2026-11-11). 수정 전에는 그 값을
+    // 그대로 돌려줬고, 돌려받은 refresh token 을 다시 보내면 %3F(?)로 바뀌어 나갔다(실측).
+    @Test
+    fun `an unpaired surrogate escape anywhere is an auth failure`() =
+        runTest(timeout = 120.seconds) {
+            val wrong = mutableListOf<String>()
+            val holds = "Malformed auth response: token response holds an unpaired surrogate escape"
+            val places = TRX_UNPAIRED + ("access_token 값" to "\"access_token\":\"${trxEsc(0xD800)}\"")
+            for ((place, member) in places) {
+                for ((label, op) in listOf("S1" to cc, "S2" to prov, "refresh" to rf, "code exchange" to codeExchange)) {
+                    tokens(trxJson(200, "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300,$member}"))
+                    trxExpect("$label 200 $place", call(block = op), KeycloakAuthException::class.java, holds, wrong)
+                }
+                introspectReply = trxJson(200, "{\"active\":true,\"username\":\"svc\",$member}")
+                trxExpect(
+                    "IN 200 $place",
+                    call(block = introspect),
+                    KeycloakAuthException::class.java,
+                    "Malformed introspection response: introspection response holds an unpaired surrogate escape",
+                    wrong,
+                )
+            }
+            // 대조 — 짝을 이룬 이스케이프와 이스케이프된 역슬래시 뒤의 「u」(이스케이프가 아니다)는 그대로다
+            val pair = "a" + trxEsc(0xD83D) + trxEsc(0xDE00) + "b"
+            tokens(
+                trxJson(
+                    200,
+                    "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300,\"scope\":\"$pair\",\"x_ext\":\"\\\\" +
+                        "ud800\"}",
+                ),
+            )
+            val control = call(block = cc)
+            if (control.value != "good") wrong += "S1 짝 · 이스케이프된 역슬래시: 받아들여야 한다 — $control"
+            introspectReply = trxJson(200, "{\"active\":true,\"username\":\"$pair\"}")
+            val introspected = call(block = introspect)
+            if ((introspected.value as? String)?.substring(1, 3) != String(Character.toChars(0x1F600))) {
+                wrong += "IN 짝: 받아들여야 한다 — $introspected"
+            }
+            assertNone(wrong)
+        }
+
     // 설명 없는 오류 응답(JSON 이 아닌 본문 · error 만 있는 본문)의 메시지는 HTTP 상태를 말한다 — Nimbus ErrorObject 는 그 본문에
     // 설명을 두지 않아 「… failed: null」 이었다. 오류를 만드는 auth 메서드 넷 모두.
     @Test
@@ -439,7 +496,18 @@ internal class TokenResponseClassTest {
                     Triple("403 JSON", trxEchoing(403, "access_denied"), 403),
                     Triple("404 JSON", trxEchoing(404, "not_found"), 404),
                     Triple("409 JSON", trxEchoing(409, "conflict"), 409),
-                )
+                    // 결합이 아예 읽지 않는 2xx — RESTEasy 의 ResponseProcessingException(200)이 전송 실패로 나갔다(2026-11-11 실측)
+                    Triple("200 Content-Type 없음", TrxReply(200, null, trxToken("good").toByteArray()), 200),
+                    // 모든 바이트가 UTF-8 인 UTF-16 — Jackson 의 바이트 파서가 인코딩을 짐작해 받아들였다(auth 레인은 거부한다)
+                    Triple("200 BOM 없는 UTF-16", TrxReply(200, "application/json", trxToken("good").toByteArray(Charsets.UTF_16LE)), 200),
+                ) +
+                    TRX_UNPAIRED.map { (place, member) ->
+                        Triple(
+                            "200 짝 없는 서로게이트 — $place",
+                            trxJson(200, "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300,$member}"),
+                            200,
+                        )
+                    }
             val table = mutableListOf<String>()
             for ((cell, reply, status) in cells) {
                 val label = "S5 $cell"

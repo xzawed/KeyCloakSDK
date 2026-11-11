@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
 import io.github.xzawed.keycloak.ResponseTooLargeException
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
+import io.github.xzawed.keycloak.holdsUnpairedSurrogate
 import io.github.xzawed.keycloak.isUtf8
 import io.github.xzawed.keycloak.readWithinCap
 import jakarta.ws.rs.HttpMethod
@@ -18,6 +19,7 @@ import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
+import java.util.zip.ZipException
 
 /**
  * admin 레인의 토큰 응답 검사(Java `TokenResponseGuard` 동형) — 토큰 엔드포인트의 성공 응답이 **그대로 보낼 수 있는 bearer 인 JSON
@@ -89,7 +91,11 @@ internal class TokenResponseGuard :
             request.setProperty(STATUS, response.status)
             return
         }
-        response.entityStream = usableOrReject(response.entityStream, exchange, response.status)
+        // 미디어 타입이 없는 2xx 는 결합이 읽지 않는다 — 판정을 통과해도 RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의
+        // 2xx)로 끝내 전송 실패로 나갔다(등록부 token-response-class-residue, 2026-11-11 실측). 끝까지 온 응답을 쓸 수 없다 — auth
+        // 레인(Nimbus)도 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
+        usableOrReject(response.entityStream, exchange, response.status)
+        throw UnusableTokenResponse(response.status, UNBOUND, null)
     }
 
     // 결합 직전의 판정. 통과한 바이트로 결합을 부르고, 결합이 그것을 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음)
@@ -136,6 +142,12 @@ internal class TokenResponseGuard :
         // 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다).
         internal const val UNBOUND = "token endpoint response does not bind as a token response"
 
+        // 2xx 본문이 UTF-8 로 보낼 수 없는 값을 품었다([holdsUnpairedSurrogate]) — 응답을 인용하지 않는다.
+        internal const val UNPAIRED_SURROGATE = "token endpoint response holds an unpaired surrogate escape"
+
+        // 끝까지 온 2xx 본문의 content-coding 을 풀지 못했다(resteasy.allowGzip) — 응답을 인용하지 않는다.
+        internal const val UNDECODABLE = "token endpoint response could not be decoded"
+
         // 판정이 읽고 쥐는 본문의 상한은 [TOKEN_RESPONSE_MAX_BYTES](auth 레인과 같은 상수, 근거는 그 선언에) — 여기 다시 적지 않는다.
         private const val ACCESS_TOKEN = "access_token"
         private val JSON = JsonFactory()
@@ -149,7 +161,15 @@ internal class TokenResponseGuard :
             exchange: Any?,
             status: Int,
         ): ByteArrayInputStream {
-            val body = if (input == null) ByteArray(0) else capPlusOne(input)
+            val body =
+                try {
+                    if (input == null) ByteArray(0) else capPlusOne(input)
+                } catch (corrupt: ZipException) {
+                    // resteasy.allowGzip — GZIPDecodingInterceptor 가 끝까지 온 본문을 풀지 못했다(깨진 deflate · CRC). 잘린 gzip 의
+                    // EOFException 은 끊긴 연결과 가를 수 없어 전송 실패 그대로다(등록부 판정 Q1, 2026-11-11). 메시지는 상수다.
+                    release(input, exchange)
+                    throw UnusableTokenResponse(status, UNDECODABLE, null)
+                }
             if (body == null) {
                 release(input, exchange)
                 throw ResponseTooLargeException("token response")
@@ -158,7 +178,13 @@ internal class TokenResponseGuard :
                 release(input, exchange)
                 throw UnusableTokenResponse(status, NOT_UTF8, null)
             }
-            if (!carriesUsableAccessToken(body)) {
+            if (holdsUnpairedSurrogate(body)) {
+                release(input, exchange)
+                throw UnusableTokenResponse(status, UNPAIRED_SURROGATE, null)
+            }
+            // 0x00 — UTF-8 JSON 텍스트에는 없다(RFC 8259 §7). 모든 바이트가 UTF-8 인 BOM 없는 UTF-16 본문을 Jackson 의 바이트 파서와 결합이
+            // 인코딩을 짐작해 받아들였다(2026-11-11 실측 — auth 레인은 거부한다). 짐작은 앞 네 바이트의 0x00 으로 하므로 이것이 그 길을 닫는다.
+            if (body.any { it.toInt() == 0 } || !carriesUsableAccessToken(body)) {
                 release(input, exchange)
                 throw UnusableTokenResponse(status, REJECTED, null)
             }
