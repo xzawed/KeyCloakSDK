@@ -96,25 +96,31 @@ func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
 		`{"a":"` + u + `d800\"`:              true, // 높은 것 뒤의 두 글자 이스케이프
 		`{"a":"` + u + `dbff` + u + `dfff"}`: false,
 		// 짝의 낮은 쪽 첫 값 · 짝 앞에 와야 할 `\` 와 `u` — 실행 레그가 살린 축소 편집 넷(2026-11-11)
-		`{"a":"` + u + `d800` + u + `dc00"}`:        false,
-		`{"a":"` + u + `d800xudc00"}`:               true,
-		`{"a":"` + u + `d800\ndc00"}`:               true,
-		`{"a":"` + u + `d800"}`:                     true,
-		`{"a":"` + u + `dc00"}`:                     true,
-		`{"` + u + `d800":1}`:                       true,
-		`{"a":"x` + u + `D800"}`:                    true,
-		`{"a":"` + u + `d800` + u + `0041"}`:        true,
-		`{"a":"` + u + `dbff"}`:                     true,
-		`{"a":["ok","` + u + `dfff"]}`:              true,
-		`{"a":"` + u + `ZZZZ","b":"` + u + `DC00"}`: true, // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그)
-		`{"x":"a\"b","y":"` + u + `dc00"}`:          true, // 이스케이프된 따옴표가 문자열을 닫지 않는다(JVM 실행 레그)
-		`{"a":"` + u + `d83d` + u + `de00"}`:        false,
-		`{"a":"\\` + `ud800"}`:                      false,
-		`{"a":"` + u + `0041"}`:                     false,
-		`{"a":"plain"}`:                             false,
-		`{"a":"` + u + `zz00"}`:                     false,
-		`{"a":1} ` + u + `d800`:                     false,
-		`{"a":"\"` + u + `d83d` + u + `de00"}`:      false,
+		`{"a":"` + u + `d800` + u + `dc00"}`: false,
+		`{"a":"` + u + `d800xudc00"}`:        true,
+		`{"a":"` + u + `d800\ndc00"}`:        true,
+		// node 실행 레그가 살린 편집들 — 짝 뒤 다음 문자열의 홀로 선 것 · 대문자 F · 짝 앞의 `\"` 와 `\\`
+		`{"a":"` + u + `d83d` + u + `de00","b":"` + u + `d800"}`: true,
+		`{"a":"` + u + `DBFF"}`:                                  true,
+		`{"a":"` + u + `DFFF"}`:                                  true,
+		`{"a":"` + u + `d800\"dc00"}`:                            true,
+		`{"a":"` + u + `d800\\dc00"}`:                            true,
+		`{"a":"` + u + `d800"}`:                                  true,
+		`{"a":"` + u + `dc00"}`:                                  true,
+		`{"` + u + `d800":1}`:                                    true,
+		`{"a":"x` + u + `D800"}`:                                 true,
+		`{"a":"` + u + `d800` + u + `0041"}`:                     true,
+		`{"a":"` + u + `dbff"}`:                                  true,
+		`{"a":["ok","` + u + `dfff"]}`:                           true,
+		`{"a":"` + u + `ZZZZ","b":"` + u + `DC00"}`:              true, // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그)
+		`{"x":"a\"b","y":"` + u + `dc00"}`:                       true, // 이스케이프된 따옴표가 문자열을 닫지 않는다(JVM 실행 레그)
+		`{"a":"` + u + `d83d` + u + `de00"}`:                     false,
+		`{"a":"\\` + `ud800"}`:                                   false,
+		`{"a":"` + u + `0041"}`:                                  false,
+		`{"a":"plain"}`:                                          false,
+		`{"a":"` + u + `zz00"}`:                                  false,
+		`{"a":1} ` + u + `d800`:                                  false,
+		`{"a":"\"` + u + `d83d` + u + `de00"}`:                   false,
 	} {
 		if got := holdsUnpairedSurrogate([]byte(json)); got != want {
 			t.Errorf("batch %s: %v, want %v", json, got, want)
