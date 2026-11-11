@@ -70,11 +70,14 @@ RSpec.describe KeycloakSdk::Http do
       ))
     end
 
-    it "returns that response carrying the streamed body" do
-      failure = Faraday::ParsingError.new(Encoding::CompatibilityError.new("x"), Faraday::Response.new(env))
-      resp = described_class.read_capped(connection(failure), :post, "https://k/t", max_bytes: 64, what: "token")
-      expect(resp.status).to eq(200)
-      expect(resp.body).to eq('{"a":1}'.b)
+    # 모든 레인이 같은 읽기를 지난다 — JWKS · logout 도(독립 레그가 살린 축소 편집 「token · introspection 일 때만」, 2026-11-11).
+    %w[token introspection logout JWKS].each do |what|
+      it "returns that response carrying the streamed body (#{what})" do
+        failure = Faraday::ParsingError.new(Encoding::CompatibilityError.new("x"), Faraday::Response.new(env))
+        resp = described_class.read_capped(connection(failure), :post, "https://k/t", max_bytes: 64, what: what)
+        expect(resp.status).to eq(200)
+        expect(resp.body).to eq('{"a":1}'.b)
+      end
     end
 
     it "re-raises it when its response is not a Faraday::Response" do

@@ -257,7 +257,12 @@ module HostileTokenResponseSpec
       "n2" => { note: "응답 헤더 이름 검증(net-http 0.10) — admin 응답(토큰 발급은 정상)",
                 reply: json(200, access_token: "nAT9k-admin-bearer-canary", token_type: "Bearer", expires_in: 300),
                 admin_raise: ArgumentError.new('too long (2000 bytes) header: "nHL9k-long-header-name-canary"...'),
-                expect: { "admin.users.get(token via provider)" => transport } }
+                expect: { "admin.users.get(token via provider)" => transport } },
+      # Faraday 가 바꾸지 않은 다른 하위 예외 — 그랜트의 전송 단계 변환은 ArgumentError 만이 아니다(독립 레그가 살린 축소 편집
+      # 「rescue ArgumentError」, 2026-11-11). Errno 의 메시지는 OS 가 만든다(RedactedCause 가 싣는 부류) — 카나리아를 넣지 않는다.
+      "n3" => { note: "전송 중 Faraday 밖 하위 예외(Errno) — 그랜트",
+                raise: Errno::EHOSTDOWN.new,
+                expect: expect_all(RACK, transport) }
     }.freeze
   end
   VARIANTS = Table::VARIANTS.merge(Wave4::VARIANTS, NetHttp010::VARIANTS).freeze

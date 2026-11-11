@@ -485,10 +485,10 @@ module KeycloakSdk
   #     전에는 `Faraday::ParsingError` 가 경계에서 TransportError 였다.
   #   · 오류 상태의 본문이 그러면 날 바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의
   #     OAuth 코드는 쓰지 않는다).
-  # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). ⚠️ 단 Faraday 의 json
-  # 미들웨어가 그보다 먼저 돈다 — utf-16 · utf-32 같은 charset 을 선언하면 거기서 `Encoding::CompatibilityError` 로 실패해
-  # 이 규칙에 닿지 않는다(기존부터, 독립 레그가 짚음 — 등록부 후보). logout 은 본문을 쓰지 않아 이 규칙
-  # 밖이다(`Http.decode_json(…, check_utf8: false)`).
+  # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). 커넥션의 json 미들웨어가
+  # utf-16 · utf-32 같은 charset 에서 스트리밍 본문의 자리표시를 파싱하다 낸 실패는 `Http.read_capped` 가 받아낸다(2026-11-11 —
+  # 전에는 그것이 이 규칙보다 먼저 TransportError 였다). logout 은 본문을 쓰지 않아 이 규칙 밖이다
+  # (`Http.decode_json(…, check_utf8: false)`).
   # ⚠️ 해석 실패는 `RedactedCause` 로만 단다 — `Faraday::ParsingError#inspect` 는 요청(클라이언트 시크릿)까지 찍는다. 메시지는
   # 상수 문장이다(본문을 싣지 않는다). ⚠️ 공개 API 를 늘리지 않으려고 `Http` 의 모듈 함수가 아니라 비공개 상수다.
   module TokenResponse
