@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"unicode/utf8"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
@@ -169,15 +168,10 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	if err != nil {
 		return nil, err
 	}
-	// encoding/json turns a sequence that is not UTF-8 into U+FFFD without an error — the claims would be ones the IdP
-	// never sent (RFC 8259 §8.1; registry token-response-class-divergent D1, measured 2026-11-10).
-	if !utf8.Valid(body) {
-		return nil, &AuthError{Msg: "introspection response is not valid UTF-8"}
-	}
-	// encoding/json turns an unpaired surrogate escape into U+FFFD without an error too — anywhere in the body, the whole
-	// response is unusable (registry token-response-class-residue Q2, measured 2026-11-11: accepted).
-	if holdsUnpairedSurrogate(body) {
-		return nil, &AuthError{Msg: "introspection response holds an unpaired surrogate escape"}
+	// encoding/json turns a sequence that is not UTF-8, or an unpaired surrogate escape, into U+FFFD without an error — the
+	// claims would be ones the IdP never sent (tokencap.go introspectionRefusal).
+	if err := introspectionRefusal(body); err != nil {
+		return nil, err
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -240,11 +234,8 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	defer func() { _ = resp.Body.Close() }()
 	// Bounded like the JWKS read (jwt.go): never more than cap+1 bytes, the extra one telling a longer body apart.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, tokenResponseMaxBytes+1))
-	// A gzip coding that does not decode: the bytes arrived, so the response is unusable rather than cut short (decision
-	// Q1, tokencap.go — it was *TransportError). An error status still names its status below.
-	garbled := undecodable(err)
-	if err != nil && !garbled {
-		return nil, &TransportError{Msg: err.Error(), Cause: err}
+	if err != nil {
+		return nil, readFailed(endpoint, err)
 	}
 	// Over the cap the response was not read in full — the same class as a body cut short (#935; it used to be *AuthError).
 	if len(body) > tokenResponseMaxBytes {
@@ -256,9 +247,6 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	// nil while the session was still alive, and Introspect parsed an empty body.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &AuthError{Msg: "request to " + endpoint + " failed (HTTP " + strconv.Itoa(resp.StatusCode) + ")"}
-	}
-	if garbled {
-		return nil, &AuthError{Msg: "response from " + endpoint + " could not be decoded"}
 	}
 	return body, nil
 }

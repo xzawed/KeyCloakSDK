@@ -439,6 +439,32 @@ func (b *cappedBody) lookPast() error {
 	return b.end
 }
 
+// introspectionRefusal is Introspect's error for a 2xx body that arrived but cannot be read as the JSON text it claims to
+// be, or nil: not UTF-8 (RFC 8259 §8.1; decision D1, measured 2026-11-10) or holding an unpaired surrogate escape (decision
+// Q2, measured 2026-11-11 — accepted) — encoding/json turns either into U+FFFD without an error, so the claims would be ones
+// the IdP never sent. ⚠️ Kept out of auth.go: that file is pinned by the integration-only boundary coverage
+// (scripts/integration-coverage.json), and no real Keycloak reaches these refusals.
+func introspectionRefusal(body []byte) error {
+	if !utf8.Valid(body) {
+		return &AuthError{Msg: "introspection response is not valid UTF-8"}
+	}
+	if holdsUnpairedSurrogate(body) {
+		return &AuthError{Msg: "introspection response holds an unpaired surrogate escape"}
+	}
+	return nil
+}
+
+// readFailed is postForm's error (Introspect · Logout) when reading the body failed. A gzip coding that does not decode
+// arrived and is unusable — *AuthError at any status, as on the grants (decision Q1, 2026-11-11; it was *TransportError) —
+// and anything else did not arrive in full: *TransportError, as before. Kept out of auth.go for the reason
+// introspectionRefusal is.
+func readFailed(endpoint string, err error) error {
+	if undecodable(err) {
+		return &AuthError{Msg: "response from " + endpoint + " could not be decoded"}
+	}
+	return &TransportError{Msg: err.Error(), Cause: err}
+}
+
 // grantFailed is the error a grant method returns when x/oauth2 fails. A response that did not arrive in full is
 // *TransportError — none came (refused, unreachable, a deadline before it), its body was cut short or ended by a deadline,
 // or it went over the cap — and one that arrived but is not a usable token response is *AuthError (#935; it used to be
