@@ -459,6 +459,16 @@ _UNPAIRED_SCAN: dict[bytes, bool] = {
     b'{"a":"' + _U + b'ZZZZ","b":"' + _U + b'DC00"}': True,
     # 이스케이프된 따옴표가 문자열을 닫지 않는다 — `\\` 만 건너뛰면 여기서 어긋난다(JVM 실행 레그)
     b'{"x":"a' + b'\\"' + b'b","y":"' + _U + b'dc00"}': True,
+    # 실행 레그(Go · node)가 살린 편집들 — 범위 위의 비-low · 짝 뒤 다음 문자열 · 대문자 F ·
+    # 짝 앞의 `\` 와 `u`
+    b'{"a":"' + _U + b"d800" + _U + b'e000"}': True,
+    b'{"a":"' + _U + b"d83d" + _U + b'de00","b":"' + _U + b'd800"}': True,
+    b'{"a":"' + _U + b'DBFF"}': True,
+    b'{"a":"' + _U + b'DFFF"}': True,
+    b'{"a":"' + _U + b'd800xudc00"}': True,
+    b'{"a":"' + _U + b"d800" + b'\\"' + b'dc00"}': True,
+    b'{"a":"' + _U + b"d800" + b"\\\\" + b'dc00"}': True,
+    b'{"a":"' + _U + b"d800" + _U + b'dc00"}': False,
     b'{"a":"' + _U + b"d83d" + _U + b'de00"}': False,
     b'{"a":"' + b"\\\\" + b'ud800"}': False,
     b'{"a":"' + _U + b'0041"}': False,
