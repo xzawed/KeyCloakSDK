@@ -11,7 +11,6 @@ use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use Psr\Http\Client\NetworkExceptionInterface;
 use Psr\Http\Client\RequestExceptionInterface;
 use Psr\Http\Message\UriInterface;
-use Xzawed\Keycloak\Internal\OAuthErrorCode;
 
 /**
  * A sanitized copy attached in an SDK exception's `getPrevious()` slot **instead of the original** underlying library
@@ -26,8 +25,9 @@ use Xzawed\Keycloak\Internal\OAuthErrorCode;
  *
  * What the copy keeps: the original class name (`originalClass`, also at the head of the message) · code · file · line ·
  * the trace **without arguments** · the cause chain sanitized by the same rules. The message is split three ways — an
- * HTTP error response keeps only the status, method and URL (without query and user info), an OAuth error response only
- * the `error` code (when it has the `OAuthErrorCode` shape), and anything else carries over **only messages built inside
+ * HTTP error response keeps only the status, method and URL (without query and user info), an OAuth error response
+ * nothing of its body (the SDK error above it carries the code `OAuthErrorCode` let through — the copy cannot see what
+ * the request sent, so a code-shaped echo of the secret would ride here), and anything else carries over **only messages built inside
  * the audited underlying libraries** (those libraries' messages do not quote their input — ⚠️ two exceptions: Guzzle's
  * transport failure quotes the request URL including its query, which `withoutQuery()` trims to the same extent, and
  * psr7's header validation quotes the rejected header value whole, which `quotesAHeader()` withholds). The message of
@@ -102,10 +102,10 @@ final class SanitizedCause extends \RuntimeException
     private static function safeMessage(\Throwable $e, ?UriInterface $sent): string
     {
         if ($e instanceof IdentityProviderException) {
-            $body = $e->getResponseBody();
-            $error = OAuthErrorCode::of(\is_array($body) ? ($body['error'] ?? null) : null);
-
-            return $error === null ? 'OAuth error response (body withheld)' : "OAuth error response: $error (description withheld)";
+            // ⚠️ Not even the code — the cause has no view of what the request sent, so a code-shaped echo of the secret
+            // (`echoedlowersecret`) rode here past the vetted `oauthError` (measured 2026-11-11). The SDK error above it
+            // carries the code that `OAuthErrorCode` let through.
+            return 'OAuth error response (body withheld)';
         }
         if ($e instanceof RequestException) {
             $response = $e->getResponse();

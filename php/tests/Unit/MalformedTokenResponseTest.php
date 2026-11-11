@@ -126,8 +126,9 @@ final class MalformedTokenResponseTest extends TestCase
     private const DEBUG_INFO = [
         'd short non-JSON body|clientCredentialsToken' => ['token endpoint returned unexpected response', null,
             'UnexpectedValueException: Failed to parse JSON response: Syntax error'],
+        // The cause carries no code — it cannot see what the request sent; the SDK error above it carries the vetted one.
         'e 400 error_description echo|clientCredentialsToken' => ['token request rejected: invalid_grant', 'invalid_grant',
-            'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response: invalid_grant (description withheld)'],
+            'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
         'e 400 error_description echo|provider.getToken' => ['client-credentials failed', 'invalid_grant', null],
         'e3 error code carries a token|clientCredentialsToken' => ['token request rejected', null,
             'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],

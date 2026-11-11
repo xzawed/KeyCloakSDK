@@ -169,7 +169,7 @@ final class ErrorTranslation
         } catch (\Throwable) {
             $error = null;   // 읽을 수 없는 본문 — 코드 없이 상태만 싣는다(읽기 오류가 경계를 넘지 않게).
         }
-        $code = OAuthErrorCode::of(\is_array($error) ? ($error['error'] ?? null) : null);
+        $code = OAuthErrorCode::of(\is_array($error) ? ($error['error'] ?? null) : null, ...self::sentSecrets($e->getRequest()));
         $status = $e->getResponse()->getStatusCode();
 
         return new KeycloakAuthError(
@@ -177,5 +177,28 @@ final class ErrorTranslation
             $code,
             SanitizedCause::of($e),
         );
+    }
+
+    /**
+     * The secrets the grant sent in its form (fschmtt posts them there — a grant carries no `Authorization`, `isTokenGrant`)
+     * — an echoed `error` that overlaps one is no code (`OAuthErrorCode`).
+     *
+     * @return list<string>
+     */
+    private static function sentSecrets(#[\SensitiveParameter] RequestInterface $request): array
+    {
+        try {
+            parse_str((string) $request->getBody(), $form);
+        } catch (\Throwable) {
+            return [];   // an unreadable body — compare nothing rather than let a read error cross the boundary
+        }
+        $sent = [];
+        foreach (['client_secret', 'refresh_token', 'password', 'client_assertion'] as $field) {
+            if (\is_string($form[$field] ?? null)) {
+                $sent[] = $form[$field];
+            }
+        }
+
+        return $sent;
     }
 }
