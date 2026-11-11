@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # 픽스처 — vitest 옵션 인자(`it(제목, { fails: true }, fn)`)로 뒤집힌 node 카나리아. JUnit 은 「expected fail」을 그냥
-# 통과로 적는다(vitest 5.1 실측). 건강 셋(timeout 옵션 · fails: false · 함수 참조)과 뒤집힘 셋(한 줄 · 여러 줄 · describe).
+# 통과로 적는다(vitest 5.1 실측). 건강 일곱(timeout 옵션 · fails: false · 함수 참조 · 참조+타임아웃 · 한 인자 화살표 ·
+# async · function)과 뒤집힘 셋(한 줄 · 여러 줄 · describe) — 건강 칸마다 둘째 인자를 읽는 분기가 하나씩이다.
 # 판정 불가 칸(변수 옵션 · 펼침 · 식)은 repo-r3b · r3c · r3d 에 하나씩 있다(첫 판정 불가가 실행을 멈춘다).
 sd_nonce_canary() {
   case "$1" in
@@ -9,6 +10,9 @@ sd_nonce_canary() {
             "node/test/unit/o.test.ts|it('o2 fails false'" \
             "node/test/unit/o.test.ts|it('o3 function reference'" \
             "node/test/unit/o.test.ts|it('o3b function reference and timeout'" \
+            "node/test/unit/o.test.ts|it('o3c single-parameter arrow'" \
+            "node/test/unit/o.test.ts|it('o3d async arrow'" \
+            "node/test/unit/o.test.ts|it('o3e function keyword'" \
             "node/test/unit/o.test.ts|it('o4 fails true'" \
             "node/test/unit/o.test.ts|it('o5 fails multi-line'" \
             "node/test/unit/o.test.ts|it('o6 inside a fails describe'" ;;

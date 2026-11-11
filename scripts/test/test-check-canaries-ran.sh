@@ -211,7 +211,10 @@ expect r2-kotlin-param 2 "표시 이름을 바꾸는 어노테이션"
 # ═══ vitest 옵션 인자의 fails — JUnit 은 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측 · #1017 레그) ═══════
 # 건강 셋(timeout 옵션 · fails: false · 함수 참조)과 뒤집힘 셋(한 줄 · 여러 줄 · describe 옵션).
 run --lang node --report "$REP/node-r3.xml" --root "$FIX/repo-r3"
-expect r3-node 1 "통과 4 · FAIL 3"
+expect r3-node 1 "통과 7 · FAIL 3"
+for _h in "o3c single-parameter arrow" "o3d async arrow" "o3e function keyword"; do
+  assert_contains "$OUT" "$_h — 1 통과" "[r3-node] 함수 인자($_h)를 옵션으로 읽었다 — 출력: $OUT"
+done
 assert_contains "$OUT" "o1 timeout options — 1 통과" "[r3-node] timeout 옵션을 뒤집힘으로 읽었다 — 출력: $OUT"
 assert_contains "$OUT" "o2 fails false — 1 통과" "[r3-node] fails: false 를 뒤집힘으로 읽었다 — 출력: $OUT"
 assert_contains "$OUT" "o3 function reference — 1 통과" "[r3-node] 함수 참조를 옵션으로 읽었다 — 출력: $OUT"
@@ -236,6 +239,9 @@ run --lang node --list --root "$FIX/repo-r3e"
 expect r3e-node 2 "선언 자리가 아니다"
 run --lang ruby --list --root "$FIX/repo-r3e"
 expect r3e-ruby 2 "선언 자리가 아니다"
+# 따옴표 없는 줄(여러 줄 raw 문자열 속)의 들여쓴 `func Test…(` — 문자열 규칙은 못 보고 go 줄 머리 규칙만 막는다.
+run --lang go --list --root "$FIX/repo-r3f"
+expect r3f-go 2 "선언 자리가 아니다"
 
 # ═══ 계측기 자신 — 서로 다른 결함이 서로 다른 이유를 내는가 ═════════════════════════════════════════
 # 위 칸들이 전부 같은 문장으로 실패하면(예: 늘 「보고서에 없다」) 이 테스트는 입력을 보지 않는 검사를 초록으로 감싼다.

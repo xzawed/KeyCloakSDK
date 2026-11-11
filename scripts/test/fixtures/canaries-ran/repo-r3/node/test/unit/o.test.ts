@@ -5,6 +5,9 @@ describe('O', () => {
   it('o2 fails false', { fails: false }, () => {})
   it('o3 function reference', handler)
   it('o3b function reference and timeout', handler, 5000)
+  it('o3c single-parameter arrow', ctx => {})
+  it('o3d async arrow', async () => {})
+  it('o3e function keyword', function () {})
   it('o4 fails true', { fails: true }, () => {
     throw new Error('the canary assertion failed')
   })
