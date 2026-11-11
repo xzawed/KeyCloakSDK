@@ -27,7 +27,8 @@ sd_nonce_canary() {
             "node/test/unit/o.test.ts|it('o7 comment with a brace'" \
             "node/test/unit/o.test.ts|it('o8 inside a commented fails describe'" \
             "node/test/unit/o.test.ts|o9 chained fails" \
-            "node/test/unit/o.test.ts|it('o10 regex with a brace'" ;;
+            "node/test/unit/o.test.ts|it('o10 regex with a brace'" \
+            "node/test/unit/o.test.ts|it('o12 regex after return'" ;;
   esac
 }
 sd_backoff_canary() {

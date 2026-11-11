@@ -214,7 +214,9 @@ expect r2-kotlin-param 2 "표시 이름을 바꾸는 어노테이션"
 # describe · 여러 줄 템플릿을 담은 감싼 함수)과 우회 넷(주석 속 `}` · 주석으로 시작하는 줄의 describe · `.skipIf(…).fails(`
 # 사슬 · 정규식 속 `}`)이 이 칸들이다.
 run --lang node --report "$REP/node-r3.xml" --root "$FIX/repo-r3"
-expect r3-node 1 "통과 12 · FAIL 7"
+expect r3-node 1 "통과 12 · FAIL 8"
+# 키워드 뒤 정규식(`return /}/`) — 나눗셈으로 읽으면 그 `}` 가 옵션 객체를 일찍 닫아 `fails: true` 를 숨겼다(Grok 레그 Q1).
+assert_contains "$OUT" "o12 regex after return — 뒤집혔다" "[r3-node] 키워드 뒤 정규식 속 괄호가 옵션 객체를 일찍 닫았다 — 출력: $OUT"
 for _h in "o3c single-parameter arrow" "o3d async arrow" "o3e function keyword" "o3f comment before the function" \
   "o3g named timeout constant" "o3h comment mentions fails" "o3i inside a commented describe" "o3j wrapped function"; do
   assert_contains "$OUT" "$_h — 1 통과" "[r3-node] 건강한 꼴($_h)을 옵션 · 뒤집힘 · 판정 불가로 읽었다 — 출력: $OUT"

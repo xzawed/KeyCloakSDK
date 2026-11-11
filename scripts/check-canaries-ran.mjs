@@ -30,6 +30,10 @@
 //    필터로 빼고 **다른 패키지(go)·같은 파일의 다른 클래스(php)** 에 같은 이름을 둔 경우(그냥 skip 이면 두 항목이 다 잡혀
 //    FAIL 이다) · 본문 바꿔치기(이름 재바인딩 · 단언 삭제 — 실행 증명이 아니라 행위 테스트·변이의 몫이다). go `(cached)` 재생과
 //    RSpec `--dry-run` 은 받는다 — 앞은 같은 입력의 같은 결과이고(레인은 `-count=1`), 뒤는 레인 전체를 비워 attest 가 운다.
+//    소스로 뒤집힘을 숨기는 꼴(#1018 레그 실측 — 리터럴 밖이라 추측해야 하는 것): 별칭(`const t = it.fails; t(…)`) · 실행
+//    중 task 변경(`Object.assign(task, { fails: true })`) · vitest 태그 옵션(`tags` 가 fails 를 싣는다) · 옵션 변수에 함수
+//    참조 테스트(`it(제목, opts, fnRef)` 는 `it(제목, fn, SLOW_MS)` 와 못 가른다) · go 표준 출력에 찍은 가짜 `--- PASS:` 줄 ·
+//    ruby 같은 줄의 미끼 예제. W1 행렬이 덮는 카나리아는 앞의 둘 중 일부를 레인에서 따로 잡는다(앵커 블록이 사라진다).
 // 판정: 통과 0 · FAIL 1 · 판정 불가 2.
 //  ⚠️ 보고서가 **없는** 것은 2 가 아니라 1 이다 — 시험 단계가 보고서를 쓰지 않았다는 바로 그 사건이다(attest 와 같은 이유).
 //  판정 불가: 인자 · 가드의 표 함수를 못 찾음 · 호출 자리 수가 AXES 와 다름 · 카나리아 0 개 · 카나리아 줄이 0 개이거나 둘
@@ -205,6 +209,7 @@ export function canaryLine(lang, lines, canary, file) {
   return at[0]
 }
 
+const REGEX_KEYWORDS = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'instanceof', 'new', 'delete', 'void', 'throw', 'yield', 'await', 'of'])
 // JS/TS 를 **파일 단위로** 훑어 문자열 · 템플릿(`${}` 안까지) · 주석 · 정규식 리터럴의 안을 공백으로 비운다 — 줄바꿈은
 // 그대로라 줄 · 열이 원문과 맞는다. 줄 단위 blankStrings 는 여러 줄 템플릿과 주석을 못 봤다(#1018 레그 실측: 템플릿 속
 // 가짜 선언 줄 · `{ /* } */ fails: true }` · 인자 사이 주석의 오탐 · 감싼 함수 속 템플릿의 괄호). `keepStrings` 면 주석 ·
@@ -275,6 +280,13 @@ export function maskJs(text, keepStrings = false) {
     while (k < n && /[a-z]/i.test(text[k])) k++
     return k
   }
+  // 정규식이 올 수 있는 자리 — 연산자 · 여는 괄호 뒤, 또는 식을 여는 키워드 뒤(`return /}/` 를 나눗셈으로 읽으면 그 `}` 가
+  // 옵션 객체를 일찍 닫아 `fails: true` 를 숨겼다 — Grok 레그 Q1). `)` · 다른 식별자 뒤는 나눗셈으로 본다.
+  const regexStart = (i) => {
+    if (prev === '' || '(,=:[!&|?{};'.includes(prev)) return true
+    const w = /([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(Math.max(0, i - 24), i))
+    return !!w && REGEX_KEYWORDS.has(w[1])
+  }
   let prev = ''
   for (let i = 0; i < n; ) {
     const c = text[i]
@@ -288,7 +300,7 @@ export function maskJs(text, keepStrings = false) {
     } else if (c === '`') {
       end = template(i)
       isString = true
-    } else if (c === '/' && (prev === '' || '(,=:[!&|?{};'.includes(prev))) end = regex(i)
+    } else if (c === '/' && regexStart(i)) end = regex(i)
     if (end < 0) {
       if (!/\s/.test(c)) prev = c
       i++

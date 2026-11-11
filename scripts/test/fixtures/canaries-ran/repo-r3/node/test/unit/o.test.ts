@@ -18,7 +18,7 @@ describe('O', () => {
   })
   it('o3j wrapped function', retried(async () => {
     const doc = `
-  multi-line ) template } with { brackets ( ${`nested } template (`}
+  multi-line ) template } with { brackets ( ${`nested ) template`}
 `
     return doc
   }))
@@ -48,6 +48,9 @@ describe('O', () => {
     throw new Error('the canary assertion failed')
   })
   it('o10 regex with a brace', { meta: { r: /}/ }, fails: true }, () => {
+    throw new Error('the canary assertion failed')
+  })
+  it('o12 regex after return', { meta: (() => { return /}/ })(), fails: true }, () => {
     throw new Error('the canary assertion failed')
   })
 })
