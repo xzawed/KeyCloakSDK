@@ -150,28 +150,38 @@ internal static class TokenResponseVerdict
             ? active.GetBoolean()
             : throw new KeycloakAuthException("Token introspection failed: response has no boolean active");
 
-    /// <summary>Where <paramref name="json"/> holds a string System.Text.Json will not decode — a member name or a string
-    /// value, at any depth: the top-level member's name when its value is the one and that name is in <paramref name="named"/>,
-    /// an empty string anywhere else, null when every string decodes.</summary>
+    /// <summary>Why <paramref name="json"/> cannot be used when it holds a string System.Text.Json will not decode — a member
+    /// name or a string value, at any depth — or null when every string decodes or the body is not a JSON object (its caller
+    /// refuses that first, and reads no code from it). A member the SDK reads (<c>error</c>, or one in <paramref name="read"/>)
+    /// is named; nothing the server chose is.</summary>
     /// <remarks>The grammar carries an unpaired UTF-16 surrogate escape (<c>\ud800</c> — RFC 8259 §8.2) and System.Text.Json
     /// parses it, but decoding it throws <see cref="InvalidOperationException"/>: <c>GetString</c> on a value, and
     /// <c>TryGetProperty</c> on every member name it passes — so one such name made Duende's getters throw out of the SDK raw
     /// (measured 2026-11-11, residue premise). The body is unusable as a whole: a value outside the members the SDK reads
     /// reached the caller in four other languages only to be sent back mutated (<c>U+FFFD</c>, <c>?</c>) or to fail as a
-    /// transport error. A name returned is the caller's, never the server's.</remarks>
-    internal static string? Undecodable(JsonElement? json, ICollection<string> named)
+    /// transport error.</remarks>
+    internal static string? Undecodable(JsonElement? json, ICollection<string> read)
     {
         if (json is not { ValueKind: JsonValueKind.Object } body)
-            return json is { } other && !Decodes(other) ? "" : null;
+            return null;
         foreach (var member in body.EnumerateObject())
         {
             if (!TryName(member, out var name))
-                return "";
+                return NotDecodable;
             if (!Decodes(member.Value))
-                return named.Contains(name) ? name : "";
+            {
+                return name switch
+                {
+                    "error" => "error value withheld",
+                    _ when read.Contains(name) => $"{name} holds an unpaired surrogate escape",
+                    _ => NotDecodable,
+                };
+            }
         }
         return null;
     }
+
+    private const string NotDecodable = "response body is not a decodable JSON object";
 
     private static bool Decodes(JsonElement value) => value.ValueKind switch
     {

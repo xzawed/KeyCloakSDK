@@ -259,9 +259,9 @@ public sealed class AuthClient : ITokenSource
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
     }
 
-    /// <summary>The members the SDK reads from a token-endpoint body — a string in one of them that will not decode is refused
-    /// by name (<see cref="ThrowIfError"/>); anywhere else, the body is.</summary>
-    private static readonly string[] ReadMembers = { "access_token", "token_type", "expires_in", "refresh_token", "id_token", "scope", "error" };
+    /// <summary>Every member the getters in <see cref="ToTokenSet"/> decode — one holding a string that will not decode is
+    /// refused by name (<see cref="ThrowIfError"/>); anywhere else, the body is.</summary>
+    private static readonly string[] TokenMembers = { "access_token", "token_type", "expires_in", "refresh_token", "id_token", "scope" };
 
     /// <summary>The text of a JSON string, or <c>false</c> when System.Text.Json refuses to decode it.</summary>
     /// <remarks>It parses an unpaired UTF-16 surrogate escape (<c>\ud800</c>, <c>\udc00</c> — RFC 8259 §8.2 lets the grammar
@@ -293,7 +293,7 @@ public sealed class AuthClient : ITokenSource
     {
         // Found before anything reads the body — TryGetProperty and Duende's getters throw on such a string. The status still
         // decides the class; the code is not read from such a body.
-        var undecodable = TokenResponseVerdict.Undecodable(resp.Json, ReadMembers);
+        var undecodable = TokenResponseVerdict.Undecodable(resp.Json, TokenMembers);
         switch (resp.ErrorType)
         {
             case ResponseErrorType.Exception when resp.Exception is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded } tooLarge:
@@ -312,8 +312,8 @@ public sealed class AuthClient : ITokenSource
         }
         if (resp.Json is { ValueKind: not JsonValueKind.Object })
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
-        if (undecodable is { } where)
-            throw new KeycloakAuthException($"{failureMessage}: {UndecodableReason(where)}");
+        if (undecodable is { } why)
+            throw new KeycloakAuthException($"{failureMessage}: {why}");
         // A 2xx that carries an error fails as a 400 does. Duende's IsError alone misses a space-only one there — it does not
         // flag a whitespace error text on a 2xx (measured: OAuthErrorCodeGrammarTests) — so the RFC grammar decides whether
         // there is an error at all (InGrammar); what is carried of it is OAuthErrorOf's, which is narrower.
@@ -346,16 +346,6 @@ public sealed class AuthClient : ITokenSource
     // Why a 400 carried no code — a string that is not carried is still a JSON string, so it gets its own words.
     private static string NoCodeReason(JsonElement? json) =>
         ErrorMember(json) is { ValueKind: JsonValueKind.String } ? "error value withheld" : "error is not a JSON string";
-
-    // Why a body holding a string that will not decode was refused (TokenResponseVerdict.Undecodable) — by the member's name
-    // only when the SDK reads that member.
-    private static string UndecodableReason(string where) => where switch
-    {
-        "error" => "error value withheld",
-        "" => "response body is not a decodable JSON object",
-        _ => $"{where} holds an unpaired surrogate escape",
-    };
-
     private static JsonElement? ErrorMember(JsonElement? json) =>
         json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) ? e : null;
 
