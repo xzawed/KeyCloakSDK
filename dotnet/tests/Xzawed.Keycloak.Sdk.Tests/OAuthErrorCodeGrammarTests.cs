@@ -8,21 +8,23 @@ using Xunit;
 namespace Xzawed.Keycloak.Sdk.Tests;
 
 /// <summary>
-/// An OAuth <c>error</c> value reaches <c>Message</c> or <c>OAuthError</c> only when it is an RFC 6749 §5.2 error code —
-/// <c>error = 1*NQSCHAR</c>, <c>NQSCHAR = %x20-21 / %x23-5B / %x5D-7E</c> — and then unchanged. Any other string is no code
-/// at all: nothing is trimmed or stripped into one (<c>"invalid_client\r\n"</c> gives no code, not <c>"invalid_client"</c>).
+/// An OAuth <c>error</c> value reaches <c>Message</c> or <c>OAuthError</c> only when it is shaped like a code —
+/// <c>[a-z_]{1,64}</c>, the shape of every registered code — and then unchanged. Any other string is no code at all:
+/// nothing is trimmed or stripped into one (<c>"invalid_client\r\n"</c> gives no code, not <c>"invalid_client"</c>). The
+/// RFC 6749 §5.2 grammar (<c>1*NQSCHAR</c>) still decides whether a 2xx carries an error at all.
 /// </summary>
 /// <remarks>
-/// <para>Measured before the fix (2026-10-03): a 400 <c>{"error":"invalid_client\n"}</c> gave the Message
+/// <para>Measured before #710 (2026-10-03): a 400 <c>{"error":"invalid_client\n"}</c> gave the Message
 /// <c>Client credentials grant failed: invalid_client\n</c> and the same <c>OAuthError</c> — one logged SDK error split into
 /// two log lines. CR, CRLF, an embedded LF, NUL, DEL and non-ASCII (U+2028 included) went through the same way on every
 /// grant and on introspection; the 401 branch kept the canonical reason in the Message but carried the raw value in
-/// <c>OAuthError</c>. The grammar excludes every control character, <c>"</c>, <c>\</c> and everything past ASCII, so
-/// enforcing it costs no valid code — and it still admits every token character, which is why
-/// <c>MalformedTokenResponseTests.KnownLeaks</c> keeps an in-grammar code as debugging information.</para>
+/// <c>OAuthError</c>. #710 took the RFC grammar for the code, which admits every token character — an endpoint that echoed
+/// a Keycloak-style secret or a JWT in <c>error</c> put it in <c>Message</c> and <c>OAuthError</c> (measured on main a7d0fdf3;
+/// registry token-error-code-secret-echo) — so the code is the narrower shape now, and a value that overlaps a secret the
+/// request sent is withheld too (<c>OAuthErrorCodeEchoTests</c>).</para>
 /// <para>The two branches that carry a code are both here: 400 (the body's <c>error</c> — a 2xx takes the same branch when
-/// it carries an error code or an <c>error</c> Duende flags) and every other HTTP error (the canonical reason, with the code
-/// in <c>OAuthError</c>).</para>
+/// it carries an <c>error</c> in the grammar or one Duende flags) and every other HTTP error (the canonical reason, with the
+/// code in <c>OAuthError</c>).</para>
 /// <para>An unpaired UTF-16 surrogate escape (U+D800 alone) is no code either — System.Text.Json will not decode it at all.
 /// It used to leave the SDK as a raw <c>InvalidOperationException</c> (Duende's <c>IsError</c> on 400 and 2xx, the
 /// SDK's own <c>GetString</c> on 401); that case and its messages live in <c>UndecodableResponseTests</c>.</para>
@@ -31,21 +33,27 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 public sealed class OAuthErrorCodeGrammarTests : IDisposable
 {
     private const string Oidc = "/realms/r/protocol/openid-connect";
-    private const string NotACode = "error is not an RFC 6749 error code";
+    private const string NotACode = "error value withheld";
     private const string NotAString = "error is not a JSON string";
+    /// <summary>No lowercase letter — no row here overlaps it (the overlap rule is OAuthErrorCodeEchoTests').</summary>
+    private const string Secret = "S3CR3T-9";
 
     private readonly WireMockServer _idp = WireMockServer.Start();
 
     public void Dispose() => _idp.Dispose();
 
     /// <param name="ErrorJson">The <c>error</c> member's JSON text.</param>
-    /// <param name="Code">What <c>OAuthError</c> carries — the value itself when it is an error code, else <c>null</c>.</param>
+    /// <param name="Code">What <c>OAuthError</c> carries — the value itself when it is a code, else <c>null</c>.</param>
     /// <param name="NoCode">The 400 message's tail when it is not one.</param>
-    private sealed record Row(string ErrorJson, string? Code, string NoCode);
+    /// <param name="InGrammar">Whether a 2xx carrying it fails — the RFC grammar decides that, not the code shape.</param>
+    private sealed record Row(string ErrorJson, string? Code, string NoCode, bool InGrammar);
 
-    private static Row Admitted(string value) => new(JsonSerializer.Serialize(value), value, "");
+    private static Row Admitted(string value) => new(JsonSerializer.Serialize(value), value, "", true);
 
-    private static Row Refused(string value) => new(JsonSerializer.Serialize(value), null, NotACode);
+    private static Row Refused(string value) => new(JsonSerializer.Serialize(value), null, NotACode, false);
+
+    /// <summary>In the RFC grammar but not shaped like a code — no code, yet a 2xx carrying it still fails.</summary>
+    private static Row InGrammarNoCode(string value) => new(JsonSerializer.Serialize(value), null, NotACode, true);
 
     private static string C(int codePoint) => ((char)codePoint).ToString();
 
@@ -64,21 +72,26 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
         ["quote 0x22, outside NQSCHAR"] = Refused("invalid" + C(0x22) + "client"),
         ["backslash 0x5C, outside NQSCHAR"] = Refused("invalid" + C(0x5C) + "client"),
         ["empty, 1*NQSCHAR needs one"] = Refused(""),
-        // Decided: a space-only value IS an error code — %x20 is NQSCHAR, so refusing it would make the 400 message
-        // ("not an RFC 6749 error code") false. It cannot split a log line.
-        ["space only, 0x20 is NQSCHAR"] = Admitted(" "),
-        ["spaces only"] = Admitted("   "),
-        ["the grammar's inner edges"] = Admitted("!#[]~"),
+        // In the grammar, not a code: no code is carried, and a 2xx carrying one still fails (Duende does not flag a
+        // whitespace-only error text on a 2xx — the grammar check does).
+        ["space only, 0x20 is NQSCHAR"] = InGrammarNoCode(" "),
+        ["spaces only"] = InGrammarNoCode("   "),
+        ["the grammar's inner edges"] = InGrammarNoCode("!#[]~"),
+        ["a Keycloak-style secret"] = InGrammarNoCode("Kx7mQ2vT9pLr4WzN8bYc3FhJ6sDa1gE5"),
+        ["a JWT"] = InGrammarNoCode("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"),
+        ["a capital letter"] = InGrammarNoCode("Invalid_client"),
+        ["the longest code (64)"] = Admitted(new string('a', 64)),
+        ["one past the longest (65)"] = InGrammarNoCode(new string('a', 65)),
         // Not a string at all — keeps its own wording (Duende renders it as raw JSON text).
-        ["number, not a JSON string"] = new("42", null, NotAString),
+        ["number, not a JSON string"] = new("42", null, NotAString, false),
     };
 
     public static IEnumerable<object[]> Cases =>
         Rows.Keys.SelectMany(row => new[] { new object[] { row, 400 }, new object[] { row, 401 } });
 
-    /// <summary>Every admitted row on a 2xx — the low edge, a common one and the high edge of the success range.</summary>
+    /// <summary>Every row in the grammar on a 2xx — the low edge, a common one and the high edge of the success range.</summary>
     public static IEnumerable<object[]> SuccessStatusCases =>
-        Rows.Where(kv => kv.Value.Code is not null)
+        Rows.Where(kv => kv.Value.InGrammar)
             .SelectMany(kv => new[] { 200, 201, 299 }.Select(status => new object[] { kv.Key, status }));
 
     private delegate Task<object> Call(KeycloakClient kc);
@@ -95,12 +108,12 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public Task Only_an_RFC_6749_error_code_reaches_Message_or_OAuthError(string row, int status) => Check(row, status);
+    public Task Only_a_code_shaped_value_reaches_Message_or_OAuthError(string row, int status) => Check(row, status);
 
-    /// <summary>A 2xx that carries an error code fails with that code, exactly as a 400 does.</summary>
+    /// <summary>A 2xx that carries an error in the grammar fails, exactly as a 400 does — with the code when it is one.</summary>
     /// <remarks>Measured before this check (2026-10-03): Duende's <c>IsError</c> did not flag a 2xx whose <c>error</c> text
-    /// is whitespace, so a space-only code — %x20 is NQSCHAR — left every token call failing as "token response missing
-    /// access_token" with no <c>OAuthError</c>, and let introspection return a result. A 2xx with any other code was
+    /// is whitespace, so a space-only value — %x20 is NQSCHAR — left every token call failing as "token response missing
+    /// access_token" with no <c>OAuthError</c>, and let introspection return a result. A 2xx with any other value was
     /// flagged already.</remarks>
     [Theory]
     [MemberData(nameof(SuccessStatusCases))]
@@ -115,7 +128,7 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
             _idp.Given(Request.Create().WithPath(path).UsingPost())
                 .RespondWith(Response.Create().WithStatusCode(status).WithHeader("Content-Type", "application/json").WithBody(body));
         }
-        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = _idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "s" });
+        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = _idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = Secret });
 
         var wrong = new List<string>();
         foreach (var (name, prefix, run) in Calls)

@@ -42,19 +42,13 @@ public sealed class MalformedTokenResponseTests
 
     /// <summary>
     /// 알려진 누출 — <c>"변형|경로"</c>(경로: <c>ToString()</c>·<c>Message</c>·<c>OAuthError</c>). ⚠️ 더 안 새면 <b>여기서
-    /// 지워야 통과한다</b>(낡은 항목 검사). 둘 다 <b>계약</b>이다 — OAuth <c>error</c> 코드는 디버깅 정보로 그대로
-    /// 넘기기로 한 값이고, RFC 6749 §5.2 문법(<c>%x20-21 / %x23-5B / %x5D-7E</c>)이 토큰 문자를 전부 허용해 SDK 가
-    /// 코드와 토큰을 가를 수 없다. 서버가 코드 자리에 토큰을 넣는 경우만 여기 걸린다. 그 문법 밖의 문자열(제어 문자·
-    /// <c>"</c>·<c>\</c>·비 ASCII)은 코드가 아니어서 어느 경로에도 싣지 않는다 — e10·e11 이 그 쪽을 잰다.
+    /// 지워야 통과한다</b>(낡은 항목 검사). 지금은 없다 — e4 · e7 의 코드 자리 카나리아(<c>LK-E4-ERR-1-canary</c>)는 RFC 6749
+    /// §5.2 문법 안이라 예전에는 계약상 그대로 실렸지만, 이제 코드는 <c>[a-z_]{1,64}</c> 이고 그 요청이 보낸 비밀과 겹치지 않을
+    /// 때만 싣는다(<c>OAuthErrorCode</c> · <c>OAuthErrorCodeEchoTests</c> · 등록부 token-error-code-secret-echo). 그 밖의
+    /// 문자열(제어 문자·<c>"</c>·<c>\</c>·비 ASCII)은 원래 코드가 아니었다 — e10·e11 이 그 쪽을 잰다.
     /// </summary>
     /// <remarks>internal — HostilePathMatrixTests 가 같은 계약(어느 경로의 카나리아가 계약상 찍히는가)을 파생 행에 그대로 건다.</remarks>
-    internal static readonly Dictionary<string, string> KnownLeaks = new(StringComparer.Ordinal)
-    {
-        ["e4 400 error string echo|ToString()"] = "OAuth error 코드는 계약상 그대로 싣는다 — 문자열 코드와 토큰을 가를 문법이 없다",
-        ["e4 400 error string echo|Message"] = "OAuth error 코드는 계약상 그대로 싣는다 — 문자열 코드와 토큰을 가를 문법이 없다",
-        ["e4 400 error string echo|OAuthError"] = "OAuth error 코드는 계약상 그대로 싣는다 — 문자열 코드와 토큰을 가를 문법이 없다",
-        ["e7 500 JSON error echo|OAuthError"] = "OAuth error 코드는 계약상 그대로 싣는다 — 문자열 코드와 토큰을 가를 문법이 없다",
-    };
+    internal static readonly Dictionary<string, string> KnownLeaks = new(StringComparer.Ordinal);
 
     /// <summary>토큰 엔드포인트 변형 — 같은 본문을 introspect 엔드포인트도 낸다.</summary>
     /// <param name="Token">토큰 호출들의 기대 결과(<c>null</c> 은 성공). nonce 를 준 code 교환은 토큰이 성공해도

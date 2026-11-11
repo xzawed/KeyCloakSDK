@@ -85,7 +85,7 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakTransportException("token request timed out", ex);
         }
-        return ToTokenSet(resp, "Client credentials grant failed", issuedAt);
+        return ToTokenSet(resp, "Client credentials grant failed", issuedAt, _cfg.ClientSecret);
     }
 
     public async Task<TokenSet> ExchangeCodeAsync(string code, string redirectUri, string codeVerifier,
@@ -109,7 +109,7 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakTransportException("token request timed out", ex);
         }
-        var tokens = ToTokenSet(resp, "Authorization code exchange failed", issuedAt);
+        var tokens = ToTokenSet(resp, "Authorization code exchange failed", issuedAt, _cfg.ClientSecret, code, codeVerifier);
 
         // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it
         // (signature/alg pin/iss/exp on the hardened validator's one ConfigurationManager — the same JWKS
@@ -151,7 +151,7 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakTransportException("token request timed out", ex);
         }
-        return ToTokenSet(resp, "Token refresh failed", issuedAt);
+        return ToTokenSet(resp, "Token refresh failed", issuedAt, _cfg.ClientSecret, refreshToken);
     }
 
     public async Task<IntrospectionResult> IntrospectAsync(string token, CancellationToken ct = default)
@@ -189,7 +189,7 @@ public sealed class AuthClient : ITokenSource
             // 끝까지 온 응답의 값을 Duende 가 바꾸지 못했다(exp · iat · nbf · JWT 페이로드) — 날것의 예외가 샜다(리뷰 레그, 2026-11-10).
             throw unusable;
         }
-        ThrowIfError(resp, "Token introspection failed", "introspection transport failure");
+        ThrowIfError(resp, "Token introspection failed", "introspection transport failure", new[] { _cfg.ClientSecret, token });
 
         var claims = resp.Claims.GroupBy(c => c.Type)
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
@@ -242,9 +242,9 @@ public sealed class AuthClient : ITokenSource
     public Task<ValidatedToken> ValidateAsync(string accessToken, CancellationToken ct = default)
         => _validator.ValidateAsync(accessToken, ct);
 
-    private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds)
+    private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds, params string?[] sent)
     {
-        ThrowIfError(resp, failureMessage, $"{failureMessage} (transport)");
+        ThrowIfError(resp, failureMessage, $"{failureMessage} (transport)", sent);
         // ⚠️ **존재 검사는 타입 검사가 아니다 — Duende 는 JSON 값을 강제변환한다.** 실측:
         // `access_token: 12345` → `"12345"`, `{"a":1}` → 그 문자열. 그래서 아래
         // `TokenSet.Create` 의 `IsNullOrEmpty` 검사를 통과하고, 소비자는 쓸 수 없는 토큰을
@@ -300,12 +300,12 @@ public sealed class AuthClient : ITokenSource
 
     /// <summary>Converts a Duende error response (token or introspection endpoint) to the SDK error.</summary>
     /// <remarks>⚠️ Beyond the OAuth <c>error</c> code, nothing the server wrote reaches the SDK error, and the code only when
-    /// it is one in the RFC 6749 §5.2 grammar (<see cref="OAuthErrorOf"/>) — Duende's own
+    /// <see cref="OAuthErrorCode"/> lets it through against <paramref name="sent"/>, the secrets the request sent — Duende's own
     /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
     /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
     /// echoed in them: <c>MalformedTokenResponseTests</c>) and on an <c>error</c> holding an unpaired surrogate escape
     /// (<c>UndecodableResponseTests</c>).</remarks>
-    private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage)
+    private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage, string?[] sent)
     {
         switch (resp.ErrorType)
         {
@@ -321,37 +321,38 @@ public sealed class AuthClient : ITokenSource
             case ResponseErrorType.Http:
                 // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
                 var reason = CanonicalReason(resp.HttpStatusCode);
-                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = OAuthErrorOf(resp.Json) ?? reason };
+                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = OAuthErrorOf(resp.Json, sent) ?? reason };
         }
         if (resp.Json is { ValueKind: not JsonValueKind.Object })
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
-        // A 2xx that carries an error code fails as a 400 does. Duende's IsError alone misses a space-only one there — it
-        // does not flag a whitespace error text on a 2xx, and %x20 is NQSCHAR (measured: OAuthErrorCodeGrammarTests).
+        // A 2xx that carries an error fails as a 400 does. Duende's IsError alone misses a space-only one there — it does not
+        // flag a whitespace error text on a 2xx (measured: OAuthErrorCodeGrammarTests) — so the RFC grammar decides whether
+        // there is an error at all (InGrammar); what is carried of it is OAuthErrorOf's, which is narrower.
         // An `error` it cannot decode is an error with no code — checked first, because IsError decodes it and throws.
         if ((ErrorMember(resp.Json) is { ValueKind: JsonValueKind.String } error && !TryDecode(error, out _))
-            || resp.IsError || OAuthErrorOf(resp.Json) is not null)
+            || resp.IsError || InGrammar(resp.Json))
         {
-            var code = OAuthErrorOf(resp.Json);
+            var code = OAuthErrorOf(resp.Json, sent);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
         }
     }
 
-    // RFC 6749 §5.2: error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E. Only a JSON string in that grammar is an
-    // OAuth error code, and it is used unchanged. Anything else is no code: Duende renders a non-string as its raw JSON
-    // text, and a string outside the grammar (CR/LF and every other control character, '"', '\', anything past ASCII)
-    // split the logged SDK error into lines before this check (measured: OAuthErrorCodeGrammarTests). It is never trimmed
-    // into a code. A string System.Text.Json will not decode (an unpaired surrogate escape) is no code either — GetString
-    // threw it out of the SDK raw before (measured: UndecodableResponseTests).
-    private static string? OAuthErrorOf(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar)
-            ? code
-            : null;
+    // What the error carries: a JSON string that OAuthErrorCode lets through against what the request sent — never trimmed
+    // into a code. Anything else is no code: Duende renders a non-string as its raw JSON text, a string with a control
+    // character split the logged SDK error into lines (measured: OAuthErrorCodeGrammarTests), and a string
+    // System.Text.Json will not decode (an unpaired surrogate escape) threw out of the SDK raw before (UndecodableResponseTests).
+    private static string? OAuthErrorOf(JsonElement? json, string?[] sent) =>
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) ? OAuthErrorCode.Carried(code, sent) : null;
+
+    // RFC 6749 §5.2: error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E — whether a 2xx carries an error at all.
+    private static bool InGrammar(JsonElement? json) =>
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar);
 
     private static bool IsNqsChar(char c) => c is >= '\x20' and <= '\x21' or >= '\x23' and <= '\x5B' or >= '\x5D' and <= '\x7E';
 
-    // Why a 400 carried no code — a string outside the grammar is still a JSON string, so it gets its own words.
+    // Why a 400 carried no code — a string that is not carried is still a JSON string, so it gets its own words.
     private static string NoCodeReason(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } ? "error is not an RFC 6749 error code" : "error is not a JSON string";
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } ? "error value withheld" : "error is not a JSON string";
 
     private static JsonElement? ErrorMember(JsonElement? json) =>
         json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) ? e : null;
