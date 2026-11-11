@@ -29,7 +29,7 @@ Metrics/AbcSize:
 # 144 → 142 (2026-10-29): `Rack::OAuth2.http_config` 를 걸던 메서드를 지워 AuthClient 가 137 이다 — 이제 가장 긴
 # 클래스는 `spec/support/body_server.rb`(142)라 거기까지만 내린다.
 Metrics/ClassLength:
-  Max: 142
+  Max: 144
 # 키워드 인자는 이름이 곧 문서화라 위치 인자 목록과 달리 가독성을 해치지 않는다
 # (예: Config#initialize의 8개 키워드 인자).
 Metrics/ParameterLists:

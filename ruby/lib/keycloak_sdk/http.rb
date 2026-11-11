@@ -376,15 +376,27 @@ module KeycloakSdk
     # allocated to the cap up front).
     # ⚠️ Looking only at `Content-Length` misses a response whose header is absent or false — the check uses the
     # running total.
+    # ⚠️ A json response middleware on `conn` judges nothing here: it parses the streamed body's placeholder, which
+    # is always empty — after the adapter forced it to the declared charset (faraday-net_http `encoded_body`). A
+    # charset Ruby keeps as a dummy encoding (utf-16 · utf-32 · utf-7 · iso-2022-jp) makes the placeholder's `strip`
+    # raise, so a usable token labelled `charset=utf-16` was a TransportError (measured 2026-11-11, every lane). Its
+    # `Faraday::ParsingError` carries the response the body was streamed for; the caller judges the body
+    # (`TokenResponse`).
     def read_capped(conn, method, url, max_bytes:, what:, body: nil, headers: {})
       buf = String.new(encoding: Encoding::BINARY)
-      resp = conn.run_request(method, url, body, IDENTITY.merge(headers)) do |req|
-        req.options.on_data = proc do |chunk, _received|
-          over = buf.bytesize + chunk.bytesize > max_bytes
-          raise TransportError, "#{what} response exceeds #{max_bytes} bytes" if over
+      resp = begin
+        conn.run_request(method, url, body, IDENTITY.merge(headers)) do |req|
+          req.options.on_data = proc do |chunk, _received|
+            over = buf.bytesize + chunk.bytesize > max_bytes
+            raise TransportError, "#{what} response exceeds #{max_bytes} bytes" if over
 
-          buf << chunk
+            buf << chunk
+          end
         end
+      rescue Faraday::ParsingError => e
+        raise unless e.response.is_a?(Faraday::Response)
+
+        e.response
       end
       resp.env.body = buf
       resp

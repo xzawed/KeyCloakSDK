@@ -36,9 +36,15 @@ module TokenResponseClassSpec
     JSON_TYPE = "application/json"
     HTML_TYPE = "text/html"
     ODD_CHARSET = "application/json; charset=x-no-such-charset"
+    # Ruby 가 「dummy」로 두는 인코딩 — 어댑터가 스트리밍 본문의 빈 자리표시를 이것으로 바꾸면 json 미들웨어의 `strip` 이
+    # Encoding::CompatibilityError 를 던졌다(r11 · r12, 2026-11-11 실측: 네 면 모두 TransportError).
+    UTF16_CHARSET = "application/json; charset=utf-16"
     HTML = "<html><body><h1>503 Service Unavailable</h1></body></html>"
     OK_TOKEN = '{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300}'
     OK_INTROSPECTION = '{"active":true,"username":"svc"}'
+
+    # BOM 을 단 UTF-16LE — RFC 8259 §8.1 밖이다(BINARY).
+    def self.utf16(json) = "\xFF\xFE".b + json.encode("UTF-16LE").b
 
     # 잘못된 UTF-8 은 Ruby 리터럴로 적을 수 없어 이어 붙인다(BINARY).
     def self.bytes(*parts) = parts.map(&:b).join
@@ -56,6 +62,8 @@ module TokenResponseClassSpec
       "r9 200 invalid UTF-8 inside a string" =>
         [200, JSON_TYPE, bytes('{"access_token":"AT-', BAD, '-token","token_type":"Bearer","expires_in":300}')],
       "r10 200 unknown charset" => [200, ODD_CHARSET, OK_TOKEN],
+      "r11 200 charset=utf-16 over a UTF-8 body" => [200, UTF16_CHARSET, OK_TOKEN],
+      "r12 200 charset=utf-16 over a UTF-16 body" => [200, UTF16_CHARSET, utf16(OK_TOKEN)],
       "401 invalid_client" => [401, JSON_TYPE, '{"error":"invalid_client"}'],
       "403 access_denied" => [403, JSON_TYPE, '{"error":"access_denied"}'],
       "404 realm missing" => [404, JSON_TYPE, '{"error":"Realm does not exist"}'],
@@ -85,6 +93,8 @@ module TokenResponseClassSpec
         [400, JSON_TYPE, bytes('{"error":"invalid_request","error_description":"', BAD, '"}')],
       "r9 200 invalid UTF-8 inside a string" => [200, JSON_TYPE, bytes('{"active":true,"username":"s', BAD, 'vc"}')],
       "r10 200 unknown charset" => [200, ODD_CHARSET, OK_INTROSPECTION],
+      "r11 200 charset=utf-16 over a UTF-8 body" => [200, UTF16_CHARSET, OK_INTROSPECTION],
+      "r12 200 charset=utf-16 over a UTF-16 body" => [200, UTF16_CHARSET, utf16(OK_INTROSPECTION)],
       "cap one byte past 1 MiB" => [200, JSON_TYPE, OK_INTROSPECTION, CAP + 1 - OK_INTROSPECTION.bytesize],
       "truncated mid-body" => [200, JSON_TYPE, OK_INTROSPECTION, 0, OK_INTROSPECTION.bytesize / 2],
       "closed mid-body" => [200, JSON_TYPE, OK_INTROSPECTION, 0, OK_INTROSPECTION.bytesize / 2, true],
@@ -115,6 +125,8 @@ module TokenResponseClassSpec
       "r8u 400 invalid UTF-8 in the error body" => [AUTH, "#{CC}: non-standard error code (HTTP 400)", nil],
       "r9 200 invalid UTF-8 inside a string" => [AUTH, "token response is not valid UTF-8", nil],
       "r10 200 unknown charset" => [:ok, "AT-ok-token"],
+      "r11 200 charset=utf-16 over a UTF-8 body" => [:ok, "AT-ok-token"],
+      "r12 200 charset=utf-16 over a UTF-16 body" => [AUTH, "token response is not valid JSON", nil],
       "401 invalid_client" => [AUTH, "#{CC}: invalid_client (HTTP 401)", "invalid_client"],
       "403 access_denied" => [AUTH, "#{CC}: access_denied (HTTP 403)", "access_denied"],
       "404 realm missing" => [AUTH, "#{CC}: non-standard error code (HTTP 404)", nil],
@@ -136,6 +148,8 @@ module TokenResponseClassSpec
       "r8u 400 invalid UTF-8 in the error body" => [AUTH, "#{GRANT}: HTTP 400", nil],
       "r9 200 invalid UTF-8 inside a string" => [AUTH, "token response is not valid UTF-8", nil],
       "r10 200 unknown charset" => [:ok, "AT-ok-token"],
+      "r11 200 charset=utf-16 over a UTF-8 body" => [:ok, "AT-ok-token"],
+      "r12 200 charset=utf-16 over a UTF-16 body" => [AUTH, "token response is not valid JSON", nil],
       "401 invalid_client" => [AUTH, "#{GRANT}: HTTP 401", "invalid_client"],
       "403 access_denied" => [AUTH, "#{GRANT}: HTTP 403", "access_denied"],
       "404 realm missing" => [AUTH, "#{GRANT}: HTTP 404", nil],
@@ -148,7 +162,8 @@ module TokenResponseClassSpec
 
     # admin 요청이 받은 Bearer 를 되돌려준다 — 그 토큰을 실제로 썼다는 증거.
     ADMIN_OK = [:ok, { "id" => "u1", "authorization" => "Bearer AT-ok-token" }].freeze
-    S5 = S2.merge("ok" => ADMIN_OK, "r10 200 unknown charset" => ADMIN_OK).freeze
+    S5 = S2.merge("ok" => ADMIN_OK, "r10 200 unknown charset" => ADMIN_OK,
+                  "r11 200 charset=utf-16 over a UTF-8 body" => ADMIN_OK).freeze
 
     INTRO = {
       "ok" => [:ok, [true, "svc"]],
@@ -166,6 +181,8 @@ module TokenResponseClassSpec
       "r8u 400 invalid UTF-8 in the error body" => [AUTH, "introspection failed: HTTP 400", nil],
       "r9 200 invalid UTF-8 inside a string" => [AUTH, "introspection response is not valid UTF-8", nil],
       "r10 200 unknown charset" => [:ok, [true, "svc"]],
+      "r11 200 charset=utf-16 over a UTF-8 body" => [:ok, [true, "svc"]],
+      "r12 200 charset=utf-16 over a UTF-16 body" => [AUTH, "introspection response is not valid JSON", nil],
       "cap one byte past 1 MiB" => [TRANSPORT, "introspection response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, /\Aintrospection transport error: Net::ReadTimeout/, nil],
       "closed mid-body" => [TRANSPORT, CUT, nil],
