@@ -714,10 +714,12 @@ for L in $SD_LANGS; do
     "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 '$_mark' 가 없다(go #380 의 나머지 절반)"
   _ebad=0
   while IFS='|' read -r _etf _etc; do
-    [ -n "$_etc" ] || continue
-    _eok="$(sd_canary_ok "$ROOT/$_etf" "$_etc")"
+    [ -n "$_etf$_etc" ] || continue
+    # `|` 가 빠진 행을 건너뛰면 그 언어는 시험 하나 안 보고 센 언어가 된다 — 모양이 틀린 행은 실패다.
+    _eok=BADROW
+    [ -z "$_etc" ] || _eok="$(sd_canary_ok "$ROOT/$_etf" "$_etc")"
     assert_eq "ok" "$_eok" \
-      "[빈 키셋] $L 의 회귀 테스트가 주석 밖에 정확히 하나가 아니다(코드만 남고 증명이 없다) — 기대: $_etc ($_etf)"
+      "[빈 키셋] $L 의 회귀 테스트가 주석 밖에 정확히 하나가 아니거나 행이 \`파일|선언\` 이 아니다(코드만 남고 증명이 없다) — 기대: $_etc ($_etf)"
     [ "$_eok" = ok ] || _ebad=1
   done <<EOF
 $_ec
