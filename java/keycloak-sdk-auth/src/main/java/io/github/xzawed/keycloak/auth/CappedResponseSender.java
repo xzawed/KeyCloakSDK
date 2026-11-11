@@ -125,6 +125,9 @@ final class CappedResponseSender {
     if (body == null) throw new TooLarge(what);
     int status = head.getStatusLine().getStatusCode();
     if (strict && status >= 200 && status < 300 && !isUtf8(body)) throw new NotUtf8(what);
+    if (strict && status >= 200 && status < 300 && holdsUnpairedSurrogate(body)) {
+      throw new NotUtf8(what, "holds an unpaired surrogate escape");
+    }
     HTTPResponse response = new HTTPResponse(status);
     response.setStatusMessage(head.getStatusLine().getReasonPhrase());
     for (Map.Entry<String, List<String>> header : BoundedTransport.grouped(head).entrySet()) {
@@ -187,6 +190,52 @@ final class CappedResponseSender {
     return true;
   }
 
+  /**
+   * JSON 텍스트가 짝 없는 UTF-16 서로게이트의 {@code \\u} 이스케이프를 품는가 — 문자열 값이든 멤버 이름이든(RFC 8259 §8.2 의 문법은
+   * 싣지만 I-JSON §2.1 은 금한다). 그 값은 어떤 UTF-8 로도 보낼 수 없다: 받아 둔 refresh token 을 다시 보내면 {@code ?}({@code %3F})로
+   * 바뀌어 나갔다(등록부 token-response-class-residue 판정 Q2, 2026-11-11 실측). 엄격한 UTF-8 인 바이트를 그대로 훑는다 — 이스케이프는
+   * ASCII 이고 여러 바이트 글자의 바이트는 {@code "} 나 {@code \} 와 겹치지 않는다. 이스케이프된 역슬래시 뒤의 {@code u} 는 이스케이프가
+   * 아니다. 형식이 틀린 이스케이프는 여기서 판정하지 않는다(파서가 거부한다). admin 가드 {@code TokenResponseGuard} 가 쌍둥이다.
+   */
+  static boolean holdsUnpairedSurrogate(byte[] json) {
+    boolean inString = false;
+    for (int i = 0; i < json.length; i++) {
+      byte b = json[i];
+      if (!inString) {
+        inString = b == '"';
+      } else if (b == '"') {
+        inString = false;
+      } else if (b == '\\' && i + 1 < json.length) {
+        if (json[i + 1] != 'u') {
+          i++; // 두 글자 이스케이프 — 이스케이프된 글자를 건너뛴다
+          continue;
+        }
+        int unit = hex4(json, i + 2);
+        if (unit < 0) return false;
+        i += 5;
+        if (unit >= 0xDC00 && unit <= 0xDFFF) return true; // 앞에 높은 서로게이트가 없는 낮은 서로게이트
+        if (unit >= 0xD800 && unit <= 0xDBFF) {
+          int low = i + 2 < json.length && json[i + 1] == '\\' && json[i + 2] == 'u' ? hex4(json, i + 3) : -1;
+          if (low < 0xDC00 || low > 0xDFFF) return true;
+          i += 6;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** {@code at} 의 16진 넷(대소문자 무관)의 값, 아니면 -1. */
+  private static int hex4(byte[] json, int at) {
+    if (at + 4 > json.length) return -1;
+    int value = 0;
+    for (int k = at; k < at + 4; k++) {
+      int digit = Character.digit(json[k], 16);
+      if (digit < 0) return -1;
+      value = value << 4 | digit;
+    }
+    return value;
+  }
+
   /** 상한을 넘는 응답 — 메시지는 무엇이 상한을 넘었는지만 말한다(응답을 인용하지 않는다). */
   static final class TooLarge extends IOException {
     private static final long serialVersionUID = 1L;
@@ -197,14 +246,18 @@ final class CappedResponseSender {
   }
 
   /**
-   * 끝까지 왔으나 2xx 본문이 UTF-8 이 아닌 응답({@link #sendStrict}) — 전송 실패가 아니다(그 레인의 인증 오류다). 메시지는 무엇이
-   * UTF-8 이 아닌지만 말한다(응답을 인용하지 않는다).
+   * 끝까지 왔으나 2xx 본문이 UTF-8 이 아니거나 UTF-8 로 보낼 수 없는 값({@link #holdsUnpairedSurrogate})을 품은 응답({@link #sendStrict})
+   * — 전송 실패가 아니다(그 레인의 인증 오류다). 메시지는 무엇이 왜 쓸 수 없는지만 말한다(응답을 인용하지 않는다).
    */
   static final class NotUtf8 extends IOException {
     private static final long serialVersionUID = 1L;
 
     NotUtf8(String what) {
-      super(what + " response is not valid UTF-8");
+      this(what, "is not valid UTF-8");
+    }
+
+    NotUtf8(String what, String why) {
+      super(what + " response " + why);
     }
   }
 }

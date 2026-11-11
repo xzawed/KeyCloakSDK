@@ -553,6 +553,13 @@ class AdminTokenResponseTest {
       reset(new Reply(200, gzip(tokenBody("12345", canary)), "gzip"));
       table.add(callExpectingRejection("gzip 12345", wrong, Expected.unusable(200)));
 
+      // 끝까지 온 본문의 gzip 이 깨졌다(deflate 아님) — 쓸 수 없는 응답이다(등록부 판정 Q1, 2026-11-11 — 전에는 ZipException 이 전송
+      // 실패로 나갔다). 머리 열 바이트는 gzip 이고 그 뒤가 deflate 가 아니다.
+      byte[] corrupt = java.util.Arrays.copyOf(new byte[] {0x1f, (byte) 0x8b, 8, 0, 0, 0, 0, 0, 0, (byte) 0xff}, 40);
+      java.util.Arrays.fill(corrupt, 10, 40, (byte) 'x');
+      reset(new Reply(200, corrupt, "gzip"));
+      table.add(callExpectingRejection("gzip 깨짐", wrong, Expected.unusable(200)));
+
       // 갱신(refresh_token 그랜트) 응답도 같은 자리에서 판정한다 — 푼 바이트가 쓸 수 있으면 새 토큰으로 나아간다.
       String first = tokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300")
           .replace("\"expires_in\":300", "\"expires_in\":1");

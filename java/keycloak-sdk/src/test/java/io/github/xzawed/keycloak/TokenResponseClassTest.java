@@ -351,6 +351,58 @@ class TokenResponseClassTest {
     assertNone(wrong);
   }
 
+  /** JSON 의 여섯 글자 이스케이프 — 소스의 유니코드 이스케이프 전처리를 피해 이어 붙인다. */
+  private static String esc(int unit) {
+    return "\\" + "u" + String.format("%04x", unit);
+  }
+
+  /** 쓸 수 있는 멤버 뒤에 붙이는 자리 — 짝 없는 서로게이트 이스케이프가 그 안 어딘가에 있다. */
+  private static final Map<String, String> UNPAIRED = Map.of(
+      "확장 멤버 값", "\"x_ext\":\"" + esc(0xD800) + "\"",
+      "멤버 이름", "\"" + esc(0xD800) + "\":1",
+      "여럿 중 하나인 배열 원소", "\"x_ext\":[\"ok\",\"" + esc(0xD800) + "\"]",
+      "중첩 객체의 이름", "\"x_ext\":{\"a\":1,\"" + esc(0xDC00) + "\":2}",
+      "읽는 멤버의 낮은 서로게이트", "\"scope\":\"ab" + esc(0xDC00) + "cd\"",
+      "대문자 16진", "\"x_ext\":\"" + esc(0xD800).toUpperCase().replace("\\U", "\\u") + "\"",
+      "높은 서로게이트 뒤 다른 이스케이프", "\"x_ext\":\"" + esc(0xD800) + esc(0x41) + "\"");
+
+  /**
+   * 짝 없는 UTF-16 서로게이트 이스케이프(RFC 8259 §8.2 의 문법은 싣지만 I-JSON §2.1 은 금한다)가 2xx 토큰 · introspection 본문 어디에
+   * 있든 끝까지 온 응답을 쓸 수 없다 — 그 레인의 인증 오류(등록부 token-response-class-residue 판정 Q2, 2026-11-11). 수정 전에는 그
+   * 값을 그대로 돌려줬고, 돌려받은 refresh token 을 다시 보내면 {@code %3F}({@code ?})로 바뀌어 나갔다(실측).
+   */
+  @Test void anUnpairedSurrogateEscapeAnywhere_isAnAuthFailure() {
+    List<String> wrong = new ArrayList<>();
+    String holds = "token response holds an unpaired surrogate escape";
+    Map<String, String> places = new java.util.LinkedHashMap<>(UNPAIRED);
+    places.put("access_token 값", "\"access_token\":\"" + esc(0xD800) + "\"");
+    for (Map.Entry<String, String> place : places.entrySet()) {
+      for (Object[] row : new Object[][] {
+          {"S1", CC, "Client credentials failed: " + holds},
+          {"S2", PROV, "Client credentials failed: " + holds},
+          {"refresh", RF, "Token refresh failed: " + holds},
+          {"code exchange", EX, "Authorization code exchange failed: " + holds}}) {
+        tokens(json(200, "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300," + place.getValue() + "}"));
+        expect(row[0] + " 200 " + place.getKey(), call((Call) row[1]), KeycloakAuthException.class, (String) row[2], wrong);
+      }
+      introspectReply = json(200, "{\"active\":true,\"username\":\"svc\"," + place.getValue() + "}");
+      expect("IN 200 " + place.getKey(), call(IN), KeycloakAuthException.class,
+          "Introspection failed: introspection response holds an unpaired surrogate escape", wrong);
+    }
+    // 대조 — 짝을 이룬 이스케이프와 이스케이프된 역슬래시 뒤의 「u」(이스케이프가 아니다)는 그대로다
+    String pair = "a" + esc(0xD83D) + esc(0xDE00) + "b";
+    tokens(json(200, "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300,\"scope\":\"" + pair
+        + "\",\"x_ext\":\"\\\\" + "ud800\"}"));
+    Outcome control = call(CC);
+    if (!"good".equals(control.value())) wrong.add("S1 짝 · 이스케이프된 역슬래시: 받아들여야 한다 — " + control);
+    introspectReply = json(200, "{\"active\":true,\"username\":\"" + pair + "\"}");
+    Outcome introspected = call(IN);
+    if (!new String(Character.toChars(0x1F600)).equals(((String) introspected.value()).substring(1, 3))) {
+      wrong.add("IN 짝: 받아들여야 한다 — " + introspected);
+    }
+    assertNone(wrong);
+  }
+
   /** 대조 — 규칙이 바꾸지 않는 auth 레인의 칸. */
   @Test void theAuthLaneControls_doNotChange() throws IOException {
     List<String> wrong = new ArrayList<>();
@@ -418,7 +470,16 @@ class TokenResponseClassTest {
         new Object[] {"401 JSON", echoing(401, "unauthorized_client"), 401},
         new Object[] {"403 JSON", echoing(403, "access_denied"), 403},
         new Object[] {"404 JSON", echoing(404, "not_found"), 404},
-        new Object[] {"409 JSON", echoing(409, "conflict"), 409});
+        new Object[] {"409 JSON", echoing(409, "conflict"), 409},
+        // 결합이 아예 읽지 않는 2xx — RESTEasy 의 ResponseProcessingException(200)이 전송 실패로 나갔다(2026-11-11 실측)
+        new Object[] {"200 Content-Type 없음", new Reply(200, null, utf8(token("good")), 0), 200},
+        // 모든 바이트가 UTF-8 인 UTF-16 — Jackson 의 바이트 파서가 인코딩을 짐작해 받아들였다(auth 레인은 거부한다)
+        new Object[] {"200 BOM 없는 UTF-16", typed(200, "application/json", token("good").getBytes(StandardCharsets.UTF_16LE)), 200});
+    cells = new ArrayList<>(cells);
+    for (Map.Entry<String, String> place : UNPAIRED.entrySet()) {
+      cells.add(new Object[] {"200 짝 없는 서로게이트 — " + place.getKey(), json(200,
+          "{\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300," + place.getValue() + "}"), 200});
+    }
     List<String> table = new ArrayList<>();
     for (Object[] cell : cells) {
       String label = "S5 " + cell[0];

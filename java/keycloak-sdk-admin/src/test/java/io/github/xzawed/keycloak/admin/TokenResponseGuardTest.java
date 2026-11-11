@@ -228,14 +228,19 @@ class TokenResponseGuardTest {
 
   // ⚠️ 아래 두 테스트의 응답 목은 미디어 타입이 없다(목의 기본값 null) — 결합이 아예 읽지 않는 2xx 라 응답 필터가 원시
   // 바이트로 판정하는 자리다(RESTEasy extractResult 는 미디어 타입이 없으면 엔티티를 읽지 않는다 — 200 이면
-  // ResponseProcessingException, 그 밖의 2xx 면 null).
-  @Test void usableTokenResponse_isHandedOnByteForByte() throws IOException {
+  // ResponseProcessingException, 그 밖의 2xx 면 null). 판정을 통과해도 결합이 읽지 않으므로 쓸 수 없는 응답이다(UNBOUND —
+  // 등록부 token-response-class-residue, 2026-11-11: 전에는 바이트를 넘겼고 RESTEasy 가 끝내 전송 실패로 나갔다). 바이트 그대로
+  // 넘기는 것은 결합이 읽는 자리({@link #reader_handsAUsableMarkedEntityOnByteForByte})가 잰다.
+  @Test void usableTokenResponseWithoutAMediaType_isUnbound() throws IOException {
     String body = "{\"access_token\":\"AT\",\"expires_in\":300,\"refresh_token\":\"RT\",\"x\":[1]}";
     ClientResponseContext res = response(Response.Status.OK, bytes(body));
-    new TokenResponseGuard().filter(request("POST", TOKEN), res);
-    ArgumentCaptor<InputStream> handed = ArgumentCaptor.forClass(InputStream.class);
-    verify(res).setEntityStream(handed.capture());
-    assertEquals(body, new String(handed.getValue().readAllBytes(), StandardCharsets.UTF_8));
+    when(res.getStatus()).thenReturn(200);
+    TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+        () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
+    assertEquals(TokenResponseGuard.UNBOUND, e.getMessage());
+    assertEquals(200, e.status());
+    assertNull(e.getCause());
+    verify(res, never()).setEntityStream(any());
   }
 
   @Test void unusableTokenResponse_isRejectedWithoutQuotingIt() {
@@ -449,10 +454,9 @@ class TokenResponseGuardTest {
   @Test void bodyOfExactlyTheCap_isHandedOn_oneByteMoreIsRejected() throws IOException {
     byte[] atCap = padded(CAP);
     ClientResponseContext res = response(Response.Status.OK, new ByteArrayInputStream(atCap));
-    new TokenResponseGuard().filter(request("POST", TOKEN), res);
-    ArgumentCaptor<InputStream> handed = ArgumentCaptor.forClass(InputStream.class);
-    verify(res).setEntityStream(handed.capture());
-    assertArrayEquals(atCap, handed.getValue().readAllBytes());
+    // 미디어 타입 없는 자리는 상한을 통과한 뒤 결합이 읽지 않아 거부한다 — 상한의 거부(TOO_LARGE)가 아니다
+    IOException unbound = assertThrows(IOException.class, () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
+    assertEquals(TokenResponseGuard.UNBOUND, unbound.getMessage());
 
     ReaderInterceptorContext ctx = readContext(Boolean.TRUE, new ByteArrayInputStream(atCap));
     assertEquals("bound", new TokenResponseGuard().aroundReadFrom(ctx));
@@ -502,11 +506,10 @@ class TokenResponseGuardTest {
     com.sun.management.ThreadMXBean threads = allocationCounter();
     byte[] small = smallTokenResponse();
     TokenResponseGuard guard = new TokenResponseGuard();
-    ClientRequestContext req = request("POST", TOKEN);
-    judge(guard, req, response(Response.Status.OK, new ByteArrayInputStream(small))); // 데우기
-    ClientResponseContext res = response(Response.Status.OK, new ByteArrayInputStream(small));
+    read(guard, readContext(Boolean.TRUE, new ByteArrayInputStream(small))); // 데우기
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, new ByteArrayInputStream(small));
     long before = threads.getCurrentThreadAllocatedBytes();
-    IOException rejected = judge(guard, req, res);
+    IOException rejected = read(guard, ctx);
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;
     long limit = 64L * 1024;
     System.out.println("[TokenResponseGuardTest 할당] " + small.length + " 바이트 본문 통과 → " + allocated + " 바이트 (한도 " + limit + ")");
@@ -524,11 +527,10 @@ class TokenResponseGuardTest {
     com.sun.management.ThreadMXBean threads = allocationCounter();
     int size = 256 * 1024;
     TokenResponseGuard guard = new TokenResponseGuard();
-    ClientRequestContext req = request("POST", TOKEN);
-    judge(guard, req, response(Response.Status.OK, new SizedBody(size))); // 데우기
-    ClientResponseContext res = response(Response.Status.OK, new SizedBody(size));
+    read(guard, readContext(Boolean.TRUE, new SizedBody(size))); // 데우기
+    ReaderInterceptorContext ctx = readContext(Boolean.TRUE, new SizedBody(size));
     long before = threads.getCurrentThreadAllocatedBytes();
-    IOException rejected = judge(guard, req, res);
+    IOException rejected = read(guard, ctx);
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;
     long limit = 3L * size;
     System.out.println("[TokenResponseGuardTest 할당] " + size + " 바이트 본문 통과 → " + allocated + " 바이트 (한도 " + limit + ")");
@@ -549,6 +551,65 @@ class TokenResponseGuardTest {
   private static byte[] smallTokenResponse() {
     return ("{\"access_token\":\"" + "A".repeat(1_900) + "\",\"expires_in\":300,\"refresh_expires_in\":0,"
         + "\"token_type\":\"Bearer\",\"not-before-policy\":0,\"scope\":\"profile email\"}").getBytes(StandardCharsets.UTF_8);
+  }
+
+  /**
+   * 결합이 읽는 자리의 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다). 쓸 수 있는 본문이
+   * 판정되는 것은 이 자리다 — 미디어 타입이 없는 응답 필터 자리는 판정을 통과해도 결합이 읽지 않아 거부한다.
+   */
+  private static IOException read(TokenResponseGuard guard, ReaderInterceptorContext ctx) {
+    try {
+      guard.aroundReadFrom(ctx);
+      return null;
+    } catch (IOException e) {
+      return e;
+    }
+  }
+
+  // ───────────── 끝까지 온 2xx 를 쓸 수 없는 세 자리(등록부 token-response-class-residue, 2026-11-11) ─────────────
+
+  /**
+   * 0x00 을 품은 본문(BOM 없는 UTF-16 — 모든 바이트가 UTF-8 이다)을 Jackson 의 바이트 파서와 결합이 인코딩을 짐작해 받아들였다 —
+   * UTF-8 JSON 텍스트에는 0x00 이 없다. 짝 없는 서로게이트 이스케이프는 어디에 있든 거부한다(그 값은 Bearer 로 보낼 수 없다).
+   * {@code resteasy.allowGzip} 의 해제기가 끝까지 온 본문을 풀지 못하면(ZipException) 쓸 수 없는 응답이다. 셋 다 응답을 인용하지 않는다.
+   */
+  @Test void reader_rejectsANulASurrogateAndACorruptCoding() throws IOException {
+    String usable = "{\"access_token\":\"AT\",\"expires_in\":300}";
+    String lone = "\\" + "ud800";
+    Object[][] rows = {
+        {new ByteArrayInputStream(usable.getBytes(StandardCharsets.UTF_16LE)), TokenResponseGuard.REJECTED},
+        {bytes("{\"access_token\":\"AT\",\"x\":\"" + lone + "\"}"), TokenResponseGuard.UNPAIRED_SURROGATE},
+        {bytes("{\"access_token\":\"AT\",\"" + lone + "\":1}"), TokenResponseGuard.UNPAIRED_SURROGATE},
+        {new InputStream() {
+          @Override public int read() throws IOException {
+            throw new java.util.zip.ZipException("invalid code lengths set");
+          }
+        }, TokenResponseGuard.UNDECODABLE}};
+    for (Object[] row : rows) {
+      ReaderInterceptorContext ctx = readContext(Boolean.TRUE, (InputStream) row[0]);
+      when(ctx.getProperty(TokenResponseGuard.STATUS)).thenReturn(200);
+      TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
+          () -> new TokenResponseGuard().aroundReadFrom(ctx));
+      assertEquals(row[1], e.getMessage());
+      assertEquals(200, e.status());
+      assertNull(e.getCause());
+      verify(ctx, never()).proceed();
+    }
+  }
+
+  /** 짝 없는 서로게이트 이스케이프의 판정 — 자리 · 짝 · 이스케이프된 역슬래시 · 대소문자 · 형식이 틀린 이스케이프. */
+  @Test void holdsUnpairedSurrogate_judgesEscapesNotText() {
+    String u = "\\" + "u";
+    for (String json : new String[] {
+        "{\"a\":\"" + u + "d800\"}", "{\"a\":\"" + u + "dc00\"}", "{\"" + u + "d800\":1}", "{\"a\":\"x" + u + "D800\"}",
+        "{\"a\":\"" + u + "d800" + u + "0041\"}", "{\"a\":\"" + u + "dbff\"}", "{\"a\":[\"ok\",\"" + u + "dfff\"]}"}) {
+      assertTrue(TokenResponseGuard.holdsUnpairedSurrogate(json.getBytes(StandardCharsets.UTF_8)), json);
+    }
+    for (String json : new String[] {
+        "{\"a\":\"" + u + "d83d" + u + "de00\"}", "{\"a\":\"\\\\" + "ud800\"}", "{\"a\":\"" + u + "0041\"}",
+        "{\"a\":\"plain\"}", "{\"a\":\"" + u + "zz00\"}", "{\"a\":1} " + u + "d800", "{\"a\":\"\\\"" + u + "d83d" + u + "de00\"}"}) {
+      assertFalse(TokenResponseGuard.holdsUnpairedSurrogate(json.getBytes(StandardCharsets.UTF_8)), json);
+    }
   }
 
   /** 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다). */

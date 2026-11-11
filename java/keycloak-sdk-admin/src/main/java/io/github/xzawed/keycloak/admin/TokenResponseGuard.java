@@ -23,6 +23,7 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
+import java.util.zip.ZipException;
 
 /**
  * admin 레인의 토큰 응답 검사 — 토큰 엔드포인트의 성공 응답이 <b>그대로 보낼 수 있는 bearer 인 JSON 문자열</b>
@@ -87,6 +88,10 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   static final String NOT_UTF8 = "token endpoint response is not valid UTF-8";
   /** 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다). */
   static final String UNBOUND = "token endpoint response does not bind as a token response";
+  /** 2xx 본문이 UTF-8 로 보낼 수 없는 값을 품었다({@link #holdsUnpairedSurrogate}) — 응답을 인용하지 않는다. */
+  static final String UNPAIRED_SURROGATE = "token endpoint response holds an unpaired surrogate escape";
+  /** 끝까지 온 2xx 본문의 content-coding 을 풀지 못했다(resteasy.allowGzip) — 응답을 인용하지 않는다. */
+  static final String UNDECODABLE = "token endpoint response could not be decoded";
   /** 본문이 상한을 넘을 때의 거부(2xx · 오류 상태 모두) — 다 읽지 않은 응답이라 전송 실패다. 응답을 인용하지 않는다. */
   static final String TOO_LARGE = "token endpoint response exceeds " + ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + " bytes";
   private static final String ACCESS_TOKEN = "access_token";
@@ -116,7 +121,11 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       request.setProperty(STATUS, response.getStatus());
       return;
     }
-    response.setEntityStream(usableOrReject(response.getEntityStream(), exchange, response.getStatus()));
+    // 미디어 타입이 없는 2xx 는 결합이 읽지 않는다 — 판정을 통과해도 RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의
+    // 2xx → TokenManager 의 NPE)로 끝내 전송 실패로 나갔다(등록부 token-response-class-residue, 2026-11-11 실측). 끝까지 온 응답을 쓸
+    // 수 없다 — auth 레인(Nimbus)도 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다.
+    usableOrReject(response.getEntityStream(), exchange, response.getStatus());
+    throw new Unusable(response.getStatus(), UNBOUND, null);
   }
 
   /**
@@ -142,7 +151,15 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
    * {@link Unusable}, 통과하면 읽은 바이트를 그대로 넘긴다.
    */
   private static ByteArrayInputStream usableOrReject(InputStream in, Object exchange, int status) throws IOException {
-    byte[] body = in == null ? new byte[0] : capPlusOne(in);
+    byte[] body;
+    try {
+      body = in == null ? new byte[0] : capPlusOne(in);
+    } catch (ZipException corrupt) {
+      // resteasy.allowGzip — GZIPDecodingInterceptor 가 끝까지 온 본문을 풀지 못했다(깨진 deflate · CRC). 잘린 gzip 의 EOFException 은
+      // 끊긴 연결과 가를 수 없어 전송 실패 그대로다(등록부 판정 Q1, 2026-11-11). 원인은 달지 않는다 — 메시지는 상수다.
+      release(in, exchange);
+      throw new Unusable(status, UNDECODABLE, null);
+    }
     if (body.length > ResponseLimits.MAX_TOKEN_RESPONSE_BYTES) {
       release(in, exchange);
       throw new IOException(TOO_LARGE);
@@ -151,7 +168,11 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       release(in, exchange);
       throw new Unusable(status, NOT_UTF8, null);
     }
-    if (!carriesUsableAccessToken(body)) {
+    if (holdsUnpairedSurrogate(body)) {
+      release(in, exchange);
+      throw new Unusable(status, UNPAIRED_SURROGATE, null);
+    }
+    if (holdsNul(body) || !carriesUsableAccessToken(body)) {
       release(in, exchange);
       throw new Unusable(status, REJECTED, null);
     }
@@ -187,6 +208,61 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       if (b < 0) return false;
     }
     return true;
+  }
+
+  /**
+   * 0x00 바이트가 있는가 — UTF-8 JSON 텍스트에는 없다(RFC 8259 §7: 문자열 안의 제어 문자는 이스케이프하고 밖에는 둘 수 없다). 모든
+   * 바이트가 UTF-8 인 BOM 없는 UTF-16 본문을 Jackson 의 바이트 파서와 결합이 인코딩을 짐작해 받아들였다 — auth 레인은 거부한다
+   * (등록부 token-response-class-residue, 2026-11-11 실측). 짐작은 앞 네 바이트의 0x00 으로 하므로 이 검사가 그 길을 닫는다.
+   */
+  static boolean holdsNul(byte[] body) {
+    for (byte b : body) {
+      if (b == 0) return true;
+    }
+    return false;
+  }
+
+  /**
+   * JSON 텍스트가 짝 없는 UTF-16 서로게이트의 {@code \\u} 이스케이프를 품는가 — auth 레인 {@code CappedResponseSender.holdsUnpairedSurrogate}
+   * 의 쌍둥이다(두 모듈은 서로를 모른다 — {@link #isUtf8} 와 같은 이유). 그 값은 Bearer 로 보낼 수 없고 HttpCore 가 {@code ?} 로 바꿨다.
+   */
+  static boolean holdsUnpairedSurrogate(byte[] json) {
+    boolean inString = false;
+    for (int i = 0; i < json.length; i++) {
+      byte b = json[i];
+      if (!inString) {
+        inString = b == '"';
+      } else if (b == '"') {
+        inString = false;
+      } else if (b == '\\' && i + 1 < json.length) {
+        if (json[i + 1] != 'u') {
+          i++; // 두 글자 이스케이프 — 이스케이프된 글자를 건너뛴다
+          continue;
+        }
+        int unit = hex4(json, i + 2);
+        if (unit < 0) return false;
+        i += 5;
+        if (unit >= 0xDC00 && unit <= 0xDFFF) return true; // 앞에 높은 서로게이트가 없는 낮은 서로게이트
+        if (unit >= 0xD800 && unit <= 0xDBFF) {
+          int low = i + 2 < json.length && json[i + 1] == '\\' && json[i + 2] == 'u' ? hex4(json, i + 3) : -1;
+          if (low < 0xDC00 || low > 0xDFFF) return true;
+          i += 6;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** {@code at} 의 16진 넷(대소문자 무관)의 값, 아니면 -1. */
+  private static int hex4(byte[] json, int at) {
+    if (at + 4 > json.length) return -1;
+    int value = 0;
+    for (int k = at; k < at + 4; k++) {
+      int digit = Character.digit(json[k], 16);
+      if (digit < 0) return -1;
+      value = value << 4 | digit;
+    }
+    return value;
   }
 
   /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 넘긴다(판정은 하지 않는다). */
