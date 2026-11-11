@@ -5,6 +5,8 @@ import com.nimbusds.oauth2.sdk.http.HTTPRequestSender
 import com.nimbusds.oauth2.sdk.http.HTTPResponse
 import com.nimbusds.oauth2.sdk.http.ReadOnlyHTTPRequest
 import com.nimbusds.oauth2.sdk.http.ReadOnlyHTTPResponse
+import io.github.xzawed.keycloak.admin.TokenResponseGuard
+import io.github.xzawed.keycloak.admin.UnusableTokenResponse
 import org.apache.http.HttpResponse
 import org.apache.http.client.methods.HttpRequestBase
 import org.apache.http.client.methods.RequestBuilder
@@ -21,6 +23,7 @@ import java.nio.charset.Charset
 import java.nio.charset.CoderResult
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.util.zip.ZipException
 
 /**
  * 토큰 엔드포인트(세 그랜트 — auth 레인과 admin 레인의 자기 토큰 부여)·introspection·logout 응답 본문의 크기 상한(바이트).
@@ -104,6 +107,52 @@ internal fun holdsUnpairedSurrogate(json: ByteArray): Boolean {
     }
     return false
 }
+
+/**
+ * admin 가드([io.github.xzawed.keycloak.admin.TokenResponseGuard])의 2xx 토큰 본문 판정 — 통과한 바이트를 돌려주고, 아니면 [release] 로
+ * 교환을 끊은 뒤 거부한다. [read] 는 상한+1 바이트까지 읽는다(넘치면 null — 다 읽지 않은 응답이라 전송 실패). 끝까지 온 응답을 쓸 수
+ * 없는 자리는 [io.github.xzawed.keycloak.admin.UnusableTokenResponse] 다: 해제기(resteasy.allowGzip)가 풀지 못한 content-coding(잘린
+ * gzip 의 EOFException 은 끊긴 연결과 가를 수 없어 그대로 전송 실패 — 등록부 판정 Q1) · 엄격한 UTF-8 아님 · 짝 없는 서로게이트 이스케이프
+ * · 0x00(UTF-8 JSON 에는 없다 — BOM 없는 UTF-16 을 Jackson 이 짐작해 받아들였다) · 쓸 수 있는 access_token 없음([usable]).
+ * ⚠️ 가드의 파일이 아니라 여기 있는 까닭: 그 파일은 통합 전용 경계 커버리지의 경계 파일이고 이 거부 갈래들은 실 Keycloak 이 닿지 않는다
+ * (2026-11-11 — 가드에 두자 bodies 78.7% 로 하한 79.2 아래였다). Java 는 가드 파일이 경계 밖이라 그 자리에 있다.
+ */
+internal fun judgedTokenBody(
+    status: Int,
+    read: () -> ByteArray?,
+    usable: (ByteArray) -> Boolean,
+    release: () -> Unit,
+): ByteArrayInputStream {
+    val body =
+        try {
+            read()
+        } catch (corrupt: ZipException) {
+            release()
+            throw UnusableTokenResponse(status, TokenResponseGuard.UNDECODABLE, null)
+        }
+    if (body == null) {
+        release()
+        throw ResponseTooLargeException("token response")
+    }
+    val refused =
+        when {
+            !isUtf8(body) -> TokenResponseGuard.NOT_UTF8
+            holdsUnpairedSurrogate(body) -> TokenResponseGuard.UNPAIRED_SURROGATE
+            body.any { it.toInt() == 0 } || !usable(body) -> TokenResponseGuard.REJECTED
+            else -> null
+        }
+    if (refused != null) {
+        release()
+        throw UnusableTokenResponse(status, refused, null)
+    }
+    return ByteArrayInputStream(body)
+}
+
+/** 판정을 통과한 미디어 타입 없는 2xx 의 거부 — 결합이 읽지 않는다([TokenResponseGuard.UNBOUND]). [judged] 는 판정을 마친 본문이다. */
+internal fun unbound(
+    status: Int,
+    @Suppress("UNUSED_PARAMETER") judged: ByteArrayInputStream,
+): UnusableTokenResponse = UnusableTokenResponse(status, TokenResponseGuard.UNBOUND, null)
 
 // [at] 의 16진 넷(대소문자 무관)의 값, 아니면 -1.
 private fun hex4(
