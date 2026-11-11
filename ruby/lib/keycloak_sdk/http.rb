@@ -494,6 +494,20 @@ module KeycloakSdk
   module TokenResponse
     module_function
 
+    # Sends a token grant and reads its response (`Http.read_capped`) — a lower exception raised meanwhile is a response
+    # that did not arrive: net-http 0.10's response header validation raises an ArgumentError that Faraday does not
+    # convert, and the grant boundary's last rescue called it "unusable token response" (AuthError — measured
+    # 2026-11-11; introspect · logout · admin were TransportError since #798). Only what fails after the read is the
+    # boundary's.
+    def read(conn, url, body:, headers:)
+      Http.read_capped(conn, :post, url, body: body, headers: headers,
+                                         max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token")
+    rescue Error, Faraday::Error
+      raise
+    rescue StandardError => e
+      raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+    end
+
     def decode(resp, what:)
       raw = resp.body
       reason, lower = unreadable(resp)

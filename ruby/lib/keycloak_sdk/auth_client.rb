@@ -163,19 +163,8 @@ module KeycloakSdk
       form = form!(operation, **params).reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) }
       pair = [@config.client_id, @config.client_secret].map { |v| URI.encode_www_form_component(v) }.join(":")
       basic = { "Authorization" => "Basic #{Base64.strict_encode64(pair)}" }
-      TokenResponse.decode(send_grant(form, basic), what: "token")
-    end
-
-    # 보내고 끝까지 읽는다 — 그 사이 난 하위 예외는 응답이 오지 않은 것이다. net-http 0.10 의 응답 헤더 검증(ArgumentError)은
-    # Faraday 가 바꾸지 않아, `token_request` 의 마지막 rescue 가 그것을 「unusable token response」 AuthError 로 불렀다(실측
-    # 2026-11-11 — introspect · logout · admin 은 이미 transport). 응답을 읽은 뒤의 실패만 그 rescue 의 몫이다.
-    def send_grant(form, headers)
-      Http.read_capped(@http, :post, @endpoints.token, body: form, headers: headers,
-                                                       max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token")
-    rescue Error, Faraday::Error
-      raise
-    rescue StandardError => e
-      raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+      # 보내다 · 읽다 난 하위 예외는 `TokenResponse.read` 가 TransportError 로 바꾼다(응답이 오지 않았다).
+      TokenResponse.decode(TokenResponse.read(@http, @endpoints.token, body: form, headers: basic), what: "token")
     end
 
     # rack-oauth2 의 응답 규칙(`Client#handle_response` — 2.3.0 client.rb:205-240)을 SDK 가 읽은 본문에 그대로 건다:
