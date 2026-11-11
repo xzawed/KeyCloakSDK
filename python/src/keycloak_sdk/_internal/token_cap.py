@@ -91,7 +91,8 @@ _Ended = Callable[[], bool]
 class ResponseRefused(Exception):
     """세션이 응답 본문을 거부했다 — 경계가 같은 메시지의 SDK 오류로 바꾸는 신호. `incomplete` 면
     본문을 다 읽지 않았다(상한 초과 → `KeycloakTransportError`), 아니면 끝까지 온 응답을 쓸 수
-    없다(두 번 압축 — 본문을 읽기 전 · 2xx 본문이 UTF-8 아님 → `KeycloakAuthError`)."""
+    없다(두 번 압축 — 본문을 읽기 전 · 풀 수 없는 압축 · 2xx 본문이 UTF-8 JSON 텍스트가 아니거나
+    짝 없는 서로게이트 이스케이프를 품음 → `KeycloakAuthError`)."""
 
     def __init__(self, message: str, *, incomplete: bool = False) -> None:
         super().__init__(message)
@@ -140,12 +141,80 @@ def _strict_utf8(status: int, kind: str, body: bytes) -> None:
     # `__context__` 로 매달린다.
     if not readable:
         raise ResponseRefused(f"{kind} is not valid UTF-8")
+    # 0x00 — UTF-8 JSON 텍스트에는 없다(RFC 8259 §7). 모든 바이트가 UTF-8 인 BOM 없는 UTF-16
+    # 본문을 aio 의 `json.loads(bytes)` 가 인코딩을 짐작해 받아들였다(실측 2026-11-11, 등록부
+    # token-response-class-residue — 다른 여덟과 sync 는 거부한다).
+    if b"\x00" in body:
+        raise ResponseRefused(f"{kind} is not valid JSON")
+    # 짝 없는 서로게이트 이스케이프는 어디에 있든 쓸 수 없다(판정 Q2) — 그 값은 UTF-8 로 보낼 수
+    # 없어, 받아 둔 refresh token 을 다시 보내면 폼을 만들지 못해 `KeycloakTransportError` 였다.
+    if holds_unpaired_surrogate(body):
+        raise ResponseRefused(f"{kind} holds an unpaired surrogate escape")
+
+
+def holds_unpaired_surrogate(json_text: bytes) -> bool:
+    """JSON 텍스트가 짝 없는 UTF-16 서로게이트의 `\\u` 이스케이프를 품는가 — 문자열 값이든 멤버
+    이름이든(RFC 8259 §8.2 의 문법은 싣지만 I-JSON §2.1 은 금한다). 엄격한 UTF-8 인 바이트를
+    그대로 훑는다 — 이스케이프는 ASCII 이고 여러 바이트 글자의 바이트는 `"` 나 `\\` 와 겹치지
+    않는다. 이스케이프된 역슬래시 뒤의 `u` 는 이스케이프가 아니고, 형식이 틀린 이스케이프는
+    건너뛰고 계속 훑는다(파서의 몫 — 거기서 멈추면 뒤의 것을 못 본다). JVM 의
+    `holdsUnpairedSurrogate` 동형."""
+    in_string = False
+    i = 0
+    n = len(json_text)
+    while i < n:
+        b = json_text[i]
+        if not in_string:
+            in_string = b == 0x22
+        elif b == 0x22:
+            in_string = False
+        elif b == 0x5C and i + 1 < n:
+            if json_text[i + 1] != 0x75:  # 두 글자 이스케이프 — 이스케이프된 글자를 건너뛴다
+                i += 2
+                continue
+            unit = _hex4(json_text, i + 2)
+            if unit < 0:
+                i += 2
+                continue
+            i += 5
+            if 0xDC00 <= unit <= 0xDFFF:
+                return True  # 앞에 높은 서로게이트가 없는 낮은 서로게이트
+            if 0xD800 <= unit <= 0xDBFF:
+                follows = i + 2 < n and json_text[i + 1] == 0x5C and json_text[i + 2] == 0x75
+                low = _hex4(json_text, i + 3) if follows else -1
+                if not 0xDC00 <= low <= 0xDFFF:
+                    return True
+                i += 6
+        i += 1
+    return False
+
+
+def _hex4(json_text: bytes, at: int) -> int:
+    """`at` 의 16진 넷(대소문자 무관)의 값, 아니면 -1."""
+    digits = json_text[at : at + 4]
+    if len(digits) != 4 or any(d not in b"0123456789abcdefABCDEF" for d in digits):
+        return -1
+    return int(digits, 16)
 
 
 def _keep(body: bytearray, inflate: _Inflate, data: bytes, kind: str) -> None:
     """원문 조각 하나를 상한 안에서 풀어 쌓는다 — 넘으면 거부한다(sync·aio 공용). `limit` 은
-    언제나 1 이상이다 — 본문이 cap 을 넘는 순간 거부하므로 cap+1-len 은 0 이 되지 않는다."""
-    body += inflate(data, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body))
+    언제나 1 이상이다 — 본문이 cap 을 넘는 순간 거부하므로 cap+1-len 은 0 이 되지 않는다.
+
+    풀지 못하면(`zlib.error` — 깨진 deflate · CRC) 끝까지 온 응답이 쓸 수 없는 것이다(등록부
+    판정 Q1, 2026-11-11 — 전에는 python-keycloak 이 감싸 `KeycloakTransportError` 였다). 손상은
+    재시도로 고쳐지지 않는다. 깨끗이 끊긴 스트림은 오류가 아니다(본문이 모자라 JSON 판정이
+    거부한다)."""
+    try:
+        inflated = inflate(data, TOKEN_RESPONSE_MAX_BYTES + 1 - len(body))
+    except zlib.error:
+        corrupt = True
+    else:
+        corrupt = False
+    # ⚠️ 거부는 `except` 밖이다 — `_strict_utf8` 과 같은 이유(원인 사슬에 본문 조각을 매달지 않는다).
+    if corrupt:
+        raise ResponseRefused(f"{kind} could not be decoded")
+    body += inflated
     if len(body) > TOKEN_RESPONSE_MAX_BYTES:
         raise _too_large(kind)
 
@@ -181,6 +250,12 @@ def capped_send(send: _SyncSend) -> _SyncSend:
         # requests 가 `content` 에서 하는 일 그대로다 — 다 읽은 본문을 응답에 둔다.
         response._content = body
         response._content_consumed = True
+        if kind in _JSON_KINDS:
+            # 선언된 charset 은 효과가 없다(RFC 8259 §11) — requests 의 `json()` 은 그것으로
+            # 본문을 풀어(`charset=utf-16` 이면 UTF-8 본문이 글자 덩어리가 된다) python-keycloak
+            # 이 bytes 를 돌려줬고 경계가 `TypeError` 로 거부했다(실측 2026-11-11 — aio 는
+            # 받아들였다).
+            response.encoding = "utf-8"
         return response
 
     return capped

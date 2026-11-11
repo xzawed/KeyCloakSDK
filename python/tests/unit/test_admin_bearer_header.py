@@ -45,7 +45,10 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from keycloak import KeycloakAdmin
+from keycloak.exceptions import KeycloakConnectionError
 
+from keycloak_sdk._internal.lower import LowerLibraryError
+from keycloak_sdk._internal.token_cap import ResponseRefused
 from keycloak_sdk.admin import AdminClient
 from keycloak_sdk.aio.admin import AsyncAdminClient
 from keycloak_sdk.config import KeycloakConfig
@@ -62,6 +65,17 @@ _GRANT = f"admin token grant returned an access token that is not a bearer token
 _SEND = f"admin request not sent: the access token is not a bearer token ({_RULE})"
 #: 빈 access_token 은 그 전에 쓸 수 없는 토큰이다(`tokens._usable_access_token` — auth 레인과 같다).
 _EMPTY = "token response has no usable access_token"
+_UNPAIRED = "token response holds an unpaired surrogate escape"
+
+
+def _whole_response(token: str) -> str | None:
+    """그랜트로 받을 때 bearer 규칙에 닿기 전에 **응답 전체가** 거부되는 토큰이면 그 메시지 —
+    짝 없는 서로게이트(JSON 은 `\\u` 이스케이프로 싣는다)는 어디에 있든 그 응답을 쓸 수 없게
+    한다(`token_cap` · 등록부 token-response-class-residue 판정 Q2). 짝을 이룬 것(아스트랄
+    글자)은 규칙에 닿는다. 주입된 bearer(보내는 자리)는 응답이 없으니 언제나 bearer 규칙이
+    거부한다."""
+    return _UNPAIRED if any(0xD800 <= ord(ch) <= 0xDFFF for ch in token) else None
+
 
 #: 규칙을 시험이 따로 쓴다 — 떼는 글자 넷과 b64token 의 글자.
 _TRIMMED = " \t\r\n"
@@ -404,11 +418,44 @@ async def test_the_canonical_table_through_the_sdk_grant(lane: str, route: str, 
         assert wire.grant_types() == ["client_credentials"], "보낸 토큰은 캐시돼야 한다"
         return
     message = _EMPTY if token == "" else _GRANT
+    whole = _whole_response(token)
     for result, err in outcomes:
         assert result is None
-        assert _refused(err, message, boundary=route == "facade", marker=marker) == []
+        if whole is None:
+            assert _refused(err, message, boundary=route == "facade", marker=marker) == []
+        else:
+            assert _response_refused(err, whole, raw=route == "raw", marker=marker) == []
     assert wire.admin_requests() == [], "거부한 토큰으로 admin 요청이 나갔다"
     assert wire.grant_types() == ["client_credentials"] * 2, "거부한 토큰을 캐시했다"
+
+
+def _response_refused(
+    err: BaseException | None, message: str, *, raw: bool = False, marker: str | None = None
+) -> list[str]:
+    """그랜트 응답이 통째로 거부됐는가(`token_cap.ResponseRefused` — 세션 안의 거부). 파사드는 같은
+    메시지의 `KeycloakAuthError` 를 새로 던지고 하위 실패의 요약(`LowerLibraryError`) 하나만 단다 —
+    python-keycloak 프레임도 지나지 않는다. `raw` 는 python-keycloak 이 그 신호를
+    `KeycloakConnectionError` 로 감싼 채 그대로 나온다(§4(b) — 경계를 지나지 않는다). 어느 쪽이든
+    토큰은 메시지·사슬 어디에도 없다(`marker` 는 `_refused` 와 같다)."""
+    if err is None:
+        return ["거부하지 않았다"]
+    problems = []
+    if raw:
+        signal = err.__cause__
+        if type(err) is not KeycloakConnectionError or type(signal) is not ResponseRefused:
+            problems.append(f"{type(err).__qualname__} ← {type(signal).__qualname__}")
+        elif str(signal) != message or signal.incomplete:
+            problems.append(f"신호 {str(signal)!r} (incomplete={signal.incomplete})")
+    else:
+        if type(err) is not KeycloakAuthError or str(err) != message:
+            problems.append(f"{type(err).__module__}.{type(err).__qualname__}({str(err)!r})")
+        if getattr(err, "error", None) is not None:
+            problems.append(f"error={err.error!r}")  # type: ignore[attr-defined]
+        if [type(e) for e in _chain(err)] != [LowerLibraryError]:
+            problems.append(f"사슬 {[type(e).__qualname__ for e in _chain(err)]}")
+        problems += [f"traceback 이 {f} 프레임을 지난다" for f in _inner_frames(err)]
+    quoted = _quotes(err, marker or CANARY, frames=marker is None and not raw)
+    return problems + [f"토큰이 {where} 에" for where in quoted]
 
 
 @pytest.mark.parametrize("row", list(_TABLE))
@@ -481,7 +528,8 @@ def _verdict(token: str, wire: _Wire, result: Any, err: BaseException | None) ->
     if _rule(token) is not None:
         ok = err is None and result == {"id": "u1"} and sent == [_bearer(token)]
         return [] if ok else [f"보내지 않았다: {err!r} · 서버가 받은 {sent!r}"]
-    wrong = _refused(err, _GRANT, boundary=True)
+    whole = _whole_response(token)
+    wrong = _refused(err, _GRANT, boundary=True) if whole is None else _response_refused(err, whole)
     if sent:
         wrong.append(f"거부했는데 admin 요청이 나갔다 {sent!r}")
     return wrong
@@ -514,7 +562,11 @@ async def test_a_grant_is_judged_by_the_bearer_rule(lane: str, case: str) -> Non
         assert wire.admin_requests() == [_bearer(token)]
         return
     assert result is None
-    assert _refused(err, _GRANT, boundary=True) == []
+    whole = _whole_response(token)
+    if whole is None:
+        assert _refused(err, _GRANT, boundary=True) == []
+    else:
+        assert _response_refused(err, whole) == []
     assert wire.admin_requests() == [], "규칙에 맞지 않는 토큰으로 admin 요청을 보냈다"
 
 
