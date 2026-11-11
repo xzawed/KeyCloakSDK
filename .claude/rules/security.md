@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=6807 -->
+<!-- doc-budget: max-bytes=7062 -->
+<!-- 6807 → 7062 (2026-11-11): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 새 「OAuth error code」 줄은
+     여덟 레인의 echo 시험(`OAuthErrorCodeEcho*` · `*oauth_error_code_echo*` — 수정 전 main 에서 RED, 대조군 「코드는 실린다」
+     는 초록)이 재고 node 는 코드를 싣지 않는다(실측). 아홉이 함께 움직이는 새 규칙이라 이 파일이 자리다(등록부
+     token-error-code-secret-echo · oauth-error-field-echo-unmasked — 판정 PM · Grok 일치, 사람 위임 「권장안」). **교환** — 이
+     변경으로 거짓이 된 문장은 이 파일에 없어, 경위 문장 「`.NET`'s README never makes the claim.」을 덜어 순증을 줄였다. -->
 <!-- 6633 → 6807 (2026-10-29): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 새 「Response read deadline」
      줄은 다섯 레인(java·kotlin·python·ruby·.NET JWKS)의 `ResponseReadDeadline*` 흘리기 시험(수정 전 RED 7 s → 1.4 s ·
      대조군 멈춤·정상)이 재고, 남은 칸은 등록부 항목이 소유한다(판정 2026-10-29 사람 위임 「권장안」). **교환** — 이 변경으로
@@ -74,7 +79,7 @@ Only what the nine must move **together** lives here — changing one language a
 
 ⚠️ **The ceiling is not "one refetch per window" everywhere.** The six that gate it themselves (python · go · rust · php · ruby · node) allow exactly one. **Java and Kotlin allow two** — Nimbus's `RateLimitedJWKSetSource` opens each window with one request already credited. To reproduce: tighten each SDK's own rate-limit test to `<= 1` and it reports `실제 2` for a flood of 8 unresolved key ids. The JVM consumer docs must say "no more than two".
 
-⚠️ **Do not "fix" the other seven — they were already right.** Node's first test bounds hits at `<= 2`, which reads like the same defect, but its per-window test pins exactly one. `.NET`'s README never makes the claim.
+⚠️ **Do not "fix" the other seven — they were already right.** Node's first test bounds hits at `<= 2`, which reads like the same defect, but its per-window test pins exactly one.
 
 ⚠️ **Stamp the forced-refetch window when the fetch is decided, not when it succeeds** — a success-only stamp leaves it open through an outage. So a 503 spends the window too, and a stamped fetch must run to completion under the SDK's own HTTP timeouts, whatever the caller cancels; **never roll the stamp back on cancellation** (python: each cancelled forged-kid validation then cost an IdP request — 10 vs 1).
 
@@ -109,6 +114,10 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 ## Response read deadline
 
 ⚠️ **A response the SDK reads must arrive in full within the configured timeout, counted from send** — a per-read timeout alone lets a trickle hold one call for ≈ cap × timeout. Tests: `ResponseReadDeadline*` — no known gap left in the nine.
+
+## OAuth error code
+
+⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent, in all nine** (node carries none) — an echoing IdP put the secret there. Tests: `OAuthErrorCodeEcho*` · `*oauth_error_code_echo*`.
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 

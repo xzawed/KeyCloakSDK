@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=170489 max-raw-bytes=187637 -->
+<!-- doc-budget: max-bytes=170489 max-raw-bytes=186829 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -8,7 +8,7 @@
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
      인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) · #995 — 은 git 으로 보냈다. -->
-<!-- max-raw-bytes 188643 → 187637: oct 마감(닫음 하나 · 새 둘 · H3 경위는 git) -->
+<!-- max-raw-bytes 187637 → 186829: secret-echo 마감(닫음 둘 · 경위 주석은 git) -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -70,7 +70,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. `guard-detection-surface-hand-narrowed` [H/M] · `token-error-code-secret-echo` · `token-response-class-residue` · `logout-2xx-html-false-success` · `hs-refusal-rests-on-libraries` [L/S].
+1. `guard-detection-surface-hand-narrowed` [H/M] · `token-response-class-residue` · `logout-2xx-html-false-success` · `hs-refusal-rests-on-libraries` [L/S].
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -341,7 +341,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 140건 (열림 64)
+## C. 품질 부채 — 140건 (열림 62)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -402,8 +402,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** node·.NET 에 실패 백오프. 남은 판정은 `jwks-cache-lifetime-divergent`
 - [x] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「300 초 · 실패면 거부」]** 아홉의 키 집합이 300 초 뒤 콜드 캐시가 된다 — 가드 1h · security.md
 - [x] `python-sync-post-retried` **[M/S · 신규·닫힘 2026-10-09 #747]** sync 세션은 어떤 요청도 저절로 다시 보내지 않는다(13 종 2 → 1)
-- [ ] `oauth-error-field-echo-unmasked` **[L/S · 신규 2026-10-09 · python·go·java·kotlin (+재스캔)]** IdP 가 시크릿·토큰을 `error_description` 이 아니라 OAuth `error` 에 되울리면 공개 오류 속성에 그대로 남는다 · `python/src/keycloak_sdk/_internal/lower.py`
-<!-- oauth-error-field-echo-unmasked(2026-10-09 #741 구현 레그 재스캔): python KeycloakAuthError.error(lower.py:118-120)는 JSON error 값을 그대로 싣는다 — sync·aio client_credentials 에서 vars(e) == {'error': 'sec+ret%2F%2B%3D~0005%C3%A9'}, refresh 는 호출자의 refresh token. 문법 검사(NQSCHAR)로는 못 막는다 — 폼 인코딩 꼴이 문법 안이다. go 는 같은 자리(oauthError)에 #764 가 문법 검사를 걸었지만 바로 그 이유로 이 항목은 남는다. JVM 둘(secret-echo 구현 레그 재스캔)도 getError()·oauthError 가 IdP 의 error 코드를 그대로 넘긴다. 나머지 다섯(node·rust·.NET·php·ruby)은 미측정. -->
+- [x] `oauth-error-field-echo-unmasked` **[L/S · 신규 2026-10-09 · 닫힘 2026-11-11 · `token-error-code-secret-echo` 와 함께]** 코드 모양(`[a-z_]{1,64}`)이 아닌 `error` 는 여덟 어디에도 싣지 않는다
 - [x] `backoff-jitter-redrawn-per-check` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29]** 일곱이 지터를 실패할 때 한 번 뽑는다 — 같이 찾은 python 지수 넘침(약 1,025 번 연속 실패 뒤 `OverflowError`)도 닫았다
 - [x] `backoff-counts-caller-cancellation` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「센다」]** 공개 API 로는 닿지 않는다(처리기가 `CancellationToken.None` 으로 설정을 묻는다) — 게이트·리트리버의 고정 시험 둘이 「센다」를 지킨다
 - [x] `token-provider-outage-refetch-per-call` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「그대로」]** 만료 뒤 장애에서 호출마다 그랜트 — 앱의 호출만 닿고 위조 입력으로 못 부풀린다
@@ -421,8 +420,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-ruby` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #763 #874]** 전역 `Rack::OAuth2.http_config` 를 걸지 않는다(판정) — ASCII 밖 bearer 는 bearer 판정이 닫는다
 - [x] `wave4-hardening-php` **[L/S · 닫힘 2026-11-02 #935]** 칸(6) → auth. (1)–(5)의 되살릴 조건은 #892 본문
 - [x] `token-response-class-divergent` **[L/M · 신규 2026-11-02 · 닫힘 2026-11-10 · #951 #952 #993 #994 #1003–#1010]** 끝까지 왔지만 못 쓰면 Auth, 다 오지 않으면 Transport — 판정 표는 #1003 본문
-- [ ] `token-response-class-residue` **[L/S · 신규 2026-11-10]** 남은 칸 — JVM S5 의 Content-Type 없는 2xx · 깨진 gzip(Transport) · UTF-16 수용, ruby S1 의 깨진 응답 머리(Auth) · utf-16 charset(Transport), 이스케이프 서로게이트 미측정 · #1007 · #1008 본문
-- [ ] `token-error-code-secret-echo` **[L/S · 신규 2026-11-10]** 코드 모양의 OAuth `error`(되울린 시크릿일 수 있다)를 S1 · S2 는 아홉 언어가, S5 는 node · ruby · rust · .NET 이 싣는다 — python 은 코드 모양만, JVM · PHP 는 안 싣는다 · #1009 본문
+- [ ] `token-response-class-residue` **[L/S · 신규 2026-11-10]** 남은 칸 — JVM S5 의 Content-Type 없는 2xx · 깨진 gzip(Transport) · UTF-16 수용, ruby S1 의 깨진 응답 머리(Auth) · utf-16 charset(Transport), php S1 · 갱신의 400 `error` 배열(Transport), 이스케이프 서로게이트 미측정 · #1007 · #1008 본문
+- [x] `token-error-code-secret-echo` **[L/S · 신규 2026-11-10 · 닫힘 2026-11-11 · 판정 「코드 모양 + 보낸 비밀과 겹치지 않음」]** 여덟이 한 술어(node 는 코드를 싣지 않는다) — security.md · `OAuthErrorCodeEcho*`
 - [ ] `logout-2xx-html-false-success` **[L/S · 신규 2026-11-10]** logout 은 204 인데 2xx 를 모두 성공으로 보는 여덟 언어는 200 HTML(프록시 로그인 페이지)도 성공이다
 - [x] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #769 #833 #875]** JVM 공통 bearer 는 판정이 닫았고 조회 스레드 생성 실패(Error)는 「그대로」 — admin 원인 사슬의 jakarta 타입은 `nimbus-type-on-public-surface` 로
 - [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
