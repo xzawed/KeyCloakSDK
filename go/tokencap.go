@@ -52,8 +52,15 @@ var errTokenResponseUndecodable = errors.New("token response could not be decode
 
 // undecodable reports whether err is a gzip decoder's verdict on bytes that arrived (undecodable · errTokenResponseUndecodable).
 // Their texts are the decoder's own and quote nothing the server sent ("gzip: invalid header", "flate: corrupt input before
-// offset 12"), so wireScrubBody passes them as they are.
+// offset 12"), so wireScrubBody passes them as they are. ⚠️ The verdict is on the bytes that came, at the first bad one —
+// not on whether the rest of the body then arrives: no cut produces these errors (a cut is io.ErrUnexpectedEOF), and bytes
+// that do not decode stay so on a retry. PHP's curl 61 (#1021), the JVM's ZipException and Python's zlib.error are judged
+// the same way. It runs on every Read of every response (wireScrubBody), so a nil or io.EOF error returns before the
+// errors.As target is taken — taking it moved one allocation per Read to the heap (independent review leg, measured).
 func undecodable(err error) bool {
+	if err == nil || err == io.EOF {
+		return false
+	}
 	var corrupt flate.CorruptInputError
 	return errors.Is(err, gzip.ErrHeader) || errors.Is(err, gzip.ErrChecksum) || errors.As(err, &corrupt)
 }

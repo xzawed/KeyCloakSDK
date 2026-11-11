@@ -90,11 +90,15 @@ func TestUTF8BodyRefusesAnUnpairedSurrogateAtEOF(t *testing.T) {
 func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
 	u := `\` + "u"
 	for json, want := range map[string]bool{
-		`{"a":"` + u + `d800` + u + `d800"}`:        true, // 높은 것 뒤의 높은 것
-		`{"a":"` + u + `dbff` + u + `e000"}`:        true, // 높은 것 뒤의 서로게이트 아닌 것
-		`{"a":"` + u + `d800` + u + `dc0"}`:         true, // 높은 것 뒤의 잘린 이스케이프
-		`{"a":"` + u + `d800\"`:                     true, // 높은 것 뒤의 두 글자 이스케이프
-		`{"a":"` + u + `dbff` + u + `dfff"}`:        false,
+		`{"a":"` + u + `d800` + u + `d800"}`: true, // 높은 것 뒤의 높은 것
+		`{"a":"` + u + `dbff` + u + `e000"}`: true, // 높은 것 뒤의 서로게이트 아닌 것
+		`{"a":"` + u + `d800` + u + `dc0"}`:  true, // 높은 것 뒤의 잘린 이스케이프
+		`{"a":"` + u + `d800\"`:              true, // 높은 것 뒤의 두 글자 이스케이프
+		`{"a":"` + u + `dbff` + u + `dfff"}`: false,
+		// 짝의 낮은 쪽 첫 값 · 짝 앞에 와야 할 `\` 와 `u` — 실행 레그가 살린 축소 편집 넷(2026-11-11)
+		`{"a":"` + u + `d800` + u + `dc00"}`:        false,
+		`{"a":"` + u + `d800xudc00"}`:               true,
+		`{"a":"` + u + `d800\ndc00"}`:               true,
 		`{"a":"` + u + `d800"}`:                     true,
 		`{"a":"` + u + `dc00"}`:                     true,
 		`{"` + u + `d800":1}`:                       true,
@@ -133,7 +137,7 @@ func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
 func TestSurrogateScanAgreesWithTheBatchScanner(t *testing.T) {
 	rng := rand.New(rand.NewPCG(20261111, 2))
 	pieces := []string{`"`, `"`, `\`, `\"`, `\\`, `\u`, `\ud800`, `\udbff`, `\udc00`, `\udfff`, `\uD83D`, `\uDE00`,
-		`A`, ``, `퟿`, `\uzz`, `\ud8`, `u`, `d8`, `00`, `x`, `:`, `{`}
+		`\u` + "0041", `\u` + "e000", `\u` + "d7ff", `\u` + "d800" + `\u` + "dc00", `\uzz`, `\ud8`, `u`, `d8`, `00`, `dc00`, `dfff`, `udc00`, `\n`, `x`, `:`, `{`}
 	for n := 0; n < 200000; n++ {
 		var text []byte
 		for k := rng.IntN(10); k > 0; k-- {

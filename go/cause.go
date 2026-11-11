@@ -180,9 +180,10 @@ type belowHTTPSlot struct {
 	// sent: the call reached the transport at all — a failure without it (x/oauth2 refusing an empty refresh token) sent
 	// nothing, and stays *AuthError. arrived: the last request got a response (status line and headers). cut: a Read of
 	// that response's body ended in an error that is not io.EOF — the transport, a deadline, broken framing, the size cap,
-	// or a gzip body that does not decode. ⚠️ gzip is decoded by this stack (net/http or decodedGzip), so its failure is
-	// framing-like and counts as cut (*TransportError); deflate and br are not decoded and arrive as raw bytes that fail as
-	// JSON (*AuthError) — rust draws the same line (#951/#952 independent legs). status: the last response's code.
+	// or a gzip stream cut short. ⚠️ A gzip body that does not decode is NOT counted here as the decider: a token request
+	// records it as a refusal (tokencap.go errTokenResponseUndecodable — *AuthError, decision Q1, 2026-11-11), which
+	// grantFailed · loginError read first. deflate and br are not decoded and arrive as raw bytes that fail as JSON
+	// (*AuthError) — rust draws the same line (#951/#952 independent legs). status: the last response's code.
 	sent, arrived, cut atomic.Bool
 	status             atomic.Int64
 }

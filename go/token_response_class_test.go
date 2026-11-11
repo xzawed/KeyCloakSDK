@@ -107,7 +107,7 @@ var classRows = []classRow{
 		body:     `{"access_token":"\ud800","token_type":"Bearer","expires_in":300,"refresh_token":"rt","active":true}`,
 		contains: "unpaired surrogate escape",
 		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
-	{name: "r17-valid-surrogate-pair", status: 200, ctype: "application/json", body: classWith(`"scope":"a😀b"`),
+	{name: "r17-valid-surrogate-pair", status: 200, ctype: "application/json", body: classWith(`"scope":"a\ud83d` + `\ude00b"`),
 		expected: [6]string{"ok", "ok", "ok", "ok", "ok", "ok"}},
 	// 깨진 gzip — 머리와 길이는 온전하고 끝까지 온 바이트를 풀지 못했다(판정 Q1 — 전에는 해제기의 오류가 끊긴 본문으로 세어져
 	// transport). 오류 상태도 그 상태가 판정한다(auth). 잘린 gzip(io.ErrUnexpectedEOF)은 끊긴 연결과 가를 수 없어 transport 다.
@@ -119,6 +119,11 @@ var classRows = []classRow{
 		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
 	{name: "r16-corrupt-deflate-400", status: 400, ctype: "application/json", encoding: "gzip", body: classCorruptGzip,
 		expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	// 꼬리의 CRC-32 · 길이가 틀렸다(gzip.ErrChecksum) — 실행 레그: 이 칸이 없어 ErrChecksum 을 빼는 편집이 살아남았다.
+	{name: "r16-bad-checksum", status: 200, ctype: "application/json", encoding: "gzip", body: classFlip(classUsable, 8),
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
+	{name: "r16-bad-length", status: 200, ctype: "application/json", encoding: "gzip", body: classFlip(classUsable, 4),
+		contains: "could not be decoded", expected: [6]string{"Auth", "Auth", "Auth", "Auth", "Auth", "Auth"}},
 	// 멤버 뒤의 바이트는 다음 gzip 멤버의 머리로 읽힌다 — 머리가 아니면 풀지 못한다(gzip.ErrHeader). 푼 본문이 정확히 상한이면 그
 	// 판정은 상한 너머 한 바이트를 보는 읽기(cappedBody.lookPast)에서 난다. ⚠️ 머리 열 바이트에 못 미치는 꼬리는 잘린 머리
 	// (io.ErrUnexpectedEOF)라 transport 다 — 위 잘린 gzip 과 같은 모양이다(실측).
@@ -145,6 +150,13 @@ func classGzip(s string) string {
 	_, _ = w.Write([]byte(s))
 	_ = w.Close()
 	return b.String()
+}
+
+// classFlip is s gzip-coded with one byte of its 8-byte trailer flipped — back 8 is in the CRC-32, back 4 in the length.
+func classFlip(s string, back int) string {
+	b := []byte(classGzip(s))
+	b[len(b)-back] ^= 0xff
+	return string(b)
 }
 
 // classCorruptGzip is a gzip header followed by bytes that are not a deflate stream (a stored block whose lengths do not
