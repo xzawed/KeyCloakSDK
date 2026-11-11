@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -107,6 +108,29 @@ func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
 	} {
 		if got := holdsUnpairedSurrogate([]byte(json)); got != want {
 			t.Errorf("%s: %v, want %v", json, got, want)
+		}
+	}
+}
+
+// TestSurrogateScanAgreesWithTheBatchScanner — utf8Body 의 상태 기계(surrogateScan)는 같은 바이트를 어떻게 잘라 먹이든 배치
+// 판정(holdsUnpairedSurrogate — 여덟 언어와 같은 스캐너)과 같은 답이다. 따옴표 · 역슬래시 · u · 16진수가 잦은 무작위 텍스트를
+// 무작위로 잘라 먹인다(고정 시드 — 이스케이프가 읽기 사이에서 잘리는 모든 자리를 지난다).
+func TestSurrogateScanAgreesWithTheBatchScanner(t *testing.T) {
+	rng := rand.New(rand.NewPCG(20261111, 2))
+	alphabet := []byte(`""\\\uuudDdcC08bfFzx:`)
+	for n := 0; n < 200000; n++ {
+		text := make([]byte, rng.IntN(28))
+		for i := range text {
+			text[i] = alphabet[rng.IntN(len(alphabet))]
+		}
+		var s surrogateScan
+		for rest := text; len(rest) > 0; {
+			k := 1 + rng.IntN(len(rest))
+			s.feed(rest[:k])
+			rest = rest[k:]
+		}
+		if got, want := s.ended(), holdsUnpairedSurrogate(text); got != want {
+			t.Fatalf("%q: stream %v, batch %v", text, got, want)
 		}
 	}
 }

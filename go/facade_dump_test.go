@@ -69,6 +69,10 @@ var dumpWalkExempt = map[string]string{
 		"필드는 원래 본문·상한 판정 플래그·센 바이트 수·끝 오류뿐이고 본문 바이트를 쥐지 않는다(tokencap.go)",
 	"utf8Body": "2xx 토큰 응답 본문을 감싸 UTF-8 인지 보는 동안만 산다 — 파사드가 쥐지 않는다. 쥐는 본문 바이트는 읽기 하나가 " +
 		"자른 문자의 앞 조각(최대 3 바이트)뿐이다(tokencap.go)",
+	"surrogateScan": "utf8Body 안에서만 산다 — 짝 없는 서로게이트 이스케이프를 읽기마다 따라가는 상태 기계다. 필드는 상태 · " +
+		"읽은 16진 자릿수 · 그 값(최대 0xFFFF) · 판정 불리언뿐이고 본문 바이트를 쥐지 않는다(tokencap.go)",
+	"bodyRefusal": "토큰 요청 하나의 ctx 값으로만 산다(withStrictBody) — 파사드가 쥐지 않는다. 필드는 그 요청의 본문을 거부한 " +
+		"SDK 센티넬 오류 하나뿐이고 응답 바이트를 인용하지 않는다(tokencap.go)",
 	"adminBodyTransport": "*http.Client.Transport·resty 안에만 산다(wireScrubTransport 를 감싼다) — 걷기는 외부 타입(http.Client) 안으로 " +
 		"내려가지 않는다. 필드는 하위 RoundTripper 하나뿐이고 비밀을 쥐지 않는다(adminbody.go)",
 	"endedBody": "admin 응답 본문을 감싸 읽는 동안만 산다 — 파사드가 쥐지 않는다. " +

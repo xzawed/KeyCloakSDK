@@ -103,20 +103,20 @@ func strictBody(ctx context.Context, status int, body io.ReadCloser) io.ReadClos
 }
 
 // utf8Body hands a body upward while checking that it is UTF-8, keeping the start of a sequence one Read cut in two
-// until the next Read completes it, and — once the body is known to be UTF-8 — that it holds no unpaired surrogate escape
-// (holdsUnpairedSurrogate, on the bytes it handed up: the cap below bounds them). An invalid sequence — or a sequence still
-// cut at EOF — or such an escape fails the read **at EOF**: whether the body is unusable can only be said once it arrived
-// in full. Refusing at the first bad byte turned a body that was then cut short or went over the cap — not arrived,
-// *TransportError — into *AuthError on the grants while Introspect, which reads first and checks after, still said
-// *TransportError (independent review leg, measured 2026-11-10). So a cap or read error from below passes through
-// untouched, and the refusal is recorded only at EOF.
+// until the next Read completes it, and that it holds no unpaired surrogate escape (surrogateScan, which follows the bytes
+// Read by Read without keeping them). An invalid sequence — or a sequence still cut at EOF — or such an escape fails the
+// read **at EOF**: whether the body is unusable can only be said once it arrived in full. Refusing at the first bad byte
+// turned a body that was then cut short or went over the cap — not arrived, *TransportError — into *AuthError on the
+// grants while Introspect, which reads first and checks after, still said *TransportError (independent review leg,
+// measured 2026-11-10). So a cap or read error from below passes through untouched, and the refusal is recorded only at
+// EOF.
 type utf8Body struct {
 	io.ReadCloser
 	refused *bodyRefusal
 	tail    []byte // the start of a sequence the last Read cut in two (at most utf8.UTFMax-1 bytes)
-	seen    []byte // every byte handed up, for the surrogate scan at EOF (dropped once the body is not UTF-8)
-	invalid bool   // a sequence that is not UTF-8 went by — refused if the body then ends
-	end     error  // the refusal, once refused
+	scan    surrogateScan
+	invalid bool  // a sequence that is not UTF-8 went by — refused if the body then ends
+	end     error // the refusal, once refused
 }
 
 func (b *utf8Body) Read(p []byte) (int, error) {
@@ -126,16 +126,15 @@ func (b *utf8Body) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	if !b.invalid && !b.take(p[:n]) {
 		b.invalid = true
-		b.seen = nil
 	}
 	if !b.invalid {
-		b.seen = append(b.seen, p[:n]...)
+		b.scan.feed(p[:n])
 	}
 	if errors.Is(err, io.EOF) {
 		switch {
 		case b.invalid || len(b.tail) > 0:
 			b.end = b.refused.refuse(errTokenResponseNotUTF8)
-		case holdsUnpairedSurrogate(b.seen):
+		case b.scan.ended():
 			b.end = b.refused.refuse(errTokenResponseUnpairedSurrogate)
 		}
 		if b.end != nil {
@@ -144,6 +143,94 @@ func (b *utf8Body) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
+
+// surrogateScan is holdsUnpairedSurrogate fed Read by Read. Keeping the body for the batch scanner raised what refusing a
+// 16 MiB response allocates from under 6 MiB to over 9 (TestTokenResponseCapOnEveryLane, measured 2026-11-11). Its verdict
+// equals the batch scanner's on every split of the same bytes (TestSurrogateScanAgreesWithTheBatchScanner).
+type surrogateScan struct {
+	state scanState
+	hex   int // hex digits of the current \u escape read so far
+	unit  int // their value
+	found bool
+}
+
+type scanState uint8
+
+const (
+	scanOut      scanState = iota // outside a string
+	scanIn                        // inside a string
+	scanEscape                    // after '\' inside a string
+	scanUnit                      // in the hex digits of \u
+	scanPairEsc                   // a high surrogate escape ended: '\' must follow at once,
+	scanPairU                     // then 'u',
+	scanPairUnit                  // then the four hex digits of a low surrogate
+)
+
+func (s *surrogateScan) feed(chunk []byte) {
+	for _, c := range chunk {
+		if s.found {
+			return
+		}
+		s.step(c)
+	}
+}
+
+func (s *surrogateScan) step(c byte) {
+	switch s.state {
+	case scanOut:
+		if c == '"' {
+			s.state = scanIn
+		}
+	case scanIn:
+		switch c {
+		case '"':
+			s.state = scanOut
+		case '\\':
+			s.state = scanEscape
+		}
+	case scanEscape:
+		if c == 'u' {
+			s.state, s.hex, s.unit = scanUnit, 0, 0
+		} else {
+			s.state = scanIn // a two-character escape — the escaped character is skipped
+		}
+	case scanUnit:
+		v := hexDigit(c)
+		if v < 0 {
+			// a malformed escape — the parser's to refuse: the digits read so far are plain characters, and so is c
+			s.state = scanIn
+			s.step(c)
+			return
+		}
+		if s.unit, s.hex = s.unit<<4|v, s.hex+1; s.hex < 4 {
+			return
+		}
+		switch {
+		case s.unit >= 0xDC00 && s.unit <= 0xDFFF:
+			s.found = true // a low surrogate with no high one before it
+		case s.unit >= 0xD800 && s.unit <= 0xDBFF:
+			s.state = scanPairEsc
+		default:
+			s.state = scanIn
+		}
+	case scanPairEsc:
+		s.state, s.found = scanPairU, c != '\\'
+	case scanPairU:
+		s.state, s.hex, s.unit, s.found = scanPairUnit, 0, 0, c != 'u'
+	case scanPairUnit:
+		v := hexDigit(c)
+		if v < 0 {
+			s.found = true
+			return
+		}
+		if s.unit, s.hex = s.unit<<4|v, s.hex+1; s.hex == 4 {
+			s.state, s.found = scanIn, s.unit < 0xDC00 || s.unit > 0xDFFF
+		}
+	}
+}
+
+// ended is the verdict once the body ended — a high surrogate escape still waiting for its low one is unpaired.
+func (s *surrogateScan) ended() bool { return s.found || s.state >= scanPairEsc }
 
 // holdsUnpairedSurrogate reports whether a JSON text holds a \u escape of a UTF-16 surrogate without its pair — a low one
 // with no high before it, or a high one not followed at once by a low one — in a string value or a member name. It scans
@@ -195,18 +282,26 @@ func hex4(json []byte, at int) int {
 	}
 	v := 0
 	for _, d := range json[at : at+4] {
-		switch {
-		case d >= '0' && d <= '9':
-			v = v<<4 | int(d-'0')
-		case d >= 'a' && d <= 'f':
-			v = v<<4 | int(d-'a'+10)
-		case d >= 'A' && d <= 'F':
-			v = v<<4 | int(d-'A'+10)
-		default:
+		h := hexDigit(d)
+		if h < 0 {
 			return -1
 		}
+		v = v<<4 | h
 	}
 	return v
+}
+
+// hexDigit is the value of one hex digit (either case), or -1.
+func hexDigit(d byte) int {
+	switch {
+	case d >= '0' && d <= '9':
+		return int(d - '0')
+	case d >= 'a' && d <= 'f':
+		return int(d-'a') + 10
+	case d >= 'A' && d <= 'F':
+		return int(d-'A') + 10
+	}
+	return -1
 }
 
 // take checks chunk after what the previous Read left cut, and keeps the start of a sequence this one cuts.
