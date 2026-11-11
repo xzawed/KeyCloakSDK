@@ -1,5 +1,5 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=170489 max-raw-bytes=186829 -->
+<!-- doc-budget: max-bytes=170489 max-raw-bytes=186796 -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -8,7 +8,7 @@
      그대로인데 블록 주석이 633 → 60,409B 로 늘었다. 이제 주석도 센다(검사 8f). 열린 항목의 긴 착수 메모와 경위는
      PR 본문으로 보내고 포인터만 남긴다.
      인상 기록 — (mm) #945 · (nn) #946 · node #953 · rust #955(그 재는 명령 줄은 #980 이 항목을 닫으며 지웠다) · #995 — 은 git 으로 보냈다. -->
-<!-- max-raw-bytes 187637 → 186829: secret-echo 마감(닫음 둘 · 경위 주석은 git) -->
+<!-- max-raw-bytes 187637 → 186796: secret-echo 마감(닫음 둘 · 경위 주석은 git) -->
 # 잔여작업 등록부 — 2026-09-03 전수 감사 후속
 
 **이 문서가 답하는 것 하나** — 「감사가 남긴 것 중 무엇이 아직 열려 있고, 각각을 **어떤 명령으로** 닫았다고 말할 수 있는가」.
@@ -62,7 +62,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-11 · #914–#1018 반영)
+### 다음 세션 진입점 (2026-11-11 · #914–#1019 반영)
 
 **지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 릴리스는 먼저 권하지 않는다(사용자 2026-11-10 「잦다」), 태그는 물결마다 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 Dependabot 뿐. 래퍼 9.8 은 #682·#788.
 
@@ -402,7 +402,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `jwks-stale-cache-outage-unbounded` **[M/S · 닫힘 2026-10-09 #743 #744]** node·.NET 에 실패 백오프. 남은 판정은 `jwks-cache-lifetime-divergent`
 - [x] `jwks-cache-lifetime-divergent` **[M/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「300 초 · 실패면 거부」]** 아홉의 키 집합이 300 초 뒤 콜드 캐시가 된다 — 가드 1h · security.md
 - [x] `python-sync-post-retried` **[M/S · 신규·닫힘 2026-10-09 #747]** sync 세션은 어떤 요청도 저절로 다시 보내지 않는다(13 종 2 → 1)
-- [x] `oauth-error-field-echo-unmasked` **[L/S · 신규 2026-10-09 · 닫힘 2026-11-11 · `token-error-code-secret-echo` 와 함께]** 코드 모양(`[a-z_]{1,64}`)이 아닌 `error` 는 여덟 어디에도 싣지 않는다
+- [x] `oauth-error-field-echo-unmasked` **[L/S · 신규 2026-10-09 · 닫힘 2026-11-11 #1019]** 코드 모양(`[a-z_]{1,64}`)이 아닌 `error` 는 여덟 어디에도 싣지 않는다
 - [x] `backoff-jitter-redrawn-per-check` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29]** 일곱이 지터를 실패할 때 한 번 뽑는다 — 같이 찾은 python 지수 넘침(약 1,025 번 연속 실패 뒤 `OverflowError`)도 닫았다
 - [x] `backoff-counts-caller-cancellation` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「센다」]** 공개 API 로는 닿지 않는다(처리기가 `CancellationToken.None` 으로 설정을 묻는다) — 게이트·리트리버의 고정 시험 둘이 「센다」를 지킨다
 - [x] `token-provider-outage-refetch-per-call` **[L/S · 신규 2026-10-09 · 닫힘 2026-10-29 · 판정 「그대로」]** 만료 뒤 장애에서 호출마다 그랜트 — 앱의 호출만 닿고 위조 입력으로 못 부풀린다
@@ -421,7 +421,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wave4-hardening-php` **[L/S · 닫힘 2026-11-02 #935]** 칸(6) → auth. (1)–(5)의 되살릴 조건은 #892 본문
 - [x] `token-response-class-divergent` **[L/M · 신규 2026-11-02 · 닫힘 2026-11-10 · #951 #952 #993 #994 #1003–#1010]** 끝까지 왔지만 못 쓰면 Auth, 다 오지 않으면 Transport — 판정 표는 #1003 본문
 - [ ] `token-response-class-residue` **[L/S · 신규 2026-11-10]** 남은 칸 — JVM S5 의 Content-Type 없는 2xx · 깨진 gzip(Transport) · UTF-16 수용, ruby S1 의 깨진 응답 머리(Auth) · utf-16 charset(Transport), php S1 · 갱신의 400 `error` 배열(Transport), 이스케이프 서로게이트 미측정 · #1007 · #1008 본문
-- [x] `token-error-code-secret-echo` **[L/S · 신규 2026-11-10 · 닫힘 2026-11-11 · 판정 「코드 모양 + 보낸 비밀과 겹치지 않음」]** 여덟이 한 술어(node 는 코드를 싣지 않는다) — security.md · `OAuthErrorCodeEcho*`
+- [x] `token-error-code-secret-echo` **[L/S · 신규 2026-11-10 · 닫힘 2026-11-11 #1019 · 판정 「코드 모양 + 보낸 비밀과 겹치지 않음」]** 여덟이 한 술어(node 는 코드를 싣지 않는다) — security.md · `OAuthErrorCodeEcho*`
 - [ ] `logout-2xx-html-false-success` **[L/S · 신규 2026-11-10]** logout 은 204 인데 2xx 를 모두 성공으로 보는 여덟 언어는 200 HTML(프록시 로그인 페이지)도 성공이다
 - [x] `wave4-hardening-java` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #769 #833 #875]** JVM 공통 bearer 는 판정이 닫았고 조회 스레드 생성 실패(Error)는 「그대로」 — admin 원인 사슬의 jakarta 타입은 `nimbus-type-on-public-surface` 로
 - [x] `wave4-hardening-kotlin` **[L/S · 신규 2026-10-05 · 닫힘 2026-10-29 · #878]** 짧은 §5.2 꼴이 산문도 가리는 것은 받아들였고(판정) `MaskingTest` 가 고정한다 · %3F 는 「그대로」
