@@ -26,10 +26,14 @@ use Xzawed\Keycloak\OidcEndpoints;
  */
 final class OAuthErrorCodeEchoTest extends TestCase
 {
-    private const SECRET = 'echoedlowersecret';
-    private const REFRESH = 'echoedlowerrefresh';
-    private const CODE = 'echoedlowercode';
-    private const VERIFIER = 'echoedlowerverifierechoedlowerverifierechoedlower';
+    // Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must be
+    // withheld by comparing against THAT value, not a sibling's prefix.
+    private const SECRET = 'zebrasecretjk';
+    private const REFRESH = 'yakrefreshvq';
+    private const CODE = 'vulturecodeby';
+    private const VERIFIER = 'ocelotverifierocelotverifierocelotverifierxx';
+    /** Every piece and every padding, so each direction of the overlap is pinned. */
+    private const FORMS = ['whole', 'prefix', 'suffix', 'middle', 'extended', 'prefixed', 'wrapped'];
 
     private static string $dir = '';
     private static int $port = 0;
@@ -185,7 +189,7 @@ final class OAuthErrorCodeEchoTest extends TestCase
     {
         $rows = [];
         foreach (array_keys(self::surfaces()) as $surface) {
-            foreach (['whole', 'truncated', 'extended'] as $form) {
+            foreach (self::FORMS as $form) {
                 $rows["$surface · $form"] = [$surface, $form];
             }
         }
@@ -196,10 +200,38 @@ final class OAuthErrorCodeEchoTest extends TestCase
     private static function shape(string $value, string $form): string
     {
         return match ($form) {
-            'truncated' => substr($value, 0, 11),
+            'prefix' => substr($value, 0, 11),
+            'suffix' => substr($value, -11),
+            'middle' => substr($value, 2, 9),
             'extended' => $value . '_x',
+            'prefixed' => 'x_' . $value,
+            'wrapped' => 'x_' . $value . '_x',
             default => $value,
         };
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function echoesOnA401(): array
+    {
+        $rows = [];
+        foreach (['client_credentials' => [], 'refresh' => ['refresh_token'], 'exchange_code' => ['code', 'code_verifier'], 'provider' => [], 'admin' => []] as $surface => $params) {
+            foreach (['client_secret', ...$params] as $param) {
+                $rows["$surface · $param"] = [$surface, $param];
+            }
+        }
+
+        return $rows;
+    }
+
+    /** Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes the same rule. */
+    #[DataProvider('echoesOnA401')]
+    public function testAnEchoOnA401IsNeverCarried(string $surface, string $param): void
+    {
+        self::state(['echo' => $param, 'status' => 401]);
+        $e = self::fail2($surface);
+        $sent = self::sentForms()[0][$param] ?? null;
+        self::assertIsString($sent);
+        self::assertWithheld($e, $sent);
     }
 
     #[DataProvider('secretEchoes')]
@@ -217,7 +249,7 @@ final class OAuthErrorCodeEchoTest extends TestCase
         $rows = [];
         foreach (['refresh' => ['refresh_token'], 'exchange_code' => ['code', 'code_verifier']] as $surface => $params) {
             foreach ($params as $param) {
-                foreach (['whole', 'truncated', 'extended'] as $form) {
+                foreach (self::FORMS as $form) {
                     $rows["$surface · $param · $form"] = [$surface, $param, $form];
                 }
             }

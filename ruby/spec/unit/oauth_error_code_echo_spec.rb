@@ -13,14 +13,26 @@ require "base64"
 # non-empty secret the request sent — neither contains the other, so a truncated or extended echo is withheld too.
 # The price is pinned below: a secret that is a piece of a registered code (`client`) withholds that code.
 module OAuthErrorCodeEchoSpec
-  REFRESH_TOKEN = "echoedlowerrefresh"
-  CODE = "echoedlowercode"
-  VERIFIER = "echoedlowerverifierechoedlowerverifierechoedlower"
+  # Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must
+  # be withheld by comparing against THAT value, not a sibling's prefix.
+  REFRESH_TOKEN = "yakrefreshvq"
+  CODE = "vulturecodeby"
+  VERIFIER = "#{'ocelotverifier' * 3}xx".freeze
+  # Every piece and every padding, so each direction of the overlap is pinned.
+  ECHO_FORMS = {
+    "whole" => ->(v) { v },
+    "prefix" => ->(v) { v[0, 11] },
+    "suffix" => ->(v) { v[-11..] },
+    "middle" => ->(v) { v[2, 9] },
+    "extended" => ->(v) { "#{v}_x" },
+    "prefixed" => ->(v) { "x_#{v}" },
+    "wrapped" => ->(v) { "x_#{v}_x" }
+  }.freeze
   TOKEN_URL = "https://kc.example.com/realms/demo/protocol/openid-connect/token"
 end
 
 RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
-  let(:secret) { "echoedlowersecret" }
+  let(:secret) { "zebrasecretjk" }
   let(:config) do
     KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: "svc",
                             client_secret: secret)
@@ -57,9 +69,9 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
     form
   end
 
-  def answer_with(&error)
+  def answer_with(status: 400, &error)
     stub_request(:post, OAuthErrorCodeEchoSpec::TOKEN_URL).to_return do |request|
-      { status: 400, body: { error: error.call(sent(request)) }.to_json,
+      { status: status, body: { error: error.call(sent(request)) }.to_json,
         headers: { "Content-Type" => "application/json" } }
     end
   end
@@ -88,7 +100,44 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
     renderings(err).each { |text| expect(text).not_to include(value) }
   end
 
-  echo_forms = { "whole" => ->(v) { v }, "truncated" => ->(v) { v[0, 11] }, "extended" => ->(v) { "#{v}_x" } }
+  echo_forms = OAuthErrorCodeEchoSpec::ECHO_FORMS
+
+  # Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes the same rule.
+  { "client_credentials" => [], "refresh" => %w[refresh_token], "exchange_code" => %w[code code_verifier],
+    "provider" => [], "admin" => [] }.each do |surface, params|
+    ["client_secret", *params].each do |param|
+      it "withholds an echoed #{param} on a 401 on #{surface}" do
+        seen = nil
+        answer_with(status: 401) do |s|
+          seen = s.fetch(param)
+          seen
+        end
+        err = failure(surface)
+        expect_withheld(err, seen)
+      end
+    end
+  end
+
+  describe "KeycloakSdk::OAuthErrorCode.carried" do
+    {
+      ["invalid_grant", ["s3cret-Value"]] => "invalid_grant",
+      ["mysecret", ["mysecret"]] => nil,
+      ["mysecret_x", ["mysecret"]] => nil,
+      ["x_mysecret", ["mysecret"]] => nil,
+      ["mysec", ["mysecret"]] => nil,
+      ["secret", ["mysecret"]] => nil,
+      ["yse", ["mysecret"]] => nil,
+      ["fresh", %w[zzz myrefresh]] => nil,
+      ["invalid_grant", [nil, ""]] => "invalid_grant",
+      ["invalid_client", ["client"]] => nil,
+      ["Invalid_grant", []] => nil,
+      [["invalid_grant"], []] => nil
+    }.each do |(value, sent), expected|
+      it "#{value.inspect} against #{sent.inspect} is #{expected.inspect}" do
+        expect(KeycloakSdk::OAuthErrorCode.carried(value, sent)).to eq(expected)
+      end
+    end
+  end
 
   %w[client_credentials refresh exchange_code provider admin].each do |surface|
     echo_forms.each do |form, shape|

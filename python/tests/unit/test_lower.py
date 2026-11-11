@@ -129,8 +129,12 @@ def test_oauth_error_is_best_effort(body: bytes | None, expected: object) -> Non
         # overlap with a non-empty value the request sent, either way round
         ("mysecret", ("mysecret",), None),
         ("mysecret_x", ("mysecret",), None),
+        ("x_mysecret", ("mysecret",), None),
         ("mysec", ("mysecret",), None),
+        ("secret", ("mysecret",), None),  # a suffix piece — not only a prefix
+        ("yse", ("mysecret",), None),  # a middle piece
         ("mysecret", (None, "", "other", "mysecret"), None),
+        ("fresh", ("zzz", "myrefresh"), None),  # a piece of a later value, not only the first
         # an absent or empty secret is not compared — "" is a piece of every code
         ("invalid_grant", (None, ""), "invalid_grant"),
         # the price: a secret that is a piece of a registered code withholds it

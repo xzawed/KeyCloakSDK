@@ -24,15 +24,18 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 [Trait("Category", "Unit")]
 public sealed class OAuthErrorCodeEchoTests : IDisposable
 {
-    private const string Secret = "echoedlowersecret"; // code-shaped on purpose: the shape alone cannot withhold it
-    private const string Refresh = "echoedlowerrefresh";
-    private const string Token = "echoedlowerintrospected";
-    private const string Code = "echoedlowercode";
-    private static readonly string Verifier = "echoedlowerverifierechoedlowerverifierechoedlower";
+    // Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must
+    // be withheld by comparing against THAT value, not a sibling's prefix.
+    private const string Secret = "zebrasecretjk";
+    private const string Refresh = "yakrefreshvq";
+    private const string Token = "walrustokenpx";
+    private const string Code = "vulturecodeby";
+    private static readonly string Verifier = string.Concat(Enumerable.Repeat("ocelotverifier", 3)) + "xx";
 
     private readonly WireMockServer _idp = WireMockServer.Start();
     private readonly ConcurrentQueue<Dictionary<string, string>> _sent = new();
     private Func<Dictionary<string, string>, object?> _error = _ => "invalid_request";
+    private int _status = 400;
 
     public OAuthErrorCodeEchoTests()
     {
@@ -57,7 +60,7 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
         var body = JsonSerializer.Serialize(new Dictionary<string, object?> { ["error"] = _error(sent) });
         return new ResponseMessage
         {
-            StatusCode = 400,
+            StatusCode = _status,
             Headers = new Dictionary<string, WireMockList<string>> { ["Content-Type"] = new("application/json") },
             BodyData = new BodyData { DetectedBodyType = BodyType.String, BodyAsString = body, Encoding = Encoding.UTF8 },
         };
@@ -78,12 +81,66 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
 
     public static IEnumerable<object[]> SurfaceNames => Surfaces.Keys.Select(k => new object[] { k });
 
+    /// <summary>Every piece and every padding, so each direction of the overlap is pinned (the code inside the value · the
+    /// value inside the code).</summary>
     private static readonly (string Name, Func<string, string> Shape)[] EchoForms =
     {
         ("whole", v => v),
-        ("truncated", v => v[..11]),
+        ("prefix", v => v[..11]),
+        ("suffix", v => v[^11..]),
+        ("middle", v => v[2..11]),
         ("extended", v => v + "_x"),
+        ("prefixed", v => "x_" + v),
+        ("wrapped", v => "x_" + v + "_x"),
     };
+
+    /// <summary>Keycloak answers a bad client with 401, not 400 — and here every error status but 400 takes a branch of its
+    /// own (the canonical reason as the message, <c>OAuthError</c> from the same rule or that reason).</summary>
+    [Theory]
+    [MemberData(nameof(SurfaceNames))]
+    public async Task An_echo_on_a_401_is_never_carried(string surface)
+    {
+        _status = 401;
+        foreach (var param in Surfaces[surface].Params.Prepend("client_secret"))
+        {
+            _error = sent => sent.GetValueOrDefault(param, "");
+            var e = await Fail(surface);
+            var value = FirstSent()[param];
+            Assert.Equal("Unauthorized", e.OAuthError); // the reason phrase, never the echoed value
+            foreach (var text in Renderings(e))
+                Assert.False(text.Contains(value, StringComparison.Ordinal), $"{surface} · 401 · {param}: {text}");
+        }
+    }
+
+    /// <summary>An empty value sent is not compared — the empty string is a piece of every code.</summary>
+    [Fact]
+    public async Task An_empty_grant_value_is_not_compared()
+    {
+        _error = _ => "invalid_grant";
+        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = _idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = Secret });
+        var e = Assert.IsType<KeycloakAuthException>(
+            await Record.ExceptionAsync(() => kc.Auth.ExchangeCodeAsync(Code, "https://app/cb", "")));
+        Assert.Equal("invalid_grant", e.OAuthError);
+    }
+
+    /// <summary><c>OAuthErrorCode.Carried</c> itself — each direction of the overlap, every position in <c>sent</c>, and the
+    /// absent or empty secret that must not be compared.</summary>
+    [Theory]
+    [InlineData("invalid_grant", new[] { "s3cret-Value" }, "invalid_grant")]
+    [InlineData("mysecret", new[] { "mysecret" }, null)]
+    [InlineData("mysecret_x", new[] { "mysecret" }, null)]
+    [InlineData("x_mysecret", new[] { "mysecret" }, null)]
+    [InlineData("mysec", new[] { "mysecret" }, null)]
+    [InlineData("secret", new[] { "mysecret" }, null)]
+    [InlineData("yse", new[] { "mysecret" }, null)]
+    [InlineData("fresh", new[] { "zzz", "myrefresh" }, null)]
+    [InlineData("x_myrefresh", new[] { "zzz", "myrefresh" }, null)]
+    [InlineData("invalid_grant", new[] { "", null }, "invalid_grant")]
+    [InlineData("invalid_client", new[] { "client" }, null)]
+    [InlineData("Invalid_grant", new string[0], null)]
+    [InlineData("invalid_grant2", new string[0], null)]
+    public void Carried_is_code_shaped_and_overlaps_nothing_sent(string value, string?[] sent, string? expected) =>
+        Assert.Equal(expected, OAuthErrorCode.Carried(value, sent));
 
     private async Task<KeycloakAuthException> Fail(string surface, string? secret = Secret)
     {

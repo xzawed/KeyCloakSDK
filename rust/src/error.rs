@@ -121,11 +121,15 @@ mod tests {
 
     #[test]
     fn oauth_error_code_withholds_a_value_that_overlaps_a_secret_the_request_sent() {
-        let cases: [(&str, &[&str], Option<&str>); 7] = [
+        let cases: [(&str, &[&str], Option<&str>); 11] = [
             ("invalid_grant", &["s3cret-Value"], Some("invalid_grant")),
             ("mysecret", &["mysecret"], None),
             ("mysecret_x", &["mysecret"], None), // extended echo
             ("mysec", &["mysecret"], None),      // truncated echo
+            ("secret", &["mysecret"], None),     // a suffix piece, not only a prefix
+            ("yse", &["mysecret"], None),        // a middle piece
+            ("x_mysecret", &["mysecret"], None), // the secret behind a prefix
+            ("fresh", &["zzz", "myrefresh"], None), // a piece of a later value
             ("mysecret", &["", "other", "mysecret"], None),
             ("invalid_grant", &["", ""], Some("invalid_grant")), // an empty secret is not compared
             ("invalid_client", &["client"], None), // the price: a secret that is a piece of the code

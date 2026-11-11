@@ -36,6 +36,8 @@ class OAuthErrorCodeEchoTest {
 
     @Volatile private var errorJson: (Map<String, String>) -> String = { "\"invalid_request\"" }
 
+    @Volatile private var status = 400
+
     @BeforeTest
     fun start() {
         server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
@@ -69,7 +71,7 @@ class OAuthErrorCodeEchoTest {
             }
         val bytes = json.toByteArray()
         ex.responseHeaders.add("Content-Type", "application/json")
-        ex.sendResponseHeaders(400, bytes.size.toLong())
+        ex.sendResponseHeaders(status, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }
 
@@ -151,8 +153,30 @@ class OAuthErrorCodeEchoTest {
         for (text in renderings(e)) assertFalse(text.contains(value), "$label: a rendering shows $value: $text")
     }
 
+    /** Every piece and every padding, so each direction of the overlap is pinned. */
     private val echoForms: Map<String, (String) -> String> =
-        mapOf("whole" to { v -> v }, "truncated" to { v -> v.substring(0, 11) }, "extended" to { v -> v + "_x" })
+        mapOf(
+            "whole" to { v -> v },
+            "prefix" to { v -> v.substring(0, 11) },
+            "suffix" to { v -> v.substring(v.length - 11) },
+            "middle" to { v -> v.substring(2, 11) },
+            "extended" to { v -> v + "_x" },
+            "prefixed" to { v -> "x_$v" },
+            "wrapped" to { v -> "x_${v}_x" },
+        )
+
+    /** Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes the same rule. */
+    @Test
+    fun anEchoOnA401IsNeverCarried() {
+        status = 401
+        for ((surface, entry) in surfaces) {
+            for (param in listOf("client_secret") + entry.first) {
+                errorJson = { s -> quoted(s[param].orEmpty()) }
+                val e = failing(surface)
+                assertWithheld("$surface · 401 · $param", e, firstSent().getValue(param))
+            }
+        }
+    }
 
     @Test
     fun anEchoedClientSecretIsNeverCarried() {
@@ -226,10 +250,12 @@ class OAuthErrorCodeEchoTest {
     }
 
     private companion object {
-        const val SECRET = "echoedlowersecret" // code-shaped on purpose: the shape alone cannot withhold it
-        const val REFRESH = "echoedlowerrefresh"
-        const val TOKEN = "echoedlowerintrospected"
-        const val CODE = "echoedlowercode"
-        const val VERIFIER = "echoedlowerverifierechoedlowerverifierechoedlower"
+        // Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value
+        // must be withheld by comparing against THAT value, not a sibling's prefix.
+        const val SECRET = "zebrasecretjk"
+        const val REFRESH = "yakrefreshvq"
+        const val TOKEN = "walrustokenpx"
+        const val CODE = "vulturecodeby"
+        const val VERIFIER = "ocelotverifierocelotverifierocelotverifierxx"
     }
 }

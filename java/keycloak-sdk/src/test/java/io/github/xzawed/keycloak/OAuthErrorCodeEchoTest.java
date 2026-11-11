@@ -51,16 +51,19 @@ import org.junit.jupiter.api.Test;
 class OAuthErrorCodeEchoTest {
   private static final String REALM = "r";
   private static final String OIDC = "/realms/" + REALM + "/protocol/openid-connect";
-  private static final String SECRET = "echoedlowersecret"; // code-shaped on purpose: the shape alone cannot withhold it
-  private static final String REFRESH = "echoedlowerrefresh";
-  private static final String TOKEN = "echoedlowerintrospected";
-  private static final String CODE = "echoedlowercode";
-  private static final String VERIFIER = "echoedlowerverifierechoedlowerverifierechoedlower";
+  // Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must be
+  // withheld by comparing against THAT value, not a sibling's prefix.
+  private static final String SECRET = "zebrasecretjk";
+  private static final String REFRESH = "yakrefreshvq";
+  private static final String TOKEN = "walrustokenpx";
+  private static final String CODE = "vulturecodeby";
+  private static final String VERIFIER = "ocelotverifier".repeat(3) + "xx";
 
   private HttpServer server;
   private ExecutorService handlers;
   private final List<Map<String, String>> sent = new ArrayList<>();
   private Function<Map<String, String>, String> errorJson = s -> "\"invalid_request\"";
+  private volatile int status = 400;
 
   @BeforeEach void start() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -96,7 +99,7 @@ class OAuthErrorCodeEchoTest {
     }
     byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
     ex.getResponseHeaders().add("Content-Type", "application/json");
-    ex.sendResponseHeaders(400, bytes.length);
+    ex.sendResponseHeaders(status, bytes.length);
     try (OutputStream out = ex.getResponseBody()) {
       out.write(bytes);
     }
@@ -175,10 +178,29 @@ class OAuthErrorCodeEchoTest {
     }
   }
 
+  /** Every piece and every padding, so each direction of the overlap is pinned. */
   private static final Map<String, UnaryOperator<String>> ECHO_FORMS = Map.of(
       "whole", v -> v,
-      "truncated", v -> v.substring(0, 11),
-      "extended", v -> v + "_x");
+      "prefix", v -> v.substring(0, 11),
+      "suffix", v -> v.substring(v.length() - 11),
+      "middle", v -> v.substring(2, 11),
+      "extended", v -> v + "_x",
+      "prefixed", v -> "x_" + v,
+      "wrapped", v -> "x_" + v + "_x");
+
+  /** Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes the same rule. */
+  @Test void anEchoOnA401IsNeverCarried() {
+    status = 401;
+    for (Map.Entry<String, Map.Entry<List<String>, Call>> s : SURFACES.entrySet()) {
+      List<String> params = new ArrayList<>(List.of("client_secret"));
+      params.addAll(s.getValue().getKey());
+      for (String param : params) {
+        errorJson = sentForm -> quoted(sentForm.getOrDefault(param, ""));
+        KeycloakAuthException e = failing(s.getKey(), SECRET);
+        assertWithheld(s.getKey() + " · 401 · " + param, e, firstSent().get(param));
+      }
+    }
+  }
 
   @Test void anEchoedClientSecretIsNeverCarried() {
     for (String surface : SURFACES.keySet()) {

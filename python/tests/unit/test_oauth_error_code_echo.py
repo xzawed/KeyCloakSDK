@@ -42,11 +42,13 @@ pytestmark = pytest.mark.usefixtures("fast_tls")
 LANES = ("sync", "aio")
 _HTTP = "Keycloak request failed: HTTP 400"
 
-SECRET = "echoedlowersecret"  # code-shaped on purpose: the shape check alone cannot withhold it
-REFRESH = "echoedlowerrefresh"
-TOKEN = "echoedlowerintrospected"
-CODE = "echoedlowercode"
-VERIFIER = "echoedlowerverifierechoedlowerverifierechoedlower"  # 49 characters
+# Code-shaped on purpose (the shape check alone cannot withhold them), and no two share a piece —
+# an echo of one value must be withheld by comparing against THAT value, not a sibling's prefix.
+SECRET = "zebrasecretjk"
+REFRESH = "yakrefreshvq"
+TOKEN = "walrustokenpx"
+CODE = "vulturecodeby"
+VERIFIER = "ocelotverifier" * 3 + "xx"  # 44 characters
 KC_SECRET = "Kx7mQ2vT9pLr4WzN8bYc3FhJ6sDa1gE5"  # the shape a Keycloak-generated secret has
 JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
 
@@ -58,6 +60,7 @@ class _Idp:
 
     echo: Callable[[dict[str, str]], Any] | None = None
     fixed: Any = None
+    status: int = 400
     url: str = ""
     seen: list[dict[str, str]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -89,7 +92,7 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length).decode() if length else ""
             payload = json.dumps({"error": idp.error_for(_sent(self.headers, body))}).encode()
-            self.send_response(400)
+            self.send_response(idp.status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
@@ -100,9 +103,9 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
 
 @contextlib.contextmanager
 def _echo_idp(
-    *, echo: Callable[[dict[str, str]], Any] | None = None, fixed: Any = None
+    *, echo: Callable[[dict[str, str]], Any] | None = None, fixed: Any = None, status: int = 400
 ) -> Iterator[_Idp]:
-    idp = _Idp(echo=echo, fixed=fixed)
+    idp = _Idp(echo=echo, fixed=fixed, status=status)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(idp))
     idp.url = f"http://127.0.0.1:{server.server_address[1]}"
     threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
@@ -150,9 +153,9 @@ def _renderings(err: BaseException) -> list[str]:
     return out
 
 
-def _withheld(err: KeycloakAuthError, value: str) -> None:
+def _withheld(err: KeycloakAuthError, value: str, status: int = 400) -> None:
     assert err.error is None
-    assert str(err) == _HTTP
+    assert str(err) == f"Keycloak request failed: HTTP {status}"
     for text in _renderings(err):
         assert value not in text
 
@@ -164,11 +167,16 @@ def _carried(err: KeycloakAuthError, code: str) -> None:
 
 # --- echoes of what the request sent ---------------------------------------------------------
 
-#: name → how the IdP derives `error` from one sent value
+#: name → how the IdP derives `error` from one sent value — every piece and every padding, so each
+#: direction of the overlap is pinned (the code inside the value · the value inside the code)
 ECHO_FORMS: dict[str, Callable[[str], str]] = {
     "whole": lambda v: v,
-    "truncated": lambda v: v[:11],
+    "prefix": lambda v: v[:11],
+    "suffix": lambda v: v[-11:],
+    "middle": lambda v: v[2:11],
     "extended": lambda v: v + "_x",
+    "prefixed": lambda v: "x_" + v,
+    "wrapped": lambda v: "x_" + v + "_x",
 }
 
 
@@ -198,6 +206,21 @@ async def test_an_echoed_grant_value_is_never_carried(
     with _echo_idp(echo=lambda sent: ECHO_FORMS[form](sent[param])) as idp:
         err = await _fail(lane, idp.url, act)
     _withheld(err, ECHO_FORMS[form](idp.seen[0][param]))
+
+
+@pytest.mark.parametrize(
+    ("surface", "param"),
+    [(s, "client_secret") for s in SURFACES]
+    + [(s, p) for s, (_, ps) in SURFACES.items() for p in ps],
+)
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_echo_on_a_401_is_never_carried(lane: str, surface: str, param: str) -> None:
+    """Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes
+    the same rule (in .NET it is a branch of its own)."""
+    act, _ = SURFACES[surface]
+    with _echo_idp(echo=lambda sent: sent[param], status=401) as idp:
+        err = await _fail(lane, idp.url, act)
+    _withheld(err, idp.seen[0][param], status=401)
 
 
 @pytest.mark.parametrize("lane", LANES)

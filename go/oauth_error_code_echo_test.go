@@ -23,21 +23,24 @@ import (
 // extended echo is withheld too. The price is pinned below: a secret that is a piece of a registered code ("client")
 // withholds that code.
 
+// Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must
+// be withheld by comparing against THAT value, not a sibling's prefix.
 const (
-	echoSecret   = "echoedlowersecret" // code-shaped on purpose: the shape alone cannot withhold it
-	echoRefresh  = "echoedlowerrefresh"
-	echoCode     = "echoedlowercode"
-	echoVerifier = "echoedlowerverifierechoedlowerverifierechoedlower"
+	echoSecret   = "zebrasecretjk"
+	echoRefresh  = "yakrefreshvq"
+	echoCode     = "vulturecodeby"
+	echoVerifier = "ocelotverifierocelotverifierocelotverifierxx"
 )
 
-// echoIdP answers every token POST with 400 {"error": …} — error is fixed, or built by echo from what the request sent
-// (the form, with the client secret from Basic when it came that way).
+// echoIdP answers every token POST with status (400 unless set) {"error": …} — error is fixed, or built by echo from
+// what the request sent (the form, with the client secret from Basic when it came that way).
 type echoIdP struct {
-	srv   *httptest.Server
-	mu    sync.Mutex
-	fixed any
-	echo  func(sent map[string]string) any
-	sent  []map[string]string
+	srv    *httptest.Server
+	mu     sync.Mutex
+	fixed  any
+	echo   func(sent map[string]string) any
+	status int
+	sent   []map[string]string
 }
 
 func newEchoIdP(t *testing.T) *echoIdP {
@@ -62,10 +65,11 @@ func newEchoIdP(t *testing.T) *echoIdP {
 		if p.echo != nil {
 			value = p.echo(sent)
 		}
+		status := p.status
 		p.mu.Unlock()
 		body, _ := json.Marshal(map[string]any{"error": value})
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}))
 	t.Cleanup(p.srv.Close)
@@ -73,9 +77,13 @@ func newEchoIdP(t *testing.T) *echoIdP {
 }
 
 func (p *echoIdP) answer(fixed any, echo func(map[string]string) any) {
+	p.answerWith(http.StatusBadRequest, fixed, echo)
+}
+
+func (p *echoIdP) answerWith(status int, fixed any, echo func(map[string]string) any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.fixed, p.echo, p.sent = fixed, echo, nil
+	p.status, p.fixed, p.echo, p.sent = status, fixed, echo, nil
 }
 
 func (p *echoIdP) firstSent(t *testing.T) map[string]string {
@@ -159,10 +167,55 @@ func checkWithheld(t *testing.T, label string, err error, value string) {
 	}
 }
 
+// Every piece and every padding, so each direction of the overlap is pinned (the code inside the value · the value
+// inside the code).
 var echoForms = map[string]func(string) string{
-	"whole":     func(v string) string { return v },
-	"truncated": func(v string) string { return v[:11] },
-	"extended":  func(v string) string { return v + "_x" },
+	"whole":    func(v string) string { return v },
+	"prefix":   func(v string) string { return v[:11] },
+	"suffix":   func(v string) string { return v[len(v)-11:] },
+	"middle":   func(v string) string { return v[2:11] },
+	"extended": func(v string) string { return v + "_x" },
+	"prefixed": func(v string) string { return "x_" + v },
+	"wrapped":  func(v string) string { return "x_" + v + "_x" },
+}
+
+// Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes the same rule.
+func TestAnEchoOnA401IsNeverCarried(t *testing.T) {
+	p := newEchoIdP(t)
+	for _, s := range echoSurfaces {
+		for _, param := range append([]string{"client_secret"}, s.params...) {
+			p.answerWith(http.StatusUnauthorized, nil, func(sent map[string]string) any { return sent[param] })
+			err := s.run(context.Background(), echoClient(t, p, echoSecret))
+			checkWithheld(t, s.name+" · 401 · "+param, err, p.firstSent(t)[param])
+		}
+	}
+}
+
+// oauthErrorCode itself — each direction of the overlap, every position in sent, and the empty secret that must not be
+// compared (it is a piece of every code).
+func TestOAuthErrorCodeOverlap(t *testing.T) {
+	for _, c := range []struct {
+		s    string
+		sent []string
+		want string
+	}{
+		{"invalid_grant", []string{"s3cret-Value"}, "invalid_grant"},
+		{"mysecret", []string{"mysecret"}, ""},
+		{"mysecret_x", []string{"mysecret"}, ""},
+		{"x_mysecret", []string{"mysecret"}, ""},
+		{"x_mysecret_x", []string{"mysecret"}, ""},
+		{"mysec", []string{"mysecret"}, ""},
+		{"secret", []string{"mysecret"}, ""},
+		{"yse", []string{"mysecret"}, ""},
+		{"fresh", []string{"zzz", "myrefresh"}, ""},
+		{"x_myrefresh", []string{"zzz", "myrefresh"}, ""},
+		{"invalid_grant", []string{"", ""}, "invalid_grant"},
+		{"invalid_client", []string{"client"}, ""},
+	} {
+		if got := oauthErrorCode(c.s, c.sent...); got != c.want {
+			t.Errorf("oauthErrorCode(%q, %q) = %q, want %q", c.s, c.sent, got, c.want)
+		}
+	}
 }
 
 func TestAnEchoedClientSecretIsNeverCarried(t *testing.T) {

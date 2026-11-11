@@ -172,6 +172,41 @@ final class ErrorTranslationTest extends TestCase
     }
 
     /**
+     * admin 의 토큰 부여가 폼에 실어 보낸 비밀 — 그 되울림은 코드 모양이어도 `oauthError` 와 메시지에 싣지 않는다
+     * (`OAuthErrorCode::carried` · 등록부 token-error-code-secret-echo). 필드마다 한 칸: 한 필드라도 비교에서 빠지면 그 칸이 떨어진다.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function grantFormSecrets(): array
+    {
+        return [
+            'client_secret' => ['client_secret'],
+            'refresh_token' => ['refresh_token'],
+            'password' => ['password'],
+            'client_assertion' => ['client_assertion'],
+        ];
+    }
+
+    #[DataProvider('grantFormSecrets')]
+    public function testAnEchoOfAValueTheGrantFormSentIsNoCode(string $field): void
+    {
+        $value = 'zebra' . str_replace('_', '', $field) . 'jk';   // code-shaped, unlike every other field's value
+        $form = http_build_query(['grant_type' => 'client_credentials', 'client_id' => 'admin-cli', $field => $value]);
+        $req = new Request('POST', self::TOKEN_URL, ['Content-Type' => 'application/x-www-form-urlencoded'], $form);
+        $res = new Response(400, ['Content-Type' => 'application/json'], (string) json_encode(['error' => $value]));
+        $e = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new ClientException('x', $req, $res)));
+
+        self::assertSame(KeycloakAuthError::class, $e::class);
+        self::assertNull($e->oauthError);
+        self::assertSame('admin token request failed: HTTP 400', $e->getMessage());
+        // 대조군 — 같은 폼에 코드는 그대로 실린다.
+        $ok = new Response(400, ['Content-Type' => 'application/json'], '{"error":"invalid_client"}');
+        $c = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new ClientException('x', $req, $ok)));
+        self::assertInstanceOf(KeycloakAuthError::class, $c);
+        self::assertSame('invalid_client', $c->oauthError);
+    }
+
+    /**
      * admin 의 토큰 부여는 Bearer 없이 나가는 요청 하나뿐이다(fschmtt `Client::fetchTokens`) — admin 요청은 전부 Bearer 를 싣는다.
      * 경로 꼬리만 보면 경로로 가는 식별자(`users()->get('x/protocol/openid-connect/token')` — fschmtt 는 경로 값을 인코딩하지 않는다)가
      * admin 요청을 토큰 부여로 바꿔, admin 오류 본문의 코드 모양 `error` 를 메시지에 실었다. 진짜 스택으로 다섯 자원의 식별자 메서드

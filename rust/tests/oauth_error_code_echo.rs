@@ -18,21 +18,24 @@ use std::sync::{Arc, Mutex};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-const SECRET: &str = "echoedlowersecret"; // code-shaped on purpose: the shape alone cannot withhold it
-const REFRESH: &str = "echoedlowerrefresh";
-const TOKEN: &str = "echoedlowerintrospected";
-const CODE: &str = "echoedlowercode";
-const VERIFIER: &str = "echoedlowerverifierechoedlowerverifierechoedlower";
+// Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must be
+// withheld by comparing against THAT value, not a sibling's prefix.
+const SECRET: &str = "zebrasecretjk";
+const REFRESH: &str = "yakrefreshvq";
+const TOKEN: &str = "walrustokenpx";
+const CODE: &str = "vulturecodeby";
+const VERIFIER: &str = "ocelotverifierocelotverifierocelotverifierxx";
 
 type Sent = HashMap<String, String>;
 type EchoFn = Arc<dyn Fn(&Sent) -> serde_json::Value + Send + Sync>;
 
-/// Answers every POST with 400 `{"error": …}` — `fixed`, or built by `echo` from what the request sent (the form, with
-/// the client secret from Basic when it came that way). Records each request's sent values.
+/// Answers every POST with `status` `{"error": …}` — `fixed`, or built by `echo` from what the request sent (the form,
+/// with the client secret from Basic when it came that way). Records each request's sent values.
 #[derive(Clone)]
 struct EchoIdp {
     fixed: serde_json::Value,
     echo: Option<EchoFn>,
+    status: u16,
     seen: Arc<Mutex<Vec<Sent>>>,
 }
 
@@ -67,7 +70,7 @@ impl Respond for EchoIdp {
             None => self.fixed.clone(),
         };
         self.seen.lock().unwrap().push(sent);
-        ResponseTemplate::new(400).set_body_json(serde_json::json!({ "error": error }))
+        ResponseTemplate::new(self.status).set_body_json(serde_json::json!({ "error": error }))
     }
 }
 
@@ -77,12 +80,17 @@ struct Run {
 }
 
 async fn idp(fixed: serde_json::Value, echo: Option<EchoFn>) -> Run {
+    idp_with(400, fixed, echo).await
+}
+
+async fn idp_with(status: u16, fixed: serde_json::Value, echo: Option<EchoFn>) -> Run {
     let server = MockServer::start().await;
     let seen = Arc::new(Mutex::new(Vec::new()));
     Mock::given(method("POST"))
         .respond_with(EchoIdp {
             fixed,
             echo,
+            status,
             seen: seen.clone(),
         })
         .mount(&server)
@@ -169,11 +177,41 @@ fn assert_withheld(label: &str, e: &KeycloakError, value: &str) {
 }
 
 type Shape = fn(&str) -> String;
-const ECHO_FORMS: [(&str, Shape); 3] = [
+/// Every piece and every padding, so each direction of the overlap is pinned (the code inside the value · the value
+/// inside the code).
+const ECHO_FORMS: [(&str, Shape); 7] = [
     ("whole", |v| v.to_string()),
-    ("truncated", |v| v[..11].to_string()),
+    ("prefix", |v| v[..11].to_string()),
+    ("suffix", |v| v[v.len() - 11..].to_string()),
+    ("middle", |v| v[2..11].to_string()),
     ("extended", |v| format!("{v}_x")),
+    ("prefixed", |v| format!("x_{v}")),
+    ("wrapped", |v| format!("x_{v}_x")),
 ];
+
+/// Keycloak answers a bad client with 401, not 400 — an error status other than 400 takes the same rule.
+#[tokio::test]
+async fn an_echo_on_a_401_is_never_carried() {
+    for surface in SURFACES {
+        for param in std::iter::once(&"client_secret").chain(params(surface)) {
+            let p = param.to_string();
+            let run = idp_with(
+                401,
+                serde_json::Value::Null,
+                Some(Arc::new(move |sent: &Sent| {
+                    sent.get(&p).cloned().unwrap_or_default().into()
+                })),
+            )
+            .await;
+            let e = fail(surface, &config(&run.server.uri(), Some(SECRET))).await;
+            let value = run.seen.lock().unwrap()[0]
+                .get(*param)
+                .cloned()
+                .expect("sent");
+            assert_withheld(&format!("{surface} · 401 · {param}"), &e, &value);
+        }
+    }
+}
 
 #[tokio::test]
 async fn an_echoed_client_secret_is_never_carried() {

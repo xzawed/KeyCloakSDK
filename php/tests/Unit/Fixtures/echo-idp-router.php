@@ -7,7 +7,8 @@ declare(strict_types=1);
  * handler to inject; `bearer-idp-router.php` has the same reason).
  *
  * State is `state.json` in the `EI_STATE` directory: `{"fixed": <any JSON value>}` answers that value as `error`, and
- * `{"echo": "<form field>", "form": "whole|truncated|extended"}` answers what THIS request sent in that field — the
+ * `{"echo": "<form field>", "form": "whole|prefix|suffix|middle|extended|prefixed|wrapped"}` answers what THIS request
+ * sent in that field (`"status"` sets the status, 400 by default) — the
  * client secret from Basic (each part form-url-encoded) or from the form. Every token POST answers 400
  * `application/json` `{"error": …}` and is logged to `requests.log` as `[path, sent form fields]`. fschmtt asks
  * `/admin/serverinfo` before its first resource call — that is where its grant happens.
@@ -51,11 +52,15 @@ if (array_key_exists('fixed', $state)) {
     $value = $sent[is_string($state['echo'] ?? null) ? $state['echo'] : ''] ?? '';
     $value = is_string($value) ? $value : '';
     $error = match ($state['form'] ?? 'whole') {
-        'truncated' => substr($value, 0, 11),
+        'prefix' => substr($value, 0, 11),
+        'suffix' => substr($value, -11),
+        'middle' => substr($value, 2, 9),
         'extended' => $value . '_x',
+        'prefixed' => 'x_' . $value,
+        'wrapped' => 'x_' . $value . '_x',
         default => $value,
     };
 }
-http_response_code(400);
+http_response_code(is_int($state['status'] ?? null) ? $state['status'] : 400);
 header('Content-Type: application/json');
 echo json_encode(['error' => $error], JSON_THROW_ON_ERROR);

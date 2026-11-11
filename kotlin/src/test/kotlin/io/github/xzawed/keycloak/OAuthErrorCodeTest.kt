@@ -35,6 +35,10 @@ class OAuthErrorCodeTest {
         assertNull(OAuthErrorCode.carried("mysecret", listOf("mysecret")))
         assertNull(OAuthErrorCode.carried("mysecret_x", listOf("mysecret")), "extended echo")
         assertNull(OAuthErrorCode.carried("mysec", listOf("mysecret")), "truncated echo")
+        assertNull(OAuthErrorCode.carried("secret", listOf("mysecret")), "a suffix piece, not only a prefix")
+        assertNull(OAuthErrorCode.carried("yse", listOf("mysecret")), "a middle piece")
+        assertNull(OAuthErrorCode.carried("x_mysecret", listOf("mysecret")), "the secret behind a prefix")
+        assertNull(OAuthErrorCode.carried("fresh", listOf("zzz", "myrefresh")), "a piece of a later value")
         assertNull(OAuthErrorCode.carried("mysecret", listOf(null, "", "other", "mysecret")))
         assertEquals(
             "invalid_grant",
