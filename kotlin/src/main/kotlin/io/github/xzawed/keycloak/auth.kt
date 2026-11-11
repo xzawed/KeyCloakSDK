@@ -184,7 +184,8 @@ public class AuthClient internal constructor(
             }
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("Introspection failed: ${reason(err, sentSecrets(req, token))}", err.code)
+            val sent = sentSecrets(req, token)
+            throw KeycloakAuthException("Introspection failed: ${reason(err, sent)}", OAuthErrorCode.carried(err.code, sent))
         }
         val success = resp.toSuccessResponse()
         return IntrospectionResult(success.isActive, success.username, success.clientID?.value)
@@ -294,7 +295,7 @@ public class AuthClient internal constructor(
     ): TokenSet {
         if (!resp.indicatesSuccess()) {
             val err = resp.toErrorResponse().errorObject
-            throw KeycloakAuthException("$failureMessage: ${reason(err, sent)}", err.code)
+            throw KeycloakAuthException("$failureMessage: ${reason(err, sent)}", OAuthErrorCode.carried(err.code, sent))
         }
         return toTokenSet(resp.toSuccessResponse().tokens, issuedAt)
     }
