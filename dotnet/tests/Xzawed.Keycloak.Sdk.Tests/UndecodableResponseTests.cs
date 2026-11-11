@@ -31,7 +31,8 @@ public sealed class UndecodableResponseTests : IDisposable
 {
     private const string Oidc = "/realms/r/protocol/openid-connect";
     private const string NotACode = "error value withheld";
-    private const string IntrospectionUndecodable = "Token introspection failed: response body is not a decodable JSON object";
+    private const string Undecodable = "response body is not a decodable JSON object";
+    private const string IntrospectionUndecodable = "Token introspection failed: " + Undecodable;
 
     /// <summary>The escape text as it travels — JSON, not a .NET surrogate.</summary>
     public static readonly string[] Escapes = { @"\ud800", @"\udc00", @"\ud800x" };
@@ -131,6 +132,46 @@ public sealed class UndecodableResponseTests : IDisposable
             Assert.Equal(0, AdminRequests());
             _idp.ResetMappings();
         }
+    }
+
+    /// <summary>The escape outside the named members: an extension member's value, a member name, a value or a name nested
+    /// in an extension member — beside a usable token (2xx) or a usable OAuth error (400, 401). The bad element is one of
+    /// several (an "any" check passes it), nested two deep, and a name inside an array's object (review leg, 2026-11-11).</summary>
+    public static IEnumerable<object[]> Placements =>
+        from escape in Escapes.Append(@"\uD800")
+        from placement in new[]
+        {
+            "\"x_ext\":\"ESC\"", "\"ESC\":1", "\"x_ext\":{\"k\":[\"ESC\"]}", "\"x_ext\":{\"ESC\":1}",
+            "\"x_ext\":[\"ok\",\"ESC\"]", "\"x_ext\":{\"a\":1,\"b\":\"ESC\"}", "\"x_ext\":[[\"ESC\"]]", "\"x_ext\":[{\"ESC\":1}]",
+        }
+        from status in new[] { 200, 400, 401 }
+        select new object[] { placement.Replace("ESC", escape, StringComparison.Ordinal), status };
+
+    /// <summary>A string System.Text.Json will not decode anywhere in the body refuses the whole response — the status still
+    /// decides the class, the OAuth code is not read from it, and no text the server chose reaches the message.</summary>
+    /// <remarks>Measured before (2026-11-11, residue premise): a member NAME holding the escape let a raw
+    /// <c>InvalidOperationException</c> out of client credentials, refresh, code exchange and the admin token fetch —
+    /// <c>TryGetProperty</c> decodes every name it passes — and an extension member's value was accepted as a usable token.</remarks>
+    [Theory]
+    [MemberData(nameof(Placements))]
+    public async Task An_undecodable_string_anywhere_refuses_the_response(string member, int status)
+    {
+        var usable = status == 200 ? "\"access_token\":\"usable-access\",\"token_type\":\"Bearer\",\"expires_in\":300" : "\"error\":\"invalid_grant\"";
+        AnswerBoth(status, "{" + usable + "," + member + "}");
+        var wrong = new List<string>();
+        foreach (var (name, prefix, run) in TokenCalls)
+        {
+            using var kc = Facade();
+            var (message, code) = status == 401 ? ($"{prefix}: Unauthorized", "Unauthorized") : ($"{prefix}: {Undecodable}", (string?)null);
+            Expect(wrong, name, await Record.ExceptionAsync(() => run(kc)), message, code);
+        }
+        using (var kc = Facade())
+        {
+            var (message, code) = status == 401 ? ("Token introspection failed: Unauthorized", "Unauthorized") : (IntrospectionUndecodable, (string?)null);
+            Expect(wrong, "IntrospectAsync", await Record.ExceptionAsync(() => kc.Auth.IntrospectAsync("tok-sent")), message, code);
+        }
+        Assert.True(wrong.Count == 0, $"[{member} · HTTP {status}]\n" + string.Join("\n", wrong));
+        Assert.Equal(0, AdminRequests());
     }
 
     /// <summary>An introspection claim holding one: the body is a JSON object, so the message must not say it is not.</summary>
