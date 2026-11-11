@@ -101,6 +101,8 @@ final class MalformedTokenResponseTest extends TestCase
         'e7 400 error array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'e8 400 error array with description' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'e9 400 error empty array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
+        // 문자열 error 옆의 배열 error_description — upstream 이 이어 붙여 "Array to string conversion" 경고였다(Grok 레그, 2026-11-11).
+        'e10 400 error_description array' => ['clientCredentialsToken' => 'auth', 'refresh' => 'auth', 'exchangeCode' => 'auth', 'exchangeCode+nonce' => 'auth', 'provider.getToken' => 'auth'],
         'f short non-JSON body' => ['introspect' => 'auth'],
         'f2 long non-JSON body' => ['introspect' => 'auth'],
         'f3 401 error_description echo' => ['introspect' => 'auth'],
@@ -348,6 +350,9 @@ final class MalformedTokenResponseTest extends TestCase
                 'e8.ARR' => ['LKe8ARR-error-array-member', true], 'e8.DESC' => ['LKe8DESC-description-beside-array', true],
             ]],
             'e9 400 error empty array' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => '{"error":[]}', 'canaries' => []],
+            'e10 400 error_description array' => ['ep' => 'token', 'status' => 400, 'type' => $json, 'body' => $enc([
+                'error' => 'invalid_grant', 'error_description' => ['LKe10DESC-description-array-member'],
+            ]), 'canaries' => ['e10.DESC' => ['LKe10DESC-description-array-member', true]]],
             // (f) introspect 의 같은 모양.
             'f short non-JSON body' => ['ep' => 'introspect', 'status' => 200, 'type' => $json, 'body' => 'LKf1SHORTbody',
                 'canaries' => ['f.SHORT' => ['LKf1SHORTbody', true]]],

@@ -52,19 +52,22 @@ final class PkceKeycloakProvider extends Keycloak
     }
 
     /**
-     * An OAuth error whose `error` is not a scalar (a JSON array or object): upstream passed it on as the exception message — a
-     * `\TypeError` that `AuthClient` could only call a transport failure (measured 2026-11-11: 400 `{"error":["invalid_grant"]}`
-     * → `KeycloakTransportError`), and with an `error_description` beside it an "Array to string conversion" warning. The
-     * response arrived and its status decided: an IdP rejection, and no code (`OAuthErrorCode` carries only a string).
+     * An OAuth error response — thrown here, never by upstream: upstream built the exception message by concatenating `error`
+     * and `error_description` from the body. An array `error` made that a `\TypeError` that `AuthClient` could only call a
+     * transport failure (measured 2026-11-11: 400 `{"error":["invalid_grant"]}` → `KeycloakTransportError`), and an array beside
+     * it an "Array to string conversion" warning (Grok leg). The message was never used — `AuthClient` builds its own from the
+     * vetted code (`OAuthErrorCode`, which carries only a string) and `SanitizedCause` withholds this one.
      *
-     * An empty array is one too — upstream skipped it as an empty `error`, so a 400 `{"error":[]}` went on to fail as "no usable
-     * access_token", a reason that was not the one (.NET also refuses any `error` member that is present).
+     * Which bodies are errors stays upstream's (a non-empty `error` — `"0"`, `0` and `false` are none), plus any array: upstream
+     * skipped an empty one, so a 400 `{"error":[]}` went on to fail as "no usable access_token", a reason that was not the one
+     * (.NET also refuses any `error` member that is present).
      *
      * @param mixed $data
      */
     protected function checkResponse(ResponseInterface $response, $data): void
     {
-        if (\is_array($data) && \is_array($data['error'] ?? null)) {
+        $error = \is_array($data) ? $data['error'] ?? null : null;
+        if (\is_array($error) || (bool) $error) {
             throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
         }
         parent::checkResponse($response, $data);
