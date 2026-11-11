@@ -4,8 +4,9 @@ import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
 import io.github.xzawed.keycloak.ResponseTooLargeException
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
-import io.github.xzawed.keycloak.isUtf8
+import io.github.xzawed.keycloak.judgedTokenBody
 import io.github.xzawed.keycloak.readWithinCap
+import io.github.xzawed.keycloak.unbound
 import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
 import jakarta.ws.rs.client.ClientResponseContext
@@ -84,12 +85,16 @@ internal class TokenResponseGuard :
             return
         }
         if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
-        if (response.mediaType != null) {
+        if (response.mediaType != null && response.status != 204 && response.status != 205) {
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             request.setProperty(STATUS, response.status)
             return
         }
-        response.entityStream = usableOrReject(response.entityStream, exchange, response.status)
+        // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
+        // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx)로 끝내 전송 실패로 나갔다(등록부
+        // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
+        // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
+        throw unbound(response.status, usableOrReject(response.entityStream, exchange, response.status))
     }
 
     // 결합 직전의 판정. 통과한 바이트로 결합을 부르고, 결합이 그것을 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음)
@@ -130,11 +135,17 @@ internal class TokenResponseGuard :
         internal val STATUS: String = TokenResponseGuard::class.java.name + ".status"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
 
-        // 2xx 본문이 엄격한 UTF-8 이 아니다([isUtf8] — auth 레인과 같은 함수) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다.
+        // 2xx 본문이 엄격한 UTF-8 이 아니다(`isUtf8` — auth 레인과 같은 함수) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다.
         internal const val NOT_UTF8 = "token endpoint response is not valid UTF-8"
 
         // 다 읽은 본문을 결합(Jackson → AccessTokenResponse)이 쓰지 못했다 — 응답을 인용하지 않는다(결합의 예외는 원인으로만 단다).
         internal const val UNBOUND = "token endpoint response does not bind as a token response"
+
+        // 2xx 본문이 UTF-8 로 보낼 수 없는 값을 품었다([holdsUnpairedSurrogate]) — 응답을 인용하지 않는다.
+        internal const val UNPAIRED_SURROGATE = "token endpoint response holds an unpaired surrogate escape"
+
+        // 끝까지 온 2xx 본문의 content-coding 을 풀지 못했다(resteasy.allowGzip) — 응답을 인용하지 않는다.
+        internal const val UNDECODABLE = "token endpoint response could not be decoded"
 
         // 판정이 읽고 쥐는 본문의 상한은 [TOKEN_RESPONSE_MAX_BYTES](auth 레인과 같은 상수, 근거는 그 선언에) — 여기 다시 적지 않는다.
         private const val ACCESS_TOKEN = "access_token"
@@ -144,26 +155,16 @@ internal class TokenResponseGuard :
         // 수 없으면 [UnusableTokenResponse], 통과하면 읽은 바이트를 그대로 넘긴다. ⚠️ UTF-8 검사가 먼저다 — Jackson 의 바이트 파서는
         // 겹침 꼴(`C1 81` → `A`)을 받아들여, 그것 없이는 auth 레인이 거부하는 본문으로 admin 이 `Bearer goodA` 를 보냈다(독립 레그 실측 ·
         // `TokenResponseClassTest` S5 · Java 동형).
+        // 판정 본체는 [judgedTokenBody](CappedResponseSender.kt) — 이 파일은 통합 전용 경계 커버리지의 경계 파일이고 그 거부 갈래들은 실
+        // Keycloak 이 닿지 않는다(scripts/integration-coverage.json). 읽기 · 끊기 · access_token 검사만 여기서 넘긴다.
         private fun usableOrReject(
             input: InputStream?,
             exchange: Any?,
             status: Int,
-        ): ByteArrayInputStream {
-            val body = if (input == null) ByteArray(0) else capPlusOne(input)
-            if (body == null) {
+        ): ByteArrayInputStream =
+            judgedTokenBody(status, { if (input == null) ByteArray(0) else capPlusOne(input) }, ::carriesUsableAccessToken) {
                 release(input, exchange)
-                throw ResponseTooLargeException("token response")
             }
-            if (!isUtf8(body)) {
-                release(input, exchange)
-                throw UnusableTokenResponse(status, NOT_UTF8, null)
-            }
-            if (!carriesUsableAccessToken(body)) {
-                release(input, exchange)
-                throw UnusableTokenResponse(status, REJECTED, null)
-            }
-            return ByteArrayInputStream(body)
-        }
 
         // 오류 본문 — 판정하지 않고 상한까지만 읽어 바이트 그대로 넘긴다. 넘치면 연결을 끊고 상한을 말하는 예외로 거부한다.
         private fun withinCapOrReject(

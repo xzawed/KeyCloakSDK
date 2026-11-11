@@ -426,6 +426,27 @@ class CappedResponseSenderTest {
     }
   }
 
+  /**
+   * 짝 없는 서로게이트 이스케이프의 판정(admin 가드 {@code TokenResponseGuardTest} 의 쌍둥이) — 자리 · 짝 · 이스케이프된 역슬래시 ·
+   * 대소문자, 그리고 형식이 틀린 이스케이프 뒤도 훑는다(거기서 멈추면 뒤의 짝 없는 서로게이트를 못 봤다 — Grok 레그, 2026-11-11).
+   */
+  @Test void holdsUnpairedSurrogate_judgesEscapesNotText() {
+    String u = "\\" + "u";
+    for (String json : new String[] {
+        "{\"a\":\"" + u + "d800\"}", "{\"a\":\"" + u + "dc00\"}", "{\"" + u + "d800\":1}", "{\"a\":\"x" + u + "D800\"}",
+        "{\"a\":\"" + u + "d800" + u + "0041\"}", "{\"a\":\"" + u + "ZZZZ\",\"b\":\"" + u + "DC00\"}",
+        // 범위의 끝 — 높은 쪽 · 낮은 쪽 마지막 값, 그리고 이스케이프된 따옴표 뒤(`\\` 만 건너뛰면 문자열 추적이 어긋난다 — JVM
+        // 실행 레그가 살린 축소 편집 셋, 2026-11-11)
+        "{\"a\":\"" + u + "dbff\"}", "{\"a\":[\"ok\",\"" + u + "dfff\"]}", "{\"x\":\"a\\\"b\",\"y\":\"" + u + "dc00\"}"}) {
+      assertTrue(CappedResponseSender.holdsUnpairedSurrogate(utf8(json)), json);
+    }
+    for (String json : new String[] {
+        "{\"a\":\"" + u + "d83d" + u + "de00\"}", "{\"a\":\"\\\\" + "ud800\"}", "{\"a\":\"" + u + "0041\"}", "{\"a\":\"plain\"}",
+        "{\"a\":\"" + u + "zz00\"}", "{\"a\":1} " + u + "d800", "{\"a\":\"\\\"" + u + "d83d" + u + "de00\"}"}) {
+      assertFalse(CappedResponseSender.holdsUnpairedSurrogate(utf8(json)), json);
+    }
+  }
+
   /** 쓸 수 있는 토큰 뒤를 JSON 공백으로 채워 정확히 {@code size} 바이트. */
   private static byte[] padded(int size) {
     byte[] body = new byte[size];

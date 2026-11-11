@@ -137,7 +137,9 @@ class AdminTokenResponseTest {
 
   private static void send(HttpExchange ex, int status, byte[] bytes, boolean typed) throws IOException {
     if (typed) ex.getResponseHeaders().add("Content-Type", "application/json");
-    ex.sendResponseHeaders(status, bytes.length);
+    // 204 · 205 는 본문이 없다(RFC 9110 §15.3.5 · §15.3.6) — 길이 0 을 주면 JDK 서버는 청크로 보내 클라이언트가 읽지 않는 끝 청크가
+    // 연결에 남는다.
+    ex.sendResponseHeaders(status, status == 204 || status == 205 ? -1 : bytes.length);
     try (OutputStream os = ex.getResponseBody()) {
       os.write(bytes);
     }
@@ -553,6 +555,21 @@ class AdminTokenResponseTest {
       reset(new Reply(200, gzip(tokenBody("12345", canary)), "gzip"));
       table.add(callExpectingRejection("gzip 12345", wrong, Expected.unusable(200)));
 
+      // 끝까지 온 본문의 gzip 이 깨졌다(deflate 아님) — 쓸 수 없는 응답이다(등록부 판정 Q1, 2026-11-11 — 전에는 ZipException 이 전송
+      // 실패로 나갔다). 머리 열 바이트는 gzip 이고 그 뒤가 deflate 가 아니다.
+      byte[] corrupt = java.util.Arrays.copyOf(new byte[] {0x1f, (byte) 0x8b, 8, 0, 0, 0, 0, 0, 0, (byte) 0xff}, 40);
+      java.util.Arrays.fill(corrupt, 10, 40, (byte) 'x');
+      reset(new Reply(200, corrupt, "gzip"));
+      table.add(callExpectingRejection("gzip 깨짐", wrong, Expected.unusable(200)));
+      // 머리가 깨진 gzip — GZIPDecodingInterceptor 는 스트림을 감쌀 때 머리를 읽어, 그 ZipException 은 가장 안쪽 판정에 닿지 않고
+      // 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). gzip 이 아닌 본문 · 지원하지 않는 압축 방법(7).
+      byte[] notGzip = new byte[40];
+      java.util.Arrays.fill(notGzip, (byte) 'x');
+      reset(new Reply(200, notGzip, "gzip"));
+      table.add(callExpectingRejection("gzip 머리 아님", wrong, Expected.unusable(200)));
+      reset(new Reply(200, java.util.Arrays.copyOf(new byte[] {0x1f, (byte) 0x8b, 7}, 40), "gzip"));
+      table.add(callExpectingRejection("gzip 방법 7", wrong, Expected.unusable(200)));
+
       // 갱신(refresh_token 그랜트) 응답도 같은 자리에서 판정한다 — 푼 바이트가 쓸 수 있으면 새 토큰으로 나아간다.
       String first = tokenBody("\"AT-1\"", ",\"refresh_token\":\"RT-1\",\"refresh_expires_in\":300")
           .replace("\"expires_in\":300", "\"expires_in\":1");
@@ -587,6 +604,12 @@ class AdminTokenResponseTest {
     for (int status : new int[] {200, 201}) {
       reset(new Reply(status, tokenBody("12345", canary).getBytes(StandardCharsets.UTF_8), null, false));
       table.add(callExpectingRejection("Content-Type 없음 " + status + " 12345", wrong, Expected.unusable(status)));
+    }
+    // 본문이 없는 2xx(204 · 205)는 미디어 타입이 붙어도 결합이 읽지 않는다 — TokenManager 가 null 로 NPE 를 내 전송 실패로
+    // 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 판정은 응답 필터가 한다.
+    for (int status : new int[] {204, 205}) {
+      reset(new Reply(status, new byte[0], null, true));
+      table.add(callExpectingRejection("본문 없음 " + status + " (JSON)", wrong, Expected.unusable(status)));
     }
     System.out.println("[AdminTokenResponseTest 내용 코딩]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));

@@ -150,6 +150,7 @@ public final class AdminClient implements AutoCloseable {
         .register(new TokenResponseGuard(), Map.<Class<?>, Integer>of(
             ClientResponseFilter.class, Priorities.USER,
             ReaderInterceptor.class, TokenResponseGuard.READ_PRIORITY))
+        .register(new TokenResponseGuard.CodingGuard(), TokenResponseGuard.CODING_PRIORITY)
         .build();
   }
 

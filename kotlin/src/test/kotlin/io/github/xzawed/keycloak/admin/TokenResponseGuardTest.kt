@@ -1,6 +1,8 @@
 package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.KeycloakConfig
+import io.github.xzawed.keycloak.TokenCodingGuard
+import io.github.xzawed.keycloak.holdsUnpairedSurrogate
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -209,7 +211,8 @@ internal class TokenResponseGuardTest {
         assertTrue(wrong.isEmpty(), "받아들였다: $wrong")
     }
 
-    // Jackson 결합과 같은 자동 인코딩 감지 — 다시 디코딩하지 않는다(UTF-16 본문을 UTF-8 로 읽으면 거짓 거부다).
+    // 이 함수는 Jackson 결합과 같이 인코딩을 감지한다(다시 디코딩하지 않는다). ⚠️ 가드는 그 앞에서 UTF-16 본문을 거부한다 — BOM 이
+    // 있으면 UTF-8 이 아니고, 없으면 0x00 을 품는다(등록부 token-response-class-residue, 2026-11-11: auth 레인과 같은 판정).
     @Test
     fun `detects the encoding like the binding`() {
         assertTrue(TokenResponseGuard.carriesUsableAccessToken("""{"access_token":"AT"}""".toByteArray(Charsets.UTF_16LE)))
@@ -290,15 +293,36 @@ internal class TokenResponseGuardTest {
 
     // ⚠️ 아래 두 테스트의 응답은 미디어 타입이 없다 — 결합이 아예 읽지 않는 2xx 라 응답 필터가 원시 바이트로 판정하는 자리다
     // (RESTEasy extractResult 는 미디어 타입이 없으면 엔티티를 읽지 않는다 — 200 이면 ResponseProcessingException, 그 밖의 2xx 면
-    // null).
+    // null). 판정을 통과해도 결합이 읽지 않으므로 쓸 수 없는 응답이다(UNBOUND — 등록부 token-response-class-residue, 2026-11-11: 전에는
+    // 바이트를 넘겼고 RESTEasy 가 끝내 전송 실패로 나갔다). 바이트 그대로 넘기는 것은 결합이 읽는 자리(아래 reader 시험)가 잰다.
     @Test
-    fun `usable token response is handed on byte for byte`() {
+    fun `usable token response without a media type is unbound`() {
         val body = """{"access_token":"AT","expires_in":300,"refresh_token":"RT","x":[1]}"""
         val res = response(Response.Status.OK, bytes(body))
-        val handed = slot<InputStream>()
-        every { res.entityStream = capture(handed) } just runs
-        TokenResponseGuard().filter(request("POST", TRG_TOKEN), res)
-        assertEquals(body, handed.captured.readAllBytes().decodeToString())
+        every { res.status } returns 200
+        val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
+        assertEquals(TokenResponseGuard.UNBOUND, e.message)
+        assertEquals(200, e.status)
+        assertNull(e.cause)
+        verify(exactly = 0) { res.entityStream = any() }
+    }
+
+    // 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 미디어 타입이 붙어도 결합이 읽지 않는다 — 표시만 달면 아무도 판정하지
+    // 않아 TokenManager 가 null 로 NPE 를 내 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 응답 필터가 판정한다. Java 동형.
+    @Test
+    fun `no-content token response with a media type is judged by the filter`() {
+        for (status in listOf(Response.Status.NO_CONTENT, Response.Status.RESET_CONTENT)) {
+            for (body in listOf(null, bytes(""))) {
+                val req = request("POST", TRG_TOKEN)
+                val res = response(status, body, MediaType.APPLICATION_JSON_TYPE)
+                every { res.status } returns status.statusCode
+                val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().filter(req, res) }
+                assertEquals(TokenResponseGuard.REJECTED, e.message)
+                assertEquals(status.statusCode, e.status)
+                assertNull(e.cause)
+                verify(exactly = 0) { req.setProperty(any(), any()) }
+            }
+        }
     }
 
     @Test
@@ -502,10 +526,10 @@ internal class TokenResponseGuardTest {
     fun `body of exactly the cap is handed on, one byte more is rejected`() {
         val atCap = trgPadded(TRG_CAP)
         val res = response(Response.Status.OK, ByteArrayInputStream(atCap))
-        val handed = slot<InputStream>()
-        every { res.entityStream = capture(handed) } just runs
-        TokenResponseGuard().filter(request("POST", TRG_TOKEN), res)
-        assertContentEquals(atCap, handed.captured.readAllBytes())
+        every { res.status } returns 200
+        // 미디어 타입 없는 자리는 상한을 통과한 뒤 결합이 읽지 않아 거부한다 — 상한의 거부가 아니다
+        val unbound = assertFailsWith<IOException> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
+        assertEquals(TokenResponseGuard.UNBOUND, unbound.message)
 
         val ctx = readContext(true, ByteArrayInputStream(atCap))
         val read = slot<InputStream>()
@@ -553,16 +577,135 @@ internal class TokenResponseGuardTest {
         val threads = trgAllocationCounter()
         val small = TRG_SMALL_TOKEN_RESPONSE
         val guard = TokenResponseGuard()
-        val req = request("POST", TRG_TOKEN)
-        judge(guard, req, response(Response.Status.OK, ByteArrayInputStream(small))) // 데우기
-        val res = response(Response.Status.OK, ByteArrayInputStream(small))
+        read(guard, readContext(true, ByteArrayInputStream(small))) // 데우기
+        val ctx = readContext(true, ByteArrayInputStream(small))
         val before = threads.currentThreadAllocatedBytes
-        val rejected = judge(guard, req, res)
+        val rejected = read(guard, ctx)
         val allocated = threads.currentThreadAllocatedBytes - before
         val limit = 64L * 1024
         println("[TokenResponseGuardTest 할당] ${small.size} 바이트 본문 통과 → $allocated 바이트 (한도 $limit)")
         assertNull(rejected, "쓸 수 있는 작은 본문을 거부했다")
         assertTrue(allocated < limit, "${small.size} 바이트 본문 하나를 판정하며 $allocated 바이트를 할당했다")
+    }
+
+    // 결합이 읽는 자리의 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다). 쓸 수 있는 본문이
+    // 판정되는 것은 이 자리다 — 미디어 타입이 없는 응답 필터 자리는 판정을 통과해도 결합이 읽지 않아 거부한다.
+    private fun read(
+        guard: TokenResponseGuard,
+        ctx: ReaderInterceptorContext,
+    ): IOException? =
+        try {
+            guard.aroundReadFrom(ctx)
+            null
+        } catch (e: IOException) {
+            e
+        }
+
+    // ───────────── 끝까지 온 2xx 를 쓸 수 없는 세 자리(등록부 token-response-class-residue, 2026-11-11 · Java 동형) ─────────────
+
+    // 0x00 을 품은 본문(BOM 없는 UTF-16 — 모든 바이트가 UTF-8 이다)을 Jackson 의 바이트 파서와 결합이 인코딩을 짐작해 받아들였다 — UTF-8
+    // JSON 텍스트에는 0x00 이 없다. 짝 없는 서로게이트 이스케이프는 어디에 있든 거부한다. resteasy.allowGzip 의 해제기가 끝까지 온 본문을
+    // 풀지 못하면(ZipException) 쓸 수 없는 응답이다. 셋 다 응답을 인용하지 않는다.
+    @Test
+    fun `reader rejects a NUL, a surrogate and a corrupt coding`() {
+        val usable = """{"access_token":"AT","expires_in":300}"""
+        val lone = "\\" + "ud800"
+        val corrupt =
+            object : InputStream() {
+                override fun read(): Int = throw java.util.zip.ZipException("invalid code lengths set")
+            }
+        val rows =
+            listOf(
+                ByteArrayInputStream(usable.toByteArray(Charsets.UTF_16LE)) to TokenResponseGuard.REJECTED,
+                bytes("{\"access_token\":\"AT\",\"x\":\"$lone\"}") to TokenResponseGuard.UNPAIRED_SURROGATE,
+                bytes("{\"access_token\":\"AT\",\"$lone\":1}") to TokenResponseGuard.UNPAIRED_SURROGATE,
+                corrupt to TokenResponseGuard.UNDECODABLE,
+            )
+        for ((body, message) in rows) {
+            val ctx = readContext(true, body)
+            every { ctx.getProperty(TokenResponseGuard.STATUS) } returns 200
+            val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().aroundReadFrom(ctx) }
+            assertEquals(message, e.message)
+            assertEquals(200, e.status)
+            assertNull(e.cause)
+            verify(exactly = 0) { ctx.proceed() }
+        }
+    }
+
+    // 짝 없는 서로게이트 이스케이프의 판정 — 자리 · 짝 · 이스케이프된 역슬래시 · 대소문자 · 형식이 틀린 이스케이프(Java 동형).
+    @Test
+    fun `holdsUnpairedSurrogate judges escapes, not text`() {
+        val u = "\\" + "u"
+        for (json in listOf(
+            "{\"a\":\"${u}d800\"}",
+            "{\"a\":\"${u}dc00\"}",
+            "{\"${u}d800\":1}",
+            "{\"a\":\"x${u}D800\"}",
+            "{\"a\":\"${u}d800${u}0041\"}",
+            "{\"a\":\"${u}dbff\"}",
+            "{\"a\":[\"ok\",\"${u}dfff\"]}",
+            // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그, 2026-11-11)
+            "{\"a\":\"${u}ZZZZ\",\"b\":\"${u}DC00\"}",
+            // 이스케이프된 따옴표가 문자열을 닫지 않는다 — `\\` 만 건너뛰면 여기서 어긋난다(JVM 실행 레그, 2026-11-11)
+            "{\"x\":\"a\\\"b\",\"y\":\"${u}dc00\"}",
+        )) {
+            assertTrue(holdsUnpairedSurrogate(json.toByteArray()), json)
+        }
+        for (json in listOf(
+            "{\"a\":\"${u}d83d${u}de00\"}",
+            "{\"a\":\"\\\\" + "ud800\"}",
+            "{\"a\":\"${u}0041\"}",
+            "{\"a\":\"plain\"}",
+            "{\"a\":\"${u}zz00\"}",
+            "{\"a\":1} ${u}d800",
+            "{\"a\":\"\\\"${u}d83d${u}de00\"}",
+        )) {
+            assertFalse(holdsUnpairedSurrogate(json.toByteArray()), json)
+        }
+    }
+
+    // 머리가 깨진 gzip — resteasy.allowGzip 의 GZIPDecodingInterceptor 는 스트림을 감쌀 때 머리를 읽어, 그 ZipException 은 가장 안쪽
+    // 판정에 닿지 않는다. 그 바깥의 TokenCodingGuard 가 같은 거부로 바꾸고 스트림을 닫는다. 잘린 머리의 EOFException 은 그대로다(끊긴
+    // 연결과 가를 수 없다 — 등록부 판정 Q1). 표시가 없는 엔티티(admin 자원)는 건드리지 않는다. Java 동형.
+    @Test
+    fun `coding guard turns a header ZipException into the same rejection`() {
+        var closes = 0
+        val raw =
+            object : InputStream() {
+                override fun read(): Int = -1
+
+                override fun close() {
+                    closes++
+                    throw IOException("Bad chunk header")
+                }
+            }
+        val ctx = readContext(true, raw)
+        val post =
+            org.apache.http.client.methods
+                .HttpPost(TRG_TOKEN)
+        every { ctx.getProperty(AdminEngine.EXCHANGE) } returns AdminEngine.Exchange(post, 1000)
+        every { ctx.getProperty(TokenResponseGuard.STATUS) } returns 200
+        every { ctx.proceed() } throws java.util.zip.ZipException("Not in GZIP format")
+        val e = assertFailsWith<UnusableTokenResponse> { TokenCodingGuard().aroundReadFrom(ctx) }
+        assertEquals(TokenResponseGuard.UNDECODABLE, e.message)
+        assertEquals(200, e.status)
+        assertNull(e.cause)
+        assertEquals(1, closes, "거부 전에 스트림을 닫아야 한다")
+        assertTrue(post.isAborted, "거부 전에 교환을 끊어야 한다 — 닫기만 하면 HttpCore 가 나머지를 EOF 까지 비운다")
+
+        val cut = java.io.EOFException("Unexpected end of ZLIB input stream")
+        val truncated = readContext(true, bytes("x"))
+        every { truncated.proceed() } throws cut
+        assertSame(cut, assertFailsWith<java.io.EOFException> { TokenCodingGuard().aroundReadFrom(truncated) })
+
+        for (mark in listOf(null, false, "true")) {
+            val other = readContext(mark, bytes("x"))
+            val admin = java.util.zip.ZipException("Not in GZIP format")
+            every { other.proceed() } throws admin
+            assertSame(admin, assertFailsWith<java.util.zip.ZipException> { TokenCodingGuard().aroundReadFrom(other) })
+        }
+        assertEquals("bound", TokenCodingGuard().aroundReadFrom(readContext(true, bytes("x"))))
+        assertTrue(TokenCodingGuard.PRIORITY < Priorities.ENTITY_CODER, "해제기보다 바깥이어야 한다")
     }
 
     // 응답 필터 판정 하나 — 거부면 그 예외를, 통과면 null 을 돌려준다(할당을 재는 구간에 단언을 두지 않는다).

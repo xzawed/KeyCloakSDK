@@ -10,6 +10,7 @@ import io.github.xzawed.keycloak.RESPONSE_MAX_HEADER_COUNT
 import io.github.xzawed.keycloak.RESPONSE_MAX_LINE_LENGTH
 import io.github.xzawed.keycloak.RedactedCause
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
+import io.github.xzawed.keycloak.TokenCodingGuard
 import io.github.xzawed.keycloak.onIo
 import jakarta.ws.rs.Priorities
 import jakarta.ws.rs.ProcessingException
@@ -165,7 +166,8 @@ public class AdminClient internal constructor(
                         ClientResponseFilter::class.java to Priorities.USER,
                         ReaderInterceptor::class.java to TokenResponseGuard.READ_PRIORITY,
                     ),
-                ).build()
+                ).register(TokenCodingGuard(), TokenCodingGuard.PRIORITY)
+                .build()
         }
     }
 }
