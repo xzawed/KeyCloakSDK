@@ -255,29 +255,13 @@ public sealed class AuthClient : ITokenSource
         {
             throw new KeycloakAuthException($"{failureMessage}: access_token is not a JSON string");
         }
-        // Duende's getters below decode lazily: a member holding an unpaired surrogate escape made them throw a raw
-        // InvalidOperationException out of the SDK (measured: access_token, refresh_token). Refuse the response by name.
-        if (UndecodableMember(resp.Json, TokenMembers) is { } member)
-            throw new KeycloakAuthException($"{failureMessage}: {member} holds an unpaired surrogate escape");
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
                                resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
     }
 
-    /// <summary>Every member the getters in <see cref="ToTokenSet"/> decode.</summary>
-    private static readonly string[] TokenMembers = { "access_token", "token_type", "expires_in", "refresh_token", "id_token", "scope" };
-
-    /// <summary>The first of <paramref name="names"/> that is a JSON string System.Text.Json will not decode.</summary>
-    private static string? UndecodableMember(JsonElement? json, string[] names)
-    {
-        if (json is not { ValueKind: JsonValueKind.Object } body)
-            return null;
-        foreach (var name in names)
-        {
-            if (body.TryGetProperty(name, out var member) && member.ValueKind == JsonValueKind.String && !TryDecode(member, out _))
-                return name;
-        }
-        return null;
-    }
+    /// <summary>The members the SDK reads from a token-endpoint body — a string in one of them that will not decode is refused
+    /// by name (<see cref="ThrowIfError"/>); anywhere else, the body is.</summary>
+    private static readonly string[] ReadMembers = { "access_token", "token_type", "expires_in", "refresh_token", "id_token", "scope", "error" };
 
     /// <summary>The text of a JSON string, or <c>false</c> when System.Text.Json refuses to decode it.</summary>
     /// <remarks>It parses an unpaired UTF-16 surrogate escape (<c>\ud800</c>, <c>\udc00</c> — RFC 8259 §8.2 lets the grammar
@@ -303,10 +287,13 @@ public sealed class AuthClient : ITokenSource
     /// <see cref="OAuthErrorCode"/> lets it through against <paramref name="sent"/>, the secrets the request sent — Duende's own
     /// <c>Error</c> is the server's reason phrase for an HTTP error and the raw JSON text of a non-string <c>error</c>
     /// member, and its <c>IsError</c> throws on a JSON root that is not an object (all three measured, with a token
-    /// echoed in them: <c>MalformedTokenResponseTests</c>) and on an <c>error</c> holding an unpaired surrogate escape
-    /// (<c>UndecodableResponseTests</c>).</remarks>
+    /// echoed in them: <c>MalformedTokenResponseTests</c>) and on a body holding an unpaired surrogate escape anywhere — any
+    /// member name, or the value it reads (<c>UndecodableResponseTests</c>).</remarks>
     private static void ThrowIfError(ProtocolResponse resp, string failureMessage, string transportMessage, string?[] sent)
     {
+        // Found before anything reads the body — TryGetProperty and Duende's getters throw on such a string. The status still
+        // decides the class; the code is not read from such a body.
+        var undecodable = TokenResponseVerdict.Undecodable(resp.Json, ReadMembers);
         switch (resp.ErrorType)
         {
             case ResponseErrorType.Exception when resp.Exception is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded } tooLarge:
@@ -321,16 +308,16 @@ public sealed class AuthClient : ITokenSource
             case ResponseErrorType.Http:
                 // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
                 var reason = CanonicalReason(resp.HttpStatusCode);
-                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = OAuthErrorOf(resp.Json, sent) ?? reason };
+                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = (undecodable is null ? OAuthErrorOf(resp.Json, sent) : null) ?? reason };
         }
         if (resp.Json is { ValueKind: not JsonValueKind.Object })
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
+        if (undecodable is { } where)
+            throw new KeycloakAuthException($"{failureMessage}: {UndecodableReason(where)}");
         // A 2xx that carries an error fails as a 400 does. Duende's IsError alone misses a space-only one there — it does not
         // flag a whitespace error text on a 2xx (measured: OAuthErrorCodeGrammarTests) — so the RFC grammar decides whether
         // there is an error at all (InGrammar); what is carried of it is OAuthErrorOf's, which is narrower.
-        // An `error` it cannot decode is an error with no code — checked first, because IsError decodes it and throws.
-        if ((ErrorMember(resp.Json) is { ValueKind: JsonValueKind.String } error && !TryDecode(error, out _))
-            || resp.IsError || InGrammar(resp.Json))
+        if (resp.IsError || InGrammar(resp.Json))
         {
             var code = OAuthErrorOf(resp.Json, sent);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
@@ -359,6 +346,15 @@ public sealed class AuthClient : ITokenSource
     // Why a 400 carried no code — a string that is not carried is still a JSON string, so it gets its own words.
     private static string NoCodeReason(JsonElement? json) =>
         ErrorMember(json) is { ValueKind: JsonValueKind.String } ? "error value withheld" : "error is not a JSON string";
+
+    // Why a body holding a string that will not decode was refused (TokenResponseVerdict.Undecodable) — by the member's name
+    // only when the SDK reads that member.
+    private static string UndecodableReason(string where) => where switch
+    {
+        "error" => "error value withheld",
+        "" => "response body is not a decodable JSON object",
+        _ => $"{where} holds an unpaired surrogate escape",
+    };
 
     private static JsonElement? ErrorMember(JsonElement? json) =>
         json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) ? e : null;
