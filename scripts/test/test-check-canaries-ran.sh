@@ -208,6 +208,32 @@ expect r2-rust-path 2 "로 들인 모듈이다"
 run --lang kotlin --list --root "$FIX/repo-r2b"
 expect r2-kotlin-param 2 "표시 이름을 바꾸는 어노테이션"
 
+# ═══ vitest 옵션 인자의 fails — JUnit 은 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측 · #1017 레그) ═══════
+# 건강 셋(timeout 옵션 · fails: false · 함수 참조)과 뒤집힘 셋(한 줄 · 여러 줄 · describe 옵션).
+run --lang node --report "$REP/node-r3.xml" --root "$FIX/repo-r3"
+expect r3-node 1 "통과 3 · FAIL 3"
+assert_contains "$OUT" "o1 timeout options — 1 통과" "[r3-node] timeout 옵션을 뒤집힘으로 읽었다 — 출력: $OUT"
+assert_contains "$OUT" "o2 fails false — 1 통과" "[r3-node] fails: false 를 뒤집힘으로 읽었다 — 출력: $OUT"
+assert_contains "$OUT" "o3 function reference — 1 통과" "[r3-node] 함수 참조를 옵션으로 읽었다 — 출력: $OUT"
+assert_contains "$OUT" "o4 fails true — 뒤집혔다" "[r3-node] 옵션 인자의 fails: true 를 놓쳤다 — 출력: $OUT"
+assert_contains "$OUT" "o5 fails multi-line — 뒤집혔다" "[r3-node] 여러 줄 옵션의 fails 를 놓쳤다 — 출력: $OUT"
+assert_contains "$OUT" "o6 inside a fails describe — 뒤집혔다" "[r3-node] describe 옵션의 fails 를 놓쳤다 — 출력: $OUT"
+# 가릴 수 없는 옵션은 추측하지 않고 판정 불가다(첫 판정 불가가 실행을 멈추므로 저장소 하나에 하나씩).
+run --lang node --list --root "$FIX/repo-r3b"
+expect r3-node-var 2 "리터럴 객체가 아니다"
+run --lang node --list --root "$FIX/repo-r3c"
+expect r3-node-spread 2 "펼침"
+run --lang node --list --root "$FIX/repo-r3d"
+expect r3-node-expr 2 "true/false 리터럴이 아니다"
+# 선언 꼴 카나리아가 문자열 안에만 있으면 그 문자열을 담은 다른 테스트가 대신 통과로 읽혔다(#1017 레그: go 는 감싼 함수 ·
+# node 는 제목이 `it('…'` 인 가짜 시험 — ruby 는 같은 꼴). 이름으로 항목을 찾는 언어는 진짜 항목에 닿아 해당 없다.
+run --lang go --list --root "$FIX/repo-r3e"
+expect r3e-go 2 "선언 자리가 아니다"
+run --lang node --list --root "$FIX/repo-r3e"
+expect r3e-node 2 "선언 자리가 아니다"
+run --lang ruby --list --root "$FIX/repo-r3e"
+expect r3e-ruby 2 "선언 자리가 아니다"
+
 # ═══ 계측기 자신 — 서로 다른 결함이 서로 다른 이유를 내는가 ═════════════════════════════════════════
 # 위 칸들이 전부 같은 문장으로 실패하면(예: 늘 「보고서에 없다」) 이 테스트는 입력을 보지 않는 검사를 초록으로 감싼다.
 run --lang python --report "$REP/python-skip.xml" --root "$REPO"
