@@ -240,7 +240,10 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
           continue;
         }
         int unit = hex4(json, i + 2);
-        if (unit < 0) return false;
+        if (unit < 0) {
+          i++; // 형식이 틀린 이스케이프 — 파서의 몫이다. 거기서 멈추면 뒤의 짝 없는 서로게이트를 못 본다(Grok 레그)
+          continue;
+        }
         i += 5;
         if (unit >= 0xDC00 && unit <= 0xDFFF) return true; // 앞에 높은 서로게이트가 없는 낮은 서로게이트
         if (unit >= 0xD800 && unit <= 0xDBFF) {

@@ -625,6 +625,8 @@ internal class TokenResponseGuardTest {
             "{\"a\":\"${u}d800${u}0041\"}",
             "{\"a\":\"${u}dbff\"}",
             "{\"a\":[\"ok\",\"${u}dfff\"]}",
+            // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그, 2026-11-11)
+            "{\"a\":\"${u}ZZZZ\",\"b\":\"${u}DC00\"}",
         )) {
             assertTrue(holdsUnpairedSurrogate(json.toByteArray()), json)
         }
