@@ -85,7 +85,7 @@ module KeycloakSdk
                                                    max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"),
                                   what: "token")
       unless resp.success?
-        oauth = resp.body.is_a?(Hash) ? resp.body["error"] : nil
+        oauth = OAuthErrorCode.carried(resp.body.is_a?(Hash) ? resp.body["error"] : nil, [@config.client_secret])
         raise AuthError.new("client-credentials token request failed: HTTP #{resp.status}", oauth_error: oauth)
       end
 

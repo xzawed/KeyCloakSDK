@@ -17,10 +17,8 @@ module KeycloakSdk
   class AuthClient
     include TokenProvider
 
-    # The shape of an OAuth error code that may go into a message — RFC 6749 · OIDC registered codes and Keycloak's
-    # codes all have this shape, while tokens and secrets (JWT · base64 · hex · UUID) are filtered out by their
-    # uppercase letters, digits, dots and hyphens.
-    OAUTH_CODE = /\A[a-z_]{1,64}\z/
+    # The grant parameters that are secrets — with the client secret, what an echoed `error` is compared against.
+    SENT_SECRETS = %i[refresh_token code code_verifier].freeze
 
     def initialize(config:, http:, jwt_validator:)
       @config = config
@@ -132,7 +130,7 @@ module KeycloakSdk
     # 토큰 그랜트 하나와 그 오류 경계(§4). 하위 예외는 SDK 타입이 되고 `cause` 에는 원본 대신 `RedactedCause` 가 달린다.
     # ⚠️ OAuth 오류는 **코드와 HTTP 상태만** 싣는다 — `error_description` 은 서버가 고른 자유 문장이라 토큰을
     # 되울릴 수 있고, 오류 본문이 JSON 이 아니면 rack-oauth2 가 본문 전체를 거기 넣는다. 코드 자리도 서버 값이라
-    # **코드 모양**(`OAUTH_CODE` — 등록 코드는 전부 소문자·밑줄)일 때만 메시지에 싣는다(`oauth_error` 에는 그대로).
+    # `OAuthErrorCode.carried` 가 허락한 것만 메시지와 `oauth_error` 에 함께 싣는다(이 요청이 보낸 비밀과 겹치면 뺀다).
     # ⚠️ 마지막 `StandardError` 는 형식이 틀린 200 을 읽다 나는 것(NoMethodError·AttrMissing·'Unknown Token Type')과
     # `to_token_set` 의 형 변환 실패다 — 원본이 새면 Ruby 3.2 의 NoMethodError 가 본문을 인용한다.
     # ⚠️ 필수 값(`code`·`refresh_token`)이 비면 보내지 않는다 — rack-oauth2 의 그랜트가 하던 검사이고, 그때는 이 경계
@@ -144,9 +142,9 @@ module KeycloakSdk
     rescue Error
       raise
     rescue Rack::OAuth2::Client::Error => e
-      code = e.response[:error].is_a?(String) ? e.response[:error] : ""
-      shown = code.match?(OAUTH_CODE) ? code : "non-standard error code"
-      raise AuthError.new("#{operation} failed: #{shown} (HTTP #{e.status})", oauth_error: code),
+      code = OAuthErrorCode.carried(e.response[:error], [@config.client_secret, *params.values_at(*SENT_SECRETS)])
+      raise AuthError.new("#{operation} failed: #{code || 'non-standard error code'} (HTTP #{e.status})",
+                          oauth_error: code),
             cause: RedactedCause.new(e)
     rescue Faraday::Error => e
       raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)

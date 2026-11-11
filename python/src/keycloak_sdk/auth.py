@@ -126,12 +126,13 @@ class AuthClient:
         # 실패한 fetch 의 백오프 — 위 30초와 **다른 축**이다(콜드 캐시 + IdP 장애).
         self._jwks_backoff = JwksFailureBackoff()
 
-    def _wrap(self, fn: Callable[[], T]) -> T:
+    def _wrap(self, fn: Callable[[], T], *sent: str) -> T:
         """python-keycloak 호출을 실행하고 그 실패를 SDK 예외로 변환한다.
 
         `response_code`가 있으면(HTTP 응답을 받았으나 실패) 인증/토큰 흐름 실패로
         간주해 `KeycloakAuthError`로, 없으면(네트워크/전송 계층 실패) `KeycloakTransportError`로
-        변환한다. OAuth `error` 코드는 response_body(JSON)에서 best-effort로 추출한다.
+        변환한다. OAuth `error` 코드는 response_body(JSON)에서 best-effort로 추출한다 — `sent` 는
+        그 요청이 client secret 말고 보낸 비밀 값이다(되울림은 싣지 않는다, `carried_code`).
 
         ⚠️ **상류 메시지도 원본 예외도 옮기지 않는다** — python-keycloak 은 거기에 응답 본문을
         싣는다(토큰·되돌린 `client_secret`). 규칙과 실측은 `_internal/lower.py`. 원본은 `except`
@@ -142,7 +143,8 @@ class AuthClient:
         except Exception as exc:
             if not is_lower_failure(exc):
                 raise
-            error, cause = auth_failure(exc), summarize(exc)
+            error = auth_failure(exc, sent=(self._config.client_secret, *sent))
+            cause = summarize(exc)
         raise error from cause
 
     @scrub_frames
@@ -215,7 +217,9 @@ class AuthClient:
                 code=code,
                 redirect_uri=redirect_uri,
                 code_verifier=code_verifier,
-            )
+            ),
+            code,
+            code_verifier,
         )
         token_set = TokenSet.from_response(response, issued_at=time.time())
         if nonce is not None:
@@ -237,19 +241,19 @@ class AuthClient:
     @scrub_frames
     def refresh(self, refresh_token: str) -> TokenSet:
         """Renews the access token with the `refresh_token` grant."""
-        response = self._wrap(lambda: self._openid.refresh_token(refresh_token))
+        response = self._wrap(lambda: self._openid.refresh_token(refresh_token), refresh_token)
         return TokenSet.from_response(response, issued_at=time.time())
 
     @scrub_frames
     def logout(self, refresh_token: str) -> None:
         """Invalidates the session (refresh token revoke)."""
-        self._wrap(lambda: self._openid.logout(refresh_token))
+        self._wrap(lambda: self._openid.logout(refresh_token), refresh_token)
 
     @scrub_frames
     def introspect(self, token: str) -> IntrospectionResult:
         """RFC 7662 token introspection. For an inactive token, fields other than `active` may
         be omitted."""
-        response = self._wrap(lambda: self._openid.introspect(token))
+        response = self._wrap(lambda: self._openid.introspect(token), token)
         return _introspection_result(response)
 
     @scrub_frames

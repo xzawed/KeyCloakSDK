@@ -21,6 +21,28 @@ module KeycloakSdk
     end
   end
 
+  # What `AuthError#oauth_error` (and a grant's message) carries of the IdP's `error`: a String of `[a-z_]{1,64}` —
+  # every registered OAuth and Keycloak code has that shape — that overlaps no non-empty secret the request sent
+  # (neither contains the other). ⚠️ `error` is response body too: an IdP that echoes what it got puts the client
+  # secret, the refresh token or the code there, and the grants used to copy any String (the provider any JSON
+  # value) into `oauth_error` (`spec/unit/oauth_error_code_echo_spec.rb`). The overlap also withholds a truncated or
+  # extended echo; its price is a secret that is a piece of a registered code (`client`) withholding that code.
+  module OAuthErrorCode
+    SHAPE = /\A[a-z_]{1,64}\z/
+
+    def self.carried(value, sent)
+      return nil unless value.is_a?(String) && value.match?(SHAPE)
+
+      value unless sent.any? { |secret| overlap?(value, secret) }
+    end
+
+    # An absent or empty secret is not compared — "" is a piece of every code (a public client sends none).
+    def self.overlap?(code, secret)
+      secret.is_a?(String) && !secret.empty? && (code.include?(secret) || secret.include?(code))
+    end
+    private_class_method :overlap?
+  end
+
   # Network transport failure (timeout/connection refused/DNS).
   class TransportError < Error; end
 

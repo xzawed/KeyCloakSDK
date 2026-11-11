@@ -103,19 +103,21 @@ class AsyncAuthClient:
         # 실패한 fetch 의 백오프 — 위 30초와 **다른 축**이다(콜드 캐시 + IdP 장애).
         self._jwks_backoff = JwksFailureBackoff()
 
-    async def _awrap(self, awaitable: Awaitable[T]) -> T:
+    async def _awrap(self, awaitable: Awaitable[T], *sent: str) -> T:
         """python-keycloak `a_*` 호출을 await하고 그 실패를 SDK 예외로 변환한다.
 
         sync `AuthClient._wrap`과 동일한 규칙(같은 `_internal/lower.py` 를 쓴다): `response_code`가
         있으면 인증/토큰 흐름 실패로 간주해 `KeycloakAuthError`로, 없으면 `KeycloakTransportError`로
-        변환한다. ⚠️ 상류 메시지도 원본 예외도 옮기지 않는다 — 응답 본문을 싣는다.
+        변환한다. ⚠️ 상류 메시지도 원본 예외도 옮기지 않는다 — 응답 본문을 싣는다. `sent` 는 그
+        요청이 client secret 말고 보낸 비밀 값이다(되울림은 싣지 않는다, `carried_code`).
         """
         try:
             return await awaitable
         except Exception as exc:
             if not is_lower_failure(exc):
                 raise
-            error, cause = auth_failure(exc), summarize(exc)
+            error = auth_failure(exc, sent=(self._config.client_secret, *sent))
+            cause = summarize(exc)
         raise error from cause
 
     @scrub_frames
@@ -178,7 +180,9 @@ class AsyncAuthClient:
                 code=code,
                 redirect_uri=redirect_uri,
                 code_verifier=code_verifier,
-            )
+            ),
+            code,
+            code_verifier,
         )
         token_set = TokenSet.from_response(response, issued_at=time.time())
         if nonce is not None:
@@ -200,19 +204,19 @@ class AsyncAuthClient:
     @ascrub_frames
     async def refresh(self, refresh_token: str) -> TokenSet:
         """Renews the access token with the `refresh_token` grant."""
-        response = await self._awrap(self._openid.a_refresh_token(refresh_token))
+        response = await self._awrap(self._openid.a_refresh_token(refresh_token), refresh_token)
         return TokenSet.from_response(response, issued_at=time.time())
 
     @ascrub_frames
     async def logout(self, refresh_token: str) -> None:
         """Invalidates the session (refresh token revoke)."""
-        await self._awrap(self._openid.a_logout(refresh_token))
+        await self._awrap(self._openid.a_logout(refresh_token), refresh_token)
 
     @ascrub_frames
     async def introspect(self, token: str) -> IntrospectionResult:
         """RFC 7662 token introspection. For an inactive token, fields other than `active` may
         be omitted."""
-        response = await self._awrap(self._openid.a_introspect(token))
+        response = await self._awrap(self._openid.a_introspect(token), token)
         return _introspection_result(response)
 
     @ascrub_frames
