@@ -169,7 +169,7 @@ final class ErrorTranslation
         } catch (\Throwable) {
             $error = null;   // 읽을 수 없는 본문 — 코드 없이 상태만 싣는다(읽기 오류가 경계를 넘지 않게).
         }
-        $code = OAuthErrorCode::of(\is_array($error) ? ($error['error'] ?? null) : null, ...self::sentSecrets($e->getRequest()));
+        $code = OAuthErrorCode::carried(\is_array($error) ? ($error['error'] ?? null) : null, ...self::sentSecrets($e->getRequest()));
         $status = $e->getResponse()->getStatusCode();
 
         return new KeycloakAuthError(

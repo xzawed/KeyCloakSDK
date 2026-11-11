@@ -17,6 +17,9 @@ module KeycloakSdk
   class AuthClient
     include TokenProvider
 
+    # The shape of an OAuth error code — kept for 1.x (`yard diff`); what is carried is `OAuthErrorCode.carried`'s call.
+    OAUTH_CODE = OAuthErrorCode::SHAPE
+
     # The grant parameters that are secrets — with the client secret, what an echoed `error` is compared against.
     SENT_SECRETS = %i[refresh_token code code_verifier].freeze
 

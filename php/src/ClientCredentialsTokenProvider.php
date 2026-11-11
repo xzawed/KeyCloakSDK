@@ -93,7 +93,7 @@ final class ClientCredentialsTokenProvider implements TokenProvider
         $json = json_decode($raw, true);
         if ($response->getStatusCode() !== 200 || !is_array($json) || !isset($json['access_token'])) {
             // ⚠️ `error` 도 응답 본문이다 — 코드 모양이고 보낸 시크릿과 겹치지 않을 때만 공개 프로퍼티로 싣는다(`OAuthErrorCode`).
-            $oauth = OAuthErrorCode::of(is_array($json) ? ($json['error'] ?? null) : null, $this->config->clientSecret);
+            $oauth = OAuthErrorCode::carried(is_array($json) ? ($json['error'] ?? null) : null, $this->config->clientSecret);
 
             throw new KeycloakAuthError('client-credentials failed', oauthError: $oauth);
         }

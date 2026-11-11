@@ -69,6 +69,6 @@ final class OAuthErrorCodeTest extends TestCase
     #[DataProvider('overlaps')]
     public function testWithholdsAValueThatOverlapsASecretTheRequestSent(string $error, array $sent, ?string $expected): void
     {
-        self::assertSame($expected, OAuthErrorCode::of($error, ...$sent));
+        self::assertSame($expected, OAuthErrorCode::carried($error, ...$sent));
     }
 }

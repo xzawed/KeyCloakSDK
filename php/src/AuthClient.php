@@ -281,7 +281,7 @@ final class AuthClient
             // ⚠️ league 의 메시지는 `error: error_description` 이다 — 설명은 응답 본문이라 IdP 가 토큰을 되울리면
             // 그대로 찍혔다(실측). 메시지에는 OAuth `error` 코드만 싣고(`oauthError` 와 같은 값), 그 코드도 코드
             // 모양이고 보낸 비밀과 겹치지 않을 때만 받는다 — `error` 자리에 토큰을 실어 보내면 공개 프로퍼티째 찍혔다(Grok 레그 실측).
-            $oauth = OAuthErrorCode::of(is_array($body) ? ($body['error'] ?? null) : null, ...$sent);
+            $oauth = OAuthErrorCode::carried(is_array($body) ? ($body['error'] ?? null) : null, ...$sent);
 
             throw new KeycloakAuthError('token request rejected' . ($oauth === null ? '' : ': ' . $oauth), oauthError: $oauth, previous: SanitizedCause::of($e));
         } catch (ConnectException $e) {
