@@ -135,10 +135,15 @@ public sealed class UndecodableResponseTests : IDisposable
     }
 
     /// <summary>The escape outside the named members: an extension member's value, a member name, a value or a name nested
-    /// in an extension member — beside a usable token (2xx) or a usable OAuth error (400, 401).</summary>
+    /// in an extension member — beside a usable token (2xx) or a usable OAuth error (400, 401). The bad element is one of
+    /// several (an "any" check passes it), nested two deep, and a name inside an array's object (review leg, 2026-11-11).</summary>
     public static IEnumerable<object[]> Placements =>
-        from escape in Escapes
-        from placement in new[] { "\"x_ext\":\"ESC\"", "\"ESC\":1", "\"x_ext\":{\"k\":[\"ESC\"]}", "\"x_ext\":{\"ESC\":1}" }
+        from escape in Escapes.Append(@"\uD800")
+        from placement in new[]
+        {
+            "\"x_ext\":\"ESC\"", "\"ESC\":1", "\"x_ext\":{\"k\":[\"ESC\"]}", "\"x_ext\":{\"ESC\":1}",
+            "\"x_ext\":[\"ok\",\"ESC\"]", "\"x_ext\":{\"a\":1,\"b\":\"ESC\"}", "\"x_ext\":[[\"ESC\"]]", "\"x_ext\":[{\"ESC\":1}]",
+        }
         from status in new[] { 200, 400, 401 }
         select new object[] { placement.Replace("ESC", escape, StringComparison.Ordinal), status };
 
