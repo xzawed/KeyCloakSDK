@@ -6,6 +6,7 @@ namespace Xzawed\Keycloak\Internal;
 
 use GuzzleHttp\Psr7\Utils;
 use League\OAuth2\Client\Grant\AbstractGrant;
+use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Token\AccessTokenInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -42,8 +43,36 @@ final class PkceKeycloakProvider extends Keycloak
         if (!\is_string($access) || $access === '' || $access === '0') {
             throw new TokenResponseUnusable();
         }
+        try {
+            return parent::createAccessToken($response, $grant);
+        } catch (\InvalidArgumentException) {
+            // Its one other refusal — an `expires_in` that is not numeric — fell into the same catch-all (measured 2026-11-11).
+            throw new TokenResponseRefused('has an unusable expires_in');
+        }
+    }
 
-        return parent::createAccessToken($response, $grant);
+    /**
+     * An OAuth error response — thrown here, never by upstream: upstream built the exception message by concatenating `error`
+     * and `error_description` from the body. An array `error` made that a `\TypeError` that `AuthClient` could only call a
+     * transport failure (measured 2026-11-11: 400 `{"error":["invalid_grant"]}` → `KeycloakTransportError`), and an array beside
+     * it an "Array to string conversion" warning (Grok leg). The message was never used — `AuthClient` builds its own from the
+     * vetted code (`OAuthErrorCode`, which carries only a string) and `SanitizedCause` withholds this one.
+     *
+     * Which bodies are errors stays upstream's (a non-empty `error` — `"0"`, `0` and `false` are none), plus any array: upstream
+     * skipped an empty one, so a 400 `{"error":[]}` went on to fail as "no usable access_token", a reason that was not the one
+     * (.NET also refuses any `error` member that is present). And the status decides first: a 3xx · 4xx · 5xx that carried an
+     * `access_token` and no `error` went on to `createAccessToken` and the three grants succeeded with it (review leg, on
+     * `origin/main` too — the provider and the admin grant already refused it).
+     *
+     * @param mixed $data
+     */
+    protected function checkResponse(ResponseInterface $response, $data): void
+    {
+        $error = \is_array($data) ? $data['error'] ?? null : null;
+        if ($response->getStatusCode() >= 300 || \is_array($error) || (bool) $error) {
+            throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
+        }
+        parent::checkResponse($response, $data);
     }
 
     /**
@@ -60,6 +89,9 @@ final class PkceKeycloakProvider extends Keycloak
         } catch (\Throwable $e) {
             if (TokenResponseCap::overflowed($sink)) {
                 throw new ResponseTooLarge('token response');
+            }
+            if (ResponseFailure::undecodable($e)) {
+                throw new TokenResponseRefused('could not be decoded');   // its head and body arrived (`ResponseFailure`)
             }
             throw $e;
         }

@@ -226,6 +226,36 @@ final class ErrorTranslationTest extends TestCase
         self::assertSame('admin request failed: HTTP 500', $e->getMessage());
     }
 
+    /**
+     * 부여 응답의 머리와 본문은 왔는데 content-coding 을 풀 수 없다(curl 61 — Guzzle 이 응답을 단 RequestException) — 끝까지 온
+     * 응답이 쓸 수 없다: auth(전에는 「admin request failed」 transport · 실측 2026-11-11). admin REST 응답은 이 규칙 밖이라 그대로다.
+     */
+    public function testUndecodableTokenGrantResponseIsAuth(): void
+    {
+        $coded = static fn (string $method, string $url, int $status = 200): RequestException => new RequestException(
+            'cURL error 61: Error while processing content unencoding',
+            new Request($method, $url),
+            new Response($status, ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip']),
+            null,
+            ['errno' => 61],
+        );
+        // 오류 상태여도 같다 — 상태가 계급을 정하고 그것은 auth 다(리뷰 레그가 살린 축소 편집 「400 미만일 때만」, 2026-11-11)
+        foreach ([200, 400] as $status) {
+            $grant = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw $coded('POST', self::TOKEN_URL, $status)));
+            self::assertSame(KeycloakAuthError::class, $grant::class);
+            self::assertSame('admin token request failed: the token response could not be decoded', $grant->getMessage());
+            self::assertNull($grant->oauthError);
+        }
+
+        $admin = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw $coded('GET', self::ADMIN_URL)));
+        self::assertSame(KeycloakTransportError::class, $admin::class);
+        self::assertSame('admin request failed', $admin->getMessage());
+
+        // 대조군 — 응답이 없는 RequestException(TLS)은 부여여도 다 오지 않은 응답이다.
+        $tls = self::thrownBy(fn () => ErrorTranslation::call(static fn () => throw new RequestException('TLS handshake failed', new Request('POST', self::TOKEN_URL))));
+        self::assertSame(KeycloakTransportError::class, $tls::class);
+    }
+
     /** 본문을 못 읽어도 변환은 끝난다 — 읽기 오류가 하위 예외 원본으로 경계를 넘지 않는다(코드만 빠진다). */
     public function testUnreadableTokenErrorBodyStillTranslates(): void
     {

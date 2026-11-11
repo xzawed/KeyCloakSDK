@@ -15,6 +15,7 @@ use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\SanitizedCause;
 use Xzawed\Keycloak\Internal\BearerToken;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
+use Xzawed\Keycloak\Internal\ResponseFailure;
 use Xzawed\Keycloak\Internal\ResponseStalled;
 use Xzawed\Keycloak\Internal\TokenResponseCap;
 
@@ -72,6 +73,10 @@ final class ClientCredentialsTokenProvider implements TokenProvider
         } catch (NetworkExceptionInterface $e) {
             throw new KeycloakTransportError('token endpoint unreachable', previous: SanitizedCause::of($e));
         } catch (ClientExceptionInterface $e) {
+            if (ResponseFailure::undecodable($e)) {
+                // 머리와 본문은 왔는데 content-coding 을 풀 수 없다 — 끝까지 온 응답이 쓸 수 없다(auth, `ResponseFailure`).
+                throw new KeycloakAuthError('client-credentials failed: the token response could not be decoded', previous: SanitizedCause::of($e));
+            }
             throw new KeycloakTransportError('token request failed', previous: SanitizedCause::of($e));
         } catch (\Throwable $e) {
             // PSR-18 밖 예외(계약을 어긴 주입 클라이언트·미들웨어)도 미분류로 새지 않는다 — AuthClient 와 같은 수렴.
