@@ -85,10 +85,16 @@ func TestUTF8BodyRefusesAnUnpairedSurrogateAtEOF(t *testing.T) {
 
 // TestHoldsUnpairedSurrogateJudgesEscapesNotText — 이스케이프를 판정한다, 글자가 아니라. JVM
 // `holdsUnpairedSurrogate judges escapes, not text` · python `test_the_unpaired_surrogate_scan_judges_escapes_not_text` 와
-// 같은 칸이다.
+// 같은 칸이다. 배치 판정과 utf8Body 의 상태 기계(통째로 · 한 바이트씩) 둘 다 잰다 — 한쪽만 재면 다른 쪽의 축소 편집
+// (`<= 0xDBFF` → `<`, 짝의 범위 검사 없앰)이 살아남았다(변이 g-17 · g-20, 2026-11-11).
 func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
 	u := `\` + "u"
 	for json, want := range map[string]bool{
+		`{"a":"` + u + `d800` + u + `d800"}`:        true, // 높은 것 뒤의 높은 것
+		`{"a":"` + u + `dbff` + u + `e000"}`:        true, // 높은 것 뒤의 서로게이트 아닌 것
+		`{"a":"` + u + `d800` + u + `dc0"}`:         true, // 높은 것 뒤의 잘린 이스케이프
+		`{"a":"` + u + `d800\"`:                     true, // 높은 것 뒤의 두 글자 이스케이프
+		`{"a":"` + u + `dbff` + u + `dfff"}`:        false,
 		`{"a":"` + u + `d800"}`:                     true,
 		`{"a":"` + u + `dc00"}`:                     true,
 		`{"` + u + `d800":1}`:                       true,
@@ -107,21 +113,31 @@ func TestHoldsUnpairedSurrogateJudgesEscapesNotText(t *testing.T) {
 		`{"a":"\"` + u + `d83d` + u + `de00"}`:      false,
 	} {
 		if got := holdsUnpairedSurrogate([]byte(json)); got != want {
-			t.Errorf("%s: %v, want %v", json, got, want)
+			t.Errorf("batch %s: %v, want %v", json, got, want)
+		}
+		var whole, bytewise surrogateScan
+		whole.feed([]byte(json))
+		for i := range len(json) {
+			bytewise.feed([]byte(json[i : i+1]))
+		}
+		if whole.ended() != want || bytewise.ended() != want {
+			t.Errorf("stream %s: whole %v, byte by byte %v, want %v", json, whole.ended(), bytewise.ended(), want)
 		}
 	}
 }
 
 // TestSurrogateScanAgreesWithTheBatchScanner — utf8Body 의 상태 기계(surrogateScan)는 같은 바이트를 어떻게 잘라 먹이든 배치
-// 판정(holdsUnpairedSurrogate — 여덟 언어와 같은 스캐너)과 같은 답이다. 따옴표 · 역슬래시 · u · 16진수가 잦은 무작위 텍스트를
-// 무작위로 잘라 먹인다(고정 시드 — 이스케이프가 읽기 사이에서 잘리는 모든 자리를 지난다).
+// 판정(holdsUnpairedSurrogate — 여덟 언어와 같은 스캐너)과 같은 답이다. 텍스트는 이스케이프 토막(높은 · 낮은 · 범위 끝 ·
+// 서로게이트 아닌 것 · 형식이 틀린 것 · 두 글자)과 따옴표 · 글자를 무작위로 잇고, 무작위로 잘라 먹인다(고정 시드). 글자 단위로
+// 지으면 「높은 것 뒤의 서로게이트 아닌 이스케이프」 같은 모양이 거의 안 나와 스트림 쪽 축소 편집이 살아남았다(변이 g-17).
 func TestSurrogateScanAgreesWithTheBatchScanner(t *testing.T) {
 	rng := rand.New(rand.NewPCG(20261111, 2))
-	alphabet := []byte(`""\\\uuudDdcC08bfFzx:`)
+	pieces := []string{`"`, `"`, `\`, `\"`, `\\`, `\u`, `\ud800`, `\udbff`, `\udc00`, `\udfff`, `\uD83D`, `\uDE00`,
+		`A`, ``, `퟿`, `\uzz`, `\ud8`, `u`, `d8`, `00`, `x`, `:`, `{`}
 	for n := 0; n < 200000; n++ {
-		text := make([]byte, rng.IntN(28))
-		for i := range text {
-			text[i] = alphabet[rng.IntN(len(alphabet))]
+		var text []byte
+		for k := rng.IntN(10); k > 0; k-- {
+			text = append(text, pieces[rng.IntN(len(pieces))]...)
 		}
 		var s surrogateScan
 		for rest := text; len(rest) > 0; {
