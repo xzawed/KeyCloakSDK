@@ -148,11 +148,8 @@ final class HostilePathMatrixTest extends TestCase
         ['Jwks\\JwksStore::getKeyByKid', self::JWKS_FETCH, 'c', 'Jwks/JwksStoreTest.php|testEmptyKeySetDoesNotClobberAGoodCache', 'getKeyByKid'],
     ];
 
-    // 보안 기본값 가드가 PHP 행위 앵커를 적는 모양 둘 — `php/tests/Unit/<파일>|public function <이름>(` · `"php/tests/Unit/<파일>" "<이름>"`.
-    private const SCRIPT_ANCHOR_RES = [
-        '#php/tests/Unit/([A-Za-z0-9_/]+Test\.php)\|public function ([A-Za-z0-9_]+)\(#',
-        '#"php/tests/Unit/([A-Za-z0-9_/]+Test\.php)"\s+"(test[A-Za-z0-9_]+)"#',
-    ];
+    // 보안 기본값 가드가 PHP 행위 앵커를 적는 모양 — `php/tests/Unit/<파일>|public function <이름>(`(nonce · 백오프 · 토큰 타입 · 빈 키셋).
+    private const SCRIPT_ANCHOR_RE = '#php/tests/Unit/([A-Za-z0-9_/]+Test\.php)\|public function ([A-Za-z0-9_]+)\(#';
 
     // ⚠️ 하네스 상태는 전부 정적이다(클래스 머리 주석).
     private static string $dir = '';
@@ -1819,11 +1816,9 @@ final class HostilePathMatrixTest extends TestCase
         $script = @file_get_contents($root . '/scripts/test/test-security-defaults.sh');
         $found = [];
         if ($script !== false) {
-            foreach (self::SCRIPT_ANCHOR_RES as $re) {
-                preg_match_all($re, $script, $m, PREG_SET_ORDER);
-                foreach ($m as $hit) {
-                    $found[$hit[1] . '|' . $hit[2]] = true;
-                }
+            preg_match_all(self::SCRIPT_ANCHOR_RE, $script, $m, PREG_SET_ORDER);
+            foreach ($m as $hit) {
+                $found[$hit[1] . '|' . $hit[2]] = true;
             }
             if ($found === []) {
                 $fails[] = 'W1 test-security-defaults.sh 에서 PHP 행위 앵커를 하나도 못 읽었다 — 적는 모양이 바뀌었나?';

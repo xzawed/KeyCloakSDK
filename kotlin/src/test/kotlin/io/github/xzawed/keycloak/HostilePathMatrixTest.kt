@@ -1491,12 +1491,9 @@ private val HP_HAND_TARGETS =
 
 private const val HP_KT_TEST_PATH = "kotlin/src/test/kotlin/io/github/xzawed/keycloak/"
 
-// 보안 기본값 가드가 kotlin 행위 앵커를 적는 두 모양 — `파일|fun 이름(`(nonce·토큰 타입)과 `"파일" "이름"`(빈 JWKS).
-private val HP_SCRIPT_ANCHOR_RES =
-    listOf(
-        Regex("""${Regex.escape(HP_KT_TEST_PATH)}([A-Za-z0-9_/]+\.kt)\|fun (?:`([^`]+)`|([A-Za-z0-9_]+))\("""),
-        Regex(""""${Regex.escape(HP_KT_TEST_PATH)}([A-Za-z0-9_/]+\.kt)"\s+"([^"]+)""""),
-    )
+// 보안 기본값 가드가 kotlin 행위 앵커를 적는 모양 — `파일|fun 이름(`(nonce · 토큰 타입 · 빈 JWKS · 백오프 면제 증거).
+private val HP_SCRIPT_ANCHOR_RE =
+    Regex("""${Regex.escape(HP_KT_TEST_PATH)}([A-Za-z0-9_/]+\.kt)\|fun (?:`([^`]+)`|([A-Za-z0-9_]+))\(""")
 
 private fun hpTestSourceDir(): Path =
     Paths.get(System.getProperty("user.dir"), "src", "test", "kotlin", "io", "github", "xzawed", "keycloak")
@@ -1548,9 +1545,10 @@ private fun hpCheckHand(
             // 셸 주석 줄은 벗긴다 — 주석 속 사본이 앵커로 읽히지 않게(함정 (o)).
             val text = Files.readAllLines(script).filterNot { it.trimStart().startsWith("#") }.joinToString("\n")
             val found =
-                HP_SCRIPT_ANCHOR_RES.flatMap { re ->
-                    re.findAll(text).map { m -> "${m.groupValues[1]}|${m.groupValues.drop(2).first { it.isNotEmpty() }}" }.toList()
-                }
+                HP_SCRIPT_ANCHOR_RE
+                    .findAll(text)
+                    .map { m -> "${m.groupValues[1]}|${m.groupValues.drop(2).first { it.isNotEmpty() }}" }
+                    .toList()
             println(
                 "W1 손 목록 ${HP_HAND_TARGETS.size} 항목 · 앵커 ${anchors.size} — invoke 의 SDK 공개 호출 ${sdkInInvoke.size} · " +
                     "보안 기본값 가드의 kotlin 행위 앵커 ${found.size} 와 대조",

@@ -1128,16 +1128,17 @@ public sealed class HostilePathMatrixTests
         (ExchangeLabel, CodeExchange, "a", MalformedWire, "ExchangeCodeAsync"),
         (IntrospectLabel, OtherClass, "row", MalformedWire, "IntrospectAsync"),
         (LogoutLabel, OtherClass, "row", MalformedWire, "LogoutAsync"),
-        // 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 dotnet 행위 앵커 — nonce · 토큰 타입 · 백오프.
+        // 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 dotnet 행위 앵커 — nonce · 토큰 타입 · 백오프 · 빈 키셋.
         (ExchangeLabel, CodeExchange, "b", "AuthClientTests.cs|ExchangeCode_nonce_mismatch_throws", "ExchangeCodeAsync"),
         (ExchangeLabel, CodeExchange, "b", "AuthClientTests.cs|ExchangeCode_missing_idtoken_with_nonce_throws", "ExchangeCodeAsync"),
         (CcLabel, TokenGrant, "a", "AuthClientTests.cs|ClientCredentialsToken_rejects_non_string_access_token", "ClientCredentialsTokenAsync"),
         (BackoffLabel, JwksFetch, "c", "BackoffConfigurationManagerTests.cs|ColdCacheFailingIdp_CollapsesToOneFetch", "GetBaseConfigurationAsync"),
         (BackoffLabel, JwksFetch, "c", "BackoffConfigurationManagerTests.cs|BackoffWindowExpires_AndAllowsARetry", "GetBaseConfigurationAsync"),
         (BackoffLabel, JwksFetch, "c", "BackoffConfigurationManagerTests.cs|SuccessResetsTheFailureCounter", "GetBaseConfigurationAsync"),
+        ("JwtValidator.ValidateAsync(String, CancellationToken)", JwksFetch, "c", "JwksEmptyKeysetTests.cs|Empty_200_does_not_poison_good_cache", "ValidateAsync"),
     };
 
-    /// <summary>보안 기본값 가드가 dotnet 행위 앵커를 적는 모양 — nonce·백오프·토큰 타입 세 축이 이 모양이다.</summary>
+    /// <summary>보안 기본값 가드가 dotnet 행위 앵커를 적는 모양 — nonce·백오프·토큰 타입·빈 키셋 네 축이 이 모양이다.</summary>
     private static readonly Regex ScriptAnchor =
         new(@"dotnet/tests/Xzawed\.Keycloak\.Sdk\.Tests/([A-Za-z0-9_]+\.cs)\|public (?:async Task|void) ([A-Za-z0-9_]+)\(", RegexOptions.Compiled);
 

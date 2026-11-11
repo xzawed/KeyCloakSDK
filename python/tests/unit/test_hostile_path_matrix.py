@@ -1490,6 +1490,9 @@ def _hand_table() -> list[_Hand]:
                 "test_recovered_idp_resets_the_backoff",
             )
         ]
+        # 빈 키셋 축 — 빈 200 을 받은 재조회는 거부되고 신뢰 키 캐시는 남는다(두 미러가 같은 이름).
+        empty = f"{tests}|test_empty_jwks_is_refused_and_keeps_the_cached_set"
+        rows.append(_Hand(f"{auth}.validate", JWKS_FETCH, "c", empty, "validate"))
         # 토큰 타입 축(1c)의 앵커는 파서를 직접 부른다 — 그 공개 입구가 client_credentials_token.
         anchor = "tests/unit/test_tokens.py|test_non_string_access_token_is_rejected"
         rows.append(_Hand(cc, TOKEN_GRANT, "a", anchor, "from_response"))

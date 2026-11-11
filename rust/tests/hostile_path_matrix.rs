@@ -1850,7 +1850,7 @@ const HAND: &[Hand] = &[
     h("AdminClient::get_user", TOKEN_GRANT, "a", DRIVE, "get_user"),
     h("KeycloakClient::auth", NONE, "row", DRIVE, "auth"),
     h("KeycloakClient::admin", NONE, "row", DRIVE, "admin"),
-    // 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 rust 행위 앵커 — nonce · 토큰 타입 · 백오프.
+    // 보안 기본값 가드(scripts/test/test-security-defaults.sh)의 rust 행위 앵커 — nonce · 토큰 타입 · 백오프 · 빈 키셋.
     h(
         "AuthClient::exchange_code",
         CODE_EXCHANGE,
@@ -1898,6 +1898,13 @@ const HAND: &[Hand] = &[
         JWKS_FETCH,
         "c",
         "src/jwks.rs|success_resets_the_failure_counter",
+        "get_key",
+    ),
+    h(
+        "JwksStore::get_key",
+        JWKS_FETCH,
+        "c",
+        "src/jwks.rs|empty_keyset_200_does_not_clobber_a_good_cache",
         "get_key",
     ),
     // 가드 밖의 손 시험 — 빈 access_token 을 refresh 에(형식 틀린 토큰 응답), 위조 서명 id_token 을 공개 교환 둘에.
