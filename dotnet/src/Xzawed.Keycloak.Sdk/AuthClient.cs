@@ -341,12 +341,18 @@ public sealed class AuthClient : ITokenSource
     // into a code. Anything else is no code: Duende renders a non-string as its raw JSON text, a string with a control
     // character split the logged SDK error into lines (measured: OAuthErrorCodeGrammarTests), and a string
     // System.Text.Json will not decode (an unpaired surrogate escape) threw out of the SDK raw before (UndecodableResponseTests).
+    // The grammar filter first changes no result ([a-z_] is inside NQSCHAR) — it keeps both callers on one path.
     private static string? OAuthErrorOf(JsonElement? json, string?[] sent) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) ? OAuthErrorCode.Carried(code, sent) : null;
+        ErrorText(json) is { } text ? OAuthErrorCode.Carried(text, sent) : null;
 
-    // RFC 6749 §5.2: error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E — whether a 2xx carries an error at all.
-    private static bool InGrammar(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar);
+    // Whether a 2xx carries an error at all.
+    private static bool InGrammar(JsonElement? json) => ErrorText(json) is not null;
+
+    // RFC 6749 §5.2: error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E — the decoded `error` string when it is in it.
+    private static string? ErrorText(JsonElement? json) =>
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar)
+            ? code
+            : null;
 
     private static bool IsNqsChar(char c) => c is >= '\x20' and <= '\x21' or >= '\x23' and <= '\x5B' or >= '\x5D' and <= '\x7E';
 

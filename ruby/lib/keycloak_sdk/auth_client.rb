@@ -143,8 +143,8 @@ module KeycloakSdk
       raise
     rescue Rack::OAuth2::Client::Error => e
       code = OAuthErrorCode.carried(e.response[:error], [@config.client_secret, *params.values_at(*SENT_SECRETS)])
-      raise AuthError.new("#{operation} failed: #{code || 'non-standard error code'} (HTTP #{e.status})",
-                          oauth_error: code),
+      shown = code || "non-standard error code"
+      raise AuthError.new("#{operation} failed: #{shown} (HTTP #{e.status})", oauth_error: code),
             cause: RedactedCause.new(e)
     rescue Faraday::Error => e
       raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
