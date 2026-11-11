@@ -219,7 +219,7 @@ func (b *cappedBody) lookPast() error {
 // deadline ended the body read, x/oauth2 has flattened its error with %v and the cause is the one the transport kept.
 // notUTF8 is oauthCtx's too: a 2xx body that is not UTF-8 arrived and is unusable — it is checked before below, whose
 // arrival mark never sees the EOF the check withheld.
-func grantFailed(msg string, err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot) error {
+func grantFailed(msg string, err error, capped, notUTF8 *atomic.Bool, below *belowHTTPSlot, sent ...string) error {
 	if capped.Load() {
 		return &TransportError{Msg: msg + ": " + errTokenResponseTooLarge.Error(), Cause: errTokenResponseTooLarge}
 	}
@@ -231,10 +231,10 @@ func grantFailed(msg string, err error, capped, notUTF8 *atomic.Bool, below *bel
 	}
 	if !below.wasSent() {
 		if ue := (*url.Error)(nil); errors.As(err, &ue) && ue.Op == "parse" {
-			return &TransportError{Msg: msg, Cause: scrubCause(err)}
+			return &TransportError{Msg: msg, Cause: scrubCause(err, sent...)}
 		}
 	} else if !below.fullyArrived() {
-		return &TransportError{Msg: msg, Cause: scrubCause(err)}
+		return &TransportError{Msg: msg, Cause: scrubCause(err, sent...)}
 	}
-	return &AuthError{Msg: msg, OAuthError: oauthError(err), Cause: scrubCause(err)}
+	return &AuthError{Msg: msg, OAuthError: oauthError(err, sent...), Cause: scrubCause(err, sent...)}
 }

@@ -21,8 +21,8 @@ func (e *ConfigError) Error() string { return "keycloak: " + e.Msg }
 // AuthError signals an authentication / token-exchange failure: the IdP refused, its token, introspection or admin
 // login response arrived in full but is not usable (an error status, a body that is not the expected JSON, no access
 // token, a redirect), or the grant was refused before any request (an empty refresh token). OAuthError preserves the
-// OAuth2 "error" code when present and in the RFC 6749 §5.2 grammar
-// (1*NQSCHAR — printable ASCII without '"' and '\'), unchanged; it is empty otherwise.
+// OAuth2 "error" code, unchanged, when it is shaped like one ([a-z_]{1,64}) and overlaps no secret the request sent; it
+// is empty otherwise (oauthErrorCode, cause.go).
 type AuthError struct {
 	Msg        string
 	OAuthError string
@@ -32,11 +32,10 @@ type AuthError struct {
 func (e *AuthError) Error() string { return "keycloak: auth: " + e.Msg }
 func (e *AuthError) Unwrap() error { return e.Cause }
 
-// GoString is the `%#v` hook. The default prints every exported field, and OAuthError keeps the token
-// endpoint's `error` value for callers whenever it is in the RFC 6749 grammar, which a token is — so a
-// hostile endpoint that put a token there had `%#v` print it (measured 2026-09-26). The field keeps it;
-// `%#v` shows it only when it has the shape of an OAuth error code (cause.go). Value receiver so a value
-// and a pointer are both covered.
+// GoString is the `%#v` hook. The default prints every exported field, and OAuthError used to keep the token
+// endpoint's `error` value whenever it was in the RFC 6749 grammar, which a token is — so a hostile endpoint
+// that put a token there had `%#v` print it (measured 2026-09-26). The field is shape-filtered now too; `%#v`
+// keeps its own check for an AuthError a caller builds. Value receiver so a value and a pointer are both covered.
 func (e AuthError) GoString() string {
 	code := e.OAuthError
 	if code != "" && !oauthCodeShaped(code) {

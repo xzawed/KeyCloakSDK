@@ -99,7 +99,7 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 	octx, capped, notUTF8, below := a.oauthCtx(ctx)
 	tok, err := cc.Token(octx)
 	if err != nil {
-		return nil, grantFailed("client credentials grant failed", err, capped, notUTF8, below)
+		return nil, grantFailed("client credentials grant failed", err, capped, notUTF8, below, a.cfg.ClientSecret)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -118,7 +118,8 @@ func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVe
 	octx, capped, notUTF8, below := a.oauthCtx(ctx)
 	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
-		return nil, grantFailed("authorization code exchange failed", err, capped, notUTF8, below)
+		return nil, grantFailed("authorization code exchange failed", err, capped, notUTF8, below,
+			a.cfg.ClientSecret, code, codeVerifier)
 	}
 	ts := tokenSetFromToken(tok)
 	if expectedNonce != "" {
@@ -153,7 +154,7 @@ func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSe
 	src := a.codeConfig("").TokenSource(octx, &oauth2.Token{RefreshToken: refreshToken})
 	tok, err := src.Token()
 	if err != nil {
-		return nil, grantFailed("token refresh failed", err, capped, notUTF8, below)
+		return nil, grantFailed("token refresh failed", err, capped, notUTF8, below, a.cfg.ClientSecret, refreshToken)
 	}
 	return tokenSetFromToken(tok), nil
 }
@@ -251,12 +252,12 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	return body, nil
 }
 
-// oauthError is the code AuthError.OAuthError carries: x/oauth2's, when it is one in the RFC 6749 grammar
-// (oauthErrorCode, cause.go), and none otherwise.
-func oauthError(err error) string {
+// oauthError is the code AuthError.OAuthError carries: x/oauth2's, when oauthErrorCode (cause.go) lets it through against
+// what the request sent, and none otherwise.
+func oauthError(err error, sent ...string) string {
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
-		return oauthErrorCode(re.ErrorCode)
+		return oauthErrorCode(re.ErrorCode, sent...)
 	}
 	return ""
 }

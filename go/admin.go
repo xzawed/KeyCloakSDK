@@ -125,7 +125,7 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
 		if err != nil {
 			// Not toSDKError: gocloak flattened the token response's error body into the message (cause.go).
-			return nil, loginError(err, capped, notUTF8, below)
+			return nil, loginError(err, capped, notUTF8, below, cfg.ClientSecret)
 		}
 		// gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
 		// noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a
