@@ -53,4 +53,7 @@ describe('O', () => {
   it('o12 regex after return', { meta: (() => { return /}/ })(), fails: true }, () => {
     throw new Error('the canary assertion failed')
   })
+  it('o13 template expression in options', { meta: `x ${`}`}`, fails: true }, () => {
+    throw new Error('the canary assertion failed')
+  })
 })
