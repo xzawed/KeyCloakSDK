@@ -209,11 +209,18 @@ run --lang kotlin --list --root "$FIX/repo-r2b"
 expect r2-kotlin-param 2 "표시 이름을 바꾸는 어노테이션"
 
 # ═══ vitest 옵션 인자의 fails — JUnit 은 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측 · #1017 레그) ═══════
-# 건강 셋(timeout 옵션 · fails: false · 함수 참조)과 뒤집힘 셋(한 줄 · 여러 줄 · describe 옵션).
+# 건강 열둘과 뒤집힘 일곱(픽스처 머리 주석). 판독은 파일 단위로 문자열 · 템플릿 · 주석 · 정규식을 비운 글(maskJs)에서
+# 한다 — 줄 단위로 비웠을 때 #1018 레그가 낸 오탐 다섯(인자 사이 주석 · 이름 붙은 타임아웃 · 주석 속 「fails」 · 주석 단
+# describe · 여러 줄 템플릿을 담은 감싼 함수)과 우회 넷(주석 속 `}` · 주석으로 시작하는 줄의 describe · `.skipIf(…).fails(`
+# 사슬 · 정규식 속 `}`)이 이 칸들이다.
 run --lang node --report "$REP/node-r3.xml" --root "$FIX/repo-r3"
-expect r3-node 1 "통과 7 · FAIL 3"
-for _h in "o3c single-parameter arrow" "o3d async arrow" "o3e function keyword"; do
-  assert_contains "$OUT" "$_h — 1 통과" "[r3-node] 함수 인자($_h)를 옵션으로 읽었다 — 출력: $OUT"
+expect r3-node 1 "통과 12 · FAIL 7"
+for _h in "o3c single-parameter arrow" "o3d async arrow" "o3e function keyword" "o3f comment before the function" \
+  "o3g named timeout constant" "o3h comment mentions fails" "o3i inside a commented describe" "o3j wrapped function"; do
+  assert_contains "$OUT" "$_h — 1 통과" "[r3-node] 건강한 꼴($_h)을 옵션 · 뒤집힘 · 판정 불가로 읽었다 — 출력: $OUT"
+done
+for _i in "o7 comment with a brace" "o8 inside a commented fails describe" "o9 chained fails" "o10 regex with a brace"; do
+  assert_contains "$OUT" "$_i — 뒤집혔다" "[r3-node] 뒤집힌 꼴($_i)을 놓쳤다 — 출력: $OUT"
 done
 assert_contains "$OUT" "o1 timeout options — 1 통과" "[r3-node] timeout 옵션을 뒤집힘으로 읽었다 — 출력: $OUT"
 assert_contains "$OUT" "o2 fails false — 1 통과" "[r3-node] fails: false 를 뒤집힘으로 읽었다 — 출력: $OUT"
@@ -231,6 +238,8 @@ run --lang node --list --root "$FIX/repo-r3c"
 expect r3-node-spread 2 "펼침"
 run --lang node --list --root "$FIX/repo-r3d"
 expect r3-node-expr 2 "true/false 리터럴이 아니다"
+run --lang node --list --root "$FIX/repo-r3h"
+expect r3-node-quoted 2 "문자열 · 계산된 키"
 # 선언 꼴 카나리아가 문자열 안에만 있으면 그 문자열을 담은 다른 테스트가 대신 통과로 읽혔다(#1017 레그: go 는 감싼 함수 ·
 # node 는 제목이 `it('…'` 인 가짜 시험 — ruby 는 같은 꼴). 이름으로 항목을 찾는 언어는 진짜 항목에 닿아 해당 없다.
 run --lang go --list --root "$FIX/repo-r3e"
@@ -242,6 +251,9 @@ expect r3e-ruby 2 "선언 자리가 아니다"
 # 따옴표 없는 줄(여러 줄 raw 문자열 속)의 들여쓴 `func Test…(` — 문자열 규칙은 못 보고 go 줄 머리 규칙만 막는다.
 run --lang go --list --root "$FIX/repo-r3f"
 expect r3f-go 2 "선언 자리가 아니다"
+# 여러 줄 템플릿 안의 가짜 `it('…'` 줄 — 줄 단위로는 코드로 보였다(#1018 레그). 파일 단위로 비우면 템플릿 안이다.
+run --lang node --list --root "$FIX/repo-r3g"
+expect r3g-node 2 "선언 자리가 아니다"
 
 # ═══ 계측기 자신 — 서로 다른 결함이 서로 다른 이유를 내는가 ═════════════════════════════════════════
 # 위 칸들이 전부 같은 문장으로 실패하면(예: 늘 「보고서에 없다」) 이 테스트는 입력을 보지 않는 검사를 초록으로 감싼다.
