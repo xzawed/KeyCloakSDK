@@ -667,12 +667,17 @@ class TokenResponseGuardTest {
         // 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그, 2026-11-11)
         "{\"a\":\"" + u + "ZZZZ\",\"b\":\"" + u + "DC00\"}",
         // 이스케이프된 따옴표가 문자열을 닫지 않는다 — `\\` 만 건너뛰면 여기서 어긋난다(JVM 실행 레그, 2026-11-11)
-        "{\"x\":\"a\\\"b\",\"y\":\"" + u + "dc00\"}"}) {
+        "{\"x\":\"a\\\"b\",\"y\":\"" + u + "dc00\"}",
+        // Go · node 실행 레그가 살린 편집들(2026-11-11) — 범위 위의 비-low · 짝 뒤 다음 문자열 · 짝 앞의 `\` 와 `u` · 대문자
+        "{\"a\":\"" + u + "d800" + u + "e000\"}", "{\"a\":\"" + u + "d83d" + u + "de00\",\"b\":\"" + u + "d800\"}",
+        "{\"a\":\"" + u + "d800xudc00\"}", "{\"a\":\"" + u + "d800\\\"dc00\"}", "{\"a\":\"" + u + "d800\\\\dc00\"}",
+        "{\"a\":\"" + u + "DBFF\"}", "{\"a\":\"" + u + "DFFF\"}"}) {
       assertTrue(TokenResponseGuard.holdsUnpairedSurrogate(json.getBytes(StandardCharsets.UTF_8)), json);
     }
     for (String json : new String[] {
         "{\"a\":\"" + u + "d83d" + u + "de00\"}", "{\"a\":\"\\\\" + "ud800\"}", "{\"a\":\"" + u + "0041\"}",
-        "{\"a\":\"plain\"}", "{\"a\":\"" + u + "zz00\"}", "{\"a\":1} " + u + "d800", "{\"a\":\"\\\"" + u + "d83d" + u + "de00\"}"}) {
+        "{\"a\":\"plain\"}", "{\"a\":\"" + u + "zz00\"}", "{\"a\":1} " + u + "d800", "{\"a\":\"\\\"" + u + "d83d" + u + "de00\"}",
+        "{\"a\":\"" + u + "d800" + u + "dc00\"}"}) {
       assertFalse(TokenResponseGuard.holdsUnpairedSurrogate(json.getBytes(StandardCharsets.UTF_8)), json);
     }
   }
