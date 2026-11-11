@@ -20,7 +20,9 @@ S5 의 기대는 손으로 적지 않는다 — 같은 칸에서 S1 이 낸 판�
 from __future__ import annotations
 
 import contextlib
+import gzip
 import threading
+import zlib
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -45,6 +47,32 @@ _JSON = "application/json"
 _HTML_TYPE = "text/html"
 _HTML = b"<html><body><h1>503 Service Unavailable</h1></body></html>"
 _GOOD_TOKEN = b'{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300}'
+_GOOD_INTRO = b'{"active":true,"username":"svc"}'
+#: JSON 의 `\u` — 짝 없는 서로게이트 이스케이프를 이어 붙인다(등록부
+#: token-response-class-residue Q2).
+_U = b"\\" + b"u"
+#: Content-Type 뒤에 줄을 바꿔 덧붙이는 헤더 — 가짜 IdP 가 그대로 보낸다.
+_GZIP = "\nContent-Encoding: gzip"
+_CORRUPT_GZIP = b"\x1f\x8b\x08\x00not-a-deflate-stream-at-all-xxxxxxxxxxxx"
+
+
+def _with(body: bytes, member: bytes) -> bytes:
+    """JSON 객체 `body` 끝에 멤버 하나를 더한다."""
+    return body[:-1] + b"," + member + b"}"
+
+
+def _flip(stream: bytes, back: int) -> bytes:
+    """gzip 꼬리의 한 바이트를 뒤집는다 — 끝에서 8 이면 CRC-32, 4 면 길이."""
+    out = bytearray(stream)
+    out[-back] ^= 0xFF
+    return bytes(out)
+
+
+def _raw_deflate(body: bytes) -> bytes:
+    """zlib 래퍼 없는 날 deflate."""
+    comp = zlib.compressobj(9, zlib.DEFLATED, -zlib.MAX_WBITS)
+    return comp.compress(body) + comp.flush()
+
 
 _Answer = tuple[int, str, bytes]
 
@@ -63,6 +91,56 @@ TOKEN_CELLS: dict[str, _Answer] = {
         b'{"access_token":"AT-\xff\xfe-token","token_type":"Bearer","expires_in":300}',
     ),
     "r10 200 unknown charset": (200, f"{_JSON}; charset=x-no-such-charset", _GOOD_TOKEN),
+    # 2026-11-11(등록부 token-response-class-residue): sync 는 선언된 charset 으로 풀어
+    # TypeError, aio 는 BOM 없는 UTF-16 을 받아들였고, 두 미러 모두 서로게이트는 그대로 · 깨진
+    # gzip 은 transport.
+    "r11 200 charset=utf-16 over a UTF-8 body": (200, f"{_JSON}; charset=utf-16", _GOOD_TOKEN),
+    "r12 200 BOM-less UTF-16 body": (200, _JSON, _GOOD_TOKEN.decode().encode("utf-16-le")),
+    "r13 200 unpaired surrogate in an extension member": (
+        200,
+        _JSON,
+        _with(_GOOD_TOKEN, b'"x_ext":"' + _U + b'd800"'),
+    ),
+    "r14 200 unpaired surrogate in a member name": (
+        200,
+        _JSON,
+        _with(_GOOD_TOKEN, b'"' + _U + b'd800":1'),
+    ),
+    "r15 200 unpaired surrogate as the access token": (
+        200,
+        _JSON,
+        b'{"access_token":"' + _U + b'd800","token_type":"Bearer","expires_in":300}',
+    ),
+    "r16 200 corrupt gzip": (200, f"{_JSON}{_GZIP}", _CORRUPT_GZIP),
+    "r16t 200 truncated gzip": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_TOKEN)[:-8]),
+    "r16e 200 empty body labelled gzip": (200, f"{_JSON}{_GZIP}", b""),
+    # 실행 레그(2026-11-11)가 살린 편집들의 칸 — 머리만 온 gzip · CRC · 길이 꼬리 · 날 deflate ·
+    # 201 ·
+    # 오류 상태의 잘린 gzip(상태가 판정한다).
+    "r16h 200 gzip header only": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_TOKEN)[:10]),
+    "r16c 200 gzip with a bad CRC": (200, f"{_JSON}{_GZIP}", _flip(gzip.compress(_GOOD_TOKEN), 8)),
+    "r16i 200 gzip with a bad length": (
+        200,
+        f"{_JSON}{_GZIP}",
+        _flip(gzip.compress(_GOOD_TOKEN), 4),
+    ),
+    "r16r 200 raw deflate": (200, f"{_JSON}\nContent-Encoding: deflate", _raw_deflate(_GOOD_TOKEN)),
+    "r13c 201 unpaired surrogate": (201, _JSON, _with(_GOOD_TOKEN, b'"x":"' + _U + b'd800"')),
+    "r13d 200 unpaired surrogate after 70 KB": (
+        200,
+        _JSON,
+        _with(_GOOD_TOKEN, b'"pad":"' + b"x" * 70_000 + b'","x":"' + _U + b'd800"'),
+    ),
+    "r16t4 400 truncated gzip error body": (
+        400,
+        f"{_JSON}{_GZIP}",
+        gzip.compress(b'{"error":"invalid_grant"}')[:-8],
+    ),
+    "r17 200 valid surrogate pair": (
+        200,
+        _JSON,
+        _with(_GOOD_TOKEN, b'"scope":"a' + _U + b"d83d" + _U + b'de00b"'),
+    ),
     # 오류 응답의 본문은 UTF-8 검사를 받지 않는다 — 판정은 상태가 한다(코드는 못 읽어 없다).
     "r8u 400 invalid UTF-8 in the error body": (
         400,
@@ -96,6 +174,32 @@ S1: dict[str, _Verdict] = {
     "r8j 400 HTML typed as JSON": _auth(f"{_HTTP} 400"),
     "r9 200 invalid UTF-8 inside a string": _auth("token response is not valid UTF-8"),
     "r10 200 unknown charset": OK,
+    "r11 200 charset=utf-16 over a UTF-8 body": OK,
+    "r12 200 BOM-less UTF-16 body": _auth("token response is not valid JSON"),
+    "r13 200 unpaired surrogate in an extension member": _auth(
+        "token response holds an unpaired surrogate escape"
+    ),
+    "r14 200 unpaired surrogate in a member name": _auth(
+        "token response holds an unpaired surrogate escape"
+    ),
+    "r15 200 unpaired surrogate as the access token": _auth(
+        "token response holds an unpaired surrogate escape"
+    ),
+    "r16 200 corrupt gzip": _auth("token response could not be decoded"),
+    # 꼬리(CRC · 길이)가 없는 gzip — 잘린 압축은 끊긴 연결과 가를 수 없다(판정 Q1, Go · JVM 과
+    # 같다). 전에는 받아들였다. gzip 이라 적은 빈 본문은 빈 본문이다(잘림이 아니다).
+    "r16t 200 truncated gzip": ("KeycloakTransportError", "token response was cut short"),
+    "r16e 200 empty body labelled gzip": _auth(f"{_UNUSABLE} (TypeError)"),
+    "r16h 200 gzip header only": ("KeycloakTransportError", "token response was cut short"),
+    "r16c 200 gzip with a bad CRC": _auth("token response could not be decoded"),
+    "r16i 200 gzip with a bad length": _auth("token response could not be decoded"),
+    "r16r 200 raw deflate": OK,
+    "r13c 201 unpaired surrogate": _auth("token response holds an unpaired surrogate escape"),
+    "r13d 200 unpaired surrogate after 70 KB": _auth(
+        "token response holds an unpaired surrogate escape"
+    ),
+    "r16t4 400 truncated gzip error body": _auth(f"{_HTTP} 400 (invalid_grant)", "invalid_grant"),
+    "r17 200 valid surrogate pair": OK,
     "r8u 400 invalid UTF-8 in the error body": _auth(f"{_HTTP} 400"),
     "401 invalid_client": _auth(f"{_HTTP} 401 (invalid_client)", "invalid_client"),
     "403 access_denied": _auth(f"{_HTTP} 403 (access_denied)", "access_denied"),
@@ -123,6 +227,20 @@ INTROSPECTION_CELLS: dict[str, _Answer] = {
         f"{_JSON}; charset=x-no-such-charset",
         b'{"active":true,"username":"svc"}',
     ),
+    "r11 200 charset=utf-16 over a UTF-8 body": (200, f"{_JSON}; charset=utf-16", _GOOD_INTRO),
+    "r12 200 BOM-less UTF-16 body": (200, _JSON, _GOOD_INTRO.decode().encode("utf-16-le")),
+    "r13 200 unpaired surrogate in an extension member": (
+        200,
+        _JSON,
+        _with(_GOOD_INTRO, b'"x_ext":"' + _U + b'd800"'),
+    ),
+    "r16 200 corrupt gzip": (200, f"{_JSON}{_GZIP}", _CORRUPT_GZIP),
+    "r16t 200 truncated gzip": (200, f"{_JSON}{_GZIP}", gzip.compress(_GOOD_INTRO)[:-8]),
+    "r17 200 valid surrogate pair": (
+        200,
+        _JSON,
+        _with(_GOOD_INTRO, b'"sub":"a' + _U + b"d83d" + _U + b'de00b"'),
+    ),
 }
 
 INTRO: dict[str, _Verdict] = {
@@ -135,6 +253,14 @@ INTRO: dict[str, _Verdict] = {
     "r8j 400 HTML typed as JSON": _auth(f"{_HTTP} 400"),
     "r9 200 invalid UTF-8 inside a string": _auth("introspection response is not valid UTF-8"),
     "r10 200 unknown charset": OK,
+    "r11 200 charset=utf-16 over a UTF-8 body": OK,
+    "r12 200 BOM-less UTF-16 body": _auth("introspection response is not valid JSON"),
+    "r13 200 unpaired surrogate in an extension member": _auth(
+        "introspection response holds an unpaired surrogate escape"
+    ),
+    "r16 200 corrupt gzip": _auth("introspection response could not be decoded"),
+    "r16t 200 truncated gzip": ("KeycloakTransportError", "introspection response was cut short"),
+    "r17 200 valid surrogate pair": OK,
 }
 
 
@@ -178,7 +304,11 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
                 self.rfile.read(length)
             status, content_type, body = idp.answer(self.command, urlsplit(self.path).path)
             self.send_response(status)
+            content_type, *extra = content_type.split("\n")
             self.send_header("Content-Type", content_type)
+            for line in extra:
+                name, value = line.split(": ", 1)
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -356,6 +486,56 @@ async def test_introspection_verdict(cell: str, lane: str) -> None:
     if err is None:
         assert result.active is True
         assert result.username == "svc"
+
+
+# --- 짝 없는 서로게이트 판독기 ------------------------------------------------------------------
+
+#: 이스케이프를 판정한다, 글자가 아니라 — JVM `holdsUnpairedSurrogate judges escapes, not text` 와
+#: 같은 칸이다.
+_UNPAIRED_SCAN: dict[bytes, bool] = {
+    b'{"a":"' + _U + b'd800"}': True,
+    b'{"a":"' + _U + b'dc00"}': True,
+    b'{"' + _U + b'd800":1}': True,
+    b'{"a":"x' + _U + b'D800"}': True,
+    b'{"a":"' + _U + b"d800" + _U + b'0041"}': True,
+    b'{"a":"' + _U + b'dbff"}': True,
+    b'{"a":["ok","' + _U + b'dfff"]}': True,
+    # 형식이 틀린 이스케이프 뒤도 훑는다(Grok 레그, 2026-11-11)
+    b'{"a":"' + _U + b'ZZZZ","b":"' + _U + b'DC00"}': True,
+    # 이스케이프된 따옴표가 문자열을 닫지 않는다 — `\\` 만 건너뛰면 여기서 어긋난다(JVM 실행 레그)
+    b'{"x":"a' + b'\\"' + b'b","y":"' + _U + b'dc00"}': True,
+    # 실행 레그(Go · node)가 살린 편집들 — 범위 위의 비-low · 짝 뒤 다음 문자열 · 대문자 F ·
+    # 짝 앞의 `\` 와 `u`
+    b'{"a":"' + _U + b"d800" + _U + b'e000"}': True,
+    b'{"a":"' + _U + b"d83d" + _U + b'de00","b":"' + _U + b'd800"}': True,
+    b'{"a":"' + _U + b'DBFF"}': True,
+    b'{"a":"' + _U + b'DFFF"}': True,
+    b'{"a":"' + _U + b'd800xudc00"}': True,
+    b'{"a":"' + _U + b"d800" + b'\\"' + b'dc00"}': True,
+    b'{"a":"' + _U + b"d800" + b"\\\\" + b'dc00"}': True,
+    b'{"a":"' + _U + b"d800" + _U + b'dc00"}': False,
+    # python 실행 레그가 살린 편집들 — 높은 것 뒤의 높은 것 · 범위 끝의 짝 · 끝에서 잘린
+    # 이스케이프 ·
+    # 64 KiB 너머
+    b'{"a":"' + _U + b"d800" + _U + b'd800"}': True,
+    b'{"a":"' + _U + b"dbff" + _U + b'dfff"}': False,
+    b'{"a":"x' + _U: False,
+    b'{"a":"x' + _U + b"12": False,
+    b'{"a":"' + b"x" * 70_000 + _U + b'd800"}': True,
+    b'{"a":"' + _U + b"d83d" + _U + b'de00"}': False,
+    b'{"a":"' + b"\\\\" + b'ud800"}': False,
+    b'{"a":"' + _U + b'0041"}': False,
+    b'{"a":"plain"}': False,
+    b'{"a":"' + _U + b'zz00"}': False,
+    b'{"a":1} ' + _U + b"d800": False,
+    b'{"a":"' + b'\\"' + _U + b"d83d" + _U + b'de00"}': False,
+}
+
+
+def test_the_unpaired_surrogate_scan_judges_escapes_not_text() -> None:
+    from keycloak_sdk._internal.token_cap import holds_unpaired_surrogate
+
+    assert {json: holds_unpaired_surrogate(json) for json in _UNPAIRED_SCAN} == _UNPAIRED_SCAN
 
 
 # --- 되울린 비밀 · raw 의 원인 사슬 ------------------------------------------------------------

@@ -109,10 +109,11 @@ def carried_code(value: object, sent: Iterable[str | None]) -> str | None:
 
 def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError | None:
     """`exc` 가 이 SDK 의 응답 본문 거부(`token_cap.py`)를 감싼 python-keycloak 실패면, 같은
-    메시지의 SDK 오류를 **새로** 만든다 — 아니면 `None`. 상한을 넘은 본문(`incomplete`)은
-    다 읽지 않은 응답이라 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
-    token-response-class-divergent · 1.0.7 까지는 `KeycloakAuthError`), 끝까지 온 응답을 쓸 수
-    없다는 거부(두 번 압축 — 본문을 읽기 전 · 2xx 본문이 UTF-8 아님)는 `KeycloakAuthError`.
+    메시지의 SDK 오류를 **새로** 만든다 — 아니면 `None`. 다 읽지 않은 응답(`incomplete` — 상한을
+    넘은 본문 · 2xx 토큰 응답의 잘린 압축)은 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
+    token-response-class-divergent · residue · 1.0.7 까지는 `KeycloakAuthError`), 끝까지 온 응답을
+    쓸 수 없다는 거부(두 번 압축 — 본문을 읽기 전 · 풀 수 없는 압축 · 2xx 본문이 UTF-8 JSON 텍스트가
+    아니거나 짝 없는 서로게이트 이스케이프를 품음)는 `KeycloakAuthError`.
 
     ⚠️ 그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 무엇이든
     `KeycloakConnectionError("Can't connect to server")` 로 감싼다. 그대로 두면 상한에 걸린 응답이
