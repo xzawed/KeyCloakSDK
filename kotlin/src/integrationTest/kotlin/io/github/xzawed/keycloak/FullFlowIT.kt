@@ -22,6 +22,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+// Keycloak 의 부트스트랩 admin 서비스 계정(아래 머리 주석) — realm CRUD 를 SDK 파사드로 하는 master 렐름 자격.
+private const val MASTER_ADMIN_CLIENT = "it-master-admin"
+private const val MASTER_ADMIN_SECRET = "it-master-secret"
+
 // FullFlowIT — 실 Keycloak 26.6(Testcontainers·dasniko) E2E. 8언어 자매 SDK(Go/.NET/Rust/Ruby)의 단일
 // 종합 시나리오와 동형: client-credentials → validate(실 JWKS) → introspect → user/client/role/group
 // CRUD(+delete 후 NotFound) → realm CRUD(master-admin) → raw() → delete → NotFound. it-realm/it-client/
@@ -31,17 +35,22 @@ import kotlin.test.assertTrue
 // 코멘트 참고) — 공개 `AdminClient(config)` 생성자는 항상 config.clientSecret으로 client-credentials
 // 그랜트만 수행한다. `POST /admin/realms`(신규 렐름 생성)는 master 렐름 전용 권한이라 it-client 서비스
 // 계정으로는 403이 난다(.NET/Rust/Ruby 자매 SDK가 각자 독립적으로 확인한 실서버 동작 — CLAUDE.md 게차
-// 참고). 그래서 master-admin 렐름 CRUD 구간만 SDK 파사드를 우회해, dasniko가 기본 제공하는
-// `KeycloakContainer.getKeycloakAdminClient()`(master 렐름 bootstrap admin/admin, password 그랜트)로
-// 얻은 원본 `org.keycloak.admin.client.Keycloak`을 직접 사용한다 — 이는 `AdminClient.raw()`가 문서화한
-// 은닉성 예외(§4)와 같은 탈출구 패턴이며, SDK 소스 자체는 수정하지 않는다(공개 API만 소비).
+// 참고). 그래서 컨테이너가 Keycloak 의 부트스트랩 admin 서비스 계정(`KC_BOOTSTRAP_ADMIN_CLIENT_ID`/`_SECRET` —
+// 첫 기동 때 master 렐름에 생기는 클라이언트, 그 서비스 계정은 렐름을 만들고 지울 수 있다)도 만들게 하고, realm
+// CRUD 는 그 자격의 client-credentials 로 master 렐름에 만든 SDK 파사드가 직접 한다(`masterAdminConfig()`).
+// dasniko 의 `KeycloakContainer.getKeycloakAdminClient()`(master 렐름 bootstrap admin/admin, password 그랜트)는
+// SDK 밖의 독립 오라클로만 쓴다 — 파사드가 만든 렐름이 보이는가, 지운 렐름이 사라졌는가.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 internal class FullFlowIT {
     private lateinit var container: KeycloakContainer
 
     @BeforeAll
     fun startKeycloak() {
-        container = KeycloakContainer("quay.io/keycloak/keycloak:26.6").withRealmImportFile("/it-realm-realm.json")
+        container =
+            KeycloakContainer("quay.io/keycloak/keycloak:26.6")
+                .withRealmImportFile("/it-realm-realm.json")
+                .withEnv("KC_BOOTSTRAP_ADMIN_CLIENT_ID", MASTER_ADMIN_CLIENT)
+                .withEnv("KC_BOOTSTRAP_ADMIN_CLIENT_SECRET", MASTER_ADMIN_SECRET)
         container.start()
     }
 
@@ -58,6 +67,16 @@ internal class FullFlowIT {
             realm = "it-realm",
             clientId = "it-client",
             clientSecret = "it-secret".toCharArray(),
+            scopes = listOf("openid"),
+        )
+
+    // realm 생성·삭제는 master 렐름 관리자 권한이다 — 부트스트랩 admin 서비스 계정의 client-credentials.
+    private fun masterAdminConfig(): KeycloakConfig =
+        KeycloakConfig(
+            serverUrl = container.authServerUrl,
+            realm = "master",
+            clientId = MASTER_ADMIN_CLIENT,
+            clientSecret = MASTER_ADMIN_SECRET.toCharArray(),
             scopes = listOf("openid"),
         )
 
@@ -125,23 +144,25 @@ internal class FullFlowIT {
                 kc.admin.users().delete(userId)
                 assertFailsWith<KeycloakAdminException.NotFound> { kc.admin.users().get(userId) }
 
-                // 5) client CRUD.
+                // 5) client CRUD(+ delete 후 조회 → NotFound). 단언이 중간에 깨져도 클라이언트를 남기지 않게 finally 로 치운다.
+                val clients = kc.admin.clients()
                 val clientId = "kotlin-it-client-$suffix"
-                val clientUuid = kc.admin.clients().create(ClientRepresentation().apply { this.clientId = clientId })
-                assertEquals(
-                    clientId,
-                    kc.admin
-                        .clients()
-                        .get(clientUuid)
-                        .clientId,
-                )
-                assertTrue(
-                    kc.admin
-                        .clients()
-                        .findByClientId(clientId)
-                        .isNotEmpty(),
-                )
-                kc.admin.clients().delete(clientUuid)
+                val clientUuid = clients.create(ClientRepresentation().apply { this.clientId = clientId })
+                var clientDeleted = false
+                try {
+                    assertEquals(clientId, clients.get(clientUuid).clientId)
+                    assertTrue(clients.findByClientId(clientId).any { it.id == clientUuid }, "findByClientId must list the created client")
+                    // 부분 업데이트 — description 만 보낸다(NON_NULL). 보내지 않은 clientId 는 보존돼야 한다.
+                    clients.update(clientUuid, ClientRepresentation().apply { description = "updated by e2e" })
+                    val clientAfterUpdate = clients.get(clientUuid)
+                    assertEquals("updated by e2e", clientAfterUpdate.description)
+                    assertEquals(clientId, clientAfterUpdate.clientId, "sparse update must not clobber clientId")
+                    clients.delete(clientUuid)
+                    clientDeleted = true
+                    assertFailsWith<KeycloakAdminException.NotFound> { clients.get(clientUuid) }
+                } finally {
+                    if (!clientDeleted) runCatching { clients.delete(clientUuid) }
+                }
 
                 // 6) role CRUD(name 키).
                 val roleName = "kotlin-it-role-$suffix"
@@ -175,6 +196,7 @@ internal class FullFlowIT {
                         .description,
                 )
                 kc.admin.roles().delete(roleName)
+                assertFailsWith<KeycloakAdminException.NotFound> { kc.admin.roles().get(roleName) }
 
                 // 7) group CRUD.
                 val groupName = "kotlin-it-group-$suffix"
@@ -202,6 +224,7 @@ internal class FullFlowIT {
                         .name,
                 )
                 kc.admin.groups().delete(groupId)
+                assertFailsWith<KeycloakAdminException.NotFound> { kc.admin.groups().get(groupId) }
 
                 // 8) realms().get/list/update — it-client 서비스계정의 realm-management 스코프
                 // (view-realm·manage-realm)로 자기 렐름은 조회·갱신 가능하다.
@@ -253,22 +276,44 @@ internal class FullFlowIT {
                 )
             }
 
-            // 10) realm CRUD via master-admin(dasniko 기본 bootstrap admin/admin, password 그랜트) —
-            // SDK 파사드가 지원하지 않는 master 전용 권한이라 컨테이너가 제공하는 raw Keycloak을 직접 쓴다.
+            // 10) realm CRUD via master-admin — 부트스트랩 admin 서비스 계정의 client-credentials 로 master 렐름에 만든 SDK
+            // 파사드가 create → get → list → update → delete 를 한다. 렐름은 이 테스트가 만든 고유 이름이다(공유 it-realm 은
+            // 지우지도 이름을 바꾸지도 않는다). dasniko 의 raw 클라이언트(bootstrap admin/admin)는 SDK 밖의 독립 오라클이다.
             val newRealm = "kotlin-it-realm-$suffix"
-            container.keycloakAdminClient.use { master ->
-                master.realms().create(
-                    RealmRepresentation().apply {
-                        realm = newRealm
-                        isEnabled = true
-                    },
-                )
-                assertEquals(newRealm, master.realm(newRealm).toRepresentation().realm)
+            container.keycloakAdminClient.use { oracle ->
+                KeycloakClient.create(masterAdminConfig()).use { master ->
+                    val realms = master.admin.realms()
+                    var realmDeleted = false
+                    try {
+                        realms.create(
+                            RealmRepresentation().apply {
+                                realm = newRealm
+                                isEnabled = true
+                                displayName = "created by e2e"
+                            },
+                        )
+                        assertEquals(newRealm, oracle.realm(newRealm).toRepresentation().realm)
+                        assertEquals("created by e2e", realms.get(newRealm).displayName)
+                        assertTrue(realms.list().any { it.realm == newRealm }, "the master admin must list the created realm")
+                        realms.update(
+                            newRealm,
+                            RealmRepresentation().apply {
+                                realm = newRealm
+                                displayName = "updated by e2e"
+                            },
+                        )
+                        assertEquals("updated by e2e", realms.get(newRealm).displayName)
 
-                master.realm(newRealm).remove()
+                        realms.delete(newRealm)
+                        realmDeleted = true
 
-                // 11) delete 후 조회 → NotFound(realm CRUD 완주 증명).
-                assertFailsWith<jakarta.ws.rs.WebApplicationException> { master.realm(newRealm).toRepresentation() }
+                        // 11) delete 후 조회 → NotFound(realm CRUD 완주 증명) — SDK 의 타입으로, 그리고 SDK 밖 클라이언트로도.
+                        assertFailsWith<KeycloakAdminException.NotFound> { realms.get(newRealm) }
+                        assertFailsWith<jakarta.ws.rs.WebApplicationException> { oracle.realm(newRealm).toRepresentation() }
+                    } finally {
+                        if (!realmDeleted) runCatching { realms.delete(newRealm) }
+                    }
+                }
             }
         }
 

@@ -156,7 +156,6 @@
       "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java"
     ],
     "owners": {
-      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.clients": "integration-admin-surface-uneven",
       "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.withKeycloak": "facade-wiring-close-contract-unasserted",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.appendUtf8": "coverage-omit-hides-security-paths",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.digit": "coverage-omit-hides-security-paths",
@@ -191,10 +190,7 @@
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Exchange.cut": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Settled.read()": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminSockets.kt:AdminSockets.disarm": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Clients.kt:ClientsResource.update": "integration-admin-surface-uneven",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Realms.kt:RealmsResource.delete": "integration-admin-surface-uneven",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.closeQuietly": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.getJUDGE_ENTITY": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.getSTATUS": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.release": "coverage-omit-hides-security-paths",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.<init>": "coverage-omit-hides-security-paths",
