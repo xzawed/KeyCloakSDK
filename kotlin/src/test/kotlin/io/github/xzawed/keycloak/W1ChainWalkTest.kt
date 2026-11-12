@@ -9,7 +9,8 @@ import kotlin.test.assertTrue
 
 // W1 의 사슬 판독(`hpChainWhy`)을 고정한다 — 행렬의 손 목록에서 사슬을 쓰는 행은 콜드 캐시 근거 하나뿐이라, 도우미 호출
 // 검사를 꺼도 지금 트리에서는 초록이었다(#1031 레그 W1d). 같은 모양의 작은 원본으로 네 갈래를 친다.
-class HostilePathMatrixW1ChainTest {
+// ⚠️ 파일 이름에 hostile-path-matrix 를 넣지 않는다 — `check-known-gaps.mjs` 가 그 이름으로 언어당 행렬 파일 하나를 찾는다.
+class W1ChainWalkTest {
     private fun source(
         dir: Path,
         text: String,

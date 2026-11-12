@@ -1671,11 +1671,9 @@ private fun hpCodeOnly(src: String): String {
     return out.toString()
 }
 
-// [file] 에서 이름이 [name] 인 함수의 본문(코드만) — 선언의 파라미터 목록 뒤 첫 `{` 부터 짝 맞는 `}` 까지다(식 본문
-// `= runTest {` 도 그 람다가 본문이 된다). 없으면 null.
 // W1 사슬 — `도우미>…>이름`. 앞 함수가 그 도우미를 부르고(`\b도우미(`), 도우미가 같은 파일에 있으며, 마지막 함수가
-// `.이름(` 을 부르는지 차례로 본다. 실패 사유를 돌려준다(빈 목록 = 닿는다). `HostilePathMatrixW1ChainTest` 가 고정한다 —
-// 도우미 호출 검사를 끄고도 초록이던 것(#1031 레그 W1d).
+// `.이름(` 을 부르는지 차례로 본다. 실패 사유를 돌려준다(빈 목록 = 닿는다). `W1ChainWalkTest` 가 고정한다 — 도우미 호출
+// 검사를 끄고도 초록이던 것(#1031 레그 W1d).
 internal fun hpChainWhy(
     file: Path,
     anchor: String,
@@ -1698,6 +1696,8 @@ internal fun hpChainWhy(
     return why
 }
 
+// [file] 에서 이름이 [name] 인 함수의 본문(코드만) — 선언의 파라미터 목록 뒤 첫 `{` 부터 짝 맞는 `}` 까지다(식 본문
+// `= runTest {` 도 그 람다가 본문이 된다 · 중괄호 없는 식 본문은 null). 없으면 null.
 internal fun hpFunctionBody(
     file: Path,
     name: String,
