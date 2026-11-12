@@ -33,8 +33,6 @@
       "python/src/keycloak_sdk/auth.py"
     ],
     "owners": {
-      "python/src/keycloak_sdk/admin/__init__.py:AdminClient.clients": "integration-admin-surface-uneven",
-      "python/src/keycloak_sdk/aio/admin/__init__.py:AsyncAdminClient.clients": "integration-admin-surface-uneven",
       "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "coverage-omit-hides-security-paths"
     }
   },
