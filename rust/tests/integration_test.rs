@@ -198,6 +198,13 @@ async fn full_flow() {
         .await
         .unwrap();
     assert_eq!(page.len(), 1, "max=1을 보냈으면 서버도 1건만 돌려줘야 한다");
+    // 그 1건이 **방금 만든 사용자**여야 한다 — 건수만 보면 username 필터가 빠져도 통과한다(realm 첫 사용자 1건).
+    assert_eq!(
+        page[0].id.as_deref(),
+        Some(uid.as_str()),
+        "search_users(username) must return the user we just created, got {:?}",
+        page[0].username
+    );
     let got = client.admin().get_user(&uid).await.unwrap();
     assert_eq!(got.username.as_deref(), Some(uname.as_str()));
 
@@ -230,7 +237,7 @@ async fn full_flow() {
         "deleted user get must map to Admin(NotFound), got {err:?}"
     );
 
-    // ── 6) client CRUD (create → get by uuid → delete) ──
+    // ── 6) client CRUD (create → get by uuid → update → get → list → delete → get → NotFound) ──
     let client_id = format!("rust-it-cli-{suffix}");
     let client_uuid = client
         .admin()
@@ -277,8 +284,15 @@ async fn full_flow() {
         "list_clients must include the client we just created"
     );
     client.admin().delete_client(&client_uuid).await.unwrap();
+    // ⚠️ `unwrap_err()` 는 Ok 값을 통째로 찍는다 — client 표현에는 `secret` 이 있다. 실패 문구에는 clientId 만 싣는다.
+    let client_err = client.admin().get_client(&client_uuid).await;
+    assert!(
+        matches!(client_err, Err(KeycloakError::Admin(AdminError::NotFound))),
+        "deleted client get must map to Admin(NotFound), got {:?}",
+        client_err.map(|c| c.client_id)
+    );
 
-    // ── 7) role CRUD (realm role by name) ──
+    // ── 7) role CRUD (realm role by name — create → get → update → get → list → delete → get → NotFound) ──
     let role_name = format!("rust-it-role-{suffix}");
     client
         .admin()
@@ -323,8 +337,13 @@ async fn full_flow() {
         "list_roles must include the role we just created"
     );
     client.admin().delete_role(&role_name).await.unwrap();
+    let role_err = client.admin().get_role(&role_name).await.unwrap_err();
+    assert!(
+        matches!(role_err, KeycloakError::Admin(AdminError::NotFound)),
+        "deleted role get must map to Admin(NotFound), got {role_err:?}"
+    );
 
-    // ── 8) group CRUD (create → get by id → delete) ──
+    // ── 8) group CRUD (create → get by id → list → rename → get → delete → get → NotFound) ──
     let group_name = format!("rust-it-grp-{suffix}");
     let gid = client
         .admin()
@@ -372,6 +391,11 @@ async fn full_flow() {
         "rename must take effect — a no-op here means path was built from the body"
     );
     client.admin().delete_group(&gid).await.unwrap();
+    let group_err = client.admin().get_group(&gid).await.unwrap_err();
+    assert!(
+        matches!(group_err, KeycloakError::Admin(AdminError::NotFound)),
+        "deleted group get must map to Admin(NotFound), got {group_err:?}"
+    );
 
     // ── 8b) realms list/update — it-client 서비스계정은 픽스처에서 view-realm·manage-realm을 갖는다.
     // (신규 realm **생성**만 master 전용이라 아래 10)에서 403을 확인한다.)
@@ -426,6 +450,8 @@ async fn full_flow() {
     );
 
     // ── 11) realm CRUD via master-admin (POST /admin/realms는 master 전용) ──
+    // 이 테스트가 만들고 지우는 realm 하나로 create → get → list → update → get → delete → get → NotFound 를 돈다
+    // (8b 의 list·update 는 픽스처 it-realm 을 만질 뿐이라 이 레코드의 수명을 증명하지 않는다).
     let master_provider: Arc<dyn TokenProvider> = Arc::new(MasterTokenProvider::new(&base));
     let master_cfg = KeycloakConfig::new(base.as_str(), "master", "admin-cli").unwrap();
     let master_admin =
@@ -436,6 +462,7 @@ async fn full_flow() {
         .create_realm(RealmRepresentation {
             realm: Some(new_realm.clone()),
             enabled: Some(true),
+            display_name: Some("created by e2e".into()),
             ..Default::default()
         })
         .await
@@ -450,6 +477,41 @@ async fn full_flow() {
         got_realm.realm.as_deref(),
         Some(new_realm.as_str()),
         "created realm must be retrievable via master admin"
+    );
+    assert_eq!(got_realm.display_name.as_deref(), Some("created by e2e"));
+
+    // list — master 토큰은 전역 admin 이라 모든 realm 을 본다. 그 안에 방금 만든 realm 이 있어야 한다.
+    assert!(
+        master_admin
+            .list_realms()
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.realm.as_deref() == Some(new_realm.as_str())),
+        "list_realms must include the realm we just created"
+    );
+
+    // update → get — 경로는 현재 이름, body 에 새 값. 만든 값("created by e2e")에서 바뀌었는지 본다.
+    master_admin
+        .update_realm(
+            &new_realm,
+            RealmRepresentation {
+                realm: Some(new_realm.clone()),
+                display_name: Some("updated by e2e".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        verify_admin
+            .get_realm()
+            .await
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("updated by e2e"),
+        "update_realm must take effect on the realm we created"
     );
 
     master_admin.delete_realm(&new_realm).await.unwrap();
