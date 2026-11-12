@@ -133,6 +133,10 @@ expect job-coe 1 "잡 \`build-test\` 에 \`continue-on-error:\`"
 fork flow-pr-only; sed -i "/^  pull_request:/s|, 'scripts/test/test-security-defaults.sh'||" "$(wa flow-pr-only)"; run
 expect flow-pr-only 1 "\`pull_request.paths\` 가 scripts/test/test-security-defaults.sh"
 assert_not_contains "$OUT" "\`push.paths\`" "[flow-pr-only] 고치지 않은 push 를 탓한다"
+# 레인 카나리아 표(#1033) — SHARED 가 검사기의 LANE 에서 오니, 레인 paths 에서만 빼도 운다(레그 W1 의 짝).
+fork flow-pr-lane; sed -i "/^  pull_request:/s|, 'scripts/test/test-lane-canaries.sh'||" "$(wa flow-pr-lane)"
+assert_not_contains "$(grep '^  pull_request:' "$(wa flow-pr-lane)")" "test-lane-canaries" "[flow-pr-lane] 변이가 착지하지 않았다"
+run; expect flow-pr-lane 1 "\`pull_request.paths\` 가 scripts/test/test-lane-canaries.sh"
 
 fork block-item; sed -i "/^      - 'scripts\/test\/test-security-defaults.sh'\$/d" "$(wb block-item)"; run
 expect block-item 1 "lang-b-ci.yml: \`pull_request.paths\`"

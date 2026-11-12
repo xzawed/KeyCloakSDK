@@ -13,8 +13,9 @@
 # 집합인 것(시험 자신이 단언한다) — 은 남는다.
 #
 # 이 파일 자신의 단언(required `doc-facts`): 트리의 언어마다 두 표 다 행이 있고(열 번째 언어는 여기서 운다), 행은 그
-# 언어 디렉터리 안의 `파일|선언` 이며, 검사기의 해석(`--list` — 주석 밖 정확히 한 줄 · 선언 자리 · 두 행이 한 시험
-# 아님)이 아홉 언어 다 성공한다.
+# 언어 디렉터리 안의 `파일|선언` 이고 그 묶음의 파일(덤프 걷기 파일 · 가드가 아는 bearer 시험표) 안이며, 언어마다 행
+# 수가 `lc_rows` 와 같고, 검사기의 해석(`--list` — 주석 밖 정확히 한 줄 · 선언 자리 · 두 행이 한 시험 아님 · 자리표시
+# 제목의 꼴에 맞는 다른 문자열 없음)이 아홉 언어 다 성공한다.
 # ⚠️ 표 함수는 검사기가 **그대로 실행**한다 — 줄 머리 `이름() {` · 줄 머리 `}` 모양을 지키고, 정의 밖의 무엇(헬퍼 ·
 # 변수)에 기대지 않는다. 새 표 함수(`lc_*_canary`)는 검사기 AXES 에 더한다(정의 수가 다르면 판정 불가).
 set -eu
@@ -91,22 +92,62 @@ lc_bearer_canary() {
   esac
 }
 
+# 행이 그 묶음의 파일 안에 있고 그 수가 표와 같은가 — 행 하나를 지우거나 다른 파일의 시험으로 돌려 대고 진짜 시험을
+# 건너뛰면 초록이었다(#1033 레그 R1 · R2). bearer 표 파일은 가드의 축 1g 가 언어마다 이미 아는 것(`sd_bearer_table` — 정의를
+# 떼어 그대로 실행한다, 사본 없음)이고, 덤프 걷기 파일은 아래 표다. 행 수는 손으로 고정한다 — 시험을 더하거나 빼면 행과
+# 이 수를 함께 고친다(한 줄 지우기가 조용히 지나가지 않게).
+lc_dump_file() {
+  case "$1" in
+    java)   printf '%s' 'java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/FacadeDumpTest.java' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/FacadeDumpTest.kt' ;;
+    python) printf '%s' 'python/tests/unit/test_facade_dump.py' ;;
+    node)   printf '%s' 'node/test/unit/facade-dump.test.ts' ;;
+    go)     printf '%s' 'go/facade_dump_test.go' ;;
+    dotnet) printf '%s' 'dotnet/tests/Xzawed.Keycloak.Sdk.Tests/FacadeDumpTests.cs' ;;
+    php)    printf '%s' 'php/tests/Unit/FacadeDumpTest.php' ;;
+    rust)   printf '%s' 'rust/tests/facade_dump.rs' ;;
+    ruby)   printf '%s' 'ruby/spec/unit/facade_dump_spec.rb' ;;
+  esac
+}
+lc_rows() { # 언어 → `덤프 bearer` 행 수
+  case "$1" in
+    java)   printf '1 1' ;;
+    kotlin) printf '1 1' ;;
+    python) printf '1 5' ;;
+    node)   printf '3 5' ;;
+    go)     printf '1 5' ;;
+    dotnet) printf '1 3' ;;
+    php)    printf '1 4' ;;
+    rust)   printf '2 4' ;;
+    ruby)   printf '6 3' ;;
+  esac
+}
+
 # ─── 이 파일의 단언 ─────────────────────────────────────────────────────────────────────────────────────
+eval "$(sed -n '/^sd_bearer_table() {/,/^}/p' "$ROOT/scripts/test/test-security-defaults.sh")"
+assert_eq "ok" "$(command -v sd_bearer_table >/dev/null 2>&1 && printf ok || printf MISSING)" "[레인 카나리아] 가드에서 sd_bearer_table 정의를 못 떼었다 — 모양(줄 머리 정의 · 줄 머리 })이 바뀌었나?"
 LC_LANGS="$(df_tree_langs)"
 _seen=0
 for L in $LC_LANGS; do
+  _counts=''
   for _fn in lc_dump_canary lc_bearer_canary; do
     _rows="$($_fn "$L")"
     assert_eq "ok" "$([ -n "$_rows" ] && printf ok || printf MISSING)" "[레인 카나리아] $L 의 $_fn 행이 없다 — 열 번째 언어면 그 언어의 시험을 적어라"
+    if [ "$_fn" = lc_dump_canary ]; then _home="$(lc_dump_file "$L")"; else _home="$(sd_bearer_table "$L")"; fi
+    _n=0
     while IFS= read -r _r; do
       [ -n "$_r" ] || continue
+      _n=$((_n + 1))
       _f="${_r%%|*}"; _d="${_r#*|}"
       _shape=bad; [ "$_d" != "$_r" ] && [ -n "$_d" ] && [ "${_f#"$L"/}" != "$_f" ] && _shape=ok
       assert_eq "ok" "$_shape" "[레인 카나리아] $L 의 $_fn 행이 \`$L/…|선언\` 이 아니다: $_r"
+      assert_eq "${_home:-(그 언어의 파일이 표에 없다)}" "$_f" "[레인 카나리아] $L 의 $_fn 행이 그 묶음의 파일 밖을 가리킨다: $_r"
     done <<EOF
 $_rows
 EOF
+    _counts="$_counts${_counts:+ }$_n"
   done
+  assert_eq "$(lc_rows "$L")" "$_counts" "[레인 카나리아] $L 의 행 수(덤프 bearer)가 lc_rows 와 다르다 — 시험을 더하거나 뺐으면 둘을 함께 고친다"
   _out="$(node "$ROOT/scripts/check-canaries-ran.mjs" --lang "$L" --list 2>&1)" && _rc=0 || _rc=$?
   assert_eq "0" "$_rc" "[레인 카나리아] $L 의 카나리아 해석이 실패했다 — 출력: $_out"
   _seen=$((_seen + 1))

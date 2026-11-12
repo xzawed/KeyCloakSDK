@@ -27,7 +27,8 @@
 //    `fails`). 오늘의 카나리아는 전부 받는 모양이다 — 그 밖의 모양을
 //    들이는 PR 이 그 레인에서 이유와 함께 운다.
 // ⚠️ 못 보는 것(독립 레그 실측 · 기대 개수나 내용의 원천이 보고서 밖이다): 매개변수 행·서브테스트 **일부만** 빼는 필터
-//    (pytest `--deselect 'x[None]'` · go `-skip 'TestX/one'`) · 헬퍼 함수가 여는 go 서브테스트를 전부 빼는 필터 · 카나리아를
+//    (pytest `--deselect 'x[None]'` · go `-skip 'TestX/one'`) · 다른 파일(또는 두 단계 넘어)의 헬퍼가 여는 go 서브테스트를 전부
+//    빼는 필터 · 카나리아를
 //    필터로 빼고 **다른 패키지(go)·같은 파일의 다른 클래스(php)** 에 같은 이름을 둔 경우(그냥 skip 이면 두 항목이 다 잡혀
 //    FAIL 이다) · 본문 바꿔치기(이름 재바인딩 · 단언 삭제 — 실행 증명이 아니라 행위 테스트·변이의 몫이다). go `(cached)` 재생과
 //    RSpec `--dry-run` 은 받는다 — 앞은 같은 입력의 같은 결과이고(레인은 `-count=1`), 뒤는 레인 전체를 비워 attest 가 운다.
@@ -69,7 +70,9 @@ export const AXES = [
   { axis: 'bearer', src: LANE, rows: 'lc_bearer_canary', shape: 'file|canary' },
 ]
 const CALL_SITE = /^[^#]*\bsd_canary_ok\s+"\$ROOT\//
-const LANE_DEF = /^lc_[a-z0-9_]+_canary\(\) \{/
+// 정의 수는 꼴을 너그럽게 센다(`이름 () {` · `function 이름 {`) — 정식 꼴만 세면 공백 하나로 새 표가 축 수 대조를 비켜 갔다
+// (#1033 레그 C2). 그런 꼴의 표는 fnDef 가 못 읽으니 AXES 에 더하는 순간 판정 불가로 드러난다.
+const LANE_DEF = /^\s*(?:function\s+)?lc_[a-z0-9_]+_canary\s*(?:\(\s*\))?\s*\{/
 
 const LANG_RE = /^[a-z][a-z0-9]*$/
 export class Usage extends Error {}
@@ -627,7 +630,23 @@ export const RESOLVE = {
     // `${` 는 그냥 글자다. 중첩 중괄호(`${a ? '}' : b}`)는 앞에서 끊겨 맞지 않는다(FAIL 쪽) — 오늘의 카나리아에는 없다.
     // ⚠️ 잔여(`%s` 와 같은 꼴 — Grok 레그): 같은 파일 · 같은 describe 경로에서 그 꼴에 맞는 다른 시험(`a ${x} b` 에 대한
     // `'a z b'`)이 빠진 카나리아 대신 통과로 읽힐 수 있다. 오늘의 행은 끝말이 서로 달라 겹치지 않는다.
-    const re = new RegExp(`^${[...chain, titlePattern(lit.body, lit.q === '`' ? NODE_TEMPLATE_INTERP : NODE_INTERP)].join(' > ')}$`)
+    const titleRe = titlePattern(lit.body, lit.q === '`' ? NODE_TEMPLATE_INTERP : NODE_INTERP)
+    // 자리표시(`%s` · `${…}`)가 있는 제목은, 그 꼴에 맞는 **다른 문자열**이 같은 파일에 있으면 판정 불가다 — 표를 비우고
+    // 그 꼴의 제목을 가진 시험 하나(`it('d — e 가 뗀 값을 보낸다', …)`)를 두면 그것이 빠진 카나리아 대신 통과로 읽혔다
+    // (#1033 레그 N2 · N3 — `%s` 도 같았다). 주석 · 정규식만 비운 글(K)의 따옴표 · 백틱 문자열을 본다(`${` 를 담은 템플릿은
+    // 값을 모르니 뺀다).
+    if (titleRe.includes('.*?')) {
+      const only = new RegExp(`^${titleRe}$`)
+      src.K.forEach((l, i) => {
+        for (const m of l.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)) {
+          if (i === ctx.at && m.index === lit.start) continue
+          const body = m[2].replace(/\\(['"`\\])/g, '$1')
+          if (!(m[1] === '`' && body.includes('${')) && only.test(body))
+            throw new Unreadable(`${ctx.file}:${i + 1}: 다른 문자열 ${JSON.stringify(body)} 이 카나리아 제목의 꼴에 맞는다 — 그 시험이 빠진 카나리아 대신 통과로 읽힐 수 있다`)
+        }
+      })
+    }
+    const re = new RegExp(`^${[...chain, titleRe].join(' > ')}$`)
     return { label: `${ctx.rel} › ${lit.body}`, inverted, match: (e) => e.classname === ctx.rel && re.test(e.name) }
   },
   go(ctx) {
@@ -650,10 +669,24 @@ export const RESOLVE = {
     if (at > j) throw new Unreadable(`${file}:${at + 1}: 카나리아 줄이 ${n} 의 본문(${i + 1}–${j + 1}행) 밖이다 — 패키지 수준 표면 그것을 쓰는 Test 를 정할 수 없다`)
     // 서브테스트를 여는 테스트는 서브테스트가 하나라도 보고돼야 한다 — `-skip 'TestX/.'` 같은 필터는 부모의 PASS 만 남긴다
     // (독립 레그 실측). 여는 자리는 `func(… *testing.T)` 를 넘기는 `.Run(` 이다(받는 이름 무관 — `tt.Run` · 문자열·주석 속
-    // 글자는 빼고 — 레그 2). ⚠️ 헬퍼 함수가 여는 서브테스트와 일부만 빼는 필터는 못 본다(기대 개수가 보고서 밖이다).
-    const sub = lines
-      .slice(i, j)
-      .some((l) => /\.Run\([^)]*?,\s*func\s*\(\s*\w+\s+\*testing\.T\s*\)/.test(blankStrings(l).replace(/\/\/.*$/, '')))
+    // 글자는 빼고 — 레그 2). 본문이 부르는 **같은 파일의 최상위 도우미**가 여는 것도 센다(한 단계) — bearer 표의 둘이
+    // `grammarInjected(t, …)` 로 연다(#1033 레그 G2: `-skip 'TestX/.'` 이 그 둘을 부모 PASS 만 남기고 비웠다).
+    // ⚠️ 다른 파일의 도우미 · 두 단계 넘는 도우미 · 일부만 빼는 필터는 못 본다(기대 개수가 보고서 밖이다).
+    const code = (l) => blankStrings(l).replace(/\/\/.*$/, '')
+    const opens = (from, to) => lines.slice(from, to).some((l) => /\.Run\([^)]*?,\s*func\s*\(\s*\w+\s+\*testing\.T\s*\)/.test(code(l)))
+    const endOf = (h) => {
+      let e = /\{\s*\}\s*$/.test(lines[h]) ? h : h + 1
+      while (e > h && e < lines.length && !/^}/.test(lines[e])) e++
+      return e
+    }
+    let sub = opens(i, j)
+    if (!sub) {
+      const called = new Set(lines.slice(i + 1, j).flatMap((l) => [...code(l).matchAll(/(?<![\w.])([A-Za-z_]\w*)\s*\(/g)].map((m) => m[1])))
+      for (let h = 0; h < lines.length && !sub; h++) {
+        const d = /^func\s+(\w+)\s*\(/.exec(lines[h])
+        if (d && d[1] !== n && called.has(d[1])) sub = opens(h, endOf(h))
+      }
+    }
     return { label: `${file}:${at + 1} → ${n}`, top: n, sub, match: (e) => e.name === n || e.name.startsWith(`${n}/`) }
   },
   dotnet(ctx) {

@@ -204,6 +204,18 @@ expect tpl-node 0 "통과 1 · FAIL 0"
 assert_contains "$OUT" '${route} 가 보낸다 — 4 통과' "[tpl-node] 두 경로 × 두 행 — 출력: $OUT"
 run --lang node --report "$REP/node-tpl-skip.xml" --root "$FIX/repo-tpl"
 expect tpl-node-skip 1 "건너뛰었다 — 2/4 항목이 skip"
+# ═══ #1033 레그 ═══
+# 템플릿 자리표시의 범위(K4) — 꼴에 맞지 않는 형제만 보고되면 카나리아는 「보고서에 없다」다(자리표시가 끝까지 먹으면 형제가 대신 읽혔다).
+run --lang node --report "$REP/node-tpl-sibling.xml" --root "$FIX/repo-tpl"
+expect tpl-node-sibling 1 "보고서에 없다"
+# 자리표시 제목의 꼴에 맞는 다른 문자열(N2 · N3) — 표를 비우고 그 꼴의 시험 하나를 두면 그것이 카나리아 대신 통과로 읽혔다.
+run --lang node --list --root "$FIX/repo-decoy"
+expect decoy-node 2 "카나리아 제목의 꼴에 맞는다"
+# 같은 파일의 도우미가 여는 go 서브테스트(G2) — `-skip 'TestX/.'` 로 서브테스트를 다 빼면 부모 PASS 만 남는다.
+run --lang go --report "$REP/go-helper-sub.txt" --root "$FIX/repo-gohelper"
+expect gohelper-sub 0 "통과 1 · FAIL 0"
+run --lang go --report "$REP/go-helper-nosub.txt" --root "$FIX/repo-gohelper"
+expect gohelper-nosub 1 "서브테스트가 하나도 보고되지 않았다"
 run --lang php --list --root "$REPO"
 assert_contains "$OUT" "empty      php/tests/Unit/TokenTest.php::testEmptyKeySetKeepsTheCache" "[axes] php 빈 키셋 행 — 출력: $OUT"
 # 서브테스트를 전부 뺀 필터(-skip 'TestX/.') — 부모의 PASS 만 남는다.

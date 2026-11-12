@@ -1,0 +1,4 @@
+=== RUN   TestViaHelper
+--- PASS: TestViaHelper (0.00s)
+PASS
+ok  	example.com/x	0.010s
