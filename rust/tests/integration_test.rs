@@ -284,10 +284,12 @@ async fn full_flow() {
         "list_clients must include the client we just created"
     );
     client.admin().delete_client(&client_uuid).await.unwrap();
-    let client_err = client.admin().get_client(&client_uuid).await.unwrap_err();
+    // ⚠️ `unwrap_err()` 는 Ok 값을 통째로 찍는다 — client 표현에는 `secret` 이 있다. 실패 문구에는 clientId 만 싣는다.
+    let client_err = client.admin().get_client(&client_uuid).await;
     assert!(
-        matches!(client_err, KeycloakError::Admin(AdminError::NotFound)),
-        "deleted client get must map to Admin(NotFound), got {client_err:?}"
+        matches!(client_err, Err(KeycloakError::Admin(AdminError::NotFound))),
+        "deleted client get must map to Admin(NotFound), got {:?}",
+        client_err.map(|c| c.client_id)
     );
 
     // ── 7) role CRUD (realm role by name — create → get → update → get → list → delete → get → NotFound) ──
