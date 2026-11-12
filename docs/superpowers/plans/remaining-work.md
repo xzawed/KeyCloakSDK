@@ -43,7 +43,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `295`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `296`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -73,7 +73,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. (비었다 — `guard-detection-surface-hand-narrowed` 닫힘 #1031–#1034. 다음은 ① 축의 열린 항목에서 사람과 고른다.)
+1. (비었다 — `guard-detection-surface-hand-narrowed`(#1031–#1034) · `integration-admin-surface-uneven`(#1035–#1041) 닫힘. 다음은 열린 항목에서 사람과 고른다.)
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -496,7 +496,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 
-## D. 원장 밖 — 88건 (열림 43)
+## D. 원장 밖 — 89건 (열림 43)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -549,15 +549,14 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `orphan-active-workflows` **[L/S · 닫힘 2026-10-28]** 파일 없는 둘을 껐다 — `repo-config.mjs check` 가 워크플로 상태를 대조한다
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
 
-### 테스트 실행 갭 — 9
+### 테스트 실행 갭 — 10
 
 - [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
 
 - [x] `integration-code-exchange-never-run` **[H/M · 신규·닫힘 2026-09-27 #640–#648]** 코드 교환이 이제 **9/9 통합에서 실제 Keycloak 에 대고 돈다**. 수단은 브라우저 없는 로그인이다(인가 URL GET → `kc-form-login` POST, 쿠키 직접 되싣기 → `Location` 의 code·state). 정상 흐름(교환 → refresh → introspect → logout)과 거부 넷(nonce 불일치 · nonce 없음 · 재사용 코드 · JWKS 밖 키)을 돈다. **node 에서 id_token 서명 미검증 결함이 나와 고쳤다**(#648 → node `1.0.2`). 다시 재는 명령: `grep -rliE 'exchange_?code|ExchangeCode' <각 통합 디렉터리>` → 언어마다 ≥ 1. 옮길 때의 함정(Secure 쿠키 · audience 매퍼 · 위조 RS256 은 단위 층)은 각 헬퍼 머리 주석이 소유한다.
 - [x] `integration-coverage-never-measured` **[H/L · 닫힘 2026-11-08 #980]** 아홉 레인이 통합 실행만의 경계 커버리지를 리포트하고(#774 go·python 파일럿 · #953 · #955 · #957 · #960 · #971 · #975 · #977 kotlin) 하한을 건다(#936 · #956 · #959 · #962 · #973 · #976 · #980). 값은 `scripts/integration-coverage.json` 의 `floor`, 세 조건은 `scripts/integration-coverage.mjs` 머리 주석이 소유한다.
-- [ ] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09]** 9개 통합 스위트가 덮는 admin 표면이 제각각이다 — **clients.update 는 2/9**, realms.create/delete 는 4/9, PHP 는 roles·groups·realms 를 하나도 안 부른다
-  - ⚠️ **1/9 이 아니라 2/9**(php·rust). 두 자리 다 등록부 작성보다 앞선다(`59c7916` #190 · `dc9efd7` #240) — 즉 **처음부터 틀린 계수**였다. 함께 잰 것: `users.update` 7/9(java·python 빠짐) · `clients.create` 6/9 · `roles.update`·`groups.update` 각 7/9(php·ruby 빠짐).
-  - ⚠️ **PR 크기가 아니다** — php 가 roles/groups/realms 를 **0/3 계열** 부르는 것을 「구현할지 건너뛸지」가 9×capability 결정이고, 그 위에 Docker E2E 가 붙는다. · `java/keycloak-sdk/src/test/java/io/github/xzawed/keycloak/AdminOpsIT.java:48`
+- [x] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09 · 닫힘 2026-11-12 · #1035–#1041]** 아홉 통합 스위트(python 둘)가 admin 25 연산을 성공 경로 · 레코드 하나의 수명주기로 돈다(전제 최소 php 9/25 · 소유 미실행 40 → 0 · 칸별 판정은 PR 본문). 서사: `git show 9d07ef32:docs/superpowers/plans/remaining-work.md` 의 이 항목
+- [ ] `integration-admin-surface-regression-unguarded` **[M/S · 신규 2026-11-12]** 25 연산 하나를 통합에서 지워도 CI 가 안 운다 — 여섯 언어는 소유자 없는 미실행이 DRIFT(경고뿐), node · python · java 는 리소스 파일이 측정 핀 밖. 후보(Grok): admin 리소스 파일만 DRIFT 를 실패로 · `scripts/integration-coverage.mjs`
 - [ ] `coverage-omit-overreach` **[M/M]** omit의 근거("단위테스트 불가한 네트워크 경계")가 실측으로 거짓이다 — Node는 이미 96.93%, Python은 98%인 코드를 게이트 밖에 두고 있다 · `node/vitest.config.ts:14`
   - **전 언어 실측(2026-09-27).** 단위만으로 java `AuthClient` 97.3%·`AdminClient` 100% 에 닿는다(세 모듈 exec 합산). 통합이 더하는 것은 **브랜치 1** 이다. dotnet `AuthClient` 는 단위와 합산이 같은 93.8% 다.
   - ⚠️ **「도달」은 「검증」이 아니다.** go 의 `TestHostilePathMatrix`(#636)는 단언 없이 모든 공개 메서드를 부른다. 그래서 단위 커버리지가 77.2% → 93.6% 로 오른다(`-skip TestHostilePathMatrix` 로 대조). omit 을 걷어낼 근거로 이 숫자를 쓰지 말 것.
