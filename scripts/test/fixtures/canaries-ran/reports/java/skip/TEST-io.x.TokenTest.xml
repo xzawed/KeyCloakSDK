@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.0.2" name="io.x.TokenTest" time="0.001" tests="2" errors="0" skipped="1" failures="0">
   <testcase name="toString_masksTokens" classname="io.x.TokenTest" time="0.001"/>
+  <testcase name="coldCacheIsBounded" classname="io.x.TokenTest" time="0.001"/>
   <testcase name="rejectsMismatchedNonce" classname="io.x.TokenTest" time="0">
     <skipped message="void io.x.TokenTest.rejectsMismatchedNonce() throws java.lang.Exception is @Disabled"/>
   </testcase>

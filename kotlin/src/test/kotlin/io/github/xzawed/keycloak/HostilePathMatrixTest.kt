@@ -1538,19 +1538,7 @@ private fun hpCheckHand(
         if (h.uses != null && !Regex("""\b${h.uses}\b""").containsMatchIn(anchorBody)) {
             why += "W1 ${h.anchor}: 앵커가 ${h.uses} 를 읽지 않는다 — 행렬의 변형과 손 테스트의 값이 갈라졌다"
         }
-        // 사슬의 도우미를 차례로 따라간다 — 앞 함수가 그 도우미를 부르고, 도우미가 같은 파일에 있어야 한다.
-        var body: String? = anchorBody
-        for (helper in chain.dropLast(1)) {
-            val from = body ?: break
-            if (!Regex("""\b${Regex.escape(helper)}\s*\(""").containsMatchIn(from)) {
-                why += "W1 ${h.anchor}: 앵커가 도우미 $helper( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
-            }
-            body = hpFunctionBody(dir.resolve(file), helper)
-            if (body == null) why += "W1 ${h.anchor}: 도우미 $helper 가 없다 — 손 테스트가 옮겨졌으면 표를 따라 고쳐라"
-        }
-        if (body != null && call !in hpCallsIn(body)) {
-            why += "W1 ${h.anchor}: 앵커가 .$call( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
-        }
+        why += hpChainWhy(dir.resolve(file), h.anchor, anchorBody, chain)
     }
     // invoke 가 부르는 SDK 공개 이름은 전부 표에 있다 — 손 테스트에 대상이 늘면 여기가 먼저 운다.
     val sdkNames = methods.values.map { it.fn.name }.toSet()
@@ -1685,7 +1673,32 @@ private fun hpCodeOnly(src: String): String {
 
 // [file] 에서 이름이 [name] 인 함수의 본문(코드만) — 선언의 파라미터 목록 뒤 첫 `{` 부터 짝 맞는 `}` 까지다(식 본문
 // `= runTest {` 도 그 람다가 본문이 된다). 없으면 null.
-private fun hpFunctionBody(
+// W1 사슬 — `도우미>…>이름`. 앞 함수가 그 도우미를 부르고(`\b도우미(`), 도우미가 같은 파일에 있으며, 마지막 함수가
+// `.이름(` 을 부르는지 차례로 본다. 실패 사유를 돌려준다(빈 목록 = 닿는다). `HostilePathMatrixW1ChainTest` 가 고정한다 —
+// 도우미 호출 검사를 끄고도 초록이던 것(#1031 레그 W1d).
+internal fun hpChainWhy(
+    file: Path,
+    anchor: String,
+    anchorBody: String,
+    chain: List<String>,
+): List<String> {
+    val why = mutableListOf<String>()
+    var body: String? = anchorBody
+    for (helper in chain.dropLast(1)) {
+        val from = body ?: break
+        if (!Regex("""\b${Regex.escape(helper)}\s*\(""").containsMatchIn(from)) {
+            why += "W1 $anchor: 앵커가 도우미 $helper( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
+        }
+        body = hpFunctionBody(file, helper)
+        if (body == null) why += "W1 $anchor: 도우미 $helper 가 없다 — 손 테스트가 옮겨졌으면 표를 따라 고쳐라"
+    }
+    if (body != null && chain.last() !in hpCallsIn(body)) {
+        why += "W1 $anchor: 앵커가 .${chain.last()}( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
+    }
+    return why
+}
+
+internal fun hpFunctionBody(
     file: Path,
     name: String,
 ): String? {

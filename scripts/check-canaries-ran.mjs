@@ -391,7 +391,32 @@ const KOTLIN_CLASS = /^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|internal|privat
 const DOTNET_CLASS = /^\s*(?:\[[^\]]*\]\s*)*(?:(?:public|internal|private|protected|static|sealed|abstract|partial)\s+)*(?:class|record|struct)\s+(\w+)/
 // 이름 그대로(surefire) · `()`(Gradle) · 매개변수 테스트 `(인자 타입)[n]` 만 받는다 — `startsWith(n + '(')` 였을 때
 // 괄호를 담은 kotlin 백틱 이름(`rejects x(legacy)`)이 카나리아 `rejects x` 로 읽혔다(독립 레그 실측).
-const jvmMatch = (cls, n) => (e) => e.classname === cls && e.name.startsWith(n) && /^(?:|\([^()]*\)(?:\[\d+\])?)$/.test(e.name.slice(n.length))
+// ⚠️ 선언의 매개변수가 비면 괄호도 비어야 한다 — 같은 이름의 미끼 오버로드(`void  이름(TestInfo i)` · kotlin 수신자
+// 확장 `fun TestInfo.\`이름\`()`)에 `@Test` 를 옮기면 진짜 시험은 안 돌고 미끼가 `이름(TestInfo)` 로 보고돼 통과로
+// 읽혔다(#1031 레그 실측 java·kotlin — 가드의 리터럴 계수는 그 미끼를 둘째 선언으로 못 센다).
+const jvmMatch = (cls, n, noArgs) => (e) =>
+  e.classname === cls && e.name.startsWith(n) && (noArgs ? /^(?:|\(\)(?:\[\d+\])?)$/ : /^(?:|\([^()]*\)(?:\[\d+\])?)$/).test(e.name.slice(n.length))
+// 카나리아 선언의 매개변수 목록이 비었는가 — 선언 정규식(끝이 `\s*\(`)의 여는 괄호에서 짝 괄호까지 읽는다(줄을 넘는다).
+function jvmNoArgs(ctx, re) {
+  const g = new RegExp(re.source, `${re.flags.replace(/[gd]/g, '')}gd`)
+  for (const m of ctx.lines[ctx.at].matchAll(g)) {
+    const gi = m.indices.findIndex((x, i) => i > 0 && x)
+    if (!(gi > 0 && overlaps(m.indices[gi], ctx.span))) continue
+    let depth = 0
+    let inner = ''
+    for (let i = ctx.at, c = m.index + m[0].length - 1; i < ctx.lines.length; i++, c = 0) {
+      const l = blankStrings(ctx.lines[i])
+      for (; c < l.length; c++) {
+        if (l[c] === '(' && depth++ === 0) continue
+        if (l[c] === ')' && --depth === 0) return inner.trim() === ''
+        inner += l[c]
+      }
+      inner += '\n'
+    }
+    throw new Unreadable(`${ctx.file}:${ctx.at + 1}: 선언의 매개변수 괄호가 닫히지 않았다`)
+  }
+  throw new Unreadable(`${ctx.file}:${ctx.at + 1}: 선언의 매개변수 목록을 읽지 못했다`)
+}
 // 문자열 리터럴의 안을 공백으로 비운 줄(길이는 그대로) — 호출·describe·주석을 찾을 때 제목 속 글자(`it (` · `//`)를 코드로
 // 읽지 않게.
 const blankStrings = (l) => l.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, (m) => m[0] + ' '.repeat(m.length - 2) + m[0])
@@ -515,12 +540,14 @@ function describeChain(src, from, file) {
 // RESOLVE[lang](ctx) → { label, match(entry), top? } · ctx = { file, rel, lines, text, at, span }
 export const RESOLVE = {
   java(ctx) {
-    const n = declAt(ctx, /\bvoid\s+(\w+)\s*\(/, 'void 메서드')
+    const re = /\bvoid\s+(\w+)\s*\(/
+    const n = declAt(ctx, re, 'void 메서드')
     const cls = qualified(packageOf(ctx.text, /^\s*package\s+([\w.]+)\s*;/m), classChain(ctx.lines, ctx.at, JAVA_CLASS), '$')
-    return { label: `${cls}#${n}`, match: jvmMatch(cls, n) }
+    return { label: `${cls}#${n}`, match: jvmMatch(cls, n, jvmNoArgs(ctx, re)) }
   },
   kotlin(ctx) {
-    const n = declAt(ctx, /\bfun\s+(?:`([^`]+)`|(\w+))\s*\(/, 'fun')
+    const re = /\bfun\s+(?:`([^`]+)`|(\w+))\s*\(/
+    const n = declAt(ctx, re, 'fun')
     // Gradle 은 표시 이름을 쓴다 — `@ParameterizedTest`(`[1] "a"`) · `@RepeatedTest`(`repetition 1 of 2`) · `@DisplayName` 이
     // 붙은 카나리아는 이름으로 보고서 항목을 정할 수 없다(독립 레그 2 실측: 8 중 6 FAIL). 받지 않는다.
     for (let i = ctx.at; i >= 0; i--) {
@@ -530,7 +557,7 @@ export const RESOLVE = {
         throw new Unreadable(`${ctx.file}:${i + 1}: 표시 이름을 바꾸는 어노테이션이 붙은 카나리아다 — Gradle 보고서 이름을 정할 수 없다`)
     }
     const cls = qualified(packageOf(ctx.text, /^\s*package\s+([\w.]+)/m), classChain(ctx.lines, ctx.at, KOTLIN_CLASS), '$')
-    return { label: `${cls}#${n}`, match: jvmMatch(cls, n) }
+    return { label: `${cls}#${n}`, match: jvmMatch(cls, n, jvmNoArgs(ctx, re)) }
   },
   python(ctx) {
     const n = declAt(ctx, /^\s*(?:async\s+)?def\s+(\w+)\s*\(/, 'def')
@@ -882,6 +909,13 @@ function main() {
     const list = canaries(opt.root, opt.lang)
     if (list.length === 0) unread(`가드의 표에서 ${opt.lang} 카나리아를 하나도 얻지 못했다 — 공허하다`)
     targets = list.map((c) => ({ c, t: resolveCanary(opt.root, opt.lang, c) }))
+    // 한 시험이 두 행의 증거를 대신하지 않는다 — 면제 근거 행을 다른 축의 카나리아로 돌려 대고 진짜 근거 시험을 건너뛰면
+    // 그 시험이 두 번 통과로 세어지고 근거는 아무도 안 봤다(#1031 레그 실측 java·kotlin).
+    const owner = new Map()
+    for (const { c, t } of targets) {
+      if (owner.has(t.label)) unread(`두 행이 같은 시험을 가리킨다(${owner.get(t.label)} · ${c.axis}): ${t.label} — 한 시험은 한 행의 증거다`)
+      owner.set(t.label, c.axis)
+    }
   } catch (e) {
     if (e instanceof Unreadable) unread(e.message)
     throw e

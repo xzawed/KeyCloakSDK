@@ -1,0 +1,54 @@
+#!/usr/bin/env sh
+# 픽스처 — 두 축의 행이 같은 시험을 가리킨다(면제 근거 행을 빈 키셋 카나리아로 돌려 댄 꼴 — #1031 레그 A4·A5) → 판정 불가.
+sd_nonce_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_backoff_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_backoff_exempt() {
+  case "$1" in
+    go) printf '%s' 'go/d_test.go|func TestDup(' ;;
+  esac
+}
+sd_mask_test() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_mask_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_mask2_test() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_mask2_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_token_type_anchor() {
+  case "$1" in
+    none) ;;
+  esac
+}
+sd_empty_canary() {
+  case "$1" in
+    go) printf '%s\n' 'go/d_test.go|func TestDup(' ;;
+  esac
+}
+_a="$(sd_canary_ok "$ROOT/$f1" "$c1")"
+_b="$(sd_canary_ok "$ROOT/$f2" "$c2")"
+_c="$(sd_canary_ok "$ROOT/$f3" "$c3")"
+_d="$(sd_canary_ok "$ROOT/$f4" "$c4")"
+_e="$(sd_canary_ok "$ROOT/$f5" "$c5")"
+_f="$(sd_canary_ok "$ROOT/$f6" "$c6")"
+_g="$(sd_canary_ok "$ROOT/$f7" "$c7")"

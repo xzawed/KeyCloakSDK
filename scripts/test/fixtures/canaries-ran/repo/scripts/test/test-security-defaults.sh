@@ -23,7 +23,7 @@ sd_backoff_canary() {
 }
 sd_backoff_exempt() {
   case "$1" in
-    none) ;;
+    java) printf '%s' 'java/core/src/test/java/io/x/TokenTest.java|void coldCacheIsBounded(' ;;
   esac
 }
 sd_mask_test() {
@@ -60,7 +60,7 @@ sd_token_type_anchor() {
 }
 sd_empty_canary() {
   case "$1" in
-    none) ;;
+    php) printf '%s\n' 'php/tests/Unit/TokenTest.php|public function testEmptyKeySetKeepsTheCache(' ;;
   esac
 }
 # 호출 자리 — 검사기는 `sd_canary_ok "$ROOT/…` 를 세기만 한다(축 일곱 = 자리 일곱).
