@@ -591,6 +591,9 @@ assert_eq "GREW" "$SD_JCP" \
 # 않는다. 행동은 언어마다 시험표가 단언한다. 이 축은 아홉 표가 **같은 정본 행 id 스물**을 다 갖는지만 본다 — 한 표에서
 # 행 하나가 빠지면 그 언어만 규칙이 갈라져도 초록이다. 하위 라이브러리가 Bearer 를 직접 짓는 셋(java·kotlin·php)은 다듬을
 # 행을 그랜트 때 거부한다 — 그 갈래는 각 표의 머리 주석이 적는다.
+# ⚠️ id 는 **주석을 뺀 줄**(`sd_code_lines`)에서만 찾는다 — 첫 판은 파일 전체를 grep 해, 행을 주석으로 막아도
+# (`// {"nbsp", …}`) id 가 그 주석에 남아 초록이었다(probe.sh SILENT 2026-11-12, go). 꼬리 주석·문서 문자열 속 id 는
+# 여전히 못 거른다(줄 단위). 표가 이 실행에서 돌았는지는 이 축이 아니라 레인의 몫이다(등록부 — 아직 열림).
 SD_BEARER_IDS='plain pad jwt lf crlf lead-tab inner-sp inner-tab inner-crlf mid-pad empty blank latin1 above-ff c1 nul del nbsp ideographic vt'
 sd_bearer_table() { # $1=언어 → 그 언어의 정본 시험표 경로(모르는 언어는 빈 값 — 축이 그 언어를 실패로 센다)
   case "$1" in
@@ -612,7 +615,7 @@ sd_bearer_axis() { # $1=언어 목록 — 지금 ROOT 를 읽는다. 스무 행�
     _bt_f="$(sd_bearer_table "$L")"
     _bt_miss=''
     for _bt_id in $SD_BEARER_IDS; do
-      if [ -z "$_bt_f" ] || ! grep -q -- "[\"']${_bt_id}[\"']" "$ROOT/$_bt_f" 2>/dev/null; then
+      if [ -z "$_bt_f" ] || ! sd_code_lines "$ROOT/$_bt_f" | grep -q -- "[\"']${_bt_id}[\"']"; then
         _bt_miss="$_bt_miss $_bt_id"
       fi
     done
@@ -646,6 +649,9 @@ assert_eq "QUIET" "$SD_BTP" \
 sd_bearer_probe '/{"nbsp", /d'
 assert_eq "GREW" "$SD_BTP" \
   "[음성대조·bearer 문법] nbsp 행을 지운 사본에서 축이 안 울었다 — 행 대조가 no-op 이거나 파일을 안 읽는다"
+sd_bearer_probe 's|{"nbsp", |// {"nbsp", |'
+assert_eq "GREW" "$SD_BTP" \
+  "[음성대조·bearer 문법] nbsp 행을 주석으로 막은 사본에서 축이 안 울었다 — 주석 속 id 를 행으로 읽는다"
 
 # ---------------------------------------------------------------------------
 # 빈 키셋 거부 — 아홉 전부(거부 지점과 그것을 잡는 테스트)
