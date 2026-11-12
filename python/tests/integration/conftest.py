@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 import traceback
+import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -121,15 +122,36 @@ def strip_nonce(request: AuthorizationUrl) -> AuthorizationUrl:
     return replace(request, url=url._replace(query=query).geturl())
 
 
+def unique_name(prefix: str) -> str:
+    """관리 E2E 레코드 이름 — 무작위 접미사로 실행·미러(sync·aio)끼리 겹치지 않게 한다."""
+    return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+def master_config(keycloak_url: str) -> KeycloakConfig:
+    """master realm 의 `admin-cli` — `keycloak_container.get_client()`(bootstrap 관리자의 비밀번호
+    그랜트)가 인증하는 자리다. 신규 realm 의 생성·삭제는 master 전용 권한이라 it-client 서비스
+    계정으로는 403 이다(Kotlin `FullFlowIT` 8b). 그 클라이언트를 `AdminClient`·`AsyncAdminClient` 에
+    주입해 realm CRUD 도 SDK 파사드를 지나게 한다 — 주입된 admin 이 있으면 SDK 는 이 설정으로
+    아무것도 만들지 않는다."""
+    return KeycloakConfig(server_url=keycloak_url, realm="master", client_id="admin-cli")
+
+
 @pytest.fixture(scope="session")
-def keycloak_url() -> Iterator[str]:
-    """`it-realm`을 임포트한 Keycloak 26.6 컨테이너를 세션 동안 1회 기동하고
-    base auth-server URL(예: `http://localhost:32819`)을 반환한다."""
+def keycloak_container() -> Iterator[KeycloakContainer]:
+    """`it-realm`을 임포트한 Keycloak 26.6 컨테이너를 세션 동안 1회 기동한다. master 관리자
+    클라이언트(`get_client()` — Kotlin `container.keycloakAdminClient` 와 같은 자리)도
+    여기서 얻는다."""
     container = _Keycloak("quay.io/keycloak/keycloak:26.6").with_realm_import_file(
         str(_REALM_IMPORT_FILE)
     )
     with container as started:
-        yield started.get_url()
+        yield started
+
+
+@pytest.fixture(scope="session")
+def keycloak_url(keycloak_container: KeycloakContainer) -> str:
+    """base auth-server URL(예: `http://localhost:32819`)."""
+    return str(keycloak_container.get_url())
 
 
 @pytest.fixture(scope="session")
