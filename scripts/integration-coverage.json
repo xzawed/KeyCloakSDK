@@ -123,7 +123,6 @@
       "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs"
     ],
     "owners": {
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ErrorResponseAsync": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsUnsupportedCharset": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "coverage-omit-hides-security-paths",
