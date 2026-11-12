@@ -625,6 +625,8 @@ export const RESOLVE = {
     // 템플릿 제목의 `${…}` 는 정의 때 값이 박힌다(`for (const [route] of …) it.each(…)(\`%s — ${route} …\`)`) — `%s` 처럼
     // 「아무 글자」다. 리터럴로 읽으면 건강한 실행이 늘 「보고서에 없다」였다(#1031 뒤 레인 표 bearer 행 실측). 따옴표 제목의
     // `${` 는 그냥 글자다. 중첩 중괄호(`${a ? '}' : b}`)는 앞에서 끊겨 맞지 않는다(FAIL 쪽) — 오늘의 카나리아에는 없다.
+    // ⚠️ 잔여(`%s` 와 같은 꼴 — Grok 레그): 같은 파일 · 같은 describe 경로에서 그 꼴에 맞는 다른 시험(`a ${x} b` 에 대한
+    // `'a z b'`)이 빠진 카나리아 대신 통과로 읽힐 수 있다. 오늘의 행은 끝말이 서로 달라 겹치지 않는다.
     const re = new RegExp(`^${[...chain, titlePattern(lit.body, lit.q === '`' ? NODE_TEMPLATE_INTERP : NODE_INTERP)].join(' > ')}$`)
     return { label: `${ctx.rel} › ${lit.body}`, inverted, match: (e) => e.classname === ctx.rel && re.test(e.name) }
   },
