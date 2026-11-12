@@ -14,7 +14,6 @@ import pytest
 
 from keycloak_sdk import (
     KeycloakAuthError,
-    TokenKeyError,
     TokenSignatureError,
     TokenValidationError,
 )
@@ -198,12 +197,14 @@ async def test_exchange_code_refuses_an_id_token_whose_aud_lacks_the_client_id(
 @pytest.mark.parametrize(
     ("algorithms", "reason"),
     [
-        (("RS256",), TokenSignatureError),  # 알고리즘 핀이 먼저 거부한다
-        (("RS256", "HS256"), TokenKeyError),  # 핀을 열어도 그 키는 realm JWKS 에 없다
+        # 알고리즘 핀이 먼저 거부한다
+        (("RS256",), "JWT signature/algorithm validation failed"),
+        # 핀을 열어도 HS 는 JWKS 를 부르기 전에 거부된다(등록부 hs-refusal-rests-on-libraries)
+        (("RS256", "HS256"), "algorithm not allowed: HS256 (a JWKS holds public keys only)"),
     ],
 )
 async def test_id_token_signed_by_a_key_outside_the_jwks_is_refused(
-    keycloak_url: str, algorithms: tuple[str, ...], reason: type[Exception]
+    keycloak_url: str, algorithms: tuple[str, ...], reason: str
 ) -> None:
     """`it-web-hs256` 의 id_token 은 realm 의 HMAC 키로 서명된다 — 대칭키는 JWKS 에 없다."""
     config = web_config(keycloak_url, "it-web-hs256", algorithms)
@@ -214,4 +215,5 @@ async def test_id_token_signed_by_a_key_outside_the_jwks_is_refused(
                 code, REDIRECT_URI, request.code_verifier, nonce=request.nonce
             )
     assert str(refused.value) == "authorization code exchange failed: invalid id_token"
-    assert type(refused.value.__cause__) is reason
+    assert type(refused.value.__cause__) is TokenSignatureError
+    assert str(refused.value.__cause__) == reason

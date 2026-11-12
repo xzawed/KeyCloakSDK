@@ -215,11 +215,11 @@ func TestValidateRejectsNoneAlg(t *testing.T) {
 // secret. If a validator trusted the header's alg to choose a key, "knows the public key" would
 // become "can mint tokens".
 //
-// ⚠️ Mutation-verified: widening the pin to allow HS256 does NOT make this test pass — the
-// rejection comes from the key source, not the algorithm pin. The JWKS yields an RSA key and
-// go-jose will not verify an HMAC signature with it. So this test guards the key-selection
-// boundary specifically; TestValidateRejectsAlgPinViolation is what guards the pin. Keep both:
-// each covers a layer the other does not, and a future refactor could break either alone.
+// ⚠️ Widening the pin to allow HS256 does not let this token through: the explicit HS refusal
+// stops it before the key lookup (TestValidateRefusesHSBeforeAnyKeyLookup), and behind that
+// go-jose will not verify an HMAC signature with the JWKS's RSA key.
+// TestValidateRejectsAlgPinViolation is what guards the pin. Keep both: each covers a layer the
+// other does not, and a future refactor could break either alone.
 func TestValidateRejectsHS256ForgedWithRSAPublicKey(t *testing.T) {
 	f := newJWTFixture(t)
 	pubDER, err := x509.MarshalPKIXPublicKey(&f.priv.PublicKey)

@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 
 import pytest
@@ -20,6 +21,7 @@ from joserfc.jwk import KeySet, RSAKey
 
 from keycloak_sdk._internal.jwt import JWT_MAX_BYTES, JwtValidator
 from keycloak_sdk.exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
+from tests.unit.conftest import hs_token
 
 ISSUER = "https://kc.example.com/realms/r"
 
@@ -402,3 +404,61 @@ def test_the_cap_measures_str_and_bytes_and_leaves_other_values_to_the_decoder()
         validator.validate(over, KeySet([_rsa_key()]))  # type: ignore[arg-type]
     with pytest.raises(TokenSignatureError):
         validator.validate(None, KeySet([_rsa_key()]))  # type: ignore[arg-type]
+
+
+# --- HS(대칭) 서명은 허용돼도 키를 찾기 전에 거부한다(hs-refusal-rests-on-libraries) ----------
+
+_RS_AND_HS = ("RS256", "HS256", "HS384", "HS512")
+_PIN_REFUSAL = "JWT signature/algorithm validation failed"  # joserfc 가 거부할 때의 지금 문구
+
+
+class _CountingKeySet(KeySet):
+    """joserfc 가 키셋에서 키를 찾는 두 길(`get_by_kid` · `pick_random_key`)을 센다."""
+
+    lookups = 0
+
+    def get_by_kid(self, kid=None, parameters=None):
+        self.lookups += 1
+        return super().get_by_kid(kid, parameters)
+
+    def pick_random_key(self, algorithm=None, parameters=None):
+        self.lookups += 1
+        return super().pick_random_key(algorithm, parameters)
+
+
+@pytest.mark.parametrize("alg", ["HS256", "HS384", "HS512"])
+def test_hs_is_refused_before_any_key_lookup_even_when_allowed(alg):
+    """⚠️ HS(대칭) 서명은 설정이 허용해도 **키를 찾기 전에** 거부한다(등록부
+    hs-refusal-rests-on-libraries) — 검증 키는 JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수
+    있는 것은 공개된 값뿐이다. kid 는 키셋에 있는 RSA 키를 가리킨다. 허용 목록 밖의 HS 는 지금의
+    길과 문구(joserfc 의 핀)에 남는다. 파사드의 JWKS 요청 수는 `test_auth.py` · `aio/test_auth.py`
+    가 잰다."""
+    rsa_key = _rsa_key()
+    forged = hs_token(os.urandom(64), ISSUER, "app", "k1", alg=alg)
+    validator = JwtValidator(issuer=ISSUER, audience="app", allowed_algs=_RS_AND_HS)
+    key_set = _CountingKeySet([rsa_key])
+
+    with pytest.raises(TokenSignatureError) as refused:
+        validator.validate(forged, key_set)
+
+    want = f"algorithm not allowed: {alg} (a JWKS holds public keys only)"
+    assert (str(refused.value), refused.value.__cause__, key_set.lookups) == (want, None, 0)
+    # 허용 목록 밖이면 지금의 문구 그대로다.
+    with pytest.raises(TokenSignatureError) as pinned:
+        JwtValidator(issuer=ISSUER, audience="app").validate(forged, KeySet([rsa_key]))
+    assert str(pinned.value) == _PIN_REFUSAL
+    # 대조 — 같은 검증기 · 같은 키셋이 그 RSA 키로 서명한 RS256 토큰은 통과시키고, 그때 키를 찾는다.
+    claims = {"iss": ISSUER, "aud": "app", "sub": "user-1", "exp": int(time.time()) + 60}
+    assert validator.validate(_sign(rsa_key, claims), key_set).subject == "user-1"
+    assert key_set.lookups == 1
+
+
+def test_an_unreadable_header_is_left_to_the_decoder():
+    """헤더를 읽을 수 없으면(base64 · JSON 이 아니다 · 객체가 아니다 · alg 가 문자열이 아니다) HS
+    거부는 판정하지 않는다 — 지금처럼 joserfc 가 거부한다."""
+    validator = JwtValidator(issuer=ISSUER, audience="app", allowed_algs=_RS_AND_HS)
+    key_set = KeySet([_rsa_key()])
+    for header in ("!!!", _b64url(b"[]"), _b64url(json.dumps({"alg": 1}).encode())):
+        with pytest.raises(TokenSignatureError) as refused:
+            validator.validate(f"{header}.e30.c2ln", key_set)
+        assert str(refused.value) == _PIN_REFUSAL

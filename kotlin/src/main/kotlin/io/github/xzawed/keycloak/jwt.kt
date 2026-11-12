@@ -76,14 +76,21 @@ public class JwtValidator private constructor(
             throw TokenValidationException("token exceeds $JWT_MAX_BYTES bytes")
         }
         return try {
-            onIo {
-                // alg=none / 미서명 JWT를 Nimbus의 암묵적 기본 동작에 의존하지 않고 명시적으로 거부한다.
-                val jwt = JWTParser.parse(accessToken)
-                if (jwt !is SignedJWT) {
-                    throw TokenValidationException("Unsecured or non-signed JWT rejected")
-                }
-                validatedTokenFrom(processor.process(jwt, null))
+            // alg=none / 미서명 JWT를 Nimbus의 암묵적 기본 동작에 의존하지 않고 명시적으로 거부한다.
+            val jwt = JWTParser.parse(accessToken)
+            if (jwt !is SignedJWT) {
+                throw TokenValidationException("Unsecured or non-signed JWT rejected")
             }
+            // ⚠️ HS(대칭) 서명은 설정이 허용해도 검증하지 않는다(등록부 hs-refusal-rests-on-libraries) — 이 SDK 의 키는 JWKS(공개
+            // 문서)뿐이라 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 허용 목록 검사는 Nimbus(JWSVerificationKeySelector)가 키를
+            // 찾는 자리에서 하므로, 같은 판정(allowedAlgs 포함)을 여기서 먼저 해 허용된 HS 만 키 조회·JWKS 요청 전에 거부한다 —
+            // 허용 밖 alg 는 지금처럼 Nimbus 가 거부한다. oct 를 버리는 키 저장소와 겹치는 방어다(Java 동형). 분해와 이 거부는 IO
+            // 디스패처로 넘기기 전이다 — 디스패처를 건너면 코루틴 스택 복구가 이 예외를 원인으로 단 사본으로 바꾼다.
+            val alg = jwt.header.algorithm
+            if (alg in allowedAlgs && alg.name.startsWith("HS")) {
+                throw TokenValidationException("algorithm not allowed: ${alg.name} (a JWKS holds public keys only)")
+            }
+            onIo { validatedTokenFrom(processor.process(jwt, null)) }
         } catch (e: TokenValidationException) {
             throw e
         } catch (e: CancellationException) {

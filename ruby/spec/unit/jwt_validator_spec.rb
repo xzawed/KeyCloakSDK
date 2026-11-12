@@ -268,13 +268,53 @@ RSpec.describe KeycloakSdk::JwtValidator do
       end
     end
 
-    # 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(ruby-jwt 가 키 종류와 alg 를 묶는다).
-    # oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+    # 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다. 지금은 키를 찾기 전의 HS 거부가
+    # 먼저 받는다(아래 「허용된 HS — 키를 찾기 전에 거부」) — 그 뒤의 ruby-jwt 키 종류 · alg 결합은 이 경로에서 닿지 않는
+    # 겹친 방어다.
     { "SPKI PEM" => :to_pem, "SPKI DER" => :to_der }.each do |name, encoding|
       it "RSA 공개키(#{name})를 HMAC 비밀로 쓴 토큰은 거부된다" do
         secret = rsa.public_key.public_send(encoding)
         forged = JWT.encode(base_claims("sub" => "attacker"), secret, "HS256", { kid: kid })
         expect { hs_validator.validate(forged) }.to raise_error(KeycloakSdk::TokenValidationError)
+      end
+    end
+  end
+
+  # ⚠️ HS(대칭) 서명은 설정이 허용해도 **키를 찾기 전에** 거부한다(등록부 hs-refusal-rests-on-libraries) — 검증 키는
+  # JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. kid 는 JWKS 의 RSA 키를 가리키고 저장소는
+  # 콜드라 키 조회는 곧 JWKS 요청이다. ruby-jwt 의 핀은 헤더 alg 를 대소문자 없이 견주므로(`valid_alg?` 의 `casecmp`)
+  # `hs256` 도 허용된 HS 다. 허용 목록 밖의 HS 는 지금의 길과 문구(ruby-jwt 의 핀)에 남는다.
+  describe "허용된 HS — 키를 찾기 전에 거부" do
+    subject(:hs_validator) { described_class.from_config(config: hs_config, jwks_store: jwks_store) }
+
+    let(:hs_config) do
+      KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: audience,
+                              clock_skew: 30, signature_algorithms: %w[RS256 HS256 HS384 HS512])
+    end
+
+    def b64url(str)
+      [str].pack("m0").tr("+/", "-_").delete("=")
+    end
+
+    # 그 alg 로 HMAC 서명한 위조 토큰 — 헤더 alg 를 적힌 그대로 두려고 직접 조립한다(ruby-jwt 는 정규 이름으로 고친다).
+    def forged_hs(alg)
+      parts = [{ "alg" => alg, "typ" => "JWT", "kid" => kid }, base_claims("sub" => "attacker")]
+      input = parts.map { |part| b64url(part.to_json) }.join(".")
+      mac = OpenSSL::HMAC.digest(alg.upcase.sub("HS", "SHA"), OpenSSL::Random.random_bytes(64), input)
+      "#{input}.#{b64url(mac)}"
+    end
+
+    %w[HS256 HS384 HS512 hs256].each do |alg|
+      it "#{alg}: JWKS 를 부르지 않고 거부한다 — 같은 검증기의 RS256 토큰은 통과하고 그때 부른다", :aggregate_failures do
+        want = "JWT validation failed: algorithm not allowed: #{alg} (a JWKS holds public keys only)"
+        expect { hs_validator.validate(forged_hs(alg)) }
+          .to raise_error(KeycloakSdk::TokenValidationError, want) { |e| expect(e.cause).to be_nil }
+        expect(a_request(:get, jwks_url)).not_to have_been_made
+        # 허용 목록 밖이면 지금의 문구 그대로다(ruby-jwt 의 핀).
+        expect { validator.validate(forged_hs(alg)) }
+          .to raise_error(KeycloakSdk::TokenValidationError, "JWT validation failed: Expected a different algorithm")
+        expect(hs_validator.validate(sign(base_claims)).subject).to eq("user-1")
+        expect(a_request(:get, jwks_url)).to have_been_made.once
       end
     end
   end

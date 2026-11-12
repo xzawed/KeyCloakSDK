@@ -25,18 +25,18 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code with a forged RS256 id_t
 
   after { client.close }
 
-  def exchange_with_id_token(id_token)
+  def exchange_with_id_token(id_token, via: client)
     stub_request(:post, "https://kc.example.com/realms/demo/protocol/openid-connect/token")
       .to_return(status: 200, headers: { "Content-Type" => "application/json" },
                  body: { access_token: "AT", token_type: "Bearer", expires_in: 300, id_token: id_token }.to_json)
-    client.auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb", expected_nonce: "n-abc")
+    via.auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb", expected_nonce: "n-abc")
   end
 
-  def id_token(key, kid, **extra)
+  def id_token(key, kid, alg: "RS256", **extra)
     now = Time.now.to_i
     claims = { "sub" => "user-1", "iss" => "https://kc.example.com/realms/demo", "aud" => "app",
                "exp" => now + 300, "iat" => now, "nonce" => "n-abc" }.merge(extra.transform_keys(&:to_s))
-    JWT.encode(claims, key, "RS256", { kid: kid })
+    JWT.encode(claims, key, alg, { kid: kid })
   end
 
   # 대조군 — 같은 클레임을 realm 키로 서명하면 통과한다. 아래 거부가 클레임이 아니라 **키** 때문임을 보인다.
@@ -65,5 +65,22 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code with a forged RS256 id_t
       .to raise_error(KeycloakSdk::AuthError, "authorization_code exchange failed: invalid id_token: " \
                                               "JWT validation failed: token exceeds 256000 bytes")
     expect(a_request(:get, "https://kc.example.com/realms/demo/protocol/openid-connect/certs")).not_to have_been_made
+  end
+
+  # 허용된 HS 도 같은 문이다 — 키를 찾기 전에 거부한다(등록부 hs-refusal-rests-on-libraries). kid 는 realm 키다.
+  # SDK 가 거부했으므로 하위 원인이 없다(`spec/integration/code_exchange_spec.rb` 의 HS 변형이 기대는 사슬).
+  it "rejects an allowed HS256 id_token without a JWKS request" do
+    hs_client = KeycloakSdk::KeycloakClient.new(
+      KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: "app",
+                              client_secret: "sekret", signature_algorithms: %w[RS256 HS256])
+    )
+    forged = id_token(OpenSSL::Random.random_bytes(64), "realm-key", alg: "HS256")
+    expect { exchange_with_id_token(forged, via: hs_client) }
+      .to raise_error(KeycloakSdk::AuthError, "authorization_code exchange failed: invalid id_token: " \
+                                              "JWT validation failed: algorithm not allowed: HS256 " \
+                                              "(a JWKS holds public keys only)") { |e| expect(e.cause.cause).to be_nil }
+    expect(a_request(:get, "https://kc.example.com/realms/demo/protocol/openid-connect/certs")).not_to have_been_made
+  ensure
+    hs_client&.close
   end
 end

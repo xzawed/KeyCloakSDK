@@ -266,18 +266,19 @@ def b64u(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def hs_token(secret: bytes, issuer: str, audience: str, kid: str | None) -> str:
-    """`secret` 으로 HS256 서명한 위조 토큰(sub=attacker).
+def hs_token(secret: bytes, issuer: str, audience: str, kid: str | None, alg: str = "HS256") -> str:
+    """`secret` 으로 `alg`(HS256 · HS384 · HS512) 서명한 위조 토큰(sub=attacker).
 
     ⚠️ joserfc 로 서명하지 않는다 — 새 joserfc 는 비대칭 공개키를 oct 키로 들이지 않아
     (「Asymmetric public keys must not be used as oct keys」) RS→HS 위조 토큰을 못 만든다
     (CI 실측 — 옛 판은 경고만 냈다). 공격자는 그 라이브러리를 쓰지 않는다."""
-    header: dict[str, object] = {"alg": "HS256", "typ": "JWT"}
+    digest = {"HS256": hashlib.sha256, "HS384": hashlib.sha384, "HS512": hashlib.sha512}[alg]
+    header: dict[str, object] = {"alg": alg, "typ": "JWT"}
     if kid is not None:
         header["kid"] = kid
     claims = {"iss": issuer, "aud": audience, "sub": "attacker", "exp": int(time.time()) + 60}
     signing_input = f"{b64u(json.dumps(header).encode())}.{b64u(json.dumps(claims).encode())}"
-    signature = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
+    signature = hmac.new(secret, signing_input.encode(), digest).digest()
     return f"{signing_input}.{b64u(signature)}"
 
 

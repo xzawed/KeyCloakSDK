@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,11 +26,16 @@ import (
 
 func hsSign(t *testing.T, secret []byte, kid string, cl jwt.Claims) string {
 	t.Helper()
+	return hsSignWith(t, jose.HS256, secret, kid, cl)
+}
+
+func hsSignWith(t *testing.T, alg jose.SignatureAlgorithm, secret []byte, kid string, cl jwt.Claims) string {
+	t.Helper()
 	opts := (&jose.SignerOptions{}).WithType("JWT")
 	if kid != "" {
 		opts = opts.WithHeader("kid", kid)
 	}
-	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: secret}, opts)
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: secret}, opts)
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
@@ -105,8 +111,8 @@ func TestValidateJWKSWithOnlyAnOctKeyHasNoUsableKeys(t *testing.T) {
 	}
 }
 
-// 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 고전 RS→HS 혼동은 거부된다(go-jose 가 키 종류와 alg 를 묶는다).
-// oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+// 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 고전 RS→HS 혼동은 거부된다. 지금은 키를 찾기 전의 HS 거부가 먼저
+// 받는다(TestValidateRefusesHSBeforeAnyKeyLookup) — 그 뒤의 go-jose 키 종류 · alg 결합은 이 경로에서 닿지 않는 겹친 방어다.
 func TestValidateRSAPublicKeyBytesAsHMACSecretAreRejectedEvenWithHSAllowed(t *testing.T) {
 	f := newJWTFixture(t)
 	v := hsAllowed(f.jwksSrv.URL)
@@ -123,5 +129,49 @@ func TestValidateRSAPublicKeyBytesAsHMACSecretAreRejectedEvenWithHSAllowed(t *te
 		if _, err := v.Validate(context.Background(), forged); err == nil {
 			t.Fatalf("RSA 공개키(%s)를 HMAC 비밀로 쓴 HS256 토큰이 통과했다", name)
 		}
+	}
+}
+
+// HS 서명은 설정이 허용해도 키를 찾기 전에 거부한다(등록부 hs-refusal-rests-on-libraries) — 검증 키는 JWKS(공개 문서)에서만
+// 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. kid 는 JWKS 에 있는 RSA 키를 가리킨다. 계수기는 JWKS 요청이다 — 캐시가
+// 비어 있어 키 조회는 곧 요청이다. 허용 목록 밖의 HS 는 지금의 길(go-jose 의 핀, `parse: `)에 남는다.
+func TestValidateRefusesHSBeforeAnyKeyLookup(t *testing.T) {
+	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+	for _, alg := range []jose.SignatureAlgorithm{jose.HS256, jose.HS384, jose.HS512} {
+		t.Run(string(alg), func(t *testing.T) {
+			f := newJWTFixture(t)
+			secret := make([]byte, 64)
+			if _, err := rand.Read(secret); err != nil {
+				t.Fatal(err)
+			}
+			forged := hsSignWith(t, alg, secret, "k1", cl)
+			v := newValidator(validatorOptions{jwksURI: f.jwksSrv.URL, issuer: testISS, audience: "my-client",
+				allowedAlgs:  []jose.SignatureAlgorithm{jose.RS256, jose.HS256, jose.HS384, jose.HS512},
+				clockSkewSec: 30, minRefetch: time.Minute})
+			_, err := v.Validate(context.Background(), forged)
+			var te *TokenValidationError
+			if !errors.As(err, &te) {
+				t.Fatalf("HS 토큰의 거부는 TokenValidationError 여야 한다: %T %v", err, err)
+			}
+			want := "algorithm not allowed: " + string(alg) + " (a JWKS holds public keys only)"
+			if te.Msg != want || te.Cause != nil || err.Error() != "keycloak: token validation: "+want {
+				t.Errorf("got Msg=%q Cause=%v Error()=%q, want Msg=%q and no cause", te.Msg, te.Cause, err.Error(), want)
+			}
+			if n := atomic.LoadInt32(f.fetches); n != 0 {
+				t.Errorf("JWKS 요청 %d 건 — HS 는 키를 찾기 전에 거부해야 한다(0 건)", n)
+			}
+			// 허용 목록 밖이면 지금의 길과 문구 그대로다 — 핀이 먼저다.
+			pinned := f.validator(t, time.Minute)
+			if _, err := pinned.Validate(context.Background(), forged); !errors.As(err, &te) || !strings.HasPrefix(te.Msg, "parse: ") {
+				t.Errorf("허용 목록 밖의 %s 는 핀(parse: )에서 거부돼야 한다: %v", alg, err)
+			}
+			// 대조 — 같은 검증기가 그 RSA 키로 서명한 RS256 토큰은 통과시키고, 그때 JWKS 를 한 번 부른다(계수기가 살아 있다).
+			if _, err := v.Validate(context.Background(), f.sign(t, f.priv, "k1", cl)); err != nil {
+				t.Fatalf("같은 검증기의 RS256 토큰이 거부됐다: %v", err)
+			}
+			if n := atomic.LoadInt32(f.fetches); n != 1 {
+				t.Errorf("대조 뒤 JWKS 요청 %d 건 — 1 건이어야 한다", n)
+			}
+		})
 	}
 }

@@ -1131,9 +1131,10 @@ def test_jwks_with_only_an_oct_key_has_no_usable_keys(jwks):
 
 @pytest.mark.parametrize("encoding", ["pem", "der", "n"])
 def test_rsa_public_key_bytes_as_hmac_secret_are_rejected_even_with_hs_allowed(jwks, encoding):
-    """고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 고전 RS→HS 혼동은 거부된다
-    (joserfc 가 키 종류와 alg 를 묶는다). oct 를 버리는 것만으로 충분하다는 판정의
-    근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다."""
+    """고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 고전 RS→HS 혼동은 거부된다.
+    지금은 JWKS 를 부르기 전의 HS 거부가 먼저 받는다(아래
+    `test_hs_is_refused_before_the_jwks_is_fetched_even_when_allowed`) — 그 뒤의 joserfc 키 종류 ·
+    alg 결합은 이 경로에서 닿지 않는 겹친 방어다."""
     rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     public = rsa.as_dict(private=False)
     secret = {
@@ -1148,6 +1149,42 @@ def test_rsa_public_key_bytes_as_hmac_secret_are_rejected_even_with_hs_allowed(j
 
     with pytest.raises(TokenValidationError):
         client.validate(hs_token(secret, endpoints.issuer, config.client_id, "k1"))
+
+
+@pytest.mark.parametrize("alg", ["HS256", "HS384", "HS512"])
+def test_hs_is_refused_before_the_jwks_is_fetched_even_when_allowed(jwks, alg):
+    """⚠️ HS(대칭) 서명은 설정이 허용해도 JWKS 를 부르기 전에 거부한다(등록부
+    hs-refusal-rests-on-libraries) — `validate` 와 코드 교환의 id_token 둘 다. kid 는
+    JWKS 의 RSA 키를 가리킨다. 검증 키는 JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수
+    있는 것은 공개된 값뿐이다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256", "HS384", "HS512"))
+    endpoints = OidcEndpoints.for_realm(config)
+    jwks.return_value = {"keys": [rsa.as_dict(private=False)]}
+    forged = hs_token(os.urandom(64), endpoints.issuer, config.client_id, "k1", alg=alg)
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "id_token": forged,
+        "token_type": "Bearer",
+        "expires_in": 60,
+    }
+    client = _client(openid, config=config)
+
+    with pytest.raises(TokenSignatureError) as refused:
+        client.validate(forged)
+    with pytest.raises(KeycloakAuthError) as exchanged:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    want = f"algorithm not allowed: {alg} (a JWKS holds public keys only)"
+    cause = exchanged.value.__cause__
+    assert (str(refused.value), refused.value.__cause__, jwks.call_count) == (want, None, 0)
+    assert str(exchanged.value) == "authorization code exchange failed: invalid id_token"
+    assert (type(cause), str(cause)) == (TokenSignatureError, want)
+    # 대조 — 같은 클라이언트가 그 RSA 키로 서명한 RS256 토큰은 통과시키고, 그때 JWKS 를 부른다.
+    good = _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
+    assert client.validate(good).subject == "user-1"
+    assert jwks.call_count == 1
 
 
 # ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. 위 `test_forced_jwks_refetch_is_rate_limited`

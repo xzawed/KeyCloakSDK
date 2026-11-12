@@ -2,7 +2,7 @@
 //!
 //! 실서버는 이런 토큰을 만들 수 없다 — realm 개인키가 없으면 JWKS 에 있는 kid 로 서명할 수 없다. 그래서
 //! 통합(`integration_test.rs` 의 `code_exchange`)이 아니라 가짜 IdP 로 잰다. 통합의 HS256 시나리오는
-//! kid 해석 단계에서 이미 거부되므로(HMAC 키는 JWKS 에 없다) **서명 검사까지 닿지 않는다.**
+//! kid 해석 단계(HS256 을 허용하면 그 앞의 HS 거부)에서 이미 거부되므로(HMAC 키는 JWKS 에 없다) **서명 검사까지 닿지 않는다.**
 //!
 //! `src/auth.rs` 의 `verify_nonce_rejects_untrusted_id_token` 이 같은 모양의 토큰을 `verify_nonce` 에
 //! **직접** 넣는다. 여기는 공개 교환을 거친다 — 교환이 id_token 을 그 검증기로 보내지 않게 되는 회귀는

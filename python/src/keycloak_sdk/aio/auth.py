@@ -28,7 +28,7 @@ from .._internal.frames import ascrub_frames, scrub_frames
 from .._internal.jwks_cache import JwksKeyCache
 from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwks_keys import import_usable_keys
-from .._internal.jwt import JwtValidator, check_token_size
+from .._internal.jwt import JwtValidator, check_token_size, refuse_hs_algorithm
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
@@ -242,9 +242,11 @@ class AsyncAuthClient:
         """`validate()` 의 본체(sync `AuthClient._validate_for` 동형) — audience 만 호출자가 정한다.
 
         ⚠️ JWKS 상태(캐시·강제 재조회 창·백오프)는 이 인스턴스의 `_load_jwks` 하나가 소유한다.
-        ⚠️ 길이 상한이 `_load_jwks()` **보다 앞**이다(sync 동형 — `check_token_size`).
+        ⚠️ 길이 상한이 `_load_jwks()` **보다 앞**이다(sync 동형 — `check_token_size`). 허용된 HS 의
+        거부도 그 앞이다(sync 동형 — `refuse_hs_algorithm`).
         """
         check_token_size(token)
+        refuse_hs_algorithm(token, self._config.signature_algorithms)
         key_set = await self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,

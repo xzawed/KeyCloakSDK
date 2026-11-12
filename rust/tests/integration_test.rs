@@ -485,10 +485,13 @@ const IT_WEB_HS256: (&str, &str) = ("it-web-hs256", "it-web-hs256-secret");
 const RS256_ONLY: &[&str] = &["RS256"];
 const RS256_AND_HS256: &[&str] = &["RS256", "HS256"];
 const UNEXPECTED_NONCE: &str = "authorization code exchange failed: unexpected nonce";
-/// ⚠️ rust 는 kid 를 **먼저** 푼다(`JwtValidator::validate` 의 (2) → (3)). HMAC 키의 kid 는 JWKS 에
-/// 없으므로 핀을 RS256 으로 두든 HS256 을 더하든 여기서 거부된다 — python 은 핀이 먼저 거부한다.
+/// ⚠️ rust 는 kid 를 핀보다 **먼저** 푼다(`JwtValidator::validate` 의 (2) → (3)). HMAC 키의 kid 는 JWKS 에
+/// 없으므로 핀이 RS256 뿐이면 여기서 거부된다 — python 은 핀이 먼저 거부한다.
 const KID_OUTSIDE_JWKS: &str =
     "authorization code exchange failed: invalid id_token: token validation error: unknown kid";
+/// HS256 을 허용하면 kid 보다 앞에서 거부된다 — JWKS 는 공개 키만 담는다(등록부 hs-refusal-rests-on-libraries).
+const HS_REFUSED_BEFORE_THE_KID: &str = "authorization code exchange failed: invalid id_token: \
+     token validation error: algorithm not allowed: HS256 (a JWKS holds public keys only)";
 const MISSING_ID_TOKEN: &str =
     "authorization code exchange failed: missing id_token for nonce validation";
 const ID_TOKEN_AUDIENCE_MISMATCH: &str = "authorization code exchange failed: invalid id_token: \
@@ -872,7 +875,7 @@ async fn exchange_with_the_nonce_succeeds_under_an_expected_audience_override(
 
 /// 서명·kid 는 맞는 **실서버** id_token 이 aud 검사에서 떨어지는 길 — `aud` 를 재정의 값으로 **덮어쓴**
 /// id_token(realm 의 하드코딩 클레임 매퍼). aud 가 재정의 값과 같아도 client id 가 없으면 거부다.
-/// (위조 RS256 은 서명에서, HS256 은 kid 에서 멈춘다. 이것이 서명 **뒤**의 aud 검사에 닿는다.)
+/// (위조 RS256 은 서명에서, HS256 은 kid(허용하면 그 앞의 HS 거부)에서 멈춘다. 이것이 서명 **뒤**의 aud 검사에 닿는다.)
 async fn id_token_without_the_client_id_is_refused_even_when_it_carries_the_override(
     env: Arc<Env>,
     redirect: Redirect,
@@ -905,7 +908,7 @@ async fn id_token_without_the_client_id_is_refused_even_when_it_carries_the_over
 }
 
 /// RS256 로 서명된 실서버 id_token 을 핀 밖(`ES256` 만 허용)에 두면 거부된다 — kid 는 JWKS 에 **있다.**
-/// HS256 시나리오는 kid 해석에서 먼저 멈춰 핀을 관찰하지 못한다. 이것이 핀을 관찰하는 자리다.
+/// HS256 시나리오는 kid 해석(허용하면 그 앞의 HS 거부)에서 먼저 멈춰 핀을 관찰하지 못한다. 이것이 핀을 관찰하는 자리다.
 async fn id_token_signed_outside_the_algorithm_pin_is_refused(env: Arc<Env>, redirect: Redirect) {
     let kc = web_client(&env.base, IT_WEB, &["ES256"], redirect);
     let (request, code) = login(&kc, redirect).await;
@@ -944,6 +947,7 @@ async fn id_token_signed_by_a_key_outside_the_jwks_is_refused(
     env: Arc<Env>,
     redirect: Redirect,
     algorithms: &'static [&'static str],
+    refused_with: &'static str,
 ) {
     let kc = web_client(&env.base, IT_WEB_HS256, algorithms, redirect);
     // 전제: 서버가 정말 HS256 으로 서명했고, 그 kid 는 realm JWKS 에 없다. `None` 이면 교환은
@@ -966,7 +970,7 @@ async fn id_token_signed_by_a_key_outside_the_jwks_is_refused(
     let (request, code) = login(&kc, redirect).await;
     assert_refused(
         exchange(&kc, redirect, &code, &request, Some(&request.nonce)).await,
-        KID_OUTSIDE_JWKS,
+        refused_with,
     );
 }
 
@@ -1079,6 +1083,7 @@ async fn code_exchange() {
                 env.clone(),
                 redirect,
                 RS256_ONLY,
+                KID_OUTSIDE_JWKS,
             )),
         );
         add(
@@ -1087,6 +1092,7 @@ async fn code_exchange() {
                 env.clone(),
                 redirect,
                 RS256_AND_HS256,
+                HS_REFUSED_BEFORE_THE_KID,
             )),
         );
     }

@@ -1,5 +1,6 @@
 import {
   errors as joseErrors,
+  decodeProtectedHeader,
   jwtVerify,
   createRemoteJWKSet,
   customFetch,
@@ -38,6 +39,20 @@ const JWT_MAX_BYTES = 256_000
  * 강제 재조회의 성공도 나이를 다시 센다. ⚠️ 나이는 벽시계다 — jose 의 `isFreshFor` 가 `Date.now()` 를 읽는다.
  */
 const JWKS_MAX_AGE_SECONDS = 300
+
+/**
+ * jose 가 검증할 토큰 머리의 `alg`(JSON 값 그대로). 읽을 수 없으면 undefined 다 — 그 판정은 지금처럼 jose 몫이다.
+ * jose 의 `jwtVerify` 처럼 Uint8Array 는 UTF-8 로 푼다(JS 호출자가 넘기면 jose 는 받는다).
+ */
+function headerAlg(token: string | Uint8Array): unknown {
+  try {
+    return decodeProtectedHeader(
+      token instanceof Uint8Array ? new TextDecoder().decode(token) : token,
+    ).alg
+  } catch {
+    return undefined
+  }
+}
 
 /** jose 의 `isJwkSet`(`lib/validate.js`)이 원소로 받는 모양 — JSON 에서 온 값이므로 null · 배열이 아닌 객체면 된다. */
 function isJwkObject(key: unknown): boolean {
@@ -379,6 +394,17 @@ export class JwtValidator {
       if (token.length > JWT_MAX_BYTES) {
         throw new Error(`token exceeds ${JWT_MAX_BYTES} bytes`)
       }
+      // ⚠️ HS(대칭) 서명은 설정이 허용해도 검증하지 않는다(등록부 hs-refusal-rests-on-libraries) — 이 SDK 의 키는 JWKS(공개
+      // 문서)뿐이라 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. jose 는 허용 목록(`algorithms`)을 `jwtVerify` 안에서 키를
+      // 찾기 직전에 보므로, 같은 판정을 여기서 먼저 해 허용된 HS 만 키 조회·JWKS 요청 전에 거부한다 — 허용 밖 alg 는 지금처럼
+      // jose 가 거부한다. 이 거부는 아래 catch 가 감싸지 않는다. 지금까지는 jose 의 JWKS 가 HS 를 받지 않는 데(「Unsupported
+      // "alg" value for a JSON Web Key Set」 — 콜드 캐시면 /certs 를 받은 뒤) 기댔다.
+      const alg = headerAlg(token)
+      if (typeof alg === 'string' && alg.startsWith('HS') && this.opts.allowedAlgs.includes(alg)) {
+        throw new KeycloakTokenValidationError(
+          `algorithm not allowed: ${alg} (a JWKS holds public keys only)`,
+        )
+      }
       const { payload } = await jwtVerify(token, this.keys, {
         algorithms: this.opts.allowedAlgs, // alg 핀 — jose는 `alg:none`을 항상 거부
         issuer: this.opts.issuer, // iss 정확일치
@@ -396,6 +422,7 @@ export class JwtValidator {
         claims: payload as Record<string, unknown>,
       }
     } catch (e) {
+      if (e instanceof KeycloakTokenValidationError) throw e // 위의 HS 거부 — 하위 오류가 아니다
       throw new KeycloakTokenValidationError(`JWT validation failed: ${(e as Error).message}`, {
         cause: e,
       })

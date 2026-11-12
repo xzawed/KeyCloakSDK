@@ -445,8 +445,9 @@ func TestE2ECodeExchange(t *testing.T) {
 		algorithms []string
 		layer      string // the TokenValidationError.Msg prefix — which check refused
 	}{
-		{"PinnedRS256", []string{"RS256"}, "parse: "},         // the algorithm pin refuses first
-		{"HS256Allowed", []string{"RS256", "HS256"}, "key: "}, // opening the pin does not help: no such key in the JWKS
+		{"PinnedRS256", []string{"RS256"}, "parse: "}, // the algorithm pin refuses first
+		// opening the pin does not help: HS is refused before the key lookup (a JWKS holds public keys only)
+		{"HS256Allowed", []string{"RS256", "HS256"}, "algorithm not allowed: HS256 (a JWKS holds public keys only)"},
 	} {
 		t.Run("IDTokenSignedOutsideTheJWKSIsRefused/"+tc.name, func(t *testing.T) {
 			hs := webClient(t, serverURL, "it-web-hs256", func(c *Config) { c.SignatureAlgorithms = tc.algorithms })

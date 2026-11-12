@@ -418,7 +418,8 @@ describe('JWKS 의 JWK 가 아닌 원소는 건너뛴다', () => {
 
 // ⚠️ 고정 — JWKS 의 대칭(`oct`) 키는 검증 키가 아니다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). 일곱
 // 언어는 HS 를 허용하면 그 키로 서명한 위조 토큰을 받았지만, node 는 jose 가 JWKS 에서 HS 를 받지 않아(「Unsupported "alg"
-// value for a JSON Web Key Set」) 처음부터 거부한다 — 코드 변경 없이 그 동작을 고정한다. jose 갱신이 이것을 바꾸면 여기서 운다.
+// value for a JSON Web Key Set」) 처음부터 거부했다. 이제는 검증기가 키 조회 전에 HS 를 거부해(등록부
+// hs-refusal-rests-on-libraries) 이 칸은 jose 의 JWKS 판정까지 가지 않는다 — jose 갱신과 무관하다.
 describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
   async function withKeys(
     keys: (rsaJwk: Record<string, unknown>) => unknown[],
@@ -491,6 +492,78 @@ describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
       },
     )
   })
+})
+
+// HS(대칭) 서명은 설정이 허용해도 키를 찾기 전에 거부한다(등록부 hs-refusal-rests-on-libraries) — 검증 키는 JWKS(공개 문서)
+// 에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 위 고정이 기대는 jose 의 거부는 키를 찾을 때(콜드면 /certs 를
+// 받은 뒤) 난다 — /certs 0 이 명시적 거부가 그보다 앞이라는 증거다. kid 는 키셋의 RSA 키를 가리킨다. 코드 교환의 id_token
+// 경로(`withAudience`)와 jose 가 받는 Uint8Array 도 같은 거부다.
+describe('HS 서명은 설정이 허용해도 키를 찾기 전에 거부한다', () => {
+  it.each(['HS256', 'HS384', 'HS512'])(
+    '%s: 세 경로 모두 /certs 0 의 같은 거부이고, 같은 검증기의 RS256 토큰은 통과한다',
+    async (alg) => {
+      const pair = await generateKeyPair('RS256')
+      const rsaJwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', use: 'sig', alg: 'RS256' }
+      const body = JSON.stringify({ keys: [rsaJwk] })
+      let certs = 0
+      const srv = createServer((_req, res) => {
+        certs += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(body)
+      })
+      await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+      try {
+        const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+        const v = JwtValidator.forJwksUri(uri, {
+          ...baseOpts,
+          allowedAlgs: ['RS256', alg],
+          jwksMinRefetchSeconds: 0,
+        })
+        const signed = (
+          header: { alg: string; kid: string },
+          key: Parameters<SignJWT['sign']>[0],
+        ) =>
+          new SignJWT({ sub: 'u', aud: 'my-client' })
+            .setProtectedHeader(header)
+            .setIssuer(ISS)
+            .setIssuedAt()
+            .setExpirationTime('5m')
+            .sign(key)
+        const forged = await signed(
+          { alg, kid: 'k1' },
+          new Uint8Array(64).map((_, i) => (i * 37 + 11) & 0xff),
+        )
+        const paths: Array<() => Promise<unknown>> = [
+          () => v.validate(forged),
+          () => v.withAudience('the-client').validate(forged),
+          () => v.validate(new TextEncoder().encode(forged) as unknown as string),
+        ]
+        for (const path of paths) {
+          const refused = await path().then(
+            () => undefined,
+            (e: unknown) => e,
+          )
+          expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+          expect({
+            message: (refused as Error).message,
+            cause: (refused as Error).cause,
+            certs,
+          }).toEqual({
+            message: `algorithm not allowed: ${alg} (a JWKS holds public keys only)`,
+            cause: undefined,
+            certs: 0,
+          })
+        }
+        // 대조 — 같은 검증기의 RS256 토큰은 통과하고, 계수기는 그 적재를 본다(위의 0 이 죽은 계수기의 0 이 아니다).
+        await expect(
+          v.validate(await signed({ alg: 'RS256', kid: 'k1' }, pair.privateKey)),
+        ).resolves.toMatchObject({ subject: 'u' })
+        expect(certs).toBeGreaterThan(0)
+      } finally {
+        await new Promise<void>((resolve) => srv.close(() => resolve()))
+      }
+    },
+  )
 })
 
 // ⚠️ 여기부터가 **웜 캐시 + IdP 장애** 축이다. 위 콜드 캐시 백오프는 캐시가 찬 뒤를 보지 않는다(규칙 (4) —

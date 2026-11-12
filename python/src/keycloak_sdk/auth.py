@@ -26,7 +26,7 @@ from ._internal.frames import scrub_frames
 from ._internal.jwks_cache import JwksKeyCache
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwks_keys import import_usable_keys
-from ._internal.jwt import JwtValidator, check_token_size
+from ._internal.jwt import JwtValidator, check_token_size, refuse_hs_algorithm
 from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
@@ -287,9 +287,11 @@ class AuthClient:
         키를 들지 않는 규칙 묶음이라 매번 새로 만들어도 저장소가 갈라지지 않는다.
 
         ⚠️ 길이 상한이 `_load_jwks()` **보다 앞**이다 — 뒤에 두면 콜드 캐시에서 상한 밖
-        쓰레기 토큰 하나가 JWKS 요청 하나가 된다(`check_token_size`).
+        쓰레기 토큰 하나가 JWKS 요청 하나가 된다(`check_token_size`). 허용된 HS 의 거부도
+        그 앞이다 — 키를 찾기 전에 거부한다(`refuse_hs_algorithm`).
         """
         check_token_size(token)
+        refuse_hs_algorithm(token, self._config.signature_algorithms)
         key_set = self._load_jwks()
         validator = JwtValidator(
             issuer=self._endpoints.issuer,

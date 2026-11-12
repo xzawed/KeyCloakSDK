@@ -868,6 +868,33 @@ async def test_jwks_with_only_an_oct_key_has_no_usable_keys(ajwks):
         )
 
 
+@pytest.mark.parametrize("alg", ["HS256", "HS384", "HS512"])
+async def test_hs_is_refused_before_the_jwks_is_fetched_even_when_allowed(ajwks, alg):
+    """sync 미러와 같은 계약 — HS(대칭) 서명은 설정이 허용해도 JWKS 를 부르기 전에
+    거부한다(등록부 hs-refusal-rests-on-libraries). `validate` 와 코드 교환의 id_token 둘 다.
+    kid 는 JWKS 의 RSA 키다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256", "HS384", "HS512"))
+    endpoints = OidcEndpoints.for_realm(config)
+    forged = hs_token(os.urandom(64), endpoints.issuer, config.client_id, "k1", alg=alg)
+    client = _client(_exchange_openid_with_id_token(rsa, forged, ajwks), config=config)
+
+    with pytest.raises(TokenSignatureError) as refused:
+        await client.validate(forged)
+    with pytest.raises(KeycloakAuthError) as exchanged:
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    want = f"algorithm not allowed: {alg} (a JWKS holds public keys only)"
+    cause = exchanged.value.__cause__
+    assert (str(refused.value), refused.value.__cause__, ajwks.await_count) == (want, None, 0)
+    assert str(exchanged.value) == "authorization code exchange failed: invalid id_token"
+    assert (type(cause), str(cause)) == (TokenSignatureError, want)
+    # 대조 — 같은 클라이언트가 그 RSA 키로 서명한 RS256 토큰은 통과시키고, 그때 JWKS 를 부른다.
+    good = _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
+    assert (await client.validate(good)).subject == "user-1"
+    assert ajwks.await_count == 1
+
+
 # ⚠️ 콜드 캐시 + IdP 장애 축 — sync 미러와 **대칭으로** 둔다. 이 저장소는 「sync 에만 있는
 # 보안 테스트」를 이미 결함 부류로 추적한다(`python-aio-security-test-asymmetry`).
 # 상태 기계는 `tests/unit/test_backoff.py` 가 재고, 여기서는 배선만 증명한다.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,6 +204,13 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 	}
 	if len(parsed.Headers) == 0 {
 		return nil, &TokenValidationError{Msg: "missing JWS header"}
+	}
+	// ⚠️ HS* is refused even when allowed, before the kid, the key lookup and any JWKS request (registry
+	// hs-refusal-rests-on-libraries): every verification key comes from the realm JWKS, a public document, so an HMAC
+	// secret could only be a published value. ParseSigned has already pinned alg to allowedAlgs; until this check the
+	// refusal rested on fetch dropping oct keys and on go-jose binding key type to alg — after the lookup.
+	if alg := parsed.Headers[0].Algorithm; strings.HasPrefix(alg, "HS") {
+		return nil, &TokenValidationError{Msg: fmt.Sprintf("algorithm not allowed: %s (a JWKS holds public keys only)", alg)}
 	}
 	kid := parsed.Headers[0].KeyID
 

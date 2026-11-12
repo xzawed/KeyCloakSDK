@@ -17,8 +17,9 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <remarks>
 /// The JWKS is a public document, so a symmetric key in it is no secret: with HS256 allowed, seven of the nine SDKs accepted a
 /// token HMAC-signed with it (measured; the nine-language table is in the PR body). .NET already refused — Microsoft.IdentityModel
-/// does not resolve the oct key for the token (IDX10503 "kid … did not match any keys"). No code change here: these pin that
-/// behaviour, so a library update that flips it fails this class. The same three shapes are measured in all nine languages.
+/// does not resolve the oct key for the token (IDX10503 "kid … did not match any keys"). Since hs-refusal-rests-on-libraries the
+/// validator refuses an HS token before loading any key, so these cells stop there and no longer rest on IdentityModel's key
+/// resolution. The same three shapes are measured in all nine languages.
 /// </remarks>
 public class JwksOctKeyTests
 {
@@ -50,8 +51,8 @@ public class JwksOctKeyTests
     }
 
     /// <summary>
-    /// Pinned — with HS allowed, the classic RS→HS confusion (the RSA public key bytes as the HMAC secret) is still refused.
-    /// "Dropping oct is enough" rests on this, so a library update that changes it fails here.
+    /// Pinned — with HS allowed, the classic RS→HS confusion (the RSA public key bytes as the HMAC secret) is still refused —
+    /// now by the validator's HS refusal before any key lookup (hs-refusal-rests-on-libraries), so no library update reaches it.
     /// </summary>
     [Fact]
     public async Task Rsa_public_key_bytes_as_hmac_secret_are_rejected_even_with_hs_allowed()
@@ -70,6 +71,76 @@ public class JwksOctKeyTests
             var forged = Sign(Payload(issuer, "attacker"), new SymmetricSecurityKey(secret) { KeyId = "k1" }, SecurityAlgorithms.HmacSha256);
             await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => validator.ValidateAsync(forged));
         }
+    }
+
+    /// <summary>
+    /// An HS (symmetric) signature is refused before any key lookup, even when the configuration allows it — pinned (registry
+    /// hs-refusal-rests-on-libraries).
+    /// </summary>
+    /// <remarks>
+    /// Verification keys come only from the JWKS, a public document, so the only thing an HMAC secret could be is a published
+    /// value. The refusal must not rest on the key store dropping oct keys plus IdentityModel's key/algorithm binding: no request
+    /// reaching the fake IdP (no discovery, no JWKS) is the evidence that it comes first. The kid names the RSA key in the set.
+    /// The id_token path of a code exchange (<c>ValidateForAudienceAsync</c>) refuses the same way.
+    /// </remarks>
+    [Theory]
+    [InlineData(SecurityAlgorithms.HmacSha256)]
+    [InlineData(SecurityAlgorithms.HmacSha384)]
+    [InlineData(SecurityAlgorithms.HmacSha512)]
+    public async Task Hs_signature_is_refused_before_any_key_lookup_even_when_allowed(string alg)
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, $$"""{"keys":[{{RsaJwk(rsa)}}]}""");
+        using var http = new HttpClient();
+        var validator = new JwtValidator(issuer, new JwtValidatorOptions
+        {
+            Issuer = issuer,
+            Audiences = new[] { "it-client" },
+            AllowedAlgorithms = new[] { "RS256", alg },
+            RefreshIntervalSeconds = 1,
+        }, http);
+        var forged = Sign(Payload(issuer, "attacker"), new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(64)) { KeyId = "k1" }, alg);
+
+        foreach (var path in new Func<Task>[]
+        {
+            () => validator.ValidateAsync(forged),
+            () => validator.ValidateForAudienceAsync(forged, "it-client"),
+        })
+        {
+            var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(path);
+            var requests = server.LogEntries.Select(e => e.RequestMessage?.Path).ToArray();
+            Assert.Multiple(
+                () => Assert.Equal($"algorithm not allowed: {alg} (a JWKS holds public keys only)", refused.Message),
+                () => Assert.Null(refused.InnerException),
+                () => Assert.Empty(requests));
+        }
+        // Control — the RSA token verifies with the same validator, and the IdP saw that (the zero above is not a dead counter's).
+        Assert.Equal("user-1", (await validator.ValidateAsync(Sign(Payload(issuer, "user-1"), rsa, SecurityAlgorithms.RsaSha256))).Subject);
+        Assert.NotEmpty(server.LogEntries);
+    }
+
+    /// <summary>
+    /// An empty or null <c>ValidAlgorithms</c> pins nothing in IdentityModel (measured on 8.23.0) — every algorithm passes it, so an
+    /// HS one is refused there as well, before any key lookup.
+    /// </summary>
+    [Fact]
+    public async Task Hs_signature_is_refused_when_the_pin_is_empty_or_null()
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, $$"""{"keys":[{{RsaJwk(rsa)}}]}""");
+        using var http = new HttpClient();
+        var opts = new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" }, AllowedAlgorithms = Array.Empty<string>() };
+        var noPin = JwtValidator.BuildParameters(issuer, opts);
+        noPin.ValidAlgorithms = null;
+        noPin.IssuerSigningKey = rsa;
+        var forged = Sign(Payload(issuer, "attacker"), new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(32)) { KeyId = "k1" }, SecurityAlgorithms.HmacSha256);
+
+        foreach (var validator in new[] { new JwtValidator(issuer, opts, http), new JwtValidator(noPin) })
+        {
+            var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => validator.ValidateAsync(forged));
+            Assert.Equal("algorithm not allowed: HS256 (a JWKS holds public keys only)", refused.Message);
+        }
+        Assert.Empty(server.LogEntries.Select(e => e.RequestMessage?.Path));
     }
 
     /// <summary>A set holding only an oct key has no usable key — refused like an empty set, never installed.</summary>
