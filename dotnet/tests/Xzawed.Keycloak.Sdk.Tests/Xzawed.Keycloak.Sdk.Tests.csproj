@@ -9,7 +9,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1" />
     <!-- ⚠️ coverlet은 **컬렉터만** 참조한다. msbuild 통합(coverlet.msbuild)은 두 가지 이유로 뺐다:
@@ -19,7 +19,7 @@
              MSBuild는 중복 타깃을 경고 없이 마지막 import로 덮으므로, 버전이 갈리는 순간
              조용한 동작 변경이 된다(10.0.1에서는 본문이 동일해 아직 무해). -->
     <PackageReference Include="coverlet.collector" Version="10.1.0" />
-    <PackageReference Include="WireMock.Net" Version="2.30.0" />
+    <PackageReference Include="WireMock.Net" Version="2.31.0" />
     <PackageReference Include="Testcontainers.Keycloak" Version="4.16.0" />
   </ItemGroup>
   <ItemGroup>
