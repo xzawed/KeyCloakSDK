@@ -10,7 +10,8 @@
 // 모델:
 //  · 카나리아 목록은 가드의 표 함수(AXES)를 **그대로 실행**해 얻는다 — 함수 정의만 떼어 sh 로 부른다(사본을 두지 않는다).
 //    가드에서 `sd_canary_ok "$ROOT/…` 를 부르는 자리 수가 AXES 수와 다르면 판정 불가다 — 새 카나리아 축이 이 검사를
-//    조용히 비켜 가지 않게.
+//    조용히 비켜 가지 않게. 가드 **밖**의 레인 카나리아 표(`scripts/test/test-lane-canaries.sh` — 덤프 걷기 · bearer
+//    정본 표)도 같은 방식이고, 그 파일은 `lc_…_canary() {` 정의 수가 그 축 수와 같아야 한다.
 //  · 카나리아 줄 → 그 줄이 선언한 테스트(RESOLVE) → 보고서 항목. 선언 이름(node·ruby 는 제목 리터럴)이 **카나리아 문자열의
 //    자리와 겹쳐야** 한다 — 아니면 같은 줄의 다른 테스트를 카나리아로 읽는다. go 만 본문 줄(표 행 · 단언 호출)을 받고 그
 //    줄을 감싼 최상위 `func Test…` 로 간다. 항목은 정확히 맞춘다: 클래스(JVM·.NET·python) · describe 경로(node) · 모듈 경로
@@ -49,8 +50,12 @@ import { spawnSync } from 'node:child_process'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const GUARD = 'scripts/test/test-security-defaults.sh'
+// 가드 **밖**의 레인 카나리아 표(덤프 걷기 · bearer 정본 표) — 가드에 두면 아홉 행렬의 W1 이 그 행을 손 목록에 요구한다.
+// 그 파일 머리 주석이 까닭을 적는다. 축 수 대조는 호출 자리가 아니라 `lc_…_canary() {` 정의 수로 한다.
+export const LANE = 'scripts/test/test-lane-canaries.sh'
 
-// 가드의 카나리아 표 — 축마다 표 함수와 그 행의 모양. `file` 이 있으면 행은 카나리아 문자열뿐이고 파일은 그 함수가 준다.
+// 카나리아 표 — 축마다 표 함수와 그 행의 모양. `file` 이 있으면 행은 카나리아 문자열뿐이고 파일은 그 함수가 준다.
+// `src` 가 없으면 가드의 표다.
 export const AXES = [
   { axis: 'nonce', rows: 'sd_nonce_canary', shape: 'file|canary' },
   { axis: 'backoff', rows: 'sd_backoff_canary', shape: 'file|canary' },
@@ -60,8 +65,11 @@ export const AXES = [
   { axis: 'mask2', file: 'sd_mask2_test', rows: 'sd_mask2_canary', shape: 'canary' },
   { axis: 'token-type', rows: 'sd_token_type_anchor', shape: 'kind|file|canary' },
   { axis: 'empty', rows: 'sd_empty_canary', shape: 'file|canary' },
+  { axis: 'dump', src: LANE, rows: 'lc_dump_canary', shape: 'file|canary' },
+  { axis: 'bearer', src: LANE, rows: 'lc_bearer_canary', shape: 'file|canary' },
 ]
 const CALL_SITE = /^[^#]*\bsd_canary_ok\s+"\$ROOT\//
+const LANE_DEF = /^lc_[a-z0-9_]+_canary\(\) \{/
 
 const LANG_RE = /^[a-z][a-z0-9]*$/
 export class Usage extends Error {}
@@ -135,23 +143,40 @@ function extractScript(defs, axes) {
 }
 
 export function canaries(root, lang, axes = AXES) {
-  const guard = join(root, GUARD)
+  const out = []
+  // 표 파일마다(가드 · 레인 표) — 축의 순서는 AXES 그대로다(가드의 축이 앞).
+  for (const src of [...new Set(axes.map((a) => a.src ?? GUARD))]) out.push(...canariesOf(root, lang, src, axes.filter((a) => (a.src ?? GUARD) === src)))
+  return out
+}
+
+function canariesOf(root, lang, src, axes) {
+  const what = src === GUARD ? '가드' : '레인 카나리아 표'
   let text
   try {
-    text = readFileSync(guard, 'utf8')
+    text = readFileSync(join(root, src), 'utf8')
   } catch (e) {
-    throw new Unreadable(`가드를 못 읽었다: ${GUARD} (${e.code ?? e.message})`)
+    throw new Unreadable(`${what}를 못 읽었다: ${src} (${e.code ?? e.message})`)
   }
-  const sites = text.split(/\r?\n/).filter((l) => CALL_SITE.test(l)).length
-  if (sites !== axes.length)
-    throw new Unreadable(
-      `가드에서 \`sd_canary_ok "$ROOT/…\` 를 부르는 자리가 ${sites} 인데 이 검사가 아는 축은 ${axes.length} 다 — ` +
-        '새 카나리아 축이면 AXES 에 그 표 함수를 더하라(안 그러면 그 축은 실행 여부를 아무도 안 본다)',
-    )
+  const lines = text.split(/\r?\n/)
+  if (src === GUARD) {
+    const sites = lines.filter((l) => CALL_SITE.test(l)).length
+    if (sites !== axes.length)
+      throw new Unreadable(
+        `가드에서 \`sd_canary_ok "$ROOT/…\` 를 부르는 자리가 ${sites} 인데 이 검사가 아는 축은 ${axes.length} 다 — ` +
+          '새 카나리아 축이면 AXES 에 그 표 함수를 더하라(안 그러면 그 축은 실행 여부를 아무도 안 본다)',
+      )
+  } else {
+    const defs = lines.filter((l) => LANE_DEF.test(l)).length
+    if (defs !== axes.length)
+      throw new Unreadable(
+        `${src} 에 \`lc_…_canary() {\` 표 함수가 ${defs} 인데 이 검사가 아는 레인 축은 ${axes.length} 다 — ` +
+          '새 표 함수면 AXES 에 더하라(안 그러면 그 표는 실행 여부를 아무도 안 본다)',
+      )
+  }
   const defs = []
   for (const fn of new Set(axes.flatMap((a) => (a.file ? [a.file, a.rows] : [a.rows])))) {
     const d = fnDef(text, fn)
-    if (d === null) throw new Unreadable(`가드에 표 함수 \`${fn}() {\` 가 없다 — 이름이나 모양(줄 머리 정의 · 줄 머리 \`}\`)이 바뀌었나?`)
+    if (d === null) throw new Unreadable(`${what}에 표 함수 \`${fn}() {\` 가 없다 — 이름이나 모양(줄 머리 정의 · 줄 머리 \`}\`)이 바뀌었나?`)
     defs.push(d)
   }
   // LC_ALL=C — 러너의 로캘이 없으면 sh 가 setlocale 경고를 stderr 에 찍어 아래 거절에 걸렸다(독립 레그 2 실측). 표의 행은

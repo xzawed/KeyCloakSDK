@@ -36,7 +36,7 @@ expect() { # expect <이름> <종료코드> <출력에 있어야 할 것>
 
 # ═══ (c) 양성 — 아홉 언어의 통과 보고서 ═══════════════════════════════════════════════════════════
 run --lang java --report "$REP/java/pass" --root "$REPO"
-expect ok-java 0 "통과 3 · FAIL 0"
+expect ok-java 0 "통과 5 · FAIL 0"
 assert_contains "$OUT" "io.x.TokenTest#rejectsMismatchedNonce — 1 통과" "[ok-java] CDATA 속 <skipped/> 를 건너뜀으로 읽었다 — 출력: $OUT"
 run --lang kotlin --report "$REP/kotlin-pass.xml" --root "$REPO"
 expect ok-kotlin 0 "통과 2 · FAIL 0"
@@ -174,7 +174,8 @@ expect leg-dup 2 "두 행이 같은 시험을 가리킨다(backoff-exempt · emp
 # 자리 수에서 — 둘 다 파생이다(검사기가 둘이 같음을 따로 단언한다).
 _axes="$(sed -n "s/^  { axis: '\([a-z0-9-]*\)'.*/\1/p" "$GUARD")"
 _sites="$(grep -cE '^[^#]*\bsd_canary_ok[[:space:]]+"\$ROOT/' "$REPO/scripts/test/test-security-defaults.sh" || true)"
-assert_eq "$_sites" "$(printf '%s\n' "$_axes" | grep -c . || true)" "[axes] AXES 에서 읽은 축 수가 픽스처 가드의 호출 자리 수와 다르다 — AXES 모양이 바뀌었나?"
+_lanedefs="$(grep -cE '^lc_[a-z0-9_]+_canary\(\) \{' "$REPO/scripts/test/test-lane-canaries.sh" || true)"
+assert_eq "$((_sites + _lanedefs))" "$(printf '%s\n' "$_axes" | grep -c . || true)" "[axes] AXES 에서 읽은 축 수가 픽스처의 가드 호출 자리 + 레인 표 함수 수와 다르다 — AXES 모양이 바뀌었나?"
 _listed=''
 for L in java kotlin python node go dotnet php rust ruby; do
   run --lang "$L" --list --root "$REPO"
@@ -189,6 +190,13 @@ done
 # 행의 자리까지 — 표 함수를 다른 축의 것으로 바꾸면 축 이름은 남아도 행이 바뀐다.
 run --lang java --list --root "$REPO"
 assert_contains "$OUT" "backoff-exempt io.x.TokenTest#coldCacheIsBounded" "[axes] java 면제 근거 행 — 출력: $OUT"
+assert_contains "$OUT" "dump       io.x.TokenTest#reachableObjectsDoNotRenderSecrets" "[axes] java 덤프 걷기 행(레인 표) — 출력: $OUT"
+assert_contains "$OUT" "bearer     io.x.TokenTest#bearerCanonicalTable" "[axes] java bearer 정본 표 행(레인 표) — 출력: $OUT"
+# 레인 표 — 표 함수가 AXES 보다 많으면 · 표가 없으면 판정 불가다(그 표의 시험은 실행 여부를 아무도 안 본다).
+run --lang go --list --root "$FIX/repo-lane-extra"
+expect lane-extra 2 "\`lc_…_canary() {\` 표 함수가 3 인데 이 검사가 아는 레인 축은 2"
+run --lang go --list --root "$FIX/repo-nolane"
+expect lane-missing 2 "레인 카나리아 표를 못 읽었다: scripts/test/test-lane-canaries.sh"
 run --lang php --list --root "$REPO"
 assert_contains "$OUT" "empty      php/tests/Unit/TokenTest.php::testEmptyKeySetKeepsTheCache" "[axes] php 빈 키셋 행 — 출력: $OUT"
 # 서브테스트를 전부 뺀 필터(-skip 'TestX/.') — 부모의 PASS 만 남는다.

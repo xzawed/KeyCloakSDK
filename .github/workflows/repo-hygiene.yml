@@ -175,6 +175,12 @@ jobs:
         # 픽스처(`scripts/test/fixtures/canaries-ran/`)만 읽는다. 실제 대조는 레인의 비-required 단계다.
         run: sh scripts/test/test-check-canaries-ran.sh
 
+      - name: 레인 카나리아 표(덤프 걷기 · bearer 정본 표 — 언어마다 행 · 아홉 언어 해석)
+        # 레인의 `check-canaries-ran.mjs` 가 보안 기본값 가드 **밖**에서 읽는 표다(가드에 두면 아홉 행렬 W1 이 그 행을 손
+        # 목록에 요구한다 — 그 파일 머리 주석). 트리의 언어마다 두 표에 행이 있고 아홉 언어의 해석(`--list` — 소스만 읽는다:
+        # 주석 밖 정확히 한 줄 · 선언 자리 · 두 행이 한 시험 아님)이 성공하는지 본다. 그 실행에서 돌았는지는 레인의 몫이다.
+        run: sh scripts/test/test-lane-canaries.sh
+
       - name: 레인 증명 단계 배선(attest · 카나리아) — 레인마다 조건 없는 두 단계 · 공용 파일 paths(FAIL 1 · 못 읽으면 2)
         # attest 와 카나리아 실행 대조는 레인 단계가 돌 때만 증명한다 — 그 단계를 지우거나 조건·실패 무시 키로 무르거나,
         # 둘이 읽는 `scripts/test/test-security-defaults.sh` 만 바꾼 PR 이 레인을 만들지 않으면 아무것도 안 울었다. 워크플로

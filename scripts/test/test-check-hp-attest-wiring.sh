@@ -22,8 +22,8 @@ lane_flow() { # $1=루트 $2=언어
   put "$1/.github/workflows/$2-ci.yml" <<EOF
 name: $2 CI
 on:
-  push: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs'] }
-  pull_request: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs'] }
+  push: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh'] }
+  pull_request: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh'] }
   workflow_dispatch:
 permissions:
   contents: read
@@ -56,7 +56,7 @@ name: $2 CI
 on:
   push:
     branches: [main]
-    paths: ['$2/**', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs']
+    paths: ['$2/**', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh']
   pull_request:
     branches: [main]
     paths:
@@ -64,6 +64,7 @@ on:
       - 'scripts/check-hp-attest.mjs'
       - 'scripts/test/test-security-defaults.sh'
       - 'scripts/check-canaries-ran.mjs'
+      - 'scripts/test/test-lane-canaries.sh'
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -202,7 +203,7 @@ assert_eq "1" "$(grep -c '^  pull_request:$' "$(wa no-paths)")" "[no-paths] 변�
 run; expect no-paths 0 "ok    lang-a"
 
 fork compact-seq; sed -i 's/^      - \(.*\)'"'"'$/    - \1'"'"'/' "$(wb compact-seq)"
-assert_eq "4" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
+assert_eq "5" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
 run; expect compact-seq 0 "ok    lang-b"
 
 fork pr-types-ok; sed -i "s|^  pull_request: {.*\$|  pull_request: { types: [opened, synchronize, reopened, labeled] }|" "$(wa pr-types-ok)"

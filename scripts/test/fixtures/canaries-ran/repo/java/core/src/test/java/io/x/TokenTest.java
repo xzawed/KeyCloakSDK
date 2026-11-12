@@ -9,4 +9,8 @@ class TokenTest {
   @Test void rejectsMismatchedNonce() throws Exception {}
 
   @Test void coldCacheIsBounded() {}
+
+  @Test void reachableObjectsDoNotRenderSecrets() {}
+
+  @Test void bearerCanonicalTable() {}
 }

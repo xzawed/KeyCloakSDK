@@ -4,9 +4,9 @@ on:
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
   push:
     branches: [main]
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
   pull_request:
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
