@@ -242,7 +242,15 @@ class TokenResponseCapTest {
       case CODE_EXCHANGE -> kc.auth().exchangeCode("code-1", CB, VERIFIER).getAccessToken();
       case INTROSPECT -> kc.auth().introspect("tok-1").getUsername().orElse(null);
       case LOGOUT -> {
-        kc.auth().logout("rt-1");
+        // 이 IdP 의 logout 은 본문을 실으려고 200 이다 — 204 만 로그아웃이라 그 답은 상한 판독기를 다 지난 뒤 상태 판정에서
+        // 실패한다(등록부 logout-2xx-html-false-success). 그 판정에 닿았으면 판독기가 본문을 받아들인 것이다.
+        try {
+          kc.auth().logout("rt-1");
+        } catch (KeycloakAuthException e) {
+          if (!"Logout failed (HTTP 200)".equals(e.getMessage())) {
+            throw e;
+          }
+        }
         yield "logged out";
       }
       case ADMIN -> "realms=" + kc.admin().realms().list().size();

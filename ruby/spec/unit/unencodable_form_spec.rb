@@ -43,6 +43,8 @@ RSpec.describe KeycloakSdk::AuthClient do
         .to_return do |req|
           form = URI.decode_www_form(req.body).to_h
           seen << (form["token"] || form["refresh_token"])
+          next { status: 204 } if req.uri.path.end_with?("/logout") # Keycloak 의 logout 성공은 204 뿐이다
+
           { status: 200, headers: UnsendableTokenSpec::JSON_TYPE,
             body: { active: true, access_token: "AT", token_type: "Bearer", expires_in: 300 }.to_json }
         end

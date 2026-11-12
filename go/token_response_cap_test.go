@@ -395,7 +395,15 @@ var capLanes = []capLane{
 	}},
 	{name: "Logout", over: "*keycloak.TransportError", run: func(t *testing.T, p *capIdP, c *Client, s capShape) error {
 		rt := capJWT(s.tokLen)
-		if err := c.Auth.Logout(context.Background(), rt); err != nil {
+		err := c.Auth.Logout(context.Background(), rt)
+		// The cap IdP answers every lane 200 with a body, and logout succeeds on 204 only (registry
+		// logout-2xx-html-false-success): within the cap the read passes and the status decides — *AuthError
+		// "(HTTP 200)". Over the cap the read fails first, so the cap's error is what this lane measures.
+		var refused *AuthError
+		if errors.As(err, &refused) && strings.HasSuffix(refused.Msg, "failed (HTTP 200)") {
+			err = nil
+		}
+		if err != nil {
 			return err
 		}
 		if got := p.formTok.Load(); got != int64(len(rt)) {

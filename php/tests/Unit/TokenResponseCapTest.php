@@ -256,8 +256,16 @@ final class TokenResponseCapTest extends TestCase
             'refresh' => static fn (): int => strlen($auth->refresh('tc-refresh-token')->accessToken),
             'code' => static fn (): int => strlen($auth->exchangeCode('tc-code', str_repeat('v', 64))->accessToken),
             'introspect' => static fn (): bool => $auth->introspect('tc-introspected-token')->active,
+            // 이 IdP 의 logout 은 본문을 실으려고 200 이다 — 204 만 로그아웃이라 그 답은 상한 판독기를 다 지난 **뒤** 상태 판정에서
+            // 실패한다(등록부 logout-2xx-html-false-success). 그 판정에 닿았으면 판독기가 본문을 받아들인 것이다.
             'logout' => static function () use ($auth): bool {
-                $auth->logout('tc-refresh-token');
+                try {
+                    $auth->logout('tc-refresh-token');
+                } catch (KeycloakAuthError $e) {
+                    if ($e->getMessage() !== 'logout failed (HTTP 200)') {
+                        throw $e;
+                    }
+                }
 
                 return true;
             },
@@ -582,7 +590,7 @@ final class TokenResponseCapTest extends TestCase
             } else {
                 self::assertInstanceOf(KeycloakAuthError::class, $result, "$lane $size: " . $result::class . ': ' . $result->getMessage());
                 if ($lane === 'logout') {
-                    self::assertSame('logout failed', $result->getMessage(), "$lane $size: 상한 안의 오류 상태는 오늘의 오류 그대로다");
+                    self::assertSame('logout failed (HTTP 400)', $result->getMessage(), "$lane $size: 상한 안의 오류 상태는 상태가 판정한다");
                 }
             }
             if ($lane === 'admin') {
@@ -899,7 +907,8 @@ final class TokenResponseCapTest extends TestCase
                 $want = match ($kind) {
                     'stalled' => "$class: {$noun[$lane]} stalled before its end · no cause",
                     'exceeds' => "$class: {$noun[$lane]} exceeds 1048576 bytes · no cause",
-                    default => 'returned',
+                    // logout 은 204 만 성공이다 — 끝까지 읽힌 200 은 그 뒤 상태 판정에서 실패한다(등록부 logout-2xx-html-false-success).
+                    default => $lane === 'logout' ? KeycloakAuthError::class . ': logout failed (HTTP 200) · no cause' : 'returned',
                 };
                 $e = self::thrown($call);
                 self::assertSame($want, self::described($e), "$lane · $bodyName");

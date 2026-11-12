@@ -258,7 +258,8 @@ public class AuthClient {
   public void logout(String refreshToken) {
     try {
       HTTPResponse resp = CappedResponseSender.send(applyTimeouts(buildLogoutRequest(refreshToken)), "logout");
-      if (!resp.indicatesSuccess()) {
+      // Keycloak 의 성공은 204 뿐이다 — 2xx 전부를 받으면 가로챈 200 로그인 페이지도 성공이었다(등록부 logout-2xx-html-false-success)
+      if (resp.getStatusCode() != java.net.HttpURLConnection.HTTP_NO_CONTENT) {
         throw new KeycloakAuthException("Logout failed (HTTP " + resp.getStatusCode() + ")", null, null);
       }
     } catch (java.io.IOException e) {

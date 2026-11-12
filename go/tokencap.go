@@ -461,6 +461,14 @@ func introspectionRefusal(body []byte) error {
 	return nil
 }
 
+// statusIs2xx is Introspect's success: any 2xx (RFC 7662 §2.2 answers 200).
+func statusIs2xx(status int) bool { return status >= 200 && status < 300 }
+
+// statusIs204 is Logout's success: Keycloak answers the backchannel logout with 204 only. Taking every 2xx made an
+// intercepting 200 page — a proxy's login form — a successful logout while the session stayed alive (registry
+// logout-2xx-html-false-success, decision 2026-11-12: every other status is *AuthError).
+func statusIs204(status int) bool { return status == http.StatusNoContent }
+
 // readFailed is postForm's error (Introspect · Logout) when reading the body failed. A gzip coding that does not decode
 // arrived and is unusable — *AuthError at any status, as on the grants (decision Q1, 2026-11-11; it was *TransportError) —
 // and anything else did not arrive in full: *TransportError, as before. Kept out of auth.go for the reason

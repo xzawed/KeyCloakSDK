@@ -293,14 +293,16 @@ export class AuthClient {
         // 실패 모드다 — 302를 따라가 무관한 200을 받으면 `response.ok`가 참이라 **logout이 성공을
         // 반환**하고, 호출자는 세션이 폐기됐다고 믿지만 살아 있다(실측 확인).
         // ⚠️ 'error'가 아니라 'manual'을 쓴다: 'error'는 `TypeError: fetch failed`로 뭉개져
-        // 네트워크 장애와 구분되지 않는다. 'manual'은 3xx를 그대로 표면화해 아래 `!response.ok`가
+        // 네트워크 장애와 구분되지 않는다. 'manual'은 3xx를 그대로 표면화해 아래 상태 검사가
         // 정상적으로 실패로 처리한다 — Go의 `ErrUseLastResponse`와 같은 의미론이다.
         redirect: 'manual',
       })
     } catch (e) {
       throw failure('Logout request error', e)
     }
-    if (!response.ok) {
+    // Keycloak 의 성공은 204 뿐이다 — `response.ok`(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
+    // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
+    if (response.status !== 204) {
       throw new KeycloakAuthError(`Logout failed (HTTP ${response.status})`)
     }
   }

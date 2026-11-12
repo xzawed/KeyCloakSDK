@@ -42,15 +42,20 @@ final class ResponseFailure
     /**
      * The SDK error for a failed introspection or logout request — `"<what> failed"` (auth) for an answer the server sent (an
      * error status, or a body that could not be decoded), `"<what> request failed"` (transport) for a request that got none.
+     * `$withStatus` names the status of that answer when Guzzle kept it — `"<what> failed (HTTP N)"`, the wording of every
+     * failed logout (`LogoutAnswer`).
      *
      * ⚠️ `$e` is sensitive — the error is built in this frame, and the Guzzle exception holds the request (Basic credentials,
      * the token or refresh token in the form): without the attribute, `var_dump` of the SDK error printed them from the trace
      * (`MalformedTokenResponseTest`, measured).
      */
-    public static function of(#[\SensitiveParameter] GuzzleException $e, string $what): KeycloakException
+    public static function of(#[\SensitiveParameter] GuzzleException $e, string $what, bool $withStatus = false): KeycloakException
     {
-        return $e instanceof BadResponseException || self::undecodable($e)
-            ? new KeycloakAuthError("$what failed", previous: SanitizedCause::of($e))
-            : new KeycloakTransportError("$what request failed", previous: SanitizedCause::of($e));
+        if (!$e instanceof BadResponseException && !self::undecodable($e)) {
+            return new KeycloakTransportError("$what request failed", previous: SanitizedCause::of($e));
+        }
+        $status = $withStatus && $e instanceof RequestException ? $e->getResponse()?->getStatusCode() : null;
+
+        return new KeycloakAuthError($status === null ? "$what failed" : "$what failed (HTTP $status)", previous: SanitizedCause::of($e));
     }
 }

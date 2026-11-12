@@ -176,6 +176,24 @@ async def test_a_logout_without_a_body_passes_through_the_capped_session(token_i
     assert token_idp.hits == ["/realms/r/protocol/openid-connect/logout"]
 
 
+@pytest.mark.parametrize(
+    ("status", "head"),
+    [(200, b"<html>login</html>"), (200, b""), (200, b"{}"), (201, b""), (202, b""), (302, b"")]
+    + [(s, b"") for s in (205, 206, 400, 401, 404, 500, 502, 503, 504)],
+    ids=lambda v: str(v),
+)
+async def test_logout_succeeds_on_204_only(status: int, head: bytes, token_idp: Any) -> None:
+    """sync 미러와 같다 — 204 가 아닌 logout 답은 로그아웃이 아니다(등록부
+    logout-2xx-html-false-success)."""
+    token_idp.status, token_idp.head = status, head
+
+    async with _client(token_idp) as kc:
+        with pytest.raises(KeycloakAuthError) as excinfo:
+            await _call("logout", kc, "L" * 40)
+
+    assert str(excinfo.value) == f"Keycloak request failed: HTTP {status}"
+
+
 @pytest.mark.parametrize("chunked", [False, True], ids=["content-length", "chunked"])
 @pytest.mark.parametrize("lane", LANES)
 async def test_a_huge_body_is_refused_holding_only_what_was_read(

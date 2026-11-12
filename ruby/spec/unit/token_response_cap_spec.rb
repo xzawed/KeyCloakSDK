@@ -275,7 +275,7 @@ RSpec.describe KeycloakSdk::Http do
             [status, outcomes]
           end
           refused = [KeycloakSdk::TransportError, TokenResponseCapSpec::LOGOUT_REFUSED]
-          expect(seen).to eq(200 => [[:ok, nil], refused],
+          expect(seen).to eq(200 => [[KeycloakSdk::AuthError, "logout failed: HTTP 200"], refused],
                              302 => [[KeycloakSdk::AuthError, "logout failed: HTTP 302"], refused],
                              400 => [[KeycloakSdk::AuthError, "logout failed: HTTP 400"], refused],
                              500 => [[KeycloakSdk::AuthError, "logout failed: HTTP 500"], refused])
@@ -298,12 +298,13 @@ RSpec.describe KeycloakSdk::Http do
     context "with auth.logout's request" do
       let(:body_server) { BodyServer.new(framing: :length) }
 
-      it "still succeeds on an empty 204 or 200" do
+      # 204 만 성공이다 — 빈 200 도 로그아웃이 아니다(등록부 logout-2xx-html-false-success · 판정 2026-11-12).
+      it "still succeeds on an empty 204, and an empty 200 is not a logout" do
         outcomes = [204, 200].map do |status|
           body_server.route(TokenResponseCapSpec::LOGOUT) { [status, {}, "", 0] }
           spec.logout_outcome(kc)
         end
-        expect(outcomes).to eq([[:ok, nil], [:ok, nil]])
+        expect(outcomes).to eq([[:ok, nil], [KeycloakSdk::AuthError, "logout failed: HTTP 200"]])
       end
 
       it "sends the same form and client auth, asking for an unencoded body" do

@@ -430,7 +430,9 @@ impl AuthClient {
             .await
             .map_err(|e| KeycloakError::Transport(format!("logout: {e}")))?;
         let status = resp.status();
-        if !status.is_success() {
+        // Keycloak 의 성공은 204 뿐이다 — is_success()(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
+        // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
+        if status != reqwest::StatusCode::NO_CONTENT {
             return Err(KeycloakError::Auth {
                 message: format!("logout failed (HTTP {})", status.as_u16()),
                 oauth_error: None,
@@ -1404,14 +1406,29 @@ mod tests {
     }
 
     // ⚠️ 대조군을 지우지 말 것 — 위 테스트가 "logout이 늘 실패한다"로도 통과하는 것을 막는
-    // 유일한 수단이다. 204(Keycloak의 실제 성공 응답)와 200 둘 다 Ok여야 한다.
+    // 유일한 수단이다. 204(Keycloak의 실제 성공 응답)만 Ok 이고, 다른 2xx 는 Auth 다 — 가로챈 200
+    // 로그인 페이지가 성공이었다(등록부 logout-2xx-html-false-success, 2026-11-12 판정).
     #[tokio::test]
-    async fn logout_accepts_2xx_status() {
-        for status in [200_u16, 204] {
+    async fn logout_accepts_only_204() {
+        let (auth, _server) = logout_fixture(204).await;
+        auth.logout("rt")
+            .await
+            .unwrap_or_else(|e| panic!("HTTP 204는 성공이어야 한다, 실제: {e:?}"));
+        // 205 · 206 · 3xx · 4xx · 5xx 와 정확한 문구 — 실행 레그가 살린 편집(205 수용 · 5xx 를 Transport 로 ·
+        // 문구에서 상태 빼기)을 잡는다.
+        for status in [
+            200_u16, 201, 202, 205, 206, 302, 400, 401, 404, 500, 502, 503, 504,
+        ] {
             let (auth, _server) = logout_fixture(status).await;
-            auth.logout("rt")
-                .await
-                .unwrap_or_else(|e| panic!("HTTP {status}는 성공이어야 한다, 실제: {e:?}"));
+            match auth.logout("rt").await {
+                Err(KeycloakError::Auth {
+                    message,
+                    oauth_error: None,
+                }) => {
+                    assert_eq!(message, format!("logout failed (HTTP {status})"));
+                }
+                other => panic!("HTTP {status}는 Auth 실패여야 한다, 실제: {other:?}"),
+            }
         }
     }
 

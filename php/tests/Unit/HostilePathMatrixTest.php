@@ -94,6 +94,8 @@ final class HostilePathMatrixTest extends TestCase
             . 'StreamInterface 를 만들지 못한다. 동작은 TokenResponseCapTest 가 잰다.',
         'Internal\\ResponseFailure::of' => '정적 분류기 — 받은 Guzzle 예외에 맞는 SDK 오류를 돌려줄 뿐 HTTP 클라이언트를 쥐지 않아 요청을 '
             . '낼 수 없다. 합성기는 GuzzleException 을 만들지 못한다. 동작은 MalformedTokenResponseTest 의 x2 · x3 · x4 · y2 행이 잰다.',
+        'Internal\\LogoutAnswer::check' => '정적 판정기 — 받은 상태 숫자만 본다(HTTP 클라이언트를 쥐지 않아 요청을 낼 수 없다). 합성 인자 1 은 '
+            . '204 가 아니라 던지므로 가를 수 없다. 동작은 MalformedTokenResponseTest 의 g2–g5 행이 잰다.',
     ];
 
     /**

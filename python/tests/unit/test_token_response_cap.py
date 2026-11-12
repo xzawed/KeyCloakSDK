@@ -189,6 +189,41 @@ def test_a_logout_without_a_body_passes_through_the_capped_session(token_idp: An
     assert token_idp.accept_encoding == "gzip, deflate"
 
 
+#: 204 가 아닌 logout 답 — 가로챈 200 로그인 페이지 · 빈 200 · `{}` · 그 밖의 2xx · 3xx.
+LOGOUT_NOT_204 = [
+    (200, b"<html>login</html>"),
+    (200, b""),
+    (200, b"{}"),
+    (201, b""),
+    (202, b""),
+    (302, b""),
+    # 205 · 206 · 4xx · 5xx — 다른 언어에서 살아남은 편집(205 수용 · 5xx 를 transport 로)을
+    # python 에서도 잡는다.
+    (205, b""),
+    (206, b""),
+    (400, b""),
+    (401, b""),
+    (404, b""),
+    (500, b""),
+    (502, b""),
+    (503, b""),
+    (504, b""),
+]
+
+
+@pytest.mark.parametrize(("status", "head"), LOGOUT_NOT_204, ids=lambda v: str(v))
+def test_logout_succeeds_on_204_only(status: int, head: bytes, token_idp: Any) -> None:
+    """Keycloak 의 logout 성공은 204 뿐이다(등록부 logout-2xx-html-false-success · 판정
+    2026-11-12). python 은 python-keycloak 이 204 만 기대해 처음부터 그랬다 — 나머지 여덟이 이리로
+    맞췄다. 이 시험은 그 상류 계약이 움직이면 잡는다(본문은 판정에 쓰지 않는다)."""
+    token_idp.status, token_idp.head = status, head
+
+    with _client(token_idp) as kc, pytest.raises(KeycloakAuthError) as excinfo:
+        _call("logout", kc, "L" * 40)
+
+    assert str(excinfo.value) == f"Keycloak request failed: HTTP {status}"
+
+
 @pytest.mark.parametrize("chunked", [False, True], ids=["content-length", "chunked"])
 @pytest.mark.parametrize("lane", LANES)
 def test_a_huge_body_is_refused_holding_only_what_was_read(

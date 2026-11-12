@@ -14,6 +14,7 @@ use Xzawed\Keycloak\Exception\KeycloakException;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\SanitizedCause;
 use Xzawed\Keycloak\Exception\TokenValidationError;
+use Xzawed\Keycloak\Internal\LogoutAnswer;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
 use Xzawed\Keycloak\Internal\PkceKeycloakProvider;
 use Xzawed\Keycloak\Internal\ResponseFailure;
@@ -241,7 +242,7 @@ final class AuthClient
             if (TokenResponseCap::overflowed($sink)) {
                 throw self::logoutTooLarge();   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR) — 오류 상태의 본문 포함
             }
-            throw ResponseFailure::of($e, 'logout');   // 서버가 준 답이면 auth, 응답이 없으면(TLS · 깨진 머리) transport
+            throw ResponseFailure::of($e, 'logout', withStatus: true);   // 서버가 준 답이면 auth, 응답이 없으면(TLS · 깨진 머리) transport
         } catch (KeycloakException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -257,6 +258,7 @@ final class AuthClient
         if ($body === null) {
             throw self::logoutTooLarge();
         }
+        LogoutAnswer::check($response->getStatusCode());   // 204 만 로그아웃이다 — 가로챈 200 페이지 · 302 는 아니다
     }
 
     private static function logoutTooLarge(): KeycloakTransportError

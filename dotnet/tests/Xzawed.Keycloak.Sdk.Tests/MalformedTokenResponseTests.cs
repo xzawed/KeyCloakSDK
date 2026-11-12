@@ -210,7 +210,8 @@ public sealed class MalformedTokenResponseTests
     /// 잘못된 헤더 줄·이름을 인용하고(청크 길이 줄은 16진), 서버의 reason phrase 는 그대로 SDK 까지 온다.
     /// </summary>
     /// <param name="expected">토큰·introspect 호출의 기대 예외.</param>
-    /// <param name="logout">logout 의 기대 예외(<c>null</c> 은 성공 — logout 은 2xx 본문을 읽지 않는다).</param>
+    /// <param name="logout">logout 의 기대 예외 — logout 의 성공은 204 뿐이라(등록부 logout-2xx-html-false-success, 2026-11-12) 200 은
+    /// 본문과 무관하게 <see cref="KeycloakAuthException"/> 이다.</param>
     [Theory]
     [InlineData("g1 invalid header line", "HTTP/1.1 200 OK\r\nLK-G1-HDRLINE-canary\r\nContent-Length: 2\r\n\r\n{}", "LK-G1-HDRLINE-canary",
         typeof(KeycloakTransportException), typeof(KeycloakTransportException))]
@@ -224,7 +225,7 @@ public sealed class MalformedTokenResponseTests
     // charset 을 무시하고 UTF-8 로 읽어(RFC 8259 §11 — 판정 D2, 2026-11-10) 그 조회가 없다: `{}` 는 끝까지 온 쓸 수 없는 본문이라
     // 토큰 호출(access_token 없음)도 introspect(active 없음 — D3)도 KeycloakAuthException 이다. 예전에는 읽기 실패로 전송 오류였다.
     [InlineData("g5 unknown charset", "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=LK-G5-CHARSET-canary\r\nContent-Length: 2\r\n\r\n{}",
-        "LK-G5-CHARSET-canary", typeof(KeycloakAuthException), null)]
+        "LK-G5-CHARSET-canary", typeof(KeycloakAuthException), typeof(KeycloakAuthException))]
     public async Task Malformed_wire_response_errors_do_not_print_its_secrets(string name, string raw, string canary, Type expected, Type? logout)
     {
         using var listener = new RawServer(raw);
