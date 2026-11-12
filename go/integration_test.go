@@ -157,26 +157,42 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
+	username := "e2e-user-" + randomHex(t, 4)
 	id, err := admin.Users.Create(ctx, gocloak.User{
-		Username: gocloak.StringP("bob"), Email: gocloak.StringP("bob@example.com"), Enabled: gocloak.BoolP(true),
+		Username: gocloak.StringP(username), Email: gocloak.StringP(username + "@example.com"), Enabled: gocloak.BoolP(true),
 	})
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Users.Delete(ctx, id); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("users cleanup: %v", err)
+		}
+	}()
 	got, err := admin.Users.Get(ctx, id)
-	if err != nil || got.Username == nil || *got.Username != "bob" {
+	if err != nil || got.Username == nil || *got.Username != username {
 		t.Fatalf("get user: %+v %v", got, err)
 	}
-	found, err := admin.Users.Search(ctx, "bob", 0, 20)
+	found, err := admin.Users.Search(ctx, username, 0, 20)
 	if err != nil || len(found) == 0 {
 		t.Fatalf("search: %d %v", len(found), err)
+	}
+	// The search is filtered by the username: every result matches the query (an unfiltered list also holds
+	// the new user — the realm has only a few), and the new user is among them.
+	for _, u := range found {
+		if u == nil || u.Username == nil || !strings.Contains(*u.Username, username) {
+			t.Fatalf("search(%q) returned a user outside the query: %+v", username, u)
+		}
+	}
+	if !listed(found, func(u *gocloak.User) bool { return u.ID != nil && *u.ID == id }) {
+		t.Fatalf("search(%q): %s is not in the result (%d users)", username, id, len(found))
 	}
 	if err := admin.Users.Update(ctx, id, gocloak.User{FirstName: gocloak.StringP("Bob")}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	updated, _ := admin.Users.Get(ctx, id)
-	if updated.FirstName == nil || *updated.FirstName != "Bob" {
-		t.Fatalf("update not applied: %+v", updated)
+	if updated, err := admin.Users.Get(ctx, id); err != nil || updated.FirstName == nil || *updated.FirstName != "Bob" {
+		t.Fatalf("update not applied: %+v %v", updated, err)
 	}
 	if err := admin.Users.Delete(ctx, id); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -189,7 +205,8 @@ func TestE2E(t *testing.T) {
 	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.Realm == nil || *r.Realm != "it-realm" {
 		t.Fatalf("realms.Get: %+v %v", r, err)
 	}
-	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP("e2e-client")})
+	clientName := "e2e-client-" + randomHex(t, 4)
+	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP(clientName)})
 	if err != nil {
 		t.Fatalf("clients.Create: %v", err)
 	}
@@ -199,26 +216,20 @@ func TestE2E(t *testing.T) {
 			t.Errorf("clients cleanup: %v", err)
 		}
 	}()
-	if c, err := admin.Clients.Get(ctx, cid); err != nil || c.ClientID == nil || *c.ClientID != "e2e-client" {
+	if c, err := admin.Clients.Get(ctx, cid); err != nil || c.ClientID == nil || *c.ClientID != clientName {
 		t.Fatalf("clients.Get: %+v %v", c, err)
 	}
-	fc, err := admin.Clients.FindByClientID(ctx, "e2e-client")
+	fc, err := admin.Clients.FindByClientID(ctx, clientName)
 	if err != nil || len(fc) == 0 {
 		t.Fatalf("clients.FindByClientID: %d %v", len(fc), err)
 	}
-	listed := false
-	for _, c := range fc {
-		if c != nil && c.ID != nil && *c.ID == cid {
-			listed = true
-		}
-	}
-	if !listed {
+	if !listed(fc, func(c *gocloak.Client) bool { return c.ID != nil && *c.ID == cid }) {
 		t.Fatalf("clients.FindByClientID: %s is not in the result (%d clients)", cid, len(fc))
 	}
 	// clients.Update addresses the client by its internal id — the facade fills the body's .ID with it, because
 	// gocloak builds the path from the body.
 	if err := admin.Clients.Update(ctx, cid, gocloak.Client{
-		ClientID:    gocloak.StringP("e2e-client"),
+		ClientID:    gocloak.StringP(clientName),
 		Description: gocloak.StringP("updated by e2e"),
 	}); err != nil {
 		t.Fatalf("clients.Update: %v", err)
@@ -232,48 +243,77 @@ func TestE2E(t *testing.T) {
 	if _, err := admin.Clients.Get(ctx, cid); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("clients.Get after delete must be ErrNotFound, got %v", err)
 	}
-	if err := admin.Roles.Create(ctx, gocloak.Role{Name: gocloak.StringP("e2e-role")}); err != nil {
+	roleName := "e2e-role-" + randomHex(t, 4)
+	if err := admin.Roles.Create(ctx, gocloak.Role{Name: gocloak.StringP(roleName)}); err != nil {
 		t.Fatalf("roles.Create: %v", err)
 	}
-	if _, err := admin.Roles.Get(ctx, "e2e-role"); err != nil {
-		t.Fatalf("roles.Get: %v", err)
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Roles.Delete(ctx, roleName); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("roles cleanup: %v", err)
+		}
+	}()
+	if r, err := admin.Roles.Get(ctx, roleName); err != nil || r.Name == nil || *r.Name != roleName {
+		t.Fatalf("roles.Get: %+v %v", r, err)
 	}
-	if rl, err := admin.Roles.List(ctx); err != nil || len(rl) == 0 {
+	rl, err := admin.Roles.List(ctx)
+	if err != nil || len(rl) == 0 {
 		t.Fatalf("roles.List: %d %v", len(rl), err)
+	}
+	if !listed(rl, func(r *gocloak.Role) bool { return r.Name != nil && *r.Name == roleName }) {
+		t.Fatalf("roles.List: %s is not in the list (%d roles)", roleName, len(rl))
 	}
 	// roles.Update는 **현재 이름으로 주소를 잡고 body가 새 이름을 나른다**(Keycloak rename 계약).
 	// 그래서 경로 인자를 body의 .Name으로 덮어쓰면 안 된다 — 덮으면 rename이 조용한 no-op이 된다.
-	if err := admin.Roles.Update(ctx, "e2e-role", gocloak.Role{
-		Name:        gocloak.StringP("e2e-role"),
+	if err := admin.Roles.Update(ctx, roleName, gocloak.Role{
+		Name:        gocloak.StringP(roleName),
 		Description: gocloak.StringP("updated by e2e"),
 	}); err != nil {
 		t.Fatalf("roles.Update: %v", err)
 	}
-	if r, err := admin.Roles.Get(ctx, "e2e-role"); err != nil || r.Description == nil || *r.Description != "updated by e2e" {
+	if r, err := admin.Roles.Get(ctx, roleName); err != nil || r.Description == nil || *r.Description != "updated by e2e" {
 		t.Fatalf("roles.Update did not take effect: %+v %v", r, err)
 	}
-	if err := admin.Roles.Delete(ctx, "e2e-role"); err != nil {
+	if err := admin.Roles.Delete(ctx, roleName); err != nil {
 		t.Fatalf("roles.Delete: %v", err)
 	}
-	gid, err := admin.Groups.Create(ctx, gocloak.Group{Name: gocloak.StringP("e2e-group")})
+	if _, err := admin.Roles.Get(ctx, roleName); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("roles.Get after delete must be ErrNotFound, got %v", err)
+	}
+	groupName := "e2e-group-" + randomHex(t, 4)
+	gid, err := admin.Groups.Create(ctx, gocloak.Group{Name: gocloak.StringP(groupName)})
 	if err != nil {
 		t.Fatalf("groups.Create: %v", err)
 	}
-	if _, err := admin.Groups.Get(ctx, gid); err != nil {
-		t.Fatalf("groups.Get: %v", err)
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Groups.Delete(ctx, gid); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("groups cleanup: %v", err)
+		}
+	}()
+	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != groupName {
+		t.Fatalf("groups.Get: %+v %v", g, err)
 	}
-	if gl, err := admin.Groups.List(ctx, 0, 20); err != nil || len(gl) == 0 {
+	gl, err := admin.Groups.List(ctx, 0, 20)
+	if err != nil || len(gl) == 0 {
 		t.Fatalf("groups.List: %d %v", len(gl), err)
 	}
+	if !listed(gl, func(g *gocloak.Group) bool { return g.ID != nil && *g.ID == gid }) {
+		t.Fatalf("groups.List: %s is not in the list (%d groups)", gid, len(gl))
+	}
 	// groups.Update는 id로 주소를 잡고 body가 새 이름을 나른다(users/clients와 같은 모양).
-	if err := admin.Groups.Update(ctx, gid, gocloak.Group{Name: gocloak.StringP("e2e-group-renamed")}); err != nil {
+	renamed := groupName + "-renamed"
+	if err := admin.Groups.Update(ctx, gid, gocloak.Group{Name: gocloak.StringP(renamed)}); err != nil {
 		t.Fatalf("groups.Update: %v", err)
 	}
-	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != "e2e-group-renamed" {
+	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != renamed {
 		t.Fatalf("groups.Update did not take effect: %+v %v", g, err)
 	}
 	if err := admin.Groups.Delete(ctx, gid); err != nil {
 		t.Fatalf("groups.Delete: %v", err)
+	}
+	if _, err := admin.Groups.Get(ctx, gid); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("groups.Get after delete must be ErrNotFound, got %v", err)
 	}
 
 	// realms.List / realms.Update — `it-client`는 manage-realm을 갖는다(testdata/it-realm-realm.json).
@@ -339,13 +379,7 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("realms.List: %v", err)
 	}
-	listedRealm := false
-	for _, r := range rls {
-		if r != nil && r.Realm != nil && *r.Realm == tmpRealm {
-			listedRealm = true
-		}
-	}
-	if !listedRealm {
+	if !listed(rls, func(r *gocloak.RealmRepresentation) bool { return r.Realm != nil && *r.Realm == tmpRealm }) {
 		t.Fatalf("realms.List: %s is not in the list (%d realms)", tmpRealm, len(rls))
 	}
 	if err := masterAdmin.Realms.Update(ctx, tmpRealm, gocloak.RealmRepresentation{
@@ -437,6 +471,16 @@ func TestE2EValidateIgnoresEd448KeyInRealmJWKS(t *testing.T) {
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// listed reports whether a list holds the record a lifecycle created — the "list contains it" step, not "non-empty".
+func listed[T any](xs []*T, match func(*T) bool) bool {
+	for _, x := range xs {
+		if x != nil && match(x) {
 			return true
 		}
 	}
