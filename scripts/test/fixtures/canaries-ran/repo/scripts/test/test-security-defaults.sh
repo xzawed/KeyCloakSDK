@@ -21,6 +21,11 @@ sd_backoff_canary() {
     rust) printf '%s\n' 'rust/src/jwks.rs|async fn backoff_bounds_cold_retries(' ;;
   esac
 }
+sd_backoff_exempt() {
+  case "$1" in
+    none) ;;
+  esac
+}
 sd_mask_test() {
   case "$1" in
     go)   printf '%s' 'go/masking_test.go' ;;
@@ -58,11 +63,12 @@ sd_empty_canary() {
     none) ;;
   esac
 }
-# 호출 자리 — 검사기는 `sd_canary_ok "$ROOT/…` 를 세기만 한다(축 여섯 = 자리 여섯).
+# 호출 자리 — 검사기는 `sd_canary_ok "$ROOT/…` 를 세기만 한다(축 일곱 = 자리 일곱).
 _a="$(sd_canary_ok "$ROOT/$f1" "$c1")"
 _b="$(sd_canary_ok "$ROOT/$f2" "$c2")"
 _c="$(sd_canary_ok "$ROOT/$f3" "$c3")"
 _d="$(sd_canary_ok "$ROOT/$f4" "$c4")"
 _e="$(sd_canary_ok "$ROOT/$f5" "$c5")"
 _f="$(sd_canary_ok "$ROOT/$f6" "$c6")"
+_g="$(sd_canary_ok "$ROOT/$f7" "$c7")"
 # 주석 속 자리는 세지 않는다: sd_canary_ok "$ROOT/$x" "$y"

@@ -54,6 +54,8 @@ export const GUARD = 'scripts/test/test-security-defaults.sh'
 export const AXES = [
   { axis: 'nonce', rows: 'sd_nonce_canary', shape: 'file|canary' },
   { axis: 'backoff', rows: 'sd_backoff_canary', shape: 'file|canary' },
+  // java·kotlin 의 백오프 면제 근거(Nimbus 가 콜드 적재도 rate-limit 한다는 것을 고정하는 시험) — 나머지 일곱은 행이 없다.
+  { axis: 'backoff-exempt', rows: 'sd_backoff_exempt', shape: 'file|canary' },
   { axis: 'mask', file: 'sd_mask_test', rows: 'sd_mask_canary', shape: 'canary' },
   { axis: 'mask2', file: 'sd_mask2_test', rows: 'sd_mask2_canary', shape: 'canary' },
   { axis: 'token-type', rows: 'sd_token_type_anchor', shape: 'kind|file|canary' },

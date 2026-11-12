@@ -959,14 +959,17 @@ assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — �
 # `_seen`이 7이 아니면 표가 낡은 것이다. 언어별 동작은 각 언어 단위테스트가 증명하고, 여기서는
 # **대칭**만 본다 — 한 언어에서 장치를 지우면 그 언어 CI 와 이 가드가 함께 운다.
 # 곁 표(면제) — java·kotlin 은 Nimbus 가 JWKS **source** 를 rate-limit 해 콜드 적재 실패도 그 창에 묶인다
-# (security.md · 2026-09-06 실측 2 회). 증거는 그 경계를 고정하는 시험이다(`파일|선언`, 주석 밖 ≥ 1 — 이 축 끝에서
-# 단언한다). 시험이 사라지면 면제의 근거도 사라진다. ⚠️ 두 행은 각 JVM 행렬 W1 의 손 목록 앵커와 **같은 자리**여야 한다 —
-# 행렬이 이 파일에서 그 언어의 행위 앵커를 전부 뽑아 자기 손 목록에 있는지 본다(kotlin 은 시험이 부르는 도우미 `run` 이
-# 앵커다 · kotlin 행렬엔 java 의 `run>validate` 같은 호출 사슬이 없다). 시험 이름을 적었더니 kotlin 레인이 W1 로 울었다.
+# (security.md · 2026-09-06 실측 2 회). 증거는 그 경계를 고정하는 시험이고, 다른 행위 축과 같은 카나리아다 — `파일|선언`,
+# 주석 밖 정확히 1 회(이 축 끝에서 단언) · 그 실행에서 돌아 통과했는지는 레인의 `check-canaries-ran.mjs`(AXES
+# `backoff-exempt`). 시험이 사라지거나 건너뛰면 면제의 근거도 사라진다. ⚠️ 첫 판은 주석 밖 ≥ 1 에 kotlin 행이 도우미
+# `fun run(` 이라, kotlin 시험을 지우고 도우미만 남겨도 · java 시험에 `@Disabled` 를 달아도 초록이었다(probe.sh SILENT
+# 2026-11-12). ⚠️ 두 행은 각 JVM 행렬 W1 의 손 목록 앵커와 **같은 자리**여야 한다 — 행렬이 이 파일에서 그 언어의 행위
+# 앵커를 전부 뽑아 자기 손 목록에 있는지 본다. 두 시험 다 도우미 `run` 을 거쳐 `.validate(` 에 닿으므로 두 행렬이 같은
+# `run>validate` 사슬로 잇는다.
 sd_backoff_exempt() {
   case "$1" in
     java)   printf '%s' 'java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/JwksColdCacheOutageTest.java|void coldCacheDuringIdpOutage_isBounded(' ;;
-    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksColdCacheOutageTest.kt|fun run(' ;;
+    kotlin) printf '%s' 'kotlin/src/test/kotlin/io/github/xzawed/keycloak/JwksColdCacheOutageTest.kt|fun `cold cache during an IdP outage is bounded`(' ;;
   esac
 }
 SD_BACKOFF_LANGS="python node go dotnet php rust ruby"
@@ -1071,14 +1074,15 @@ EOF
   _backoff_seen=$((_backoff_seen + 1))
 done
 assert_eq "7" "$_backoff_seen" "[backoff] 훑은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
-# 면제의 증거 — 곁 표의 시험 선언이 주석 밖에 있는가. 선언만 본다(동작은 그 레인 CI 가 돌린다).
+# 면제의 증거 — 곁 표의 시험 선언이 주석 밖에 정확히 하나인가(카나리아). 동작은 그 레인 CI 가 돌리고, 그 실행에서
+# 돌아 통과했는지는 레인의 check-canaries-ran 이 본다.
 _backoff_ex_seen=0
 for L in $SD_LANGS; do
   _bx="$(sd_backoff_exempt "$L")"
   [ -n "$_bx" ] || continue
   _bxf="${_bx%%|*}"; _bxd="${_bx#*|}"
-  assert_eq "ok" "$(sd_hook_ok "$ROOT/$_bxf" "$_bxd")" \
-    "[backoff] $L 의 면제 근거 시험이 없다(주석 밖) — 기대: $_bxd ($_bxf). 근거가 사라지면 면제도 사라진다"
+  assert_eq "ok" "$(sd_canary_ok "$ROOT/$_bxf" "$_bxd")" \
+    "[backoff] $L 의 면제 근거 시험이 주석 밖에 정확히 하나가 아니다 — 기대: $_bxd ($_bxf). 근거가 사라지면 면제도 사라진다"
   _backoff_ex_seen=$((_backoff_ex_seen + 1))
 done
 assert_eq "2" "$_backoff_ex_seen" "[backoff] 면제 근거를 본 언어 수가 2가 아니다 — 곁 표나 루프가 낡았나?"

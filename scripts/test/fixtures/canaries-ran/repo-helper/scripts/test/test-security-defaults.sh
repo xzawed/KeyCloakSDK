@@ -40,6 +40,11 @@ sd_token_type_anchor() {
 sd_py_rows() {
   printf '%s\n' 'python/tests/unit/test_auth.py|async def test_aio_rejects_mismatched_nonce('
 }
+sd_backoff_exempt() {
+  case "$1" in
+    none) ;;
+  esac
+}
 sd_empty_canary() {
   case "$1" in
     none) ;;
@@ -51,3 +56,4 @@ _c="$(sd_canary_ok "$ROOT/$f3" "$c3")"
 _d="$(sd_canary_ok "$ROOT/$f4" "$c4")"
 _e="$(sd_canary_ok "$ROOT/$f5" "$c5")"
 _f="$(sd_canary_ok "$ROOT/$f6" "$c6")"
+_g="$(sd_canary_ok "$ROOT/$f7" "$c7")"
