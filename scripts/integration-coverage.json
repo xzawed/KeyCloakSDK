@@ -15,9 +15,6 @@
       "go/admin.go:AdminClient.GoString": "coverage-omit-hides-security-paths",
       "go/admin.go:AdminClient.String": "coverage-omit-hides-security-paths",
       "go/admin.go:NewAdminClient": "facade-wiring-close-contract-unasserted",
-      "go/admin_clients.go:ClientsResource.Update": "integration-admin-surface-uneven",
-      "go/admin_realms.go:RealmsResource.Create": "integration-admin-surface-uneven",
-      "go/admin_realms.go:RealmsResource.Delete": "integration-admin-surface-uneven",
       "go/auth.go:AuthClient.GoString": "coverage-omit-hides-security-paths",
       "go/auth.go:AuthClient.String": "coverage-omit-hides-security-paths",
       "go/client.go:Client.GoString": "coverage-omit-hides-security-paths",
@@ -108,14 +105,6 @@
     ],
     "owners": {
       "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": "coverage-omit-hides-security-paths",
-      "ruby/lib/keycloak_sdk/admin/clients.rb:Clients#list": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/clients.rb:Clients#update": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/groups.rb:Groups#list": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/groups.rb:Groups#update": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/realms.rb:Realms#list": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/realms.rb:Realms#update": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/roles.rb:Roles#list": "integration-admin-surface-uneven",
-      "ruby/lib/keycloak_sdk/admin/roles.rb:Roles#update": "integration-admin-surface-uneven",
       "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#access_token": "facade-wiring-close-contract-unasserted"
     }
   },
@@ -140,7 +129,6 @@
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.Undecodable": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "coverage-omit-hides-security-paths",
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/ClientsResource.cs:ClientsResource.UpdateAsync": "integration-admin-surface-uneven",
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.CanonicalReason": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "coverage-omit-hides-security-paths",
       "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs:KeycloakClient.Dispose": "facade-wiring-close-contract-unasserted"

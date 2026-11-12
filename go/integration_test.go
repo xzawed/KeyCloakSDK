@@ -11,7 +11,9 @@ package keycloak
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"os"
 	"strings"
@@ -26,6 +28,14 @@ import (
 
 //go:embed testdata/it-realm-realm.json
 var itRealmJSON []byte
+
+// The master realm's bootstrap admin service account (startKeycloak). Creating a realm is a master-realm-only
+// privilege — the it-client service account gets 403 — so TestE2E's realm lifecycle authenticates as this client
+// through the SDK's ordinary path (New → Admin, client-credentials).
+const (
+	masterAdminClientID     = "go-it-master-admin"
+	masterAdminClientSecret = "go-it-master-secret"
+)
 
 // One Keycloak for the whole run — TestE2E and TestE2ECodeExchange share it (both match `-run TestE2E`),
 // so the code-exchange tests cost no second container start. TestMain terminates it after every test.
@@ -58,8 +68,10 @@ func startKeycloak(ctx context.Context) (string, func(), error) {
 		Image:        "quay.io/keycloak/keycloak:26.6",
 		ExposedPorts: []string{"8080/tcp"},
 		Env: map[string]string{
-			"KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
-			"KC_BOOTSTRAP_ADMIN_PASSWORD": "admin",
+			"KC_BOOTSTRAP_ADMIN_USERNAME":      "admin",
+			"KC_BOOTSTRAP_ADMIN_PASSWORD":      "admin",
+			"KC_BOOTSTRAP_ADMIN_CLIENT_ID":     masterAdminClientID,
+			"KC_BOOTSTRAP_ADMIN_CLIENT_SECRET": masterAdminClientSecret,
 		},
 		Cmd: []string{"start-dev", "--import-realm"},
 		Files: []testcontainers.ContainerFile{{
@@ -181,14 +193,44 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clients.Create: %v", err)
 	}
-	if _, err := admin.Clients.Get(ctx, cid); err != nil {
-		t.Fatalf("clients.Get: %v", err)
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Clients.Delete(ctx, cid); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("clients cleanup: %v", err)
+		}
+	}()
+	if c, err := admin.Clients.Get(ctx, cid); err != nil || c.ClientID == nil || *c.ClientID != "e2e-client" {
+		t.Fatalf("clients.Get: %+v %v", c, err)
 	}
-	if fc, err := admin.Clients.FindByClientID(ctx, "e2e-client"); err != nil || len(fc) == 0 {
+	fc, err := admin.Clients.FindByClientID(ctx, "e2e-client")
+	if err != nil || len(fc) == 0 {
 		t.Fatalf("clients.FindByClientID: %d %v", len(fc), err)
+	}
+	listed := false
+	for _, c := range fc {
+		if c != nil && c.ID != nil && *c.ID == cid {
+			listed = true
+		}
+	}
+	if !listed {
+		t.Fatalf("clients.FindByClientID: %s is not in the result (%d clients)", cid, len(fc))
+	}
+	// clients.Update addresses the client by its internal id — the facade fills the body's .ID with it, because
+	// gocloak builds the path from the body.
+	if err := admin.Clients.Update(ctx, cid, gocloak.Client{
+		ClientID:    gocloak.StringP("e2e-client"),
+		Description: gocloak.StringP("updated by e2e"),
+	}); err != nil {
+		t.Fatalf("clients.Update: %v", err)
+	}
+	if c, err := admin.Clients.Get(ctx, cid); err != nil || c.Description == nil || *c.Description != "updated by e2e" {
+		t.Fatalf("clients.Update did not take effect: %+v %v", c, err)
 	}
 	if err := admin.Clients.Delete(ctx, cid); err != nil {
 		t.Fatalf("clients.Delete: %v", err)
+	}
+	if _, err := admin.Clients.Get(ctx, cid); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("clients.Get after delete must be ErrNotFound, got %v", err)
 	}
 	if err := admin.Roles.Create(ctx, gocloak.Role{Name: gocloak.StringP("e2e-role")}); err != nil {
 		t.Fatalf("roles.Create: %v", err)
@@ -259,6 +301,67 @@ func TestE2E(t *testing.T) {
 	}
 	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.DisplayName == nil || *r.DisplayName != "updated by e2e" {
 		t.Fatalf("realms.Update did not take effect: %+v %v", r, err)
+	}
+
+	// 4c) realm lifecycle on a throwaway realm — create · get · list · update · delete, then ErrNotFound.
+	// Creating a realm is master-realm-only (it-client gets 403), so this runs as the master bootstrap admin service
+	// account through the SDK's ordinary path (New → Admin, client-credentials). ⚠️ Not NewAdminClient with an
+	// injected password-grant token: that function's integration gap is owned by another registry item
+	// (facade-wiring-close-contract-unasserted), which an unasserted call here would silently mark as covered.
+	master, err := New(Config{
+		ServerURL: serverURL, Realm: "master", ClientID: masterAdminClientID, ClientSecret: masterAdminClientSecret,
+	})
+	if err != nil {
+		t.Fatalf("new master client: %v", err)
+	}
+	defer func() { _ = master.Close() }()
+	masterAdmin, err := master.Admin(ctx)
+	if err != nil {
+		t.Fatalf("master admin: %v", err)
+	}
+	tmpRealm := "go-it-realm-" + randomHex(t, 4)
+	if err := masterAdmin.Realms.Create(ctx, gocloak.RealmRepresentation{
+		Realm:   gocloak.StringP(tmpRealm),
+		Enabled: gocloak.BoolP(true),
+	}); err != nil {
+		t.Fatalf("realms.Create(%s): %v", tmpRealm, err)
+	}
+	// The container is shared — removed even when an assertion below fails; after a full lifecycle it is already gone.
+	defer func() {
+		if err := masterAdmin.Realms.Delete(ctx, tmpRealm); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("realms cleanup: %v", err)
+		}
+	}()
+	if r, err := masterAdmin.Realms.Get(ctx, tmpRealm); err != nil || r.Realm == nil || *r.Realm != tmpRealm || r.Enabled == nil || !*r.Enabled {
+		t.Fatalf("realms.Get(%s): %+v %v", tmpRealm, r, err)
+	}
+	rls, err := masterAdmin.Realms.List(ctx)
+	if err != nil {
+		t.Fatalf("realms.List: %v", err)
+	}
+	listedRealm := false
+	for _, r := range rls {
+		if r != nil && r.Realm != nil && *r.Realm == tmpRealm {
+			listedRealm = true
+		}
+	}
+	if !listedRealm {
+		t.Fatalf("realms.List: %s is not in the list (%d realms)", tmpRealm, len(rls))
+	}
+	if err := masterAdmin.Realms.Update(ctx, tmpRealm, gocloak.RealmRepresentation{
+		Realm:       gocloak.StringP(tmpRealm),
+		DisplayName: gocloak.StringP("throwaway updated by e2e"),
+	}); err != nil {
+		t.Fatalf("realms.Update(%s): %v", tmpRealm, err)
+	}
+	if r, err := masterAdmin.Realms.Get(ctx, tmpRealm); err != nil || r.DisplayName == nil || *r.DisplayName != "throwaway updated by e2e" {
+		t.Fatalf("realms.Update(%s) did not take effect: %+v %v", tmpRealm, r, err)
+	}
+	if err := masterAdmin.Realms.Delete(ctx, tmpRealm); err != nil {
+		t.Fatalf("realms.Delete(%s): %v", tmpRealm, err)
+	}
+	if _, err := masterAdmin.Realms.Get(ctx, tmpRealm); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("realms.Get after delete must be ErrNotFound, got %v", err)
 	}
 
 	// 5) Raw() escape hatch reaches endpoints the facade does not wrap.
@@ -338,6 +441,16 @@ func contains(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// randomHex is a name suffix that keeps a throwaway resource from colliding with anything else on the shared server.
+func randomHex(t *testing.T, n int) string {
+	t.Helper()
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatalf("random suffix: %v", err)
+	}
+	return hex.EncodeToString(b)
 }
 
 func mustToken(t *testing.T, a *AdminClient, ctx context.Context) string {

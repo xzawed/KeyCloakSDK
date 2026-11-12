@@ -57,11 +57,31 @@ public class E2ETests
         await admin.Users.DeleteAsync(userId);
         await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Users.GetAsync(userId));
 
-        // 5) clients (raw)
+        // 5) clients (raw) — create · get · find · update · delete, then NotFound. The finally removes the client only
+        // when an assertion stopped the lifecycle before its own delete.
         var clientUuid = await admin.Clients.CreateAsync(new ClientRepresentation { ClientId = "svc-e2e", Enabled = true });
-        Assert.Equal("svc-e2e", (await admin.Clients.GetAsync(clientUuid)).ClientId);
-        Assert.NotEmpty(await admin.Clients.FindByClientIdAsync("svc-e2e"));
-        await admin.Clients.DeleteAsync(clientUuid);
+        var clientDeleted = false;
+        try
+        {
+            Assert.Equal("svc-e2e", (await admin.Clients.GetAsync(clientUuid)).ClientId);
+            var foundClients = await admin.Clients.FindByClientIdAsync("svc-e2e");
+            Assert.NotEmpty(foundClients);
+            Assert.Contains(foundClients, c => c.Id == clientUuid);
+            // update addresses the client by its internal id; the body carries the field being changed.
+            await admin.Clients.UpdateAsync(clientUuid, new ClientRepresentation { ClientId = "svc-e2e", Description = "updated-e2e" });
+            Assert.Equal("updated-e2e", (await admin.Clients.GetAsync(clientUuid)).Description);
+            await admin.Clients.DeleteAsync(clientUuid);
+            clientDeleted = true;
+            await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Clients.GetAsync(clientUuid));
+        }
+        finally
+        {
+            if (!clientDeleted)
+            {
+                try { await admin.Clients.DeleteAsync(clientUuid); }
+                catch (KeycloakException) { /* best effort — the assertion that stopped the lifecycle is the failure to report */ }
+            }
+        }
 
         // 6) roles (raw, by name)
         await admin.Roles.CreateAsync(new RoleRepresentation { Name = "role-e2e" });
