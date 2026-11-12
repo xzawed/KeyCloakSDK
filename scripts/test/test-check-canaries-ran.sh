@@ -197,6 +197,13 @@ run --lang go --list --root "$FIX/repo-lane-extra"
 expect lane-extra 2 "\`lc_…_canary() {\` 표 함수가 3 인데 이 검사가 아는 레인 축은 2"
 run --lang go --list --root "$FIX/repo-nolane"
 expect lane-missing 2 "레인 카나리아 표를 못 읽었다: scripts/test/test-lane-canaries.sh"
+# 템플릿 제목의 `${…}` 는 정의 때 값이 박힌다(`for` 안의 `it.each(…)(\`%s — ${route} …\`)`) — 리터럴로 읽으면 건강한
+# 실행이 늘 「보고서에 없다」였다(레인 표 node bearer 행 실측).
+run --lang node --report "$REP/node-tpl.xml" --root "$FIX/repo-tpl"
+expect tpl-node 0 "통과 1 · FAIL 0"
+assert_contains "$OUT" '${route} 가 보낸다 — 4 통과' "[tpl-node] 두 경로 × 두 행 — 출력: $OUT"
+run --lang node --report "$REP/node-tpl-skip.xml" --root "$FIX/repo-tpl"
+expect tpl-node-skip 1 "건너뛰었다 — 2/4 항목이 skip"
 run --lang php --list --root "$REPO"
 assert_contains "$OUT" "empty      php/tests/Unit/TokenTest.php::testEmptyKeySetKeepsTheCache" "[axes] php 빈 키셋 행 — 출력: $OUT"
 # 서브테스트를 전부 뺀 필터(-skip 'TestX/.') — 부모의 PASS 만 남는다.

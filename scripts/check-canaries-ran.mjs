@@ -450,6 +450,7 @@ const blankStrings = (l) => l.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, (m) => m
 // 건강한 실행을 FAIL 로 낸다(독립 레그 2 실측).
 const DESCRIBE_LIT = /^\s*(?:describe|suite)(?:\.(?:only|skip|todo|concurrent|sequential|shuffle))*\(\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`$\\]|\$(?!\{))*)`)\s*,/
 const NODE_INTERP = /%%|%\$|%[sdifjoOc#]|\$[A-Za-z_][\w.]*/
+const NODE_TEMPLATE_INTERP = new RegExp(`\\$\\{[^}]*\\}|${NODE_INTERP.source}`)
 // vitest 의 옵션 인자도 뒤집는다 — `it(제목, { fails: true }, fn)` · `describe(제목, { fails: true }, fn)` 은 본문이 실패해야
 // 통과하고 JUnit 은 그 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측: 한 줄 · 여러 줄 · describe · 변수 옵션 넷 다 —
 // #1017 레그가 카나리아 하나를 그렇게 바꾸고 회귀를 넣어 초록을 냈다). 셋째 인자 꼴 `it(제목, fn, 옵션)` 은 vitest 4 가
@@ -621,7 +622,10 @@ export const RESOLVE = {
     // 읽혔다(독립 레그 실측). 제목만 있는 줄에서 시작하면 더 깊은 들여쓰기 탓에 닫힌 형제 describe 를 감싼 것으로 읽었다(레그 2).
     const { chain, inverted: underFails } = describeChain(src, callAt, ctx.file)
     const inverted = /\.fails\b/.test(head) || optionsFail(src, ctx.at, lit.end, ctx.file, 'it/test') || underFails
-    const re = new RegExp(`^${[...chain, titlePattern(lit.body, NODE_INTERP)].join(' > ')}$`)
+    // 템플릿 제목의 `${…}` 는 정의 때 값이 박힌다(`for (const [route] of …) it.each(…)(\`%s — ${route} …\`)`) — `%s` 처럼
+    // 「아무 글자」다. 리터럴로 읽으면 건강한 실행이 늘 「보고서에 없다」였다(#1031 뒤 레인 표 bearer 행 실측). 따옴표 제목의
+    // `${` 는 그냥 글자다. 중첩 중괄호(`${a ? '}' : b}`)는 앞에서 끊겨 맞지 않는다(FAIL 쪽) — 오늘의 카나리아에는 없다.
+    const re = new RegExp(`^${[...chain, titlePattern(lit.body, lit.q === '`' ? NODE_TEMPLATE_INTERP : NODE_INTERP)].join(' > ')}$`)
     return { label: `${ctx.rel} › ${lit.body}`, inverted, match: (e) => e.classname === ctx.rel && re.test(e.name) }
   },
   go(ctx) {
