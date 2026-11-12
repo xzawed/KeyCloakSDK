@@ -14,4 +14,8 @@ final class TokenTest extends TestCase
     public function testNonStringAccessTokenIsRejected(mixed $bad): void
     {
     }
+
+    public function testEmptyKeySetKeepsTheCache(): void
+    {
+    }
 }

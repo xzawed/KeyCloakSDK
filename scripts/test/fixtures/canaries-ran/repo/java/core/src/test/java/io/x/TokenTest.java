@@ -7,4 +7,6 @@ class TokenTest {
   @Test void toString_masksTokens() {}
 
   @Test void rejectsMismatchedNonce() throws Exception {}
+
+  @Test void coldCacheIsBounded() {}
 }

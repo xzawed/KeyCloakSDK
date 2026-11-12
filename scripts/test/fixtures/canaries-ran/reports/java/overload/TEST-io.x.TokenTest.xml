@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.0.2" name="io.x.TokenTest" time="0.003" tests="3" errors="0" skipped="0" failures="0">
+  <testcase name="toString_masksTokens" classname="io.x.TokenTest" time="0.001"/>
+  <testcase name="coldCacheIsBounded" classname="io.x.TokenTest" time="0.001"/>
+  <testcase name="rejectsMismatchedNonce(TestInfo)" classname="io.x.TokenTest" time="0.001"/>
+</testsuite>

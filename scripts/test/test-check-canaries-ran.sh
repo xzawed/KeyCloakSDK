@@ -36,7 +36,7 @@ expect() { # expect <이름> <종료코드> <출력에 있어야 할 것>
 
 # ═══ (c) 양성 — 아홉 언어의 통과 보고서 ═══════════════════════════════════════════════════════════
 run --lang java --report "$REP/java/pass" --root "$REPO"
-expect ok-java 0 "통과 2 · FAIL 0"
+expect ok-java 0 "통과 3 · FAIL 0"
 assert_contains "$OUT" "io.x.TokenTest#rejectsMismatchedNonce — 1 통과" "[ok-java] CDATA 속 <skipped/> 를 건너뜀으로 읽었다 — 출력: $OUT"
 run --lang kotlin --report "$REP/kotlin-pass.xml" --root "$REPO"
 expect ok-kotlin 0 "통과 2 · FAIL 0"
@@ -53,7 +53,7 @@ assert_contains "$OUT" "go/masking_test.go:19 → TestSlogMasks — 1 통과" "[
 run --lang dotnet --report "$REP/dotnet/pass" --root "$REPO"
 expect ok-dotnet 0 "통과 2 · FAIL 0"
 run --lang php --report "$REP/php-pass.xml" --root "$REPO"
-expect ok-php 0 "통과 2 · FAIL 0"
+expect ok-php 0 "통과 3 · FAIL 0"
 assert_contains "$OUT" "testNonStringAccessTokenIsRejected — 2 통과" "[ok-php] 데이터 셋 둘 — 출력: $OUT"
 run --lang rust --report "$REP/rust-pass.txt" --root "$REPO"
 expect ok-rust 0 "통과 2 · FAIL 0"
@@ -124,7 +124,7 @@ expect not-trx 2 "TRX 가 아니다"
 run --lang go --report "$REP/java/pass" --root "$REPO"
 expect go-dir 2 "디렉터리를 받지 않는다"
 run --lang java --list --root "$FIX/repo-sites"
-expect sites 2 "부르는 자리가 7 인데 이 검사가 아는 축은 6"
+expect sites 2 "부르는 자리가 8 인데 이 검사가 아는 축은 7"
 run --lang java --list --root "$FIX/repo-nofn"
 expect nofn 2 "표 함수 \`sd_mask2_canary() {\` 가 없다"
 run --lang java --list --root "$FIX/repo-bad"
@@ -160,6 +160,37 @@ expect leg-node-describe 1 "nonce 가 틀리면 거부한다(이 설정에서 �
 # 괄호를 담은 kotlin 백틱 이름 — `rejects mismatched nonce(legacy client)` 가 카나리아로 읽혔다.
 run --lang kotlin --report "$REP/kotlin-decoy.xml" --root "$REPO"
 expect leg-kotlin-paren 1 "rejects mismatched nonce — 보고서에 없다"
+# ═══ #1031 레그(2026-11-12) ═══
+# 미끼 오버로드 — 매개변수 없는 카나리아에 같은 이름의 `이름(TestInfo)` 시험만 보고됐다(진짜는 `@Test` 를 잃고 안 돌았다).
+run --lang java --report "$REP/java/overload" --root "$REPO"
+expect leg-java-overload 1 "io.x.TokenTest#rejectsMismatchedNonce — 보고서에 없다"
+run --lang kotlin --report "$REP/kotlin-overload.xml" --root "$REPO"
+expect leg-kotlin-overload 1 "io.x.AuthTest#rejects mismatched nonce — 보고서에 없다"
+# 두 행이 한 시험 — 면제 근거 행을 다른 축의 카나리아로 돌려 대면 그 시험이 두 번 통과로 세어진다.
+run --lang go --list --root "$FIX/repo-dup"
+expect leg-dup 2 "두 행이 같은 시험을 가리킨다(backoff-exempt · empty)"
+# 축의 배선 — AXES 의 축 전부가 픽스처 어느 언어의 `--list` 에 행으로 나온다. 표 함수나 모양을 바꾸면 그 축의 행이 조용히
+# 빠졌다(레그 B2 · B3 — 행 없는 축은 호출 자리 수만 고정됐다). 축 이름은 검사기의 AXES 에서, 축 수는 픽스처 가드의 호출
+# 자리 수에서 — 둘 다 파생이다(검사기가 둘이 같음을 따로 단언한다).
+_axes="$(sed -n "s/^  { axis: '\([a-z0-9-]*\)'.*/\1/p" "$GUARD")"
+_sites="$(grep -cE '^[^#]*\bsd_canary_ok[[:space:]]+"\$ROOT/' "$REPO/scripts/test/test-security-defaults.sh" || true)"
+assert_eq "$_sites" "$(printf '%s\n' "$_axes" | grep -c . || true)" "[axes] AXES 에서 읽은 축 수가 픽스처 가드의 호출 자리 수와 다르다 — AXES 모양이 바뀌었나?"
+_listed=''
+for L in java kotlin python node go dotnet php rust ruby; do
+  run --lang "$L" --list --root "$REPO"
+  assert_eq "0" "$CODE" "[axes] $L --list — 출력: $OUT"
+  _listed="$_listed
+$(printf '%s\n' "$OUT" | sed -n 's/^\([a-z0-9-]*\) .*/\1/p')"
+done
+for _ax in $_axes; do
+  assert_eq "ok" "$(printf '%s\n' "$_listed" | grep -qxF -- "$_ax" && printf ok || printf MISSING)" \
+    "[axes] 축 $_ax 의 행이 픽스처 어느 언어의 --list 에도 없다 — AXES 의 표 함수 · 모양이 그 축을 빠뜨린다"
+done
+# 행의 자리까지 — 표 함수를 다른 축의 것으로 바꾸면 축 이름은 남아도 행이 바뀐다.
+run --lang java --list --root "$REPO"
+assert_contains "$OUT" "backoff-exempt io.x.TokenTest#coldCacheIsBounded" "[axes] java 면제 근거 행 — 출력: $OUT"
+run --lang php --list --root "$REPO"
+assert_contains "$OUT" "empty      php/tests/Unit/TokenTest.php::testEmptyKeySetKeepsTheCache" "[axes] php 빈 키셋 행 — 출력: $OUT"
 # 서브테스트를 전부 뺀 필터(-skip 'TestX/.') — 부모의 PASS 만 남는다.
 run --lang go --report "$REP/go-subfiltered.txt" --root "$REPO"
 expect leg-go-subfiltered 1 "서브테스트가 하나도 보고되지 않았다"

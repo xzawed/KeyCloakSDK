@@ -1440,6 +1440,7 @@ private fun hpLogVerdicts(
 
 // 손으로 고른 Kotlin 테스트가 겨누는 멤버 — 파생 집합이 이것 밑으로 **조용히** 줄지 않게 한다. anchor 는 그 손 테스트
 // (`파일|함수`), call 은 그 함수가 실제로 부르는 이름, uses 는 그 함수가 읽어야 하는 식별자(행렬이 같은 값을 쓴다는 결속)다.
+// call 은 `도우미>…>이름` 사슬일 수 있다 — 시험이 같은 파일의 도우미를 거쳐 대상을 부르는 꼴(java 행렬과 같은 표기).
 // axis: a·b·c = 그 W3 축의 파생 대상에 있어야 한다 · row = 행이고 계급이 맞기만 하면 된다(교환 계급 밖).
 private class HpHand(
     val label: String,
@@ -1478,8 +1479,16 @@ private val HP_HAND_TARGETS =
             uses = "CC_NON_STRING_ACCESS_TOKENS",
         ),
         HpHand("JwtValidator.validate", HP_JWKS_FETCH, "c", "JwksEmptyKeysetTest.kt|empty200DoesNotPoisonGoodCache", "validate"),
-        // 가드 밖의 손 테스트 — 콜드 캐시 JWKS(Nimbus 가 fetch 를 소유해 가드의 백오프 축에서 빠진 자리) · 위조 id_token.
-        HpHand("JwtValidator.validate", HP_JWKS_FETCH, "c", "JwksColdCacheOutageTest.kt|run", "validate"),
+        // 가드의 백오프 면제 근거 — 콜드 캐시 JWKS(Nimbus 가 fetch 를 소유해 백오프 축에서 빠진 자리). 시험이 도우미 run 을
+        // 거쳐 validate 에 닿는다(java 행렬과 같은 사슬).
+        HpHand(
+            "JwtValidator.validate",
+            HP_JWKS_FETCH,
+            "c",
+            "JwksColdCacheOutageTest.kt|cold cache during an IdP outage is bounded",
+            "run>validate",
+        ),
+        // 가드 밖의 손 테스트 — 위조 id_token.
         HpHand(
             "AuthClient.exchangeCode",
             HP_CODE_EXCHANGE,
@@ -1510,6 +1519,8 @@ private fun hpCheckHand(
     if (!Files.isDirectory(dir)) return listOf("W1 테스트 소스 디렉터리가 없다($dir) — 앵커 대조가 공허하다") to false
     val anchors = HP_HAND_TARGETS.map { it.anchor }.toSet()
     for (h in HP_HAND_TARGETS) {
+        val chain = h.call.split('>')
+        val call = chain.last()
         val r = byLabel[h.label]
         when {
             r == null -> why += "W1 ${h.label}: 손 테스트(${h.anchor})가 겨누는데 파생 집합에 행이 없다"
@@ -1517,21 +1528,21 @@ private fun hpCheckHand(
             h.axis != "row" && h.label !in tgt.getValue(h.axis) ->
                 why += "W1 ${h.label}: 손 테스트(${h.anchor})가 겨누는데 W3${h.axis} 의 파생 대상에 없다"
         }
-        if (!h.label.substringBefore('(').endsWith(".${h.call}")) why += "W1 ${h.label}: 행 이름이 앵커가 부르는 ${h.call} 로 끝나지 않는다"
+        if (!h.label.substringBefore('(').endsWith(".$call")) why += "W1 ${h.label}: 행 이름이 앵커가 부르는 $call 로 끝나지 않는다"
         val (file, fn) = h.anchor.split('|', limit = 2)
-        val body = hpFunctionBody(dir.resolve(file), fn)
-        if (body == null) {
+        val anchorBody = hpFunctionBody(dir.resolve(file), fn)
+        if (anchorBody == null) {
             why += "W1 ${h.anchor}: 앵커 함수가 없다 — 손 테스트가 옮겨졌으면 표를 따라 고쳐라"
             continue
         }
-        if (h.call !in hpCallsIn(body)) why += "W1 ${h.anchor}: 앵커가 .${h.call}( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
-        if (h.uses != null && !Regex("""\b${h.uses}\b""").containsMatchIn(body)) {
+        if (h.uses != null && !Regex("""\b${h.uses}\b""").containsMatchIn(anchorBody)) {
             why += "W1 ${h.anchor}: 앵커가 ${h.uses} 를 읽지 않는다 — 행렬의 변형과 손 테스트의 값이 갈라졌다"
         }
+        why += hpChainWhy(dir.resolve(file), h.anchor, anchorBody, chain)
     }
     // invoke 가 부르는 SDK 공개 이름은 전부 표에 있다 — 손 테스트에 대상이 늘면 여기가 먼저 운다.
     val sdkNames = methods.values.map { it.fn.name }.toSet()
-    val invokeCalls = HP_HAND_TARGETS.filter { it.anchor == HP_MAL_INVOKE }.map { it.call }.toSet()
+    val invokeCalls = HP_HAND_TARGETS.filter { it.anchor == HP_MAL_INVOKE }.map { it.call.substringAfterLast('>') }.toSet()
     val (mf, mfn) = HP_MAL_INVOKE.split('|', limit = 2)
     val sdkInInvoke = hpFunctionBody(dir.resolve(mf), mfn)?.let { hpCallsIn(it) intersect sdkNames }.orEmpty()
     if (sdkInInvoke.isEmpty()) why += "W1 $HP_MAL_INVOKE 에서 SDK 공개 호출을 하나도 못 읽었다 — 대조가 공허하다"
@@ -1660,9 +1671,34 @@ private fun hpCodeOnly(src: String): String {
     return out.toString()
 }
 
+// W1 사슬 — `도우미>…>이름`. 앞 함수가 그 도우미를 부르고(`\b도우미(`), 도우미가 같은 파일에 있으며, 마지막 함수가
+// `.이름(` 을 부르는지 차례로 본다. 실패 사유를 돌려준다(빈 목록 = 닿는다). `W1ChainWalkTest` 가 고정한다 — 도우미 호출
+// 검사를 끄고도 초록이던 것(#1031 레그 W1d).
+internal fun hpChainWhy(
+    file: Path,
+    anchor: String,
+    anchorBody: String,
+    chain: List<String>,
+): List<String> {
+    val why = mutableListOf<String>()
+    var body: String? = anchorBody
+    for (helper in chain.dropLast(1)) {
+        val from = body ?: break
+        if (!Regex("""\b${Regex.escape(helper)}\s*\(""").containsMatchIn(from)) {
+            why += "W1 $anchor: 앵커가 도우미 $helper( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
+        }
+        body = hpFunctionBody(file, helper)
+        if (body == null) why += "W1 $anchor: 도우미 $helper 가 없다 — 손 테스트가 옮겨졌으면 표를 따라 고쳐라"
+    }
+    if (body != null && chain.last() !in hpCallsIn(body)) {
+        why += "W1 $anchor: 앵커가 .${chain.last()}( 를 부르지 않는다 — 손 테스트의 대상이 바뀌었다"
+    }
+    return why
+}
+
 // [file] 에서 이름이 [name] 인 함수의 본문(코드만) — 선언의 파라미터 목록 뒤 첫 `{` 부터 짝 맞는 `}` 까지다(식 본문
-// `= runTest {` 도 그 람다가 본문이 된다). 없으면 null.
-private fun hpFunctionBody(
+// `= runTest {` 도 그 람다가 본문이 된다 · 중괄호 없는 식 본문은 null). 없으면 null.
+internal fun hpFunctionBody(
     file: Path,
     name: String,
 ): String? {
