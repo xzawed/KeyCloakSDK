@@ -100,7 +100,7 @@ jobs:
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       # ⚠️ 절대경로라 두 잡의 워크스페이스 경로가 같아야 한다 — 같은 ubuntu-latest 호스티드 러너면 같다.
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
