@@ -23,6 +23,17 @@ use Throwable;
  */
 trait KeycloakContainerTrait
 {
+    /**
+     * master realm 의 부트스트랩 admin **서비스계정**(KC 26 `KC_BOOTSTRAP_ADMIN_CLIENT_ID`·`_SECRET`). `POST /admin/realms` 는
+     * master 전용이라 it-client(it-realm SA)로는 403 이다(Kotlin `FullFlowIT` 8b · Rust `integration_test.rs` 10 이 실서버로
+     * 단언한다). PHP admin 은 토큰을 스스로 소유해(client_credentials) 토큰 주입을
+     * 받지 않으므로 — Rust·Ruby 는 master 비밀번호 그랜트 토큰을 끼워 넣는다 — 이 클라이언트로 SDK 파사드를 그대로 만든다.
+     * 실측(KC 26.6): 부트스트랩 사용자(admin/admin)와 함께 둘 다 생기고, 이 토큰으로 realm POST 201 · DELETE 204 · 그 뒤 GET 404.
+     */
+    private const MASTER_ADMIN_CLIENT_ID = 'it-master-admin';
+
+    private const MASTER_ADMIN_CLIENT_SECRET = 'it-master-admin-secret';
+
     private static ?string $containerName = null;
 
     private static string $baseUrl = '';
@@ -43,6 +54,8 @@ trait KeycloakContainerTrait
                 '-p', '127.0.0.1::8080',
                 '-e', 'KC_BOOTSTRAP_ADMIN_USERNAME=admin',
                 '-e', 'KC_BOOTSTRAP_ADMIN_PASSWORD=admin',
+                '-e', 'KC_BOOTSTRAP_ADMIN_CLIENT_ID=' . self::MASTER_ADMIN_CLIENT_ID,
+                '-e', 'KC_BOOTSTRAP_ADMIN_CLIENT_SECRET=' . self::MASTER_ADMIN_CLIENT_SECRET,
                 '-e', 'KC_HEALTH_ENABLED=true',
                 '-v', "{$realm}:/opt/keycloak/data/import/it-realm-realm.json:ro",
                 'quay.io/keycloak/keycloak:26.6',
