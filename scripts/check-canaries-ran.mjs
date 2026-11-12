@@ -10,7 +10,8 @@
 // 모델:
 //  · 카나리아 목록은 가드의 표 함수(AXES)를 **그대로 실행**해 얻는다 — 함수 정의만 떼어 sh 로 부른다(사본을 두지 않는다).
 //    가드에서 `sd_canary_ok "$ROOT/…` 를 부르는 자리 수가 AXES 수와 다르면 판정 불가다 — 새 카나리아 축이 이 검사를
-//    조용히 비켜 가지 않게.
+//    조용히 비켜 가지 않게. 가드 **밖**의 레인 카나리아 표(`scripts/test/test-lane-canaries.sh` — 덤프 걷기 · bearer
+//    정본 표)도 같은 방식이고, 그 파일은 `lc_…_canary() {` 정의 수가 그 축 수와 같아야 한다.
 //  · 카나리아 줄 → 그 줄이 선언한 테스트(RESOLVE) → 보고서 항목. 선언 이름(node·ruby 는 제목 리터럴)이 **카나리아 문자열의
 //    자리와 겹쳐야** 한다 — 아니면 같은 줄의 다른 테스트를 카나리아로 읽는다. go 만 본문 줄(표 행 · 단언 호출)을 받고 그
 //    줄을 감싼 최상위 `func Test…` 로 간다. 항목은 정확히 맞춘다: 클래스(JVM·.NET·python) · describe 경로(node) · 모듈 경로
@@ -26,7 +27,8 @@
 //    `fails`). 오늘의 카나리아는 전부 받는 모양이다 — 그 밖의 모양을
 //    들이는 PR 이 그 레인에서 이유와 함께 운다.
 // ⚠️ 못 보는 것(독립 레그 실측 · 기대 개수나 내용의 원천이 보고서 밖이다): 매개변수 행·서브테스트 **일부만** 빼는 필터
-//    (pytest `--deselect 'x[None]'` · go `-skip 'TestX/one'`) · 헬퍼 함수가 여는 go 서브테스트를 전부 빼는 필터 · 카나리아를
+//    (pytest `--deselect 'x[None]'` · go `-skip 'TestX/one'`) · 다른 파일(또는 두 단계 넘어)의 헬퍼가 여는 go 서브테스트를 전부
+//    빼는 필터 · 카나리아를
 //    필터로 빼고 **다른 패키지(go)·같은 파일의 다른 클래스(php)** 에 같은 이름을 둔 경우(그냥 skip 이면 두 항목이 다 잡혀
 //    FAIL 이다) · 본문 바꿔치기(이름 재바인딩 · 단언 삭제 — 실행 증명이 아니라 행위 테스트·변이의 몫이다). go `(cached)` 재생과
 //    RSpec `--dry-run` 은 받는다 — 앞은 같은 입력의 같은 결과이고(레인은 `-count=1`), 뒤는 레인 전체를 비워 attest 가 운다.
@@ -49,8 +51,12 @@ import { spawnSync } from 'node:child_process'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const GUARD = 'scripts/test/test-security-defaults.sh'
+// 가드 **밖**의 레인 카나리아 표(덤프 걷기 · bearer 정본 표) — 가드에 두면 아홉 행렬의 W1 이 그 행을 손 목록에 요구한다.
+// 그 파일 머리 주석이 까닭을 적는다. 축 수 대조는 호출 자리가 아니라 `lc_…_canary() {` 정의 수로 한다.
+export const LANE = 'scripts/test/test-lane-canaries.sh'
 
-// 가드의 카나리아 표 — 축마다 표 함수와 그 행의 모양. `file` 이 있으면 행은 카나리아 문자열뿐이고 파일은 그 함수가 준다.
+// 카나리아 표 — 축마다 표 함수와 그 행의 모양. `file` 이 있으면 행은 카나리아 문자열뿐이고 파일은 그 함수가 준다.
+// `src` 가 없으면 가드의 표다.
 export const AXES = [
   { axis: 'nonce', rows: 'sd_nonce_canary', shape: 'file|canary' },
   { axis: 'backoff', rows: 'sd_backoff_canary', shape: 'file|canary' },
@@ -60,8 +66,13 @@ export const AXES = [
   { axis: 'mask2', file: 'sd_mask2_test', rows: 'sd_mask2_canary', shape: 'canary' },
   { axis: 'token-type', rows: 'sd_token_type_anchor', shape: 'kind|file|canary' },
   { axis: 'empty', rows: 'sd_empty_canary', shape: 'file|canary' },
+  { axis: 'dump', src: LANE, rows: 'lc_dump_canary', shape: 'file|canary' },
+  { axis: 'bearer', src: LANE, rows: 'lc_bearer_canary', shape: 'file|canary' },
 ]
 const CALL_SITE = /^[^#]*\bsd_canary_ok\s+"\$ROOT\//
+// 정의 수는 꼴을 너그럽게 센다(`이름 () {` · `function 이름 {`) — 정식 꼴만 세면 공백 하나로 새 표가 축 수 대조를 비켜 갔다
+// (#1033 레그 C2). 그런 꼴의 표는 fnDef 가 못 읽으니 AXES 에 더하는 순간 판정 불가로 드러난다.
+const LANE_DEF = /^\s*(?:function\s+)?lc_[a-z0-9_]+_canary\s*(?:\(\s*\))?\s*\{/
 
 const LANG_RE = /^[a-z][a-z0-9]*$/
 export class Usage extends Error {}
@@ -135,23 +146,40 @@ function extractScript(defs, axes) {
 }
 
 export function canaries(root, lang, axes = AXES) {
-  const guard = join(root, GUARD)
+  const out = []
+  // 표 파일마다(가드 · 레인 표) — 축의 순서는 AXES 그대로다(가드의 축이 앞).
+  for (const src of [...new Set(axes.map((a) => a.src ?? GUARD))]) out.push(...canariesOf(root, lang, src, axes.filter((a) => (a.src ?? GUARD) === src)))
+  return out
+}
+
+function canariesOf(root, lang, src, axes) {
+  const what = src === GUARD ? '가드' : '레인 카나리아 표'
   let text
   try {
-    text = readFileSync(guard, 'utf8')
+    text = readFileSync(join(root, src), 'utf8')
   } catch (e) {
-    throw new Unreadable(`가드를 못 읽었다: ${GUARD} (${e.code ?? e.message})`)
+    throw new Unreadable(`${what}를 못 읽었다: ${src} (${e.code ?? e.message})`)
   }
-  const sites = text.split(/\r?\n/).filter((l) => CALL_SITE.test(l)).length
-  if (sites !== axes.length)
-    throw new Unreadable(
-      `가드에서 \`sd_canary_ok "$ROOT/…\` 를 부르는 자리가 ${sites} 인데 이 검사가 아는 축은 ${axes.length} 다 — ` +
-        '새 카나리아 축이면 AXES 에 그 표 함수를 더하라(안 그러면 그 축은 실행 여부를 아무도 안 본다)',
-    )
+  const lines = text.split(/\r?\n/)
+  if (src === GUARD) {
+    const sites = lines.filter((l) => CALL_SITE.test(l)).length
+    if (sites !== axes.length)
+      throw new Unreadable(
+        `가드에서 \`sd_canary_ok "$ROOT/…\` 를 부르는 자리가 ${sites} 인데 이 검사가 아는 축은 ${axes.length} 다 — ` +
+          '새 카나리아 축이면 AXES 에 그 표 함수를 더하라(안 그러면 그 축은 실행 여부를 아무도 안 본다)',
+      )
+  } else {
+    const defs = lines.filter((l) => LANE_DEF.test(l)).length
+    if (defs !== axes.length)
+      throw new Unreadable(
+        `${src} 에 \`lc_…_canary() {\` 표 함수가 ${defs} 인데 이 검사가 아는 레인 축은 ${axes.length} 다 — ` +
+          '새 표 함수면 AXES 에 더하라(안 그러면 그 표는 실행 여부를 아무도 안 본다)',
+      )
+  }
   const defs = []
   for (const fn of new Set(axes.flatMap((a) => (a.file ? [a.file, a.rows] : [a.rows])))) {
     const d = fnDef(text, fn)
-    if (d === null) throw new Unreadable(`가드에 표 함수 \`${fn}() {\` 가 없다 — 이름이나 모양(줄 머리 정의 · 줄 머리 \`}\`)이 바뀌었나?`)
+    if (d === null) throw new Unreadable(`${what}에 표 함수 \`${fn}() {\` 가 없다 — 이름이나 모양(줄 머리 정의 · 줄 머리 \`}\`)이 바뀌었나?`)
     defs.push(d)
   }
   // LC_ALL=C — 러너의 로캘이 없으면 sh 가 setlocale 경고를 stderr 에 찍어 아래 거절에 걸렸다(독립 레그 2 실측). 표의 행은
@@ -425,6 +453,7 @@ const blankStrings = (l) => l.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, (m) => m
 // 건강한 실행을 FAIL 로 낸다(독립 레그 2 실측).
 const DESCRIBE_LIT = /^\s*(?:describe|suite)(?:\.(?:only|skip|todo|concurrent|sequential|shuffle))*\(\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`$\\]|\$(?!\{))*)`)\s*,/
 const NODE_INTERP = /%%|%\$|%[sdifjoOc#]|\$[A-Za-z_][\w.]*/
+const NODE_TEMPLATE_INTERP = new RegExp(`\\$\\{[^}]*\\}|${NODE_INTERP.source}`)
 // vitest 의 옵션 인자도 뒤집는다 — `it(제목, { fails: true }, fn)` · `describe(제목, { fails: true }, fn)` 은 본문이 실패해야
 // 통과하고 JUnit 은 그 「expected fail」을 그냥 통과로 적는다(vitest 5.1 실측: 한 줄 · 여러 줄 · describe · 변수 옵션 넷 다 —
 // #1017 레그가 카나리아 하나를 그렇게 바꾸고 회귀를 넣어 초록을 냈다). 셋째 인자 꼴 `it(제목, fn, 옵션)` 은 vitest 4 가
@@ -596,7 +625,28 @@ export const RESOLVE = {
     // 읽혔다(독립 레그 실측). 제목만 있는 줄에서 시작하면 더 깊은 들여쓰기 탓에 닫힌 형제 describe 를 감싼 것으로 읽었다(레그 2).
     const { chain, inverted: underFails } = describeChain(src, callAt, ctx.file)
     const inverted = /\.fails\b/.test(head) || optionsFail(src, ctx.at, lit.end, ctx.file, 'it/test') || underFails
-    const re = new RegExp(`^${[...chain, titlePattern(lit.body, NODE_INTERP)].join(' > ')}$`)
+    // 템플릿 제목의 `${…}` 는 정의 때 값이 박힌다(`for (const [route] of …) it.each(…)(\`%s — ${route} …\`)`) — `%s` 처럼
+    // 「아무 글자」다. 리터럴로 읽으면 건강한 실행이 늘 「보고서에 없다」였다(#1031 뒤 레인 표 bearer 행 실측). 따옴표 제목의
+    // `${` 는 그냥 글자다. 중첩 중괄호(`${a ? '}' : b}`)는 앞에서 끊겨 맞지 않는다(FAIL 쪽) — 오늘의 카나리아에는 없다.
+    // ⚠️ 잔여(`%s` 와 같은 꼴 — Grok 레그): 같은 파일 · 같은 describe 경로에서 그 꼴에 맞는 다른 시험(`a ${x} b` 에 대한
+    // `'a z b'`)이 빠진 카나리아 대신 통과로 읽힐 수 있다. 오늘의 행은 끝말이 서로 달라 겹치지 않는다.
+    const titleRe = titlePattern(lit.body, lit.q === '`' ? NODE_TEMPLATE_INTERP : NODE_INTERP)
+    // 자리표시(`%s` · `${…}`)가 있는 제목은, 그 꼴에 맞는 **다른 문자열**이 같은 파일에 있으면 판정 불가다 — 표를 비우고
+    // 그 꼴의 제목을 가진 시험 하나(`it('d — e 가 뗀 값을 보낸다', …)`)를 두면 그것이 빠진 카나리아 대신 통과로 읽혔다
+    // (#1033 레그 N2 · N3 — `%s` 도 같았다). 주석 · 정규식만 비운 글(K)의 따옴표 · 백틱 문자열을 본다(`${` 를 담은 템플릿은
+    // 값을 모르니 뺀다).
+    if (titleRe.includes('.*?')) {
+      const only = new RegExp(`^${titleRe}$`)
+      src.K.forEach((l, i) => {
+        for (const m of l.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)) {
+          if (i === ctx.at && m.index === lit.start) continue
+          const body = m[2].replace(/\\(['"`\\])/g, '$1')
+          if (!(m[1] === '`' && body.includes('${')) && only.test(body))
+            throw new Unreadable(`${ctx.file}:${i + 1}: 다른 문자열 ${JSON.stringify(body)} 이 카나리아 제목의 꼴에 맞는다 — 그 시험이 빠진 카나리아 대신 통과로 읽힐 수 있다`)
+        }
+      })
+    }
+    const re = new RegExp(`^${[...chain, titleRe].join(' > ')}$`)
     return { label: `${ctx.rel} › ${lit.body}`, inverted, match: (e) => e.classname === ctx.rel && re.test(e.name) }
   },
   go(ctx) {
@@ -619,10 +669,24 @@ export const RESOLVE = {
     if (at > j) throw new Unreadable(`${file}:${at + 1}: 카나리아 줄이 ${n} 의 본문(${i + 1}–${j + 1}행) 밖이다 — 패키지 수준 표면 그것을 쓰는 Test 를 정할 수 없다`)
     // 서브테스트를 여는 테스트는 서브테스트가 하나라도 보고돼야 한다 — `-skip 'TestX/.'` 같은 필터는 부모의 PASS 만 남긴다
     // (독립 레그 실측). 여는 자리는 `func(… *testing.T)` 를 넘기는 `.Run(` 이다(받는 이름 무관 — `tt.Run` · 문자열·주석 속
-    // 글자는 빼고 — 레그 2). ⚠️ 헬퍼 함수가 여는 서브테스트와 일부만 빼는 필터는 못 본다(기대 개수가 보고서 밖이다).
-    const sub = lines
-      .slice(i, j)
-      .some((l) => /\.Run\([^)]*?,\s*func\s*\(\s*\w+\s+\*testing\.T\s*\)/.test(blankStrings(l).replace(/\/\/.*$/, '')))
+    // 글자는 빼고 — 레그 2). 본문이 부르는 **같은 파일의 최상위 도우미**가 여는 것도 센다(한 단계) — bearer 표의 둘이
+    // `grammarInjected(t, …)` 로 연다(#1033 레그 G2: `-skip 'TestX/.'` 이 그 둘을 부모 PASS 만 남기고 비웠다).
+    // ⚠️ 다른 파일의 도우미 · 두 단계 넘는 도우미 · 일부만 빼는 필터는 못 본다(기대 개수가 보고서 밖이다).
+    const code = (l) => blankStrings(l).replace(/\/\/.*$/, '')
+    const opens = (from, to) => lines.slice(from, to).some((l) => /\.Run\([^)]*?,\s*func\s*\(\s*\w+\s+\*testing\.T\s*\)/.test(code(l)))
+    const endOf = (h) => {
+      let e = /\{\s*\}\s*$/.test(lines[h]) ? h : h + 1
+      while (e > h && e < lines.length && !/^}/.test(lines[e])) e++
+      return e
+    }
+    let sub = opens(i, j)
+    if (!sub) {
+      const called = new Set(lines.slice(i + 1, j).flatMap((l) => [...code(l).matchAll(/(?<![\w.])([A-Za-z_]\w*)\s*\(/g)].map((m) => m[1])))
+      for (let h = 0; h < lines.length && !sub; h++) {
+        const d = /^func\s+(\w+)\s*\(/.exec(lines[h])
+        if (d && d[1] !== n && called.has(d[1])) sub = opens(h, endOf(h))
+      }
+    }
     return { label: `${file}:${at + 1} → ${n}`, top: n, sub, match: (e) => e.name === n || e.name.startsWith(`${n}/`) }
   },
   dotnet(ctx) {

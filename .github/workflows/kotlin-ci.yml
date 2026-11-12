@@ -5,9 +5,9 @@ on:
   # JaCoCo 판을 그 pom 에서 읽는다: JaCoCo 를 올리는 PR 에서 kotlin 하한을 다시 재야 한다(하한은 여유가 없다).
   push:
     branches: [main]
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'java/pom.xml']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'java/pom.xml']
   pull_request:
-    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'java/pom.xml']
+    paths: ['kotlin/**', '.github/workflows/kotlin-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'java/pom.xml']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:

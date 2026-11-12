@@ -6,8 +6,8 @@ on:
   # 저장소의 열세 개 `scripts/*.{mjs,sh}` 중 자기 변경에 안 도는 자리가 여기 하나였다(실측).
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 이 레인이 실제 Keycloak 에 대고 돌아야 한다(go-ci · python-ci 와 같다).
-  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
-  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  push: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
+  pull_request: { branches: [main], paths: ['node/**', '.github/workflows/node-ci.yml', 'scripts/check-node-public-surface.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:

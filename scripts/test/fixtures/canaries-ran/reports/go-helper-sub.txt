@@ -1,0 +1,8 @@
+=== RUN   TestViaHelper
+=== RUN   TestViaHelper/plain
+=== RUN   TestViaHelper/nbsp
+--- PASS: TestViaHelper (0.00s)
+    --- PASS: TestViaHelper/plain (0.00s)
+    --- PASS: TestViaHelper/nbsp (0.00s)
+PASS
+ok  	example.com/x	0.011s

@@ -22,8 +22,8 @@ lane_flow() { # $1=루트 $2=언어
   put "$1/.github/workflows/$2-ci.yml" <<EOF
 name: $2 CI
 on:
-  push: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs'] }
-  pull_request: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs'] }
+  push: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh'] }
+  pull_request: { branches: [main], paths: ['$2/**', '.github/workflows/$2-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh'] }
   workflow_dispatch:
 permissions:
   contents: read
@@ -56,7 +56,7 @@ name: $2 CI
 on:
   push:
     branches: [main]
-    paths: ['$2/**', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs']
+    paths: ['$2/**', 'scripts/check-hp-attest.mjs', 'scripts/test/test-security-defaults.sh', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh']
   pull_request:
     branches: [main]
     paths:
@@ -64,6 +64,7 @@ on:
       - 'scripts/check-hp-attest.mjs'
       - 'scripts/test/test-security-defaults.sh'
       - 'scripts/check-canaries-ran.mjs'
+      - 'scripts/test/test-lane-canaries.sh'
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -132,6 +133,10 @@ expect job-coe 1 "잡 \`build-test\` 에 \`continue-on-error:\`"
 fork flow-pr-only; sed -i "/^  pull_request:/s|, 'scripts/test/test-security-defaults.sh'||" "$(wa flow-pr-only)"; run
 expect flow-pr-only 1 "\`pull_request.paths\` 가 scripts/test/test-security-defaults.sh"
 assert_not_contains "$OUT" "\`push.paths\`" "[flow-pr-only] 고치지 않은 push 를 탓한다"
+# 레인 카나리아 표(#1033) — SHARED 가 검사기의 LANE 에서 오니, 레인 paths 에서만 빼도 운다(레그 W1 의 짝).
+fork flow-pr-lane; sed -i "/^  pull_request:/s|, 'scripts/test/test-lane-canaries.sh'||" "$(wa flow-pr-lane)"
+assert_not_contains "$(grep '^  pull_request:' "$(wa flow-pr-lane)")" "test-lane-canaries" "[flow-pr-lane] 변이가 착지하지 않았다"
+run; expect flow-pr-lane 1 "\`pull_request.paths\` 가 scripts/test/test-lane-canaries.sh"
 
 fork block-item; sed -i "/^      - 'scripts\/test\/test-security-defaults.sh'\$/d" "$(wb block-item)"; run
 expect block-item 1 "lang-b-ci.yml: \`pull_request.paths\`"
@@ -202,7 +207,7 @@ assert_eq "1" "$(grep -c '^  pull_request:$' "$(wa no-paths)")" "[no-paths] 변�
 run; expect no-paths 0 "ok    lang-a"
 
 fork compact-seq; sed -i 's/^      - \(.*\)'"'"'$/    - \1'"'"'/' "$(wb compact-seq)"
-assert_eq "4" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
+assert_eq "5" "$(grep -c "^    - '" "$(wb compact-seq)")" "[compact-seq] 변이가 착지하지 않았다"
 run; expect compact-seq 0 "ok    lang-b"
 
 fork pr-types-ok; sed -i "s|^  pull_request: {.*\$|  pull_request: { types: [opened, synchronize, reopened, labeled] }|" "$(wa pr-types-ok)"

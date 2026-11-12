@@ -7,7 +7,8 @@
 // 울지 않았다(등록부 `guard-detection-surface-hand-narrowed` 의 남은 칸 — attest 는 #934, 카나리아는 이 판). 그리고 아홉
 // 행렬의 W1 과 카나리아 검사가 런타임에 읽는 `scripts/test/test-security-defaults.sh` 가 레인 `paths:` 밖이라, 그 스크립트만
 // 바꾼 PR 은 언어 CI 를 만들지 않았다 — 2026-09-01 이후 그 파일을 고친 `main` 커밋 36 중 18 이 언어 디렉터리를 안
-// 건드렸다(`w1-shared-script-drift-weekly-only`). 런타임에 읽는 루트 파일은 그 하나다(다른 루트 경로는 주석 속 인용).
+// 건드렸다(`w1-shared-script-drift-weekly-only`). 런타임에 읽는 루트 파일은 그것과 카나리아 검사가 함께 읽는 레인 카나리아
+// 표(`scripts/test/test-lane-canaries.sh` — 덤프 걷기 · bearer 정본 표) 둘이다(다른 루트 경로는 주석 속 인용).
 //
 // 모델 — 언어 집합은 트리에서 파생한다(`check-known-gaps.mjs` 의 `deriveLangs` = `df_tree_langs`). 단계 종류(STEPS)마다,
 // 언어마다:
@@ -34,9 +35,13 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { deriveLangs } from './check-known-gaps.mjs'
+import { GUARD, LANE } from './check-canaries-ran.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-export const SHARED = ['scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-security-defaults.sh']
+// 카나리아 검사가 읽는 표 둘(가드 · 레인 표)은 그 검사의 내보낸 경로에서 받는다 — 손으로 적으면 레인 표를 여기서 빼고 레인
+// paths 에서도 빼는 두 줄 편집이 초록이었다(#1033 레그 W1). 이제 빼려면 검사기의 LANE 을 바꿔야 하고, 그러면 레인 대조가
+// 그 표를 못 읽어 운다.
+export const SHARED = ['scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', GUARD, LANE]
 // 레인이 반드시 돌아야 하는 증명 단계 — 종류 이름은 메시지에 그대로 나간다(attest 쪽 문구는 #934 그대로다).
 const stepRe = (script) => new RegExp(`(^|[\\s;&|(])node\\s+(?:\\S+\\s+)*?(?:\\.{1,2}\\/)*${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s"']|$)`)
 export const STEPS = [
