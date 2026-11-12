@@ -143,6 +143,127 @@ public class JwksOctKeyTests
         Assert.Empty(server.LogEntries.Select(e => e.RequestMessage?.Path));
     }
 
+    /// <summary>
+    /// The length cap comes before the HS refusal: with HS256 allowed, an HS256 token over the cap is refused with the cap's
+    /// message, before any request. The token is a readable HS256 token, so an HS refusal placed ahead of the cap would answer.
+    /// </summary>
+    [Fact]
+    public async Task Hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal()
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, $$"""{"keys":[{{RsaJwk(rsa)}}]}""");
+        using var http = new HttpClient();
+        var validator = HsAllowed(issuer, http);
+        var exp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300;
+        var padded = $$"""{"iss":"{{issuer}}","sub":"attacker","aud":"it-client","exp":{{exp}},"pad":"{{new string('x', JwtValidator.MaxJwtBytes * 3 / 4)}}"}""";
+        var over = Sign(padded, new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(64)) { KeyId = "k1" }, SecurityAlgorithms.HmacSha256);
+        Assert.True(over.Length > JwtValidator.MaxJwtBytes, $"fixture: {over.Length}");
+
+        foreach (var path in new Func<Task>[]
+        {
+            () => validator.ValidateAsync(over),
+            () => validator.ValidateForAudienceAsync(over, "it-client"),
+        })
+        {
+            var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(path);
+            Assert.Multiple(
+                () => Assert.Equal("token exceeds 256000 bytes", refused.Message),
+                () => Assert.Null(refused.InnerException),
+                () => Assert.Empty(server.LogEntries));
+        }
+    }
+
+    /// <summary>
+    /// An already-cancelled token ends the call before the HS refusal too: <see cref="OperationCanceledException"/>, as .NET
+    /// expects, not the refusal (ValidationCancellationTests holds the same for an RS256 token).
+    /// </summary>
+    [Fact]
+    public async Task An_already_cancelled_token_ends_an_hs_validation_with_OperationCanceledException()
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, $$"""{"keys":[{{RsaJwk(rsa)}}]}""");
+        using var http = new HttpClient();
+        var validator = HsAllowed(issuer, http);
+        var forged = Sign(Payload(issuer, "attacker"), new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(64)) { KeyId = "k1" }, SecurityAlgorithms.HmacSha256);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        foreach (var path in new Func<Task>[]
+        {
+            () => validator.ValidateAsync(forged, cts.Token),
+            () => validator.ValidateForAudienceAsync(forged, "it-client", cts.Token),
+        })
+        {
+            var ended = await Record.ExceptionAsync(path);
+            Assert.IsAssignableFrom<OperationCanceledException>(ended);
+        }
+        Assert.Empty(server.LogEntries);
+    }
+
+    /// <summary>
+    /// An HS alg the pin refuses keeps IdentityModel's path and wording — the SDK refuses only the HS algs the pin lets through.
+    /// Measured on 8.23.0: discovery and the JWKS are fetched, then IDX10511 with a
+    /// <see cref="SecurityTokenInvalidSignatureException"/> inside.
+    /// </summary>
+    [Fact]
+    public async Task Hs_signature_the_pin_refuses_keeps_IdentityModel_path()
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, $$"""{"keys":[{{RsaJwk(rsa)}}]}""");
+        using var http = new HttpClient();
+        var validator = Pinned(issuer, http, "RS256");
+        var forged = Sign(Payload(issuer, "attacker"), new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(64)) { KeyId = "k1" }, SecurityAlgorithms.HmacSha256);
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => validator.ValidateAsync(forged));
+        Assert.Multiple(
+            () => Assert.NotEqual(SdkRefusal("HS256"), refused.Message),
+            () => Assert.StartsWith("IDX10511:", refused.Message),
+            () => Assert.IsType<SecurityTokenInvalidSignatureException>(refused.InnerException),
+            () => Assert.NotEmpty(server.LogEntries));
+    }
+
+    /// <summary>
+    /// Letter case follows IdentityModel's pin, which compares ordinally: with the pin [RS256, hs256] neither a header alg
+    /// <c>hs256</c> (not an "HS" prefix, ordinally) nor <c>HS256</c> (not in the pin, ordinally) is an HS alg the pin lets
+    /// through, so both keep IdentityModel's path — a request to the IdP and its own error inside.
+    /// </summary>
+    [Theory]
+    [InlineData("hs256")]
+    [InlineData("HS256")]
+    public async Task Letter_case_follows_the_ordinal_pin(string headerAlg)
+    {
+        var rsa = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k1" };
+        using var server = Idp(out var issuer, $$"""{"keys":[{{RsaJwk(rsa)}}]}""");
+        using var http = new HttpClient();
+        var validator = Pinned(issuer, http, "RS256", "hs256");
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => validator.ValidateAsync(HandSigned(headerAlg, Payload(issuer, "attacker"))));
+        Assert.Multiple(
+            () => Assert.NotEqual(SdkRefusal(headerAlg), refused.Message),
+            () => Assert.NotNull(refused.InnerException),
+            () => Assert.NotEmpty(server.LogEntries));
+    }
+
+    private static string SdkRefusal(string alg) => $"algorithm not allowed: {alg} (a JWKS holds public keys only)";
+
+    private static JwtValidator Pinned(string issuer, HttpClient http, params string[] algs) => new(issuer, new JwtValidatorOptions
+    {
+        Issuer = issuer,
+        Audiences = new[] { "it-client" },
+        AllowedAlgorithms = algs,
+        RefreshIntervalSeconds = 1,
+    }, http);
+
+    // An HMAC-SHA256 token whose header alg is written as given, kid k1 — CreateToken does not sign under a name it does not
+    // know ("hs256").
+    private static string HandSigned(string alg, string payloadJson)
+    {
+        var input = Base64UrlEncoder.Encode($$"""{"alg":"{{alg}}","typ":"JWT","kid":"k1"}""") + "." + Base64UrlEncoder.Encode(payloadJson);
+        var mac = HMACSHA256.HashData(RandomNumberGenerator.GetBytes(64), Encoding.ASCII.GetBytes(input));
+        return input + "." + Base64UrlEncoder.Encode(mac);
+    }
+
     /// <summary>A set holding only an oct key has no usable key — refused like an empty set, never installed.</summary>
     [Fact]
     public async Task Only_an_oct_key_has_no_usable_keys()

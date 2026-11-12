@@ -141,6 +141,41 @@ class JwksOctKeyTest {
     assertTrue(lookups.get() > 0, "계수기가 키 조회를 보지 못한다");
   }
 
+  /**
+   * 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로,
+   * 분해 · 키 조회 전에 거부된다. 토큰은 분해할 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면 그 문구가 나온다.
+   */
+  @Test
+  void hsTokenOverTheCap_isRefusedByTheCap_beforeTheHsRefusal() throws Exception {
+    RSAKey k1 = new RSAKeyGenerator(2048).keyID("k1").generate();
+    JWKSet set = new JWKSet(k1.toPublicJWK());
+    AtomicInteger lookups = new AtomicInteger();
+    JWKSource<SecurityContext> counting = (selector, ctx) -> {
+      lookups.incrementAndGet();
+      return selector.select(set);
+    };
+    OidcMetadata md = OidcMetadata.forRealm(
+        KeycloakConfig.builder().serverUrl("https://kc.example.com").realm("r").clientId("app").build());
+    JwtValidator v = JwtValidator.withJwkSource(counting, md.getIssuer(), "app",
+        Set.of(JWSAlgorithm.RS256, JWSAlgorithm.HS256), Duration.ofSeconds(30));
+    byte[] secret = new byte[64];
+    RANDOM.nextBytes(secret);
+    JWTClaimsSet padded = new JWTClaimsSet.Builder(claims(md, "attacker"))
+        .claim("pad", "x".repeat(JwtValidator.JWT_MAX_BYTES * 3 / 4)).build();
+    SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256).keyID("k1").build(), padded);
+    jwt.sign(new MACSigner(secret));
+    String over = jwt.serialize();
+    assertTrue(over.length() > JwtValidator.JWT_MAX_BYTES, "fixture: " + over.length());
+
+    for (JwtValidator path : List.of(v, v.withAudience("app"))) {
+      TokenValidationException e = assertThrows(TokenValidationException.class, () -> path.validate(over));
+      assertAll(
+          () -> assertEquals("token exceeds 256000 bytes", e.getMessage()),
+          () -> assertNull(e.getCause()),
+          () -> assertEquals(0, lookups.get(), "상한을 넘은 HS 토큰이 키를 찾았다"));
+    }
+  }
+
   private static com.sun.net.httpserver.HttpServer serve(String set) throws java.io.IOException {
     byte[] b = set.getBytes(StandardCharsets.UTF_8);
     com.sun.net.httpserver.HttpServer s =

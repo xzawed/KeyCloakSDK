@@ -462,3 +462,34 @@ def test_an_unreadable_header_is_left_to_the_decoder():
         with pytest.raises(TokenSignatureError) as refused:
             validator.validate(f"{header}.e30.c2ln", key_set)
         assert str(refused.value) == _PIN_REFUSAL
+
+
+def test_a_header_nested_past_the_recursion_limit_ends_in_an_sdk_error():
+    """머리의 JSON 이 파서의 재귀 한도를 넘게 겹쳐 있어도(`[` 5 만 겹) HS 거부가 머리를 읽다
+    날것의 `RecursionError` 를 내보내지 않는다 — 읽을 수 없는 머리이므로 판정하지 않고 지금의
+    길(joserfc)에 맡겨, SDK 오류로 끝난다."""
+    validator = JwtValidator(issuer=ISSUER, audience="app", allowed_algs=_RS_AND_HS)
+    depth = 50_000
+    header = _b64url(('{"alg":"HS256","x":' + "[" * depth + "]" * depth + "}").encode())
+
+    with pytest.raises(TokenValidationError):
+        validator.validate(f"{header}.e30.c2ln", KeySet([_rsa_key()]))
+
+
+def test_an_hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal():
+    """길이 상한이 HS 거부보다 먼저다 — 허용된 HS256 이어도 상한을 넘은 토큰은 상한의 문구(평범한
+    `TokenValidationError`)로, 키를 찾기 전에 거부된다. 머리는 읽을 수 있어 HS 거부가 상한보다
+    앞이면 그 문구가 나온다. 파사드의 같은 칸은 `test_auth.py` · `aio/test_auth.py` 다."""
+    validator = JwtValidator(issuer=ISSUER, audience="app", allowed_algs=_RS_AND_HS)
+    key_set = _CountingKeySet([_rsa_key()])
+    over = hs_token(os.urandom(64), ISSUER, "app", "k1", pad="x" * (JWT_MAX_BYTES * 3 // 4))
+    assert len(over) > JWT_MAX_BYTES
+
+    with pytest.raises(TokenValidationError) as refused:
+        validator.validate(over, key_set)
+
+    assert (type(refused.value), str(refused.value), key_set.lookups) == (
+        TokenValidationError,
+        f"token exceeds {JWT_MAX_BYTES} bytes",
+        0,
+    )

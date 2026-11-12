@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from joserfc import jwt as jjwt
+from joserfc.errors import UnsupportedAlgorithmError
 from joserfc.jwk import ECKey, RSAKey
 from keycloak import KeycloakOpenID
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
@@ -1185,6 +1186,61 @@ def test_hs_is_refused_before_the_jwks_is_fetched_even_when_allowed(jwks, alg):
     good = _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
     assert client.validate(good).subject == "user-1"
     assert jwks.call_count == 1
+
+
+def test_an_hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal(jwks):
+    """길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의
+    문구가 아니라 상한의 문구(평범한 `TokenValidationError`)로, JWKS 를 부르기 전에 거부된다.
+    머리는 읽을 수 있어 HS 거부가 상한보다 앞이면 그 문구가 나온다. `validate` 와 코드 교환의
+    id_token 둘 다."""
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    pad = "x" * (JWT_MAX_BYTES * 3 // 4)
+    over = hs_token(os.urandom(64), endpoints.issuer, config.client_id, "k1", pad=pad)
+    assert len(over) > JWT_MAX_BYTES
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = {
+        "access_token": "acc",
+        "id_token": over,
+        "token_type": "Bearer",
+        "expires_in": 60,
+    }
+    client = _client(openid, config=config)
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate(over)
+    with pytest.raises(KeycloakAuthError) as exchanged:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    want = f"token exceeds {JWT_MAX_BYTES} bytes"
+    cause = exchanged.value.__cause__
+    assert (type(refused.value), str(refused.value), jwks.call_count) == (
+        TokenValidationError,
+        want,
+        0,
+    )
+    assert (type(cause), str(cause)) == (TokenValidationError, want)
+
+
+def test_a_lowercase_hs_alg_the_pin_names_is_left_to_joserfc(jwks):
+    """대소문자는 joserfc 의 핀처럼 정확히 견준다 — 설정 핀 ("RS256", "hs256") 에서 머리 alg
+    `hs256` 은 「HS」 접두가 아니므로 HS 거부가 아니라 지금의 길이다: JWKS 를 적재하고, joserfc 가
+    그 이름을 모른다고 거부한다(원인 `UnsupportedAlgorithmError`)."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "hs256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    jwks.return_value = {"keys": [rsa.as_dict(private=False)]}
+    forged = hs_token(os.urandom(64), endpoints.issuer, config.client_id, "k1", alg="hs256")
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+
+    with pytest.raises(TokenSignatureError) as refused:
+        client.validate(forged)
+
+    assert (str(refused.value), type(refused.value.__cause__), jwks.call_count) == (
+        "JWT signature/algorithm validation failed",
+        UnsupportedAlgorithmError,
+        1,
+    )
 
 
 # ⚠️ 여기부터가 콜드 캐시 + IdP 장애 축이다. 위 `test_forced_jwks_refetch_is_rate_limited`

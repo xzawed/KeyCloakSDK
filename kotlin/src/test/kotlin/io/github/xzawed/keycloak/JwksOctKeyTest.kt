@@ -146,6 +146,51 @@ internal class JwksOctKeyTest {
             assertTrue(lookups.get() > 0, "계수기가 키 조회를 보지 못한다")
         }
 
+    /**
+     * 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로, 분해 · 키
+     * 조회 전에 거부된다. 토큰은 분해할 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면 그 문구가 나온다. Java 자매 시험과 같다.
+     */
+    @Test
+    fun hsTokenOverTheCapIsRefusedByTheCapBeforeTheHsRefusal(): Unit =
+        runBlocking {
+            val k1 = RSAKeyGenerator(2048).keyID("k1").generate()
+            val set = JWKSet(k1.toPublicJWK())
+            val lookups = AtomicInteger()
+            val counting =
+                JWKSource<SecurityContext> { selector, _ ->
+                    lookups.incrementAndGet()
+                    selector.select(set)
+                }
+            val endpoints = OidcEndpoints.forRealm(KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = "app"))
+            val validator =
+                JwtValidator.withJwkSource(
+                    counting,
+                    endpoints.issuer,
+                    "app",
+                    setOf(JWSAlgorithm.RS256, JWSAlgorithm.HS256),
+                    Duration.ofSeconds(30),
+                )
+            val secret = ByteArray(64).also { RANDOM.nextBytes(it) }
+            val padded =
+                JWTClaimsSet
+                    .Builder(claims(endpoints, "attacker"))
+                    .claim("pad", "x".repeat(JWT_MAX_BYTES * 3 / 4))
+                    .build()
+            val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.HS256).keyID("k1").build(), padded)
+            jwt.sign(MACSigner(secret))
+            val over = jwt.serialize()
+            assertTrue(over.length > JWT_MAX_BYTES, "fixture: ${over.length}")
+
+            for (path in listOf(validator, validator.withAudience("app"))) {
+                val e = assertFailsWith<TokenValidationException> { path.validate(over) }
+                assertAll(
+                    { assertEquals("token exceeds 256000 bytes", e.message) },
+                    { assertNull(e.cause) },
+                    { assertEquals(0, lookups.get(), "상한을 넘은 HS 토큰이 키를 찾았다") },
+                )
+            }
+        }
+
     private fun serve(set: String): HttpServer {
         val bytes = set.toByteArray(StandardCharsets.UTF_8)
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)

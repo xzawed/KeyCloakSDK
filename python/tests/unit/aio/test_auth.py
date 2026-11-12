@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from joserfc import jwt as jjwt
+from joserfc.errors import UnsupportedAlgorithmError
 from joserfc.jwk import ECKey, RSAKey
 from keycloak.exceptions import KeycloakAuthenticationError, KeycloakGetError
 
@@ -893,6 +894,53 @@ async def test_hs_is_refused_before_the_jwks_is_fetched_even_when_allowed(ajwks,
     good = _signed_token(rsa, issuer=endpoints.issuer, audience=config.client_id)
     assert (await client.validate(good)).subject == "user-1"
     assert ajwks.await_count == 1
+
+
+async def test_an_hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal(ajwks):
+    """sync 미러와 같은 계약 — 길이 상한이 HS 거부보다 먼저다. 상한을 넘은 HS256 토큰은 HS 의
+    문구가 아니라 상한의 문구로, JWKS 를 부르기 전에 거부된다. `validate` 와 코드 교환의 id_token
+    둘 다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "HS256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    pad = "x" * (JWT_MAX_BYTES * 3 // 4)
+    over = hs_token(os.urandom(64), endpoints.issuer, config.client_id, "k1", pad=pad)
+    assert len(over) > JWT_MAX_BYTES
+    client = _client(_exchange_openid_with_id_token(rsa, over, ajwks), config=config)
+
+    with pytest.raises(TokenValidationError) as refused:
+        await client.validate(over)
+    with pytest.raises(KeycloakAuthError) as exchanged:
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    want = f"token exceeds {JWT_MAX_BYTES} bytes"
+    cause = exchanged.value.__cause__
+    assert (type(refused.value), str(refused.value), ajwks.await_count) == (
+        TokenValidationError,
+        want,
+        0,
+    )
+    assert (type(cause), str(cause)) == (TokenValidationError, want)
+
+
+async def test_a_lowercase_hs_alg_the_pin_names_is_left_to_joserfc(ajwks):
+    """sync 미러와 같은 계약 — 설정 핀 ("RS256", "hs256") 에서 머리 alg `hs256` 은 「HS」 접두가
+    아니므로 지금의 길이다: JWKS 를 적재하고, joserfc 가 그 이름을 모른다고 거부한다."""
+    rsa = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    config = _config(signature_algorithms=("RS256", "hs256"))
+    endpoints = OidcEndpoints.for_realm(config)
+    ajwks.return_value = {"keys": [rsa.as_dict(private=False)]}
+    forged = hs_token(os.urandom(64), endpoints.issuer, config.client_id, "k1", alg="hs256")
+    client = _client(MagicMock(), config=config)
+
+    with pytest.raises(TokenSignatureError) as refused:
+        await client.validate(forged)
+
+    assert (str(refused.value), type(refused.value.__cause__), ajwks.await_count) == (
+        "JWT signature/algorithm validation failed",
+        UnsupportedAlgorithmError,
+        1,
+    )
 
 
 # ⚠️ 콜드 캐시 + IdP 장애 축 — sync 미러와 **대칭으로** 둔다. 이 저장소는 「sync 에만 있는

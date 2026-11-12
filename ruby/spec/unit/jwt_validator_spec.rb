@@ -297,8 +297,9 @@ RSpec.describe KeycloakSdk::JwtValidator do
     end
 
     # 그 alg 로 HMAC 서명한 위조 토큰 — 헤더 alg 를 적힌 그대로 두려고 직접 조립한다(ruby-jwt 는 정규 이름으로 고친다).
-    def forged_hs(alg)
-      parts = [{ "alg" => alg, "typ" => "JWT", "kid" => kid }, base_claims("sub" => "attacker")]
+    # `extra` 는 클레임에 더한다(예: 길이를 늘리는 `pad`).
+    def forged_hs(alg, **extra)
+      parts = [{ "alg" => alg, "typ" => "JWT", "kid" => kid }, base_claims("sub" => "attacker", **extra)]
       input = parts.map { |part| b64url(part.to_json) }.join(".")
       mac = OpenSSL::HMAC.digest(alg.upcase.sub("HS", "SHA"), OpenSSL::Random.random_bytes(64), input)
       "#{input}.#{b64url(mac)}"
@@ -316,6 +317,36 @@ RSpec.describe KeycloakSdk::JwtValidator do
         expect(hs_validator.validate(sign(base_claims)).subject).to eq("user-1")
         expect(a_request(:get, jwks_url)).to have_been_made.once
       end
+    end
+
+    # 길이 상한이 HS 거부보다 먼저다 — 머리를 읽을 수 있는 HS256 토큰이라 HS 거부가 상한보다 앞이면 그 문구가 나온다.
+    it "상한을 넘은 HS256 토큰은 HS 거부보다 먼저 상한의 문구로, JWKS 를 부르지 않고 거부한다" do
+      over = forged_hs("HS256", "pad" => "x" * (256_000 * 3 / 4))
+      expect(over.bytesize).to be > 256_000
+      expect { hs_validator.validate(over) }
+        .to raise_error(KeycloakSdk::TokenValidationError, "JWT validation failed: token exceeds 256000 bytes")
+      expect(a_request(:get, jwks_url)).not_to have_been_made
+    end
+
+    # 허용 목록 원소가 Symbol 이어도 — Config 는 `Array(...)` 만 해 Symbol 을 그대로 두고(실측 [:RS256, :HS256]), ruby-jwt
+    # 도 그 목록을 받는다 — 문자열로 견준다.
+    it "허용 목록이 Symbol(%i[RS256 HS256])이어도 HS256 을 JWKS 를 부르지 않고 거부한다" do
+      symbols = KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: audience,
+                                        clock_skew: 30, signature_algorithms: %i[RS256 HS256])
+      expect(symbols.signature_algorithms).to eq(%i[RS256 HS256])
+      expect { described_class.from_config(config: symbols, jwks_store: jwks_store).validate(forged_hs("HS256")) }
+        .to raise_error(KeycloakSdk::TokenValidationError,
+                        "JWT validation failed: algorithm not allowed: HS256 (a JWKS holds public keys only)")
+      expect(a_request(:get, jwks_url)).not_to have_been_made
+    end
+
+    # 공개 생성자는 `algorithms:` 를 받은 그대로 둔다 — 문자열 하나도(Config 는 그것을 배열로 감싸므로 생성자로 잰다).
+    it "허용 목록이 문자열 하나(\"HS256\")여도 NoMethodError 가 아니라 HS 거부다" do
+      single = described_class.new(issuer: issuer, audience: audience, jwks_store: jwks_store, algorithms: "HS256")
+      expect { single.validate(forged_hs("HS256")) }
+        .to raise_error(KeycloakSdk::TokenValidationError,
+                        "JWT validation failed: algorithm not allowed: HS256 (a JWKS holds public keys only)")
+      expect(a_request(:get, jwks_url)).not_to have_been_made
     end
   end
 

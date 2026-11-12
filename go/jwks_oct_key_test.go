@@ -175,3 +175,43 @@ func TestValidateRefusesHSBeforeAnyKeyLookup(t *testing.T) {
 		})
 	}
 }
+
+// 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로, 분해 ·
+// JWKS 요청 전에 거부된다. 토큰은 분해할 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면 그 문구가 나온다.
+func TestValidateRefusesOverCapHSTokenByTheCapBeforeTheHSRefusal(t *testing.T) {
+	f := newJWTFixture(t)
+	secret := make([]byte, 64)
+	if _, err := rand.Read(secret); err != nil {
+		t.Fatal(err)
+	}
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: secret},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "k1"))
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+	over, err := jwt.Signed(sig).Claims(cl).Claims(map[string]any{"pad": strings.Repeat("x", jwtMaxBytes*3/4)}).Serialize()
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	if len(over) <= jwtMaxBytes {
+		t.Fatalf("fixture: %d bytes, want more than %d", len(over), jwtMaxBytes)
+	}
+	v := hsAllowed(f.jwksSrv.URL)
+	for _, path := range []struct {
+		name string
+		v    *Validator
+	}{{"access", v}, {"id_token", v.withAudience("my-client")}} {
+		_, err := path.v.Validate(context.Background(), over)
+		var te *TokenValidationError
+		if !errors.As(err, &te) {
+			t.Fatalf("%s: want *TokenValidationError, got %T: %v", path.name, err, err)
+		}
+		if want := "token exceeds 256000 bytes"; te.Msg != want || te.Cause != nil {
+			t.Errorf("%s: got Msg=%q Cause=%v, want Msg=%q and no cause", path.name, te.Msg, te.Cause, want)
+		}
+	}
+	if n := atomic.LoadInt32(f.fetches); n != 0 {
+		t.Errorf("JWKS 요청 %d 건 — 상한을 넘은 토큰은 IdP 에 닿지 않아야 한다(0 건)", n)
+	}
+}

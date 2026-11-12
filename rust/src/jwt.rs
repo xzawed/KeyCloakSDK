@@ -689,6 +689,37 @@ mod tests {
         }
     }
 
+    /// 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로,
+    /// 헤더 디코드 · `/certs` 요청 전에 거부된다. 토큰은 헤더를 읽을 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면
+    /// 그 문구가 나온다. access 와 코드 교환의 id_token 경로(`validate_for_audience`) 둘 다다.
+    #[tokio::test]
+    async fn hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal() {
+        let fx = make_key();
+        let mut h = Header::new(Algorithm::HS256);
+        h.kid = Some("test-kid".into());
+        let mut c = good_claims();
+        c["pad"] = json!("x".repeat(JWT_MAX_BYTES * 3 / 4));
+        let over = encode(&h, &c, &EncodingKey::from_secret(&[7u8; 64])).unwrap();
+        assert!(over.len() > JWT_MAX_BYTES, "fixture: {} bytes", over.len());
+        let (v, server) = validator_and_idp_with(&fx, cfg_with(&["RS256", "HS256"])).await;
+        let access = v.validate(&over).await.map(|vt| vt.subject);
+        let id_token = v
+            .validate_for_audience(&over, "it-client")
+            .await
+            .map(|vt| vt.subject);
+        for (name, got) in [("access", access), ("id_token", id_token)] {
+            assert!(
+                matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == "token exceeds 256000 bytes"),
+                "{name}: want the cap's refusal, got {got:?}"
+            );
+        }
+        assert_eq!(
+            certs_requests(server).await,
+            0,
+            "a token refused by the cap must not reach the IdP"
+        );
+    }
+
     /// RFC 8032 §7.1 TEST 1 의 Ed25519 키 — 공개된 시험 벡터라 비밀이 아니다(EC · Ed 키 생성 의존을 더하지 않는다).
     const ED25519_TEST1_SEED: &str =
         "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
