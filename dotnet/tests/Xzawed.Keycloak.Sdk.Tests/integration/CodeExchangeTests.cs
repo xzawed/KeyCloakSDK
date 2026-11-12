@@ -253,11 +253,11 @@ public sealed class CodeExchangeTests
     }
 
     /// <summary><c>it-web-hs256</c> 의 id_token 은 realm 의 HMAC 키로 서명된다 — 대칭키는 JWKS 에 없다.</summary>
-    /// <remarks>⚠️ <b>두 행은 .NET 에서 같은 이유로 거부된다</b>(python 은 둘이 갈린다: 핀 → 서명 오류, 핀 해제 → 키 오류).
-    /// IdentityModel 은 알고리즘 핀보다 kid 조회를 먼저 해서, RS256 만 허용해도 IDX10503(kid 가 JWKS 에 없다)이 난다(실측).
-    /// 그래서 실서버로는 핀 자체가 판정하는 경로에 닿지 않는다 — 핀은 단위 <c>JwtValidatorTests.Algorithm_pin_violation_rejected</c>
-    /// 와 <c>Hs256_forged_with_rsa_public_key_rejected</c> 가 잰다. 여기서 두 행이 지키는 것은 「HS256 을 허용으로 열어도 JWKS
-    /// 밖 키는 통과하지 않는다」와 그 사유다.</remarks>
+    /// <remarks>⚠️ <b>두 행은 사유가 갈린다.</b> RS256 만 허용하면 IdentityModel 이 알고리즘 핀보다 kid 조회를 먼저 해
+    /// IDX10503(kid 가 JWKS 에 없다)이 난다(실측) — 실서버로는 핀 자체가 판정하는 경로에 닿지 않고, 핀은 단위
+    /// <c>JwtValidatorTests.Algorithm_pin_violation_rejected</c> 와 <c>Hs256_forged_with_rsa_public_key_rejected</c> 가 잰다.
+    /// HS256 을 허용으로 열면 SDK 가 키를 찾기 전에 HS 를 거부한다(등록부 hs-refusal-rests-on-libraries — 원인 없음).
+    /// 두 행이 지키는 것은 「HS256 을 허용으로 열어도 JWKS 밖 키는 통과하지 않는다」와 그 사유다.</remarks>
     [Theory]
     [InlineData("RS256")]
     [InlineData("RS256,HS256")]
@@ -269,7 +269,15 @@ public sealed class CodeExchangeTests
             () => kc.Auth.ExchangeCodeAsync(code, RedirectUri, request.CodeVerifier, request.Nonce));
         Assert.Equal("id_token validation failed", refused.Message);
         var validation = Assert.IsType<KeycloakTokenValidationException>(refused.InnerException);
-        Assert.IsType<SecurityTokenSignatureKeyNotFoundException>(validation.InnerException);
+        if (algorithms.Contains("HS256", StringComparison.Ordinal))
+        {
+            Assert.Equal("algorithm not allowed: HS256 (a JWKS holds public keys only)", validation.Message);
+            Assert.Null(validation.InnerException);
+        }
+        else
+        {
+            Assert.IsType<SecurityTokenSignatureKeyNotFoundException>(validation.InnerException);
+        }
     }
 
     private static IEnumerable<Exception> Chain(Exception e)
