@@ -11,7 +11,9 @@ package keycloak
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"os"
 	"strings"
@@ -26,6 +28,14 @@ import (
 
 //go:embed testdata/it-realm-realm.json
 var itRealmJSON []byte
+
+// The master realm's bootstrap admin service account (startKeycloak). Creating a realm is a master-realm-only
+// privilege — the it-client service account gets 403 — so TestE2E's realm lifecycle authenticates as this client
+// through the SDK's ordinary path (New → Admin, client-credentials).
+const (
+	masterAdminClientID     = "go-it-master-admin"
+	masterAdminClientSecret = "go-it-master-secret"
+)
 
 // One Keycloak for the whole run — TestE2E and TestE2ECodeExchange share it (both match `-run TestE2E`),
 // so the code-exchange tests cost no second container start. TestMain terminates it after every test.
@@ -58,8 +68,10 @@ func startKeycloak(ctx context.Context) (string, func(), error) {
 		Image:        "quay.io/keycloak/keycloak:26.6",
 		ExposedPorts: []string{"8080/tcp"},
 		Env: map[string]string{
-			"KC_BOOTSTRAP_ADMIN_USERNAME": "admin",
-			"KC_BOOTSTRAP_ADMIN_PASSWORD": "admin",
+			"KC_BOOTSTRAP_ADMIN_USERNAME":      "admin",
+			"KC_BOOTSTRAP_ADMIN_PASSWORD":      "admin",
+			"KC_BOOTSTRAP_ADMIN_CLIENT_ID":     masterAdminClientID,
+			"KC_BOOTSTRAP_ADMIN_CLIENT_SECRET": masterAdminClientSecret,
 		},
 		Cmd: []string{"start-dev", "--import-realm"},
 		Files: []testcontainers.ContainerFile{{
@@ -145,26 +157,42 @@ func TestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
+	username := "e2e-user-" + randomHex(t, 4)
 	id, err := admin.Users.Create(ctx, gocloak.User{
-		Username: gocloak.StringP("bob"), Email: gocloak.StringP("bob@example.com"), Enabled: gocloak.BoolP(true),
+		Username: gocloak.StringP(username), Email: gocloak.StringP(username + "@example.com"), Enabled: gocloak.BoolP(true),
 	})
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Users.Delete(ctx, id); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("users cleanup: %v", err)
+		}
+	}()
 	got, err := admin.Users.Get(ctx, id)
-	if err != nil || got.Username == nil || *got.Username != "bob" {
+	if err != nil || got.Username == nil || *got.Username != username {
 		t.Fatalf("get user: %+v %v", got, err)
 	}
-	found, err := admin.Users.Search(ctx, "bob", 0, 20)
+	found, err := admin.Users.Search(ctx, username, 0, 20)
 	if err != nil || len(found) == 0 {
 		t.Fatalf("search: %d %v", len(found), err)
+	}
+	// The search is filtered by the username: every result matches the query (an unfiltered list also holds
+	// the new user — the realm has only a few), and the new user is among them.
+	for _, u := range found {
+		if u == nil || u.Username == nil || !strings.Contains(*u.Username, username) {
+			t.Fatalf("search(%q) returned a user outside the query: %+v", username, u)
+		}
+	}
+	if !listed(found, func(u *gocloak.User) bool { return u.ID != nil && *u.ID == id }) {
+		t.Fatalf("search(%q): %s is not in the result (%d users)", username, id, len(found))
 	}
 	if err := admin.Users.Update(ctx, id, gocloak.User{FirstName: gocloak.StringP("Bob")}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	updated, _ := admin.Users.Get(ctx, id)
-	if updated.FirstName == nil || *updated.FirstName != "Bob" {
-		t.Fatalf("update not applied: %+v", updated)
+	if updated, err := admin.Users.Get(ctx, id); err != nil || updated.FirstName == nil || *updated.FirstName != "Bob" {
+		t.Fatalf("update not applied: %+v %v", updated, err)
 	}
 	if err := admin.Users.Delete(ctx, id); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -177,61 +205,115 @@ func TestE2E(t *testing.T) {
 	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.Realm == nil || *r.Realm != "it-realm" {
 		t.Fatalf("realms.Get: %+v %v", r, err)
 	}
-	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP("e2e-client")})
+	clientName := "e2e-client-" + randomHex(t, 4)
+	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP(clientName)})
 	if err != nil {
 		t.Fatalf("clients.Create: %v", err)
 	}
-	if _, err := admin.Clients.Get(ctx, cid); err != nil {
-		t.Fatalf("clients.Get: %v", err)
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Clients.Delete(ctx, cid); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("clients cleanup: %v", err)
+		}
+	}()
+	if c, err := admin.Clients.Get(ctx, cid); err != nil || c.ClientID == nil || *c.ClientID != clientName {
+		t.Fatalf("clients.Get: %+v %v", c, err)
 	}
-	if fc, err := admin.Clients.FindByClientID(ctx, "e2e-client"); err != nil || len(fc) == 0 {
+	fc, err := admin.Clients.FindByClientID(ctx, clientName)
+	if err != nil || len(fc) == 0 {
 		t.Fatalf("clients.FindByClientID: %d %v", len(fc), err)
+	}
+	if !listed(fc, func(c *gocloak.Client) bool { return c.ID != nil && *c.ID == cid }) {
+		t.Fatalf("clients.FindByClientID: %s is not in the result (%d clients)", cid, len(fc))
+	}
+	// clients.Update addresses the client by its internal id — the facade fills the body's .ID with it, because
+	// gocloak builds the path from the body.
+	if err := admin.Clients.Update(ctx, cid, gocloak.Client{
+		ClientID:    gocloak.StringP(clientName),
+		Description: gocloak.StringP("updated by e2e"),
+	}); err != nil {
+		t.Fatalf("clients.Update: %v", err)
+	}
+	if c, err := admin.Clients.Get(ctx, cid); err != nil || c.Description == nil || *c.Description != "updated by e2e" {
+		t.Fatalf("clients.Update did not take effect: %+v %v", c, err)
 	}
 	if err := admin.Clients.Delete(ctx, cid); err != nil {
 		t.Fatalf("clients.Delete: %v", err)
 	}
-	if err := admin.Roles.Create(ctx, gocloak.Role{Name: gocloak.StringP("e2e-role")}); err != nil {
+	if _, err := admin.Clients.Get(ctx, cid); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("clients.Get after delete must be ErrNotFound, got %v", err)
+	}
+	roleName := "e2e-role-" + randomHex(t, 4)
+	if err := admin.Roles.Create(ctx, gocloak.Role{Name: gocloak.StringP(roleName)}); err != nil {
 		t.Fatalf("roles.Create: %v", err)
 	}
-	if _, err := admin.Roles.Get(ctx, "e2e-role"); err != nil {
-		t.Fatalf("roles.Get: %v", err)
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Roles.Delete(ctx, roleName); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("roles cleanup: %v", err)
+		}
+	}()
+	if r, err := admin.Roles.Get(ctx, roleName); err != nil || r.Name == nil || *r.Name != roleName {
+		t.Fatalf("roles.Get: %+v %v", r, err)
 	}
-	if rl, err := admin.Roles.List(ctx); err != nil || len(rl) == 0 {
+	rl, err := admin.Roles.List(ctx)
+	if err != nil || len(rl) == 0 {
 		t.Fatalf("roles.List: %d %v", len(rl), err)
+	}
+	if !listed(rl, func(r *gocloak.Role) bool { return r.Name != nil && *r.Name == roleName }) {
+		t.Fatalf("roles.List: %s is not in the list (%d roles)", roleName, len(rl))
 	}
 	// roles.Update는 **현재 이름으로 주소를 잡고 body가 새 이름을 나른다**(Keycloak rename 계약).
 	// 그래서 경로 인자를 body의 .Name으로 덮어쓰면 안 된다 — 덮으면 rename이 조용한 no-op이 된다.
-	if err := admin.Roles.Update(ctx, "e2e-role", gocloak.Role{
-		Name:        gocloak.StringP("e2e-role"),
+	if err := admin.Roles.Update(ctx, roleName, gocloak.Role{
+		Name:        gocloak.StringP(roleName),
 		Description: gocloak.StringP("updated by e2e"),
 	}); err != nil {
 		t.Fatalf("roles.Update: %v", err)
 	}
-	if r, err := admin.Roles.Get(ctx, "e2e-role"); err != nil || r.Description == nil || *r.Description != "updated by e2e" {
+	if r, err := admin.Roles.Get(ctx, roleName); err != nil || r.Description == nil || *r.Description != "updated by e2e" {
 		t.Fatalf("roles.Update did not take effect: %+v %v", r, err)
 	}
-	if err := admin.Roles.Delete(ctx, "e2e-role"); err != nil {
+	if err := admin.Roles.Delete(ctx, roleName); err != nil {
 		t.Fatalf("roles.Delete: %v", err)
 	}
-	gid, err := admin.Groups.Create(ctx, gocloak.Group{Name: gocloak.StringP("e2e-group")})
+	if _, err := admin.Roles.Get(ctx, roleName); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("roles.Get after delete must be ErrNotFound, got %v", err)
+	}
+	groupName := "e2e-group-" + randomHex(t, 4)
+	gid, err := admin.Groups.Create(ctx, gocloak.Group{Name: gocloak.StringP(groupName)})
 	if err != nil {
 		t.Fatalf("groups.Create: %v", err)
 	}
-	if _, err := admin.Groups.Get(ctx, gid); err != nil {
-		t.Fatalf("groups.Get: %v", err)
+	// Removed even when an assertion below fails; after a full lifecycle it is already gone (ErrNotFound).
+	defer func() {
+		if err := admin.Groups.Delete(ctx, gid); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("groups cleanup: %v", err)
+		}
+	}()
+	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != groupName {
+		t.Fatalf("groups.Get: %+v %v", g, err)
 	}
-	if gl, err := admin.Groups.List(ctx, 0, 20); err != nil || len(gl) == 0 {
+	gl, err := admin.Groups.List(ctx, 0, 20)
+	if err != nil || len(gl) == 0 {
 		t.Fatalf("groups.List: %d %v", len(gl), err)
 	}
+	if !listed(gl, func(g *gocloak.Group) bool { return g.ID != nil && *g.ID == gid }) {
+		t.Fatalf("groups.List: %s is not in the list (%d groups)", gid, len(gl))
+	}
 	// groups.Update는 id로 주소를 잡고 body가 새 이름을 나른다(users/clients와 같은 모양).
-	if err := admin.Groups.Update(ctx, gid, gocloak.Group{Name: gocloak.StringP("e2e-group-renamed")}); err != nil {
+	renamed := groupName + "-renamed"
+	if err := admin.Groups.Update(ctx, gid, gocloak.Group{Name: gocloak.StringP(renamed)}); err != nil {
 		t.Fatalf("groups.Update: %v", err)
 	}
-	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != "e2e-group-renamed" {
+	if g, err := admin.Groups.Get(ctx, gid); err != nil || g.Name == nil || *g.Name != renamed {
 		t.Fatalf("groups.Update did not take effect: %+v %v", g, err)
 	}
 	if err := admin.Groups.Delete(ctx, gid); err != nil {
 		t.Fatalf("groups.Delete: %v", err)
+	}
+	if _, err := admin.Groups.Get(ctx, gid); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("groups.Get after delete must be ErrNotFound, got %v", err)
 	}
 
 	// realms.List / realms.Update — `it-client`는 manage-realm을 갖는다(testdata/it-realm-realm.json).
@@ -259,6 +341,61 @@ func TestE2E(t *testing.T) {
 	}
 	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.DisplayName == nil || *r.DisplayName != "updated by e2e" {
 		t.Fatalf("realms.Update did not take effect: %+v %v", r, err)
+	}
+
+	// 4c) realm lifecycle on a throwaway realm — create · get · list · update · delete, then ErrNotFound.
+	// Creating a realm is master-realm-only (it-client gets 403), so this runs as the master bootstrap admin service
+	// account through the SDK's ordinary path (New → Admin, client-credentials). ⚠️ Not NewAdminClient with an
+	// injected password-grant token: that function's integration gap is owned by another registry item
+	// (facade-wiring-close-contract-unasserted), which an unasserted call here would silently mark as covered.
+	master, err := New(Config{
+		ServerURL: serverURL, Realm: "master", ClientID: masterAdminClientID, ClientSecret: masterAdminClientSecret,
+	})
+	if err != nil {
+		t.Fatalf("new master client: %v", err)
+	}
+	defer func() { _ = master.Close() }()
+	masterAdmin, err := master.Admin(ctx)
+	if err != nil {
+		t.Fatalf("master admin: %v", err)
+	}
+	tmpRealm := "go-it-realm-" + randomHex(t, 4)
+	if err := masterAdmin.Realms.Create(ctx, gocloak.RealmRepresentation{
+		Realm:   gocloak.StringP(tmpRealm),
+		Enabled: gocloak.BoolP(true),
+	}); err != nil {
+		t.Fatalf("realms.Create(%s): %v", tmpRealm, err)
+	}
+	// The container is shared — removed even when an assertion below fails; after a full lifecycle it is already gone.
+	defer func() {
+		if err := masterAdmin.Realms.Delete(ctx, tmpRealm); err != nil && !errors.Is(err, ErrNotFound) {
+			t.Errorf("realms cleanup: %v", err)
+		}
+	}()
+	if r, err := masterAdmin.Realms.Get(ctx, tmpRealm); err != nil || r.Realm == nil || *r.Realm != tmpRealm || r.Enabled == nil || !*r.Enabled {
+		t.Fatalf("realms.Get(%s): %+v %v", tmpRealm, r, err)
+	}
+	rls, err := masterAdmin.Realms.List(ctx)
+	if err != nil {
+		t.Fatalf("realms.List: %v", err)
+	}
+	if !listed(rls, func(r *gocloak.RealmRepresentation) bool { return r.Realm != nil && *r.Realm == tmpRealm }) {
+		t.Fatalf("realms.List: %s is not in the list (%d realms)", tmpRealm, len(rls))
+	}
+	if err := masterAdmin.Realms.Update(ctx, tmpRealm, gocloak.RealmRepresentation{
+		Realm:       gocloak.StringP(tmpRealm),
+		DisplayName: gocloak.StringP("throwaway updated by e2e"),
+	}); err != nil {
+		t.Fatalf("realms.Update(%s): %v", tmpRealm, err)
+	}
+	if r, err := masterAdmin.Realms.Get(ctx, tmpRealm); err != nil || r.DisplayName == nil || *r.DisplayName != "throwaway updated by e2e" {
+		t.Fatalf("realms.Update(%s) did not take effect: %+v %v", tmpRealm, r, err)
+	}
+	if err := masterAdmin.Realms.Delete(ctx, tmpRealm); err != nil {
+		t.Fatalf("realms.Delete(%s): %v", tmpRealm, err)
+	}
+	if _, err := masterAdmin.Realms.Get(ctx, tmpRealm); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("realms.Get after delete must be ErrNotFound, got %v", err)
 	}
 
 	// 5) Raw() escape hatch reaches endpoints the facade does not wrap.
@@ -338,6 +475,26 @@ func contains(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// listed reports whether a list holds the record a lifecycle created — the "list contains it" step, not "non-empty".
+func listed[T any](xs []*T, match func(*T) bool) bool {
+	for _, x := range xs {
+		if x != nil && match(x) {
+			return true
+		}
+	}
+	return false
+}
+
+// randomHex is a name suffix that keeps a throwaway resource from colliding with anything else on the shared server.
+func randomHex(t *testing.T, n int) string {
+	t.Helper()
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatalf("random suffix: %v", err)
+	}
+	return hex.EncodeToString(b)
 }
 
 func mustToken(t *testing.T, a *AdminClient, ctx context.Context) string {

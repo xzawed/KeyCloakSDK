@@ -46,41 +46,100 @@ public class E2ETests
         var introspection = await client.Auth.IntrospectAsync(token.AccessToken);
         Assert.True(introspection.Active);
 
-        // 4) user CRUD (+ delete-then-NotFound)
+        // 4) users — every lifecycle below has the same shape: create under a unique name · get · list contains it ·
+        // update · get · delete, then NotFound. Its finally removes the record only when an assertion stopped the
+        // lifecycle before the record was confirmed gone.
         var admin = await client.AdminAsync();
-        var userId = await admin.Users.CreateAsync(new UserRepresentation { Username = "bob", Email = "bob@example.com", Enabled = true });
-        Assert.False(string.IsNullOrEmpty(userId));
-        Assert.Equal("bob", (await admin.Users.GetAsync(userId)).Username);
-        Assert.NotEmpty(await admin.Users.SearchAsync("bob"));
-        await admin.Users.UpdateAsync(userId, new UserRepresentation { FirstName = "Bob", Enabled = true });
-        Assert.Equal("Bob", (await admin.Users.GetAsync(userId)).FirstName);
-        await admin.Users.DeleteAsync(userId);
-        await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Users.GetAsync(userId));
+        var userName = Unique("e2e-user");
+        var userId = await admin.Users.CreateAsync(new UserRepresentation { Username = userName, Email = $"{userName}@example.com", Enabled = true });
+        var userGone = false;
+        try
+        {
+            Assert.False(string.IsNullOrEmpty(userId));
+            Assert.Equal(userName, (await admin.Users.GetAsync(userId)).Username);
+            // The search is filtered by the username: every result matches the query (an unfiltered list also holds
+            // the new user — the realm has only a few), and the new user is among them.
+            var foundUsers = await admin.Users.SearchAsync(userName);
+            Assert.NotEmpty(foundUsers);
+            Assert.All(foundUsers, u => Assert.Contains(userName, u.Username));
+            Assert.Contains(foundUsers, u => u.Id == userId);
+            await admin.Users.UpdateAsync(userId, new UserRepresentation { FirstName = "Bob", Enabled = true });
+            Assert.Equal("Bob", (await admin.Users.GetAsync(userId)).FirstName);
+            await admin.Users.DeleteAsync(userId);
+            await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Users.GetAsync(userId));
+            userGone = true;
+        }
+        finally
+        {
+            if (!userGone)
+                await BestEffortAsync(() => admin.Users.DeleteAsync(userId));
+        }
 
         // 5) clients (raw)
-        var clientUuid = await admin.Clients.CreateAsync(new ClientRepresentation { ClientId = "svc-e2e", Enabled = true });
-        Assert.Equal("svc-e2e", (await admin.Clients.GetAsync(clientUuid)).ClientId);
-        Assert.NotEmpty(await admin.Clients.FindByClientIdAsync("svc-e2e"));
-        await admin.Clients.DeleteAsync(clientUuid);
+        var clientName = Unique("e2e-client");
+        var clientUuid = await admin.Clients.CreateAsync(new ClientRepresentation { ClientId = clientName, Enabled = true });
+        var clientGone = false;
+        try
+        {
+            Assert.Equal(clientName, (await admin.Clients.GetAsync(clientUuid)).ClientId);
+            var foundClients = await admin.Clients.FindByClientIdAsync(clientName);
+            Assert.NotEmpty(foundClients);
+            Assert.Contains(foundClients, c => c.Id == clientUuid);
+            // update addresses the client by its internal id; the body carries the field being changed.
+            await admin.Clients.UpdateAsync(clientUuid, new ClientRepresentation { ClientId = clientName, Description = "updated-e2e" });
+            Assert.Equal("updated-e2e", (await admin.Clients.GetAsync(clientUuid)).Description);
+            await admin.Clients.DeleteAsync(clientUuid);
+            await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Clients.GetAsync(clientUuid));
+            clientGone = true;
+        }
+        finally
+        {
+            if (!clientGone)
+                await BestEffortAsync(() => admin.Clients.DeleteAsync(clientUuid));
+        }
 
         // 6) roles (raw, by name)
-        await admin.Roles.CreateAsync(new RoleRepresentation { Name = "role-e2e" });
-        Assert.Equal("role-e2e", (await admin.Roles.GetAsync("role-e2e")).Name);
-        Assert.Contains(await admin.Roles.ListAsync(), r => r.Name == "role-e2e");
-        // ⚠️ update: 이 셋(roles.update · realms.update · realms.list)은 예전에 파사드에도 Raw에도 없어
-        // 소비자가 도달할 수 없던 연산이다. 단위테스트는 WireMock에 대고 우리가 **무엇을 보내는지**만
-        // 잠근다 — 실 Keycloak이 그 PUT/GET을 실제로 받아들이는지는 여기서만 증명된다.
-        await admin.Roles.UpdateAsync("role-e2e", new RoleRepresentation { Name = "role-e2e", Description = "renamed-desc" });
-        Assert.Equal("renamed-desc", (await admin.Roles.GetAsync("role-e2e")).Description);
-        await admin.Roles.DeleteAsync("role-e2e");
+        var roleName = Unique("e2e-role");
+        await admin.Roles.CreateAsync(new RoleRepresentation { Name = roleName });
+        var roleGone = false;
+        try
+        {
+            Assert.Equal(roleName, (await admin.Roles.GetAsync(roleName)).Name);
+            Assert.Contains(await admin.Roles.ListAsync(), r => r.Name == roleName);
+            // ⚠️ update: 이 셋(roles.update · realms.update · realms.list)은 예전에 파사드에도 Raw에도 없어
+            // 소비자가 도달할 수 없던 연산이다. 단위테스트는 WireMock에 대고 우리가 **무엇을 보내는지**만
+            // 잠근다 — 실 Keycloak이 그 PUT/GET을 실제로 받아들이는지는 여기서만 증명된다.
+            await admin.Roles.UpdateAsync(roleName, new RoleRepresentation { Name = roleName, Description = "renamed-desc" });
+            Assert.Equal("renamed-desc", (await admin.Roles.GetAsync(roleName)).Description);
+            await admin.Roles.DeleteAsync(roleName);
+            await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Roles.GetAsync(roleName));
+            roleGone = true;
+        }
+        finally
+        {
+            if (!roleGone)
+                await BestEffortAsync(() => admin.Roles.DeleteAsync(roleName));
+        }
 
         // 7) groups (typed)
-        var groupId = await admin.Groups.CreateAsync(new GroupRepresentation { Name = "group-e2e" });
-        Assert.Equal("group-e2e", (await admin.Groups.GetAsync(groupId)).Name);
-        Assert.Contains(await admin.Groups.ListAsync(), g => g.Name == "group-e2e");
-        await admin.Groups.UpdateAsync(groupId, new GroupRepresentation { Name = "group-e2e-renamed" });
-        Assert.Equal("group-e2e-renamed", (await admin.Groups.GetAsync(groupId)).Name);
-        await admin.Groups.DeleteAsync(groupId);
+        var groupName = Unique("e2e-group");
+        var groupId = await admin.Groups.CreateAsync(new GroupRepresentation { Name = groupName });
+        var groupGone = false;
+        try
+        {
+            Assert.Equal(groupName, (await admin.Groups.GetAsync(groupId)).Name);
+            Assert.Contains(await admin.Groups.ListAsync(), g => g.Id == groupId);
+            await admin.Groups.UpdateAsync(groupId, new GroupRepresentation { Name = $"{groupName}-renamed" });
+            Assert.Equal($"{groupName}-renamed", (await admin.Groups.GetAsync(groupId)).Name);
+            await admin.Groups.DeleteAsync(groupId);
+            await Assert.ThrowsAsync<KeycloakNotFoundException>(() => admin.Groups.GetAsync(groupId));
+            groupGone = true;
+        }
+        finally
+        {
+            if (!groupGone)
+                await BestEffortAsync(() => admin.Groups.DeleteAsync(groupId));
+        }
 
         // 8) realms: get current (typed, it-client's own realm-management scope) + create/delete throwaway.
         //
@@ -99,17 +158,39 @@ public class E2ETests
             new KeycloakConfig { ServerUrl = _kc.BaseUrl, Realm = "master", ClientId = "admin-cli", ClientSecret = "unused" },
             masterTokenProvider);
 
-        await masterAdmin.Realms.CreateAsync(new RealmRepresentation { Realm = "throwaway-e2e", Enabled = true });
-        Assert.Equal("throwaway-e2e", (await masterAdmin.Realms.GetAsync("throwaway-e2e")).Realm);
-        Assert.Contains(await masterAdmin.Realms.ListAsync(), r => r.Realm == "throwaway-e2e");
-        await masterAdmin.Realms.UpdateAsync("throwaway-e2e",
-            new RealmRepresentation { Realm = "throwaway-e2e", Enabled = true, DisplayName = "renamed-e2e" });
-        Assert.Equal("renamed-e2e", (await masterAdmin.Realms.GetAsync("throwaway-e2e")).DisplayName);
-        await masterAdmin.Realms.DeleteAsync("throwaway-e2e");
+        var realmName = Unique("e2e-realm");
+        await masterAdmin.Realms.CreateAsync(new RealmRepresentation { Realm = realmName, Enabled = true });
+        var realmGone = false;
+        try
+        {
+            Assert.Equal(realmName, (await masterAdmin.Realms.GetAsync(realmName)).Realm);
+            Assert.Contains(await masterAdmin.Realms.ListAsync(), r => r.Realm == realmName);
+            await masterAdmin.Realms.UpdateAsync(realmName,
+                new RealmRepresentation { Realm = realmName, Enabled = true, DisplayName = "renamed-e2e" });
+            Assert.Equal("renamed-e2e", (await masterAdmin.Realms.GetAsync(realmName)).DisplayName);
+            await masterAdmin.Realms.DeleteAsync(realmName);
+            await Assert.ThrowsAsync<KeycloakNotFoundException>(() => masterAdmin.Realms.GetAsync(realmName));
+            realmGone = true;
+        }
+        finally
+        {
+            if (!realmGone)
+                await BestEffortAsync(() => masterAdmin.Realms.DeleteAsync(realmName));
+        }
 
         // 9) Raw escape hatch
         var raw = admin.Raw;
         Assert.Equal(KeycloakFixture.Realm, (await raw.GetRealmAsync(KeycloakFixture.Realm)).Realm);
+    }
+
+    /// <summary>A name nothing else on the shared container holds — lowercase, because Keycloak lowercases usernames.</summary>
+    private static string Unique(string prefix) => $"{prefix}-{Guid.NewGuid().ToString("N")[..8]}";
+
+    /// <summary>Cleanup that never hides the failure that stopped a lifecycle — the record may already be gone.</summary>
+    private static async Task BestEffortAsync(Func<Task> delete)
+    {
+        try { await delete(); }
+        catch (KeycloakException) { /* the assertion that stopped the lifecycle is the failure to report */ }
     }
 }
 
