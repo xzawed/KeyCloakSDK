@@ -1414,7 +1414,11 @@ mod tests {
         auth.logout("rt")
             .await
             .unwrap_or_else(|e| panic!("HTTP 204는 성공이어야 한다, 실제: {e:?}"));
-        for status in [200_u16, 201, 202] {
+        // 205 · 206 · 3xx · 4xx · 5xx 와 정확한 문구 — 실행 레그가 살린 편집(205 수용 · 5xx 를 Transport 로 ·
+        // 문구에서 상태 빼기)을 잡는다.
+        for status in [
+            200_u16, 201, 202, 205, 206, 302, 400, 401, 404, 500, 502, 503, 504,
+        ] {
             let (auth, _server) = logout_fixture(status).await;
             match auth.logout("rt").await {
                 Err(KeycloakError::Auth {

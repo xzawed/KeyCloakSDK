@@ -18,6 +18,7 @@ import { AuthClient } from '../../src/auth.js'
 import { defineConfig, type KeycloakConfigInput } from '../../src/config.js'
 import {
   KeycloakAuthError,
+  KeycloakError,
   KeycloakTokenValidationError,
   KeycloakTransportError,
 } from '../../src/errors.js'
@@ -310,7 +311,12 @@ describe('logout (백채널 — refresh_token revoke)', () => {
     ],
     ['201', new Response(null, { status: 201 })],
     ['202', new Response(null, { status: 202 })],
-  ])('204 밖의 2xx 는 실패다 — %s', async (_cell, response) => {
+    // 205 · 206 · 3xx · 4xx · 5xx 와 정확한 문구 — 실행 레그가 살린 편집(205 수용 · 502 · 504 를 transport 로 ·
+    // 300 이상에서 문구의 상태 빼기)을 잡는다.
+    ...[205, 206, 302, 400, 401, 404, 500, 502, 503, 504].map(
+      (status) => [String(status), new Response(null, { status })] as [string, Response],
+    ),
+  ])('204 밖의 상태는 실패다 — %s', async (_cell, response) => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response)
     const got = await new AuthClient(cfg).logout('RT').then(
       () => undefined,
@@ -318,6 +324,25 @@ describe('logout (백채널 — refresh_token revoke)', () => {
     )
     expect(got).toBeInstanceOf(KeycloakAuthError)
     expect((got as Error).message).toBe(`Logout failed (HTTP ${response.status})`)
+    fetchSpy.mockRestore()
+  })
+
+  // 판정은 상태가 한다 — 본문 스트림이 깨져도 날것의 하위 오류가 새지 않는다(§4). 실행 레그가 살린 편집 「상태 검사 앞에서
+  // `await response.text()`」는 끊긴 200 본문에서 SDK 오류가 아닌 `TypeError: terminated` 를 냈다.
+  it('204 가 아닌 답의 본문 스트림이 깨져도 SDK 오류다', async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new TypeError('terminated'))
+      },
+    })
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(broken, { status: 200 }))
+    const got = await new AuthClient(cfg).logout('RT').then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(got).toBeInstanceOf(KeycloakError)
     fetchSpy.mockRestore()
   })
 

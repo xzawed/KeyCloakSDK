@@ -433,23 +433,26 @@ internal class TokenResponseClassTest {
             if ((errorBody.thrown as? KeycloakAuthException)?.oauthError != "invalid_grant") {
                 wrong += "S1 400 오류 본문의 잘못된 UTF-8: invalid_grant 인증 오류여야 한다 — $errorBody"
             }
-            // logout 의 성공은 204 뿐이다 — 200 은 본문이 무엇이든 auth 실패(등록부 logout-2xx-html-false-success, 2026-11-12 판정 —
-            // 전에는 2xx 를 모두 받아 가로챈 200 로그인 페이지도 성공이었다). 본문은 판정에 쓰지 않는다. Java 동형.
+            // logout 의 성공은 204 뿐이다 — 그 밖의 상태(다른 2xx · 3xx · 4xx · 5xx)는 본문이 무엇이든 상태를 실은 auth 실패다(등록부
+            // logout-2xx-html-false-success, 2026-11-12 판정 — 전에는 2xx 를 모두 받아 가로챈 200 로그인 페이지도 성공이었다). 본문은
+            // 판정에 쓰지 않는다. 205 · 206 · 404 · 5xx 칸과 정확한 문구는 실행 레그가 살린 편집을 잡는다. Java 동형.
             tokens(trxJson(200, trxToken("AT")))
-            for (reply in listOf(
-                TrxReply(200, "application/json", trxConcat("""{"x":"""".toByteArray(), TRX_INVALID, "\"}".toByteArray())),
-                TrxReply(200, "text/html", "<html><body><form action=\"/login\"></form></body></html>".toByteArray()),
-                TrxReply(200, null, null),
-                TrxReply(302, null, null),
-            )) {
+            val notLogouts =
+                listOf(
+                    TrxReply(200, "application/json", trxConcat("""{"x":"""".toByteArray(), TRX_INVALID, "\"}".toByteArray())),
+                    TrxReply(200, "text/html", "<html><body><form action=\"/login\"></form></body></html>".toByteArray()),
+                    TrxReply(200, null, null),
+                ) + listOf(201, 202, 205, 206, 302, 400, 401, 404, 500, 502, 503, 504).map { TrxReply(it, null, null) }
+            for (reply in notLogouts) {
                 logoutReply = reply
                 val failed =
                     call { kc ->
                         kc.auth.logout("rt-1")
                         "logged out"
                     }
-                if ((failed.thrown as? KeycloakAuthException)?.message?.startsWith("Logout failed (HTTP ") != true) {
-                    wrong += "logout $reply: auth 실패(Logout failed (HTTP N))여야 한다 — $failed"
+                val want = "Logout failed (HTTP ${reply.status})"
+                if ((failed.thrown as? KeycloakAuthException)?.message != want) {
+                    wrong += "logout $reply: auth 실패($want)여야 한다 — $failed"
                 }
             }
             logoutReply = TrxReply(204, null, null)

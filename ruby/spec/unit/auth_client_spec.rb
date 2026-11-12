@@ -93,8 +93,13 @@ RSpec.describe KeycloakSdk::AuthClient do
 
     # Keycloak 의 logout 성공은 204 뿐이다 — 가로챈 200 로그인 페이지 · 그 밖의 2xx · 3xx 는 로그아웃이 아니다
     # (등록부 logout-2xx-html-false-success · 판정 2026-11-12). 본문은 판정에 쓰지 않는다.
+    # 205 · 206 · 4xx · 5xx 와 정확한 문구 — 실행 레그가 살린 편집(205 · 404 수용 · 502 · 504 를 TransportError 로)을 잡는다.
     [[200, "text/html", "<html>login</html>"], [200, "application/json", "{}"], [200, nil, ""],
-     [201, nil, ""], [202, nil, ""], [302, "text/html", ""]].each do |status, type, body|
+     [201, nil, ""], [202, nil, ""], [205, nil, ""], [206, nil, ""], [302, "text/html", ""],
+     [400, "application/json", '{"error":"invalid_grant"}'], [401, nil, ""],
+     [404, "text/html", "<html>Not Found</html>"], [500, nil, ""],
+     [502, "text/html", "<html>Bad Gateway</html>"], [503, nil, ""],
+     [504, "text/html", "<html>Gateway Timeout</html>"]].each do |status, type, body|
       it "raises AuthError naming the status on HTTP #{status} #{type.inspect} #{body.inspect}" do
         headers = type ? { "Content-Type" => type } : {}
         stub_request(:post, logout_url).to_return(status: status, headers: headers, body: body)

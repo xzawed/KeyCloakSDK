@@ -178,7 +178,8 @@ async def test_a_logout_without_a_body_passes_through_the_capped_session(token_i
 
 @pytest.mark.parametrize(
     ("status", "head"),
-    [(200, b"<html>login</html>"), (200, b""), (200, b"{}"), (201, b""), (202, b""), (302, b"")],
+    [(200, b"<html>login</html>"), (200, b""), (200, b"{}"), (201, b""), (202, b""), (302, b"")]
+    + [(s, b"") for s in (205, 206, 400, 401, 404, 500, 502, 503, 504)],
     ids=lambda v: str(v),
 )
 async def test_logout_succeeds_on_204_only(status: int, head: bytes, token_idp: Any) -> None:

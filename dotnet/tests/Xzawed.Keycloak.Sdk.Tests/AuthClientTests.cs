@@ -191,6 +191,17 @@ public class AuthClientTests : IDisposable
     [InlineData(200, "text/html", "<html><body><form action=\"/login\"></form></body></html>")]
     [InlineData(201, null, "")]
     [InlineData(202, null, "")]
+    // 205 · 206 · 404 · 5xx 와 정확한 문구 — 실행 레그가 살린 편집(205 수용 · 5xx 를 transport 로 · 문구에서 상태 빼기)을 잡는다.
+    [InlineData(205, null, "")]
+    [InlineData(206, null, "")]
+    [InlineData(302, null, "")]
+    [InlineData(400, null, "")]
+    [InlineData(401, null, "")]
+    [InlineData(404, null, "")]
+    [InlineData(500, null, "")]
+    [InlineData(502, null, "")]
+    [InlineData(503, null, "")]
+    [InlineData(504, null, "")]
     public async Task Logout_succeeds_on_204_only(int status, string? contentType, string body)
     {
         var auth = Build(out _);

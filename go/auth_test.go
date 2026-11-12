@@ -659,6 +659,17 @@ func TestLogoutSucceedsOn204Only(t *testing.T) {
 		{"200 error json", http.StatusOK, "application/json", `{"error":"invalid_grant"}`},
 		{"201", http.StatusCreated, "", ""},
 		{"202", http.StatusAccepted, "", ""},
+		// 205 · 206 · 4xx · 5xx — 실행 레그가 살린 편집(205 수용 · 504 를 *TransportError 로)을 잡는다. 3xx 는
+		// TestPostFormRejectsNon2xx.
+		{"205", http.StatusResetContent, "", ""},
+		{"206", http.StatusPartialContent, "", ""},
+		{"400", http.StatusBadRequest, "application/json", `{"error":"invalid_grant"}`},
+		{"401", http.StatusUnauthorized, "application/json", `{"error":"invalid_client"}`},
+		{"404", http.StatusNotFound, "text/html", "<html>Not Found</html>"},
+		{"500", http.StatusInternalServerError, "", ""},
+		{"502", http.StatusBadGateway, "text/html", "<html>Bad Gateway</html>"},
+		{"503", http.StatusServiceUnavailable, "", ""},
+		{"504", http.StatusGatewayTimeout, "text/html", "<html>Gateway Timeout</html>"},
 	}
 	for _, c := range cells {
 		t.Run(c.name, func(t *testing.T) {
@@ -716,7 +727,10 @@ func TestPostFormRejectsNon2xx(t *testing.T) {
 		t.Run(http.StatusText(code), func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Location", "/elsewhere")
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(code)
+				// 리다이렉트가 활성 토큰처럼 읽히는 본문을 실었다 — introspect 가 3xx 를 성공으로 읽으면 이것이 판정이 된다.
+				_, _ = w.Write([]byte(`{"active":true,"username":"u","client_id":"app"}`))
 			}))
 			t.Cleanup(srv.Close)
 			cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "x"}.withDefaults()
@@ -728,6 +742,32 @@ func TestPostFormRejectsNon2xx(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "HTTP "+strconv.Itoa(code)) {
 				t.Fatalf("오류는 실제 상태코드를 담아야 한다(HTTP %d): %v", code, err)
+			}
+			// introspect 도 같다 — 실행 레그가 살린 편집 「statusIs2xx 를 400 미만으로」는 이 본문을 활성 토큰으로 받았다.
+			r, err := a.Introspect(context.Background(), "tok")
+			var ae *AuthError
+			if !errors.As(err, &ae) || !strings.Contains(err.Error(), "HTTP "+strconv.Itoa(code)) {
+				t.Fatalf("Introspect 가 HTTP %d 를 상태를 실은 *AuthError 로 거부해야 한다: %+v %T %v", code, r, err, err)
+			}
+		})
+	}
+}
+
+// TestIntrospectAcceptsAny2xx — introspection 의 성공은 그대로 2xx 다(statusIs2xx — RFC 7662 §2.2 는 200 으로 답한다).
+// logout 이 성공 술어를 받게 되면서 introspect 의 술어가 따로 섰다 — 실행 레그가 살린 편집 「200 만」을 201 칸이 잡는다.
+func TestIntrospectAcceptsAny2xx(t *testing.T) {
+	for _, code := range []int{http.StatusOK, http.StatusCreated} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(code)
+				_, _ = w.Write([]byte(`{"active":true,"username":"u","client_id":"app"}`))
+			}))
+			t.Cleanup(srv.Close)
+			cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "x"}.withDefaults()
+			r, err := newAuthClient(cfg, nil).Introspect(context.Background(), "tok")
+			if err != nil || !r.Active || r.Username != "u" {
+				t.Fatalf("HTTP %d introspection must be read: %+v %v", code, r, err)
 			}
 		})
 	}
