@@ -99,6 +99,19 @@ impl JwtValidator {
         //     Algorithm enum에는 `none` 변형이 없어 alg="none" 헤더는 여기서 구조적으로 거부된다.
         let header = jsonwebtoken::decode_header(token)
             .map_err(|_| KeycloakError::TokenValidation("malformed JWT header".into()))?;
+        // ⚠️ HS(대칭)는 설정이 허용해도 kid · 키 조회 · JWKS 요청 **전에** 거부한다(등록부 hs-refusal-rests-on-libraries) —
+        //    검증 키는 realm JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 설정 핀은 jsonwebtoken 이
+        //    (3) 에서, 키를 찾은 **뒤**에 걸므로 여기서 직접 본다 — 허용 목록 밖의 alg 는 지금처럼 (3) 의 핀이 거부한다.
+        if matches!(
+            header.alg,
+            Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512
+        ) && self.algorithms.contains(&header.alg)
+        {
+            return Err(KeycloakError::TokenValidation(format!(
+                "algorithm not allowed: {:?} (a JWKS holds public keys only)",
+                header.alg
+            )));
+        }
         let kid = header
             .kid
             .as_deref()
@@ -606,8 +619,9 @@ mod tests {
         }
     }
 
-    /// 고정 — HS 를 허용해도 RSA 공개키(PEM 텍스트)를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(jsonwebtoken 이 키 계열과 alg 를
-    /// 묶는다). oct 를 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+    /// 고정 — HS 를 허용해도 RSA 공개키(PEM 텍스트)를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다. 지금은 키를 찾기 전의 HS 거부가
+    /// 먼저 받는다(`hs_is_refused_before_any_key_lookup_even_when_allowed`) — 그 뒤의 jsonwebtoken 키 계열 · alg 결합은 이
+    /// 경로에서 닿지 않는 겹친 방어다.
     #[tokio::test]
     async fn rsa_public_key_as_hmac_secret_is_rejected_even_with_hs_allowed() {
         let fx = make_key();
@@ -626,6 +640,83 @@ mod tests {
                 Err(KeycloakError::TokenValidation(_))
             ),
             "RSA 공개키를 HMAC 비밀로 쓴 HS256 토큰이 통과했다"
+        );
+    }
+
+    /// ⚠️ HS(대칭) 서명은 설정이 허용해도 **키를 찾기 전에** 거부한다(등록부 hs-refusal-rests-on-libraries) — 검증 키는
+    /// JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. kid 는 JWKS 에 있는 RSA 키를 가리키고,
+    /// 검증기는 콜드라 키 조회는 곧 `/certs` 요청이다. 허용 목록 밖의 HS 는 지금의 길과 문구(jsonwebtoken 의 핀)에 남는다.
+    #[tokio::test]
+    async fn hs_is_refused_before_any_key_lookup_even_when_allowed() {
+        let fx = make_key();
+        let secret = [7u8; 64];
+        for (alg, name) in [
+            (Algorithm::HS256, "HS256"),
+            (Algorithm::HS384, "HS384"),
+            (Algorithm::HS512, "HS512"),
+        ] {
+            let mut h = Header::new(alg);
+            h.kid = Some("test-kid".into());
+            let forged = encode(&h, &good_claims(), &EncodingKey::from_secret(&secret)).unwrap();
+            let (v, server) =
+                validator_and_idp_with(&fx, cfg_with(&["RS256", "HS256", "HS384", "HS512"])).await;
+            let got = v.validate(&forged).await.map(|vt| vt.subject);
+            let hits = certs_requests(server).await;
+            let want = format!("algorithm not allowed: {name} (a JWKS holds public keys only)");
+            assert!(
+                matches!(&got, Err(KeycloakError::TokenValidation(m)) if *m == want) && hits == 0,
+                "{name}: want TokenValidation({want:?}) and 0 /certs requests, got {got:?} and {hits}"
+            );
+            assert_eq!(
+                got.unwrap_err().to_string(),
+                format!("token validation error: {want}")
+            );
+            // 허용 목록 밖이면 지금의 문구 그대로다.
+            let pinned = validator_for(&fx).await;
+            let got = pinned.validate(&forged).await.map(|vt| vt.subject);
+            assert!(
+                matches!(&got, Err(KeycloakError::TokenValidation(m))
+                    if m == "token verification failed: algorithm not allowed"),
+                "{name} outside the allowlist: {got:?}"
+            );
+            // 대조 — 같은 검증기가 그 RSA 키로 서명한 RS256 토큰은 통과시키고, 그때 /certs 를 부른다(계수기가 살아 있다).
+            let vt = v
+                .validate(&sign(&fx, good_claims(), "test-kid"))
+                .await
+                .unwrap_or_else(|e| panic!("{name} control: {e}"));
+            assert_eq!(vt.subject, "s1");
+            assert_eq!(certs_requests(server).await, 1, "{name}: control fetch");
+        }
+    }
+
+    /// 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로,
+    /// 헤더 디코드 · `/certs` 요청 전에 거부된다. 토큰은 헤더를 읽을 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면
+    /// 그 문구가 나온다. access 와 코드 교환의 id_token 경로(`validate_for_audience`) 둘 다다.
+    #[tokio::test]
+    async fn hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal() {
+        let fx = make_key();
+        let mut h = Header::new(Algorithm::HS256);
+        h.kid = Some("test-kid".into());
+        let mut c = good_claims();
+        c["pad"] = json!("x".repeat(JWT_MAX_BYTES * 3 / 4));
+        let over = encode(&h, &c, &EncodingKey::from_secret(&[7u8; 64])).unwrap();
+        assert!(over.len() > JWT_MAX_BYTES, "fixture: {} bytes", over.len());
+        let (v, server) = validator_and_idp_with(&fx, cfg_with(&["RS256", "HS256"])).await;
+        let access = v.validate(&over).await.map(|vt| vt.subject);
+        let id_token = v
+            .validate_for_audience(&over, "it-client")
+            .await
+            .map(|vt| vt.subject);
+        for (name, got) in [("access", access), ("id_token", id_token)] {
+            assert!(
+                matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == "token exceeds 256000 bytes"),
+                "{name}: want the cap's refusal, got {got:?}"
+            );
+        }
+        assert_eq!(
+            certs_requests(server).await,
+            0,
+            "a token refused by the cap must not reach the IdP"
         );
     }
 
@@ -731,7 +822,8 @@ mod tests {
     }
 
     /// 대조 — 계열로 거르는 것이 핀을 넓히지 않는다. 섞은 설정에서도 (a) 같은 계열이지만 설정에 없는 alg(RS384) ·
-    /// (b) 키와 계열이 다른 헤더 alg(HS256 — RSA 공개키 PEM 을 HMAC 비밀로 쓴 고전 혼동)는 거부하고, (c) 키 계열의 alg 가
+    /// (b) 키와 계열이 다른 헤더 alg(HS256 — RSA 공개키 PEM 을 HMAC 비밀로 쓴 고전 혼동. HS 는 키를 찾기 전의 거부가 받으므로
+    /// 문구가 그것이다)는 거부하고, (c) 키 계열의 alg 가
     /// 설정에 하나도 없으면(ES256 + EdDSA · RSA 키) 「algorithm not allowed」다. (d) Ed25519 키도 핀에 EdDSA 가 없으면 ·
     /// (e) P-256 키도 핀 밖 ES256(RS256 만 · ES384 + RS256)이면 · (f) 기본 핀(RS256)에서 같은 계열의 PS256 · RS384 도
     /// 거부한다 — (d)–(f) 는 레그가 「모든 시험을 통과하며 핀을 넓히는 변이」로 찾은 자리다.
@@ -766,7 +858,8 @@ mod tests {
         .unwrap();
         let got = v.validate(&forged).await;
         assert!(
-            matches!(&got, Err(KeycloakError::TokenValidation(m)) if m == not_allowed),
+            matches!(&got, Err(KeycloakError::TokenValidation(m))
+                if m == "algorithm not allowed: HS256 (a JWKS holds public keys only)"),
             "(b) {got:?}"
         );
 
@@ -1081,13 +1174,21 @@ mod tests {
 
     /// `validator_for` 와 같되 IdP 를 함께 돌려준다 — 거부가 요청을 보냈는지 세는 시험용.
     async fn validator_and_idp(fx: &Fixture) -> (JwtValidator, &'static MockServer) {
+        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
+        validator_and_idp_with(fx, cfg).await
+    }
+
+    /// `validator_and_idp` 의 config 주입 변형.
+    async fn validator_and_idp_with(
+        fx: &Fixture,
+        cfg: KeycloakConfig,
+    ) -> (JwtValidator, &'static MockServer) {
         let server: &'static MockServer = Box::leak(Box::new(MockServer::start().await));
         Mock::given(method("GET"))
             .and(path("/certs"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({"keys":[fx.jwk]})))
             .mount(server)
             .await;
-        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
         let endpoints = OidcEndpoints::new(&cfg);
         let store = JwksStore::new(
             format!("{}/certs", server.uri()),

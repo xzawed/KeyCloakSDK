@@ -167,6 +167,14 @@ public sealed class JwtValidator
         // units, code points and bytes agree on it.
         if (token is { Length: > MaxJwtBytes })
             throw new KeycloakTokenValidationException($"token exceeds {MaxJwtBytes} bytes");
+        // ⚠️ An HS (symmetric) signature is never verified, even when the configuration allows it (registry
+        // hs-refusal-rests-on-libraries): this SDK's keys come only from the JWKS, a public document, so the only thing an
+        // HMAC secret could be is a published value. IdentityModel refused an allowed HS token only after loading the keys
+        // (measured: discovery and the JWKS fetched twice, then IDX10511), so the SDK reads the header alg itself and refuses
+        // an HS one that the ValidAlgorithms pin lets through here, before any discovery, JWKS fetch or refetch. An alg the
+        // pin refuses keeps IdentityModel's path and wording. Overlaps the oct drop (BackoffConfigurationRetriever).
+        if (HeaderAlg(token) is { } alg && alg.StartsWith("HS", StringComparison.Ordinal) && PinAllows(tvp, alg))
+            throw new KeycloakTokenValidationException($"algorithm not allowed: {alg} (a JWKS holds public keys only)");
         var result = await ResultAsync(token, tvp).WaitAsync(ct).ConfigureAwait(false);
         // ⚠️ IdentityModel hides PII in its own message but nests a JSON parse error that quotes the decoded header or
         // payload — the constructor scrubs that chain (ErrorCause); the message is taken the same way.
@@ -183,6 +191,25 @@ public sealed class JwtValidator
             IssuedAt: jwt.TryGetPayloadValue<long>("iat", out var iat) ? iat : null,
             Claims: claims);
     }
+
+    /// <summary>The header <c>alg</c> as IdentityModel reads the token, or null when it cannot read it — that verdict stays
+    /// IdentityModel's (<see cref="ResultAsync"/> converts it).</summary>
+    private static string? HeaderAlg(string token)
+    {
+        try
+        {
+            return new JsonWebToken(token).Alg;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Whether the <c>ValidAlgorithms</c> pin lets <paramref name="alg"/> through, as IdentityModel applies it: null
+    /// or empty pins nothing, otherwise an ordinal match (measured on 8.23.0).</summary>
+    private static bool PinAllows(TokenValidationParameters tvp, string alg)
+        => tvp.ValidAlgorithms is not { } pinned || !pinned.Any() || pinned.Contains(alg, StringComparer.Ordinal);
 
     /// <summary>IdentityModel's verdict, with anything it throws already an SDK error — so the caller's
     /// <see cref="Task.WaitAsync(CancellationToken)"/> is the only source of <see cref="OperationCanceledException"/>.</summary>

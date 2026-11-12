@@ -4,17 +4,22 @@ import com.nimbusds.jose.JWSAlgorithm
 import com.nimbusds.jose.JWSHeader
 import com.nimbusds.jose.crypto.MACSigner
 import com.nimbusds.jose.crypto.RSASSASigner
+import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator
+import com.nimbusds.jose.jwk.source.JWKSource
+import com.nimbusds.jose.proc.SecurityContext
 import com.nimbusds.jose.util.Base64URL
 import com.nimbusds.jose.util.Resource
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
@@ -22,9 +27,11 @@ import java.security.SecureRandom
 import java.time.Duration
 import java.util.Base64
 import java.util.Date
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -74,8 +81,8 @@ internal class JwksOctKeyTest {
     }
 
     /**
-     * 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다(Nimbus 는 HS 에 oct 키만 고른다). oct 를
-     * 버리는 것만으로 충분하다는 판정의 근거라, 라이브러리 갱신이 이것을 바꾸면 여기서 운다.
+     * 고정 — HS 를 허용해도 RSA 공개키 바이트를 HMAC 비밀로 쓴 RS→HS 혼동은 거부된다. 이제 검증기가 키 조회 전에 HS 를 거부해
+     * (등록부 hs-refusal-rests-on-libraries) 이 칸은 Nimbus 의 키 선택(HS 에 oct 키만 고른다)까지 가지 않는다 — 라이브러리 갱신과 무관하다.
      */
     @Test
     fun rsaPublicKeyBytesAsHmacSecretAreRejectedEvenWithHsAllowed(): Unit =
@@ -98,6 +105,89 @@ internal class JwksOctKeyTest {
                 }
             } finally {
                 server.stop(0)
+            }
+        }
+
+    /**
+     * HS(대칭) 서명은 설정이 허용해도 키를 찾기 전에 거부한다(등록부 hs-refusal-rests-on-libraries) — 검증 키는 JWKS(공개 문서)에서만
+     * 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 그 거부가 oct 를 버리는 키 저장소와 Nimbus 의 키·alg 결합에만 기대지 않는다는
+     * 증거가 키 조회 0 이다. kid 는 원천에 있는 RSA 키를 가리킨다. 코드 교환의 id_token 경로([JwtValidator.withAudience] —
+     * `AuthClient.requireValidNonce`)도 같은 거부다. Java 자매 시험과 같은 모양이다.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = ["HS256", "HS384", "HS512"])
+    fun hsSignatureIsRefusedBeforeAnyKeyLookupEvenWhenAllowed(name: String): Unit =
+        runBlocking {
+            val hs = JWSAlgorithm.parse(name)
+            val k1 = RSAKeyGenerator(2048).keyID("k1").generate()
+            val set = JWKSet(k1.toPublicJWK())
+            val lookups = AtomicInteger()
+            val counting =
+                JWKSource<SecurityContext> { selector, _ ->
+                    lookups.incrementAndGet()
+                    selector.select(set)
+                }
+            val endpoints = OidcEndpoints.forRealm(KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = "app"))
+            val validator =
+                JwtValidator.withJwkSource(counting, endpoints.issuer, "app", setOf(JWSAlgorithm.RS256, hs), Duration.ofSeconds(30))
+            val secret = ByteArray(64).also { RANDOM.nextBytes(it) }
+            val forged = hsToken(endpoints, secret, "k1", hs)
+
+            for (path in listOf(validator, validator.withAudience("app"))) {
+                val e = assertFailsWith<TokenValidationException> { path.validate(forged) }
+                assertAll(
+                    { assertEquals("algorithm not allowed: $name (a JWKS holds public keys only)", e.message) },
+                    { assertNull(e.cause, "원인이 달렸다 — 라이브러리의 거부를 감싼 것이다") },
+                    { assertEquals(0, lookups.get(), "HS 토큰이 키를 찾았다") },
+                )
+            }
+            // 대조 — 같은 검증기의 RS256 토큰은 통과하고, 계수기는 그 조회를 본다(위의 0 이 죽은 계수기의 0 이 아니다).
+            assertEquals("user-1", validator.validate(rsToken(endpoints, k1)).subject)
+            assertTrue(lookups.get() > 0, "계수기가 키 조회를 보지 못한다")
+        }
+
+    /**
+     * 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로, 분해 · 키
+     * 조회 전에 거부된다. 토큰은 분해할 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면 그 문구가 나온다. Java 자매 시험과 같다.
+     */
+    @Test
+    fun hsTokenOverTheCapIsRefusedByTheCapBeforeTheHsRefusal(): Unit =
+        runBlocking {
+            val k1 = RSAKeyGenerator(2048).keyID("k1").generate()
+            val set = JWKSet(k1.toPublicJWK())
+            val lookups = AtomicInteger()
+            val counting =
+                JWKSource<SecurityContext> { selector, _ ->
+                    lookups.incrementAndGet()
+                    selector.select(set)
+                }
+            val endpoints = OidcEndpoints.forRealm(KeycloakConfig(serverUrl = "https://kc.example.com", realm = "r", clientId = "app"))
+            val validator =
+                JwtValidator.withJwkSource(
+                    counting,
+                    endpoints.issuer,
+                    "app",
+                    setOf(JWSAlgorithm.RS256, JWSAlgorithm.HS256),
+                    Duration.ofSeconds(30),
+                )
+            val secret = ByteArray(64).also { RANDOM.nextBytes(it) }
+            val padded =
+                JWTClaimsSet
+                    .Builder(claims(endpoints, "attacker"))
+                    .claim("pad", "x".repeat(JWT_MAX_BYTES * 3 / 4))
+                    .build()
+            val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.HS256).keyID("k1").build(), padded)
+            jwt.sign(MACSigner(secret))
+            val over = jwt.serialize()
+            assertTrue(over.length > JWT_MAX_BYTES, "fixture: ${over.length}")
+
+            for (path in listOf(validator, validator.withAudience("app"))) {
+                val e = assertFailsWith<TokenValidationException> { path.validate(over) }
+                assertAll(
+                    { assertEquals("token exceeds 256000 bytes", e.message) },
+                    { assertNull(e.cause) },
+                    { assertEquals(0, lookups.get(), "상한을 넘은 HS 토큰이 키를 찾았다") },
+                )
             }
         }
 
@@ -147,8 +237,9 @@ internal class JwksOctKeyTest {
         endpoints: OidcEndpoints,
         secret: ByteArray,
         kid: String?,
+        alg: JWSAlgorithm = JWSAlgorithm.HS256,
     ): String {
-        val header = JWSHeader.Builder(JWSAlgorithm.HS256).apply { kid?.let { keyID(it) } }.build()
+        val header = JWSHeader.Builder(alg).apply { kid?.let { keyID(it) } }.build()
         val jwt = SignedJWT(header, claims(endpoints, "attacker"))
         jwt.sign(MACSigner(secret))
         return jwt.serialize()

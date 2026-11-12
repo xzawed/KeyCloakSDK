@@ -48,6 +48,8 @@ module KeycloakSdk
         raise TokenValidationError, "JWT validation failed: token is not valid UTF-8"
       end
 
+      reject_symmetric!(token) # ⚠️ before `JWT.decode` — the alg pin and the key lookup are both inside it
+
       payload, = JWT.decode(token, nil, true, decode_options(audience))
       to_validated(payload)
     rescue JWT::DecodeError => e
@@ -65,6 +67,26 @@ module KeycloakSdk
       return unless token.is_a?(String) && token.bytesize > JWT_MAX_BYTES
 
       raise TokenValidationError, "JWT validation failed: token exceeds #{JWT_MAX_BYTES} bytes"
+    end
+
+    # ⚠️ 허용 목록에 든 HS(대칭) 알고리즘은 kid · 키 조회 · JWKS 요청 **전에** 거부한다(등록부 hs-refusal-rests-on-libraries)
+    # — 검증 키는 realm JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 설정 핀은 ruby-jwt 가
+    # `JWT.decode` 안에서, 키를 찾는 그 호출 안에서 걸므로 헤더 alg 를 여기서 직접 본다. 허용 여부는 ruby-jwt 와 같이
+    # 대소문자 없이 견준다(`valid_alg?` 의 `casecmp` — 아니면 `hs256` 이 핀을 지나 키를 찾았다, 실측). 허용 목록 밖의
+    # alg 와 읽을 수 없는 헤더는 판정하지 않는다 — 지금처럼 ruby-jwt 가 거부한다.
+    def reject_symmetric!(token)
+      alg = header_alg(token)
+      return unless alg.is_a?(String) && alg.upcase.start_with?("HS")
+      return unless Array(@algorithms).any? { |a| a.to_s.casecmp(alg)&.zero? }
+
+      raise TokenValidationError, "JWT validation failed: algorithm not allowed: #{alg} (a JWKS holds public keys only)"
+    end
+
+    # 헤더의 `alg` — ruby-jwt 가 `JWT.decode` 에서 읽는 그 해석(`JWT::EncodedToken#header`)으로 읽는다.
+    def header_alg(token)
+      JWT::EncodedToken.new(token).header["alg"]
+    rescue StandardError # 기형 헤더 · String 이 아닌 값 — 판정은 지금의 길(ruby-jwt)에 맡긴다
+      nil
     end
 
     def decode_options(audience)

@@ -111,14 +111,33 @@ public final class JwtValidator {
     if (accessToken != null && accessToken.length() > JWT_MAX_BYTES) {
       throw new TokenValidationException("token exceeds " + JWT_MAX_BYTES + " bytes", null);
     }
+    com.nimbusds.jwt.SignedJWT jwt = parseSigned(accessToken);
+    // ⚠️ HS(대칭) 서명은 설정이 허용해도 검증하지 않는다(등록부 hs-refusal-rests-on-libraries) — 이 SDK 의 키는 JWKS(공개
+    // 문서)뿐이라 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 허용 목록 검사는 Nimbus(JWSVerificationKeySelector)가 키를
+    // 찾는 자리에서 하므로, 같은 판정(allowedAlgs.contains)을 여기서 먼저 해 허용된 HS 만 키 조회·JWKS 요청 전에 거부한다 —
+    // 허용 밖 alg 는 지금처럼 Nimbus 가 거부한다. oct 를 버리는 키 저장소(NoRedirectResourceRetriever)와 겹치는 방어다.
+    // try 밖이라 이 메시지가 그대로 나간다.
+    JWSAlgorithm alg = jwt.getHeader().getAlgorithm();
+    if (allowedAlgs.contains(alg) && alg.getName().startsWith("HS")) {
+      throw new TokenValidationException(
+          "algorithm not allowed: " + alg.getName() + " (a JWKS holds public keys only)", null);
+    }
+    try {
+      JWTClaimsSet claims = processor.process(jwt, null);
+      return ValidatedToken.from(claims);
+    }
+    catch (Exception e) { throw new TokenValidationException("JWT validation failed", e); }
+  }
+
+  // 분해한다 — 실패는 지금처럼 「JWT validation failed」 로 감싼다.
+  private static com.nimbusds.jwt.SignedJWT parseSigned(String accessToken) {
     try {
       // alg=none / 미서명 JWT를 Nimbus의 암묵적 기본 동작에 의존하지 않고 명시적으로 거부한다.
       com.nimbusds.jwt.JWT jwt = com.nimbusds.jwt.JWTParser.parse(accessToken);
       if (!(jwt instanceof com.nimbusds.jwt.SignedJWT)) {
         throw new TokenValidationException("Unsecured or non-signed JWT rejected", null);
       }
-      JWTClaimsSet claims = processor.process((com.nimbusds.jwt.SignedJWT) jwt, null);
-      return ValidatedToken.from(claims);
+      return (com.nimbusds.jwt.SignedJWT) jwt;
     }
     catch (Exception e) { throw new TokenValidationException("JWT validation failed", e); }
   }

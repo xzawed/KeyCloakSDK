@@ -142,8 +142,8 @@ describe('JwtValidator (강화 검증)', () => {
     await expect(JwtValidator.forKeySource(keys, OPTS).validate(forged)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
-    // alg 핀이 HS256을 허용하도록 잘못 구성되어도 뚫리지 않아야 한다 — 키 소스가 RSA JWKS라
-    // HMAC 검증에 쓸 대칭키가 없기 때문이다. 이 두 번째 단언이 없으면 이 테스트는 alg 핀만
+    // alg 핀이 HS256을 허용하도록 잘못 구성되어도 뚫리지 않아야 한다 — 검증기가 키 조회 전에 HS 를
+    // 거부한다(등록부 hs-refusal-rests-on-libraries · 키 소스도 RSA JWKS 라 대칭키가 없다). 이 두 번째 단언이 없으면 이 테스트는 alg 핀만
     // 확인하는 셈이라 '혼동 공격 방어'라는 이름값을 못 한다.
     const permissive = JwtValidator.forKeySource(keys, { ...OPTS, allowedAlgs: ['RS256', 'HS256'] })
     await expect(permissive.validate(forged)).rejects.toBeInstanceOf(KeycloakTokenValidationError)

@@ -9,12 +9,14 @@ joserfc의 `jwt.decode(..., algorithms=[...])`는 서명·알고리즘 핀닝을
 from __future__ import annotations
 
 import time
+from collections.abc import Collection
 from typing import Any
 
 from joserfc import jwt as _jwt
 from joserfc.errors import InvalidKeyIdError, MissingKeyError
 from joserfc.jwk import KeySet
 from joserfc.jws import JWSRegistry
+from joserfc.util import json_b64decode
 
 from ..exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
 from ..tokens import ValidatedToken
@@ -41,13 +43,39 @@ def check_token_size(token: str) -> None:
         raise TokenValidationError(f"token exceeds {JWT_MAX_BYTES} bytes")
 
 
+def refuse_hs_algorithm(token: str, allowed_algs: Collection[str]) -> None:
+    """⚠️ 허용 목록에 든 HS(대칭) 알고리즘을 **키를 찾기 전에** 거부한다(등록부
+    hs-refusal-rests-on-libraries).
+
+    검증 키는 realm JWKS(공개 문서)에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다.
+    설정 핀은 joserfc 가 디코드 안에서 — 파사드가 JWKS 를 적재한 **뒤**에 — 걸고, 그때까지 이 거부는
+    oct 를 버리는 키 적재(`jwks_keys.py`)와 joserfc 의 키 종류 · alg 결합에 기대 있었다. 그래서 헤더
+    alg 를 여기서 직접 본다. 허용 목록 밖의 alg 와 읽을 수 없는 헤더는 판정하지 않는다 — 지금처럼
+    joserfc 가 거부한다. `check_token_size` 처럼 파사드(`_validate_for`, JWKS 적재 앞)와
+    `JwtValidator.validate` 가 둘 다 부른다.
+    """
+    alg = _header_alg(token)
+    if isinstance(alg, str) and alg in allowed_algs and alg.startswith("HS"):
+        raise TokenSignatureError(f"algorithm not allowed: {alg} (a JWKS holds public keys only)")
+
+
+def _header_alg(token: str | bytes) -> object:
+    """보호 헤더의 `alg` 값 — joserfc 와 같은 디코더로 읽는다. 읽을 수 없으면 None."""
+    try:
+        raw = token.encode() if isinstance(token, str) else token
+        return json_b64decode(raw.partition(b".")[0]).get("alg")
+    except Exception:  # 기형 헤더 · 문자열이 아닌 토큰 — 판정은 지금의 길(joserfc)에 맡긴다
+        return None
+
+
 class JwtValidator:
     """joserfc 기반 자체 강화 JWT 검증기.
 
     - 길이: `JWT_MAX_BYTES` 를 넘으면 디코드 전에 평범한 `TokenValidationError` 다
       (서명 실패 하위 타입이 아니라 JWKS 재조회를 부르지 않는다).
     - 서명 검증 + 알고리즘 핀닝: `allowed_algs`에 없는 알고리즘(`none` 포함)·미서명
-      토큰은 joserfc가 디코드 단계에서 거부한다.
+      토큰은 joserfc가 디코드 단계에서 거부한다. 허용된 HS 는 그보다 앞, 키를 찾기 전에
+      거부한다(`refuse_hs_algorithm`).
     - issuer: 정확 일치(exact match).
     - audience: 포함 검사(containment) — `aud` 클레임이 문자열이면 `==`, 리스트면
       멤버십(`in`)으로 판단한다(다중 audience를 갖는 실제 Keycloak 토큰 대응).
@@ -84,6 +112,7 @@ class JwtValidator:
 
     def validate(self, token: str, key_set: KeySet) -> ValidatedToken:
         check_token_size(token)
+        refuse_hs_algorithm(token, self._algs)
         try:
             decoded = _jwt.decode(token, key_set, registry=self._registry)
         except (InvalidKeyIdError, MissingKeyError) as exc:

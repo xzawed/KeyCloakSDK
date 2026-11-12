@@ -222,12 +222,12 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
   end
 
   # `it-web-hs256` 의 id_token 은 realm 의 HMAC 키로 서명된다 — 대칭키는 JWKS 에 없다.
-  # 두 변형이 서로 다른 층에서 거부되는지를 하위 원인의 클래스(`RedactedCause#lower_classes`)와 메시지로 가른다.
-  # ⚠️ ruby-jwt 3.3 에서 「kid 없음」은 `DecodeError` 가 아니라 `SignatureError` 다(`jwk/key_finder.rb:36`, 실측).
+  # 두 변형이 서로 다른 층에서 거부되는지를 하위 원인의 클래스(`RedactedCause#lower_classes`)와 메시지로 가른다 — HS 를
+  # 허용한 변형은 SDK 가 키를 찾기 전에 거부해 하위 원인이 없다(등록부 hs-refusal-rests-on-libraries).
   # 첫 변형은 `Config` **기본** 핀(RS256)이다 — 명시하지 않아야 기본값이 넓어지는 회귀를 잡는다.
   {
     nil => ["JWT::IncorrectAlgorithm", /Expected a different algorithm\z/], # 알고리즘 핀이 먼저 거부한다
-    %w[RS256 HS256] => ["JWT::SignatureError", /Could not find public key for kid \S+\z/] # 핀을 열어도 JWKS 에 키가 없다
+    %w[RS256 HS256] => [nil, /algorithm not allowed: HS256 \(a JWKS holds public keys only\)\z/] # 핀을 열어도 거부한다
   }.each do |algorithms, (lower, reason)|
     it "refuses an id_token signed by a key outside the JWKS (algorithms #{algorithms&.join('+') || 'default'})" do
       kc = algorithms ? new_client("it-web-hs256", signature_algorithms: algorithms) : new_client("it-web-hs256")
@@ -236,7 +236,7 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
         .to raise_error(KeycloakSdk::AuthError, /\Aauthorization_code exchange failed: invalid id_token: /) { |e|
           expect(e.message).to match(reason)
           expect(e.cause).to be_a(KeycloakSdk::TokenValidationError)
-          expect(e.cause.cause.lower_classes.first).to eq(lower)
+          expect(e.cause.cause&.lower_classes&.first).to eq(lower)
         }
     end
   end

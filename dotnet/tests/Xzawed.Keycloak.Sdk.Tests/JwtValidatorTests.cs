@@ -214,7 +214,8 @@ public class JwtValidatorTests
     // Classic HS/RS confusion: the attacker forges an HS256 token using the PUBLIC key material as the
     // HMAC secret. If the validator trusted the header's alg to pick a key, "knows the public key" would
     // become "can mint tokens". The second assertion is the load-bearing one: even when HS256 is (wrongly)
-    // allowed, the configured key material is RSA, so there is no symmetric key to verify against.
+    // allowed, the validator refuses an HS token before any key lookup (hs-refusal-rests-on-libraries); the
+    // RSA key material would leave no symmetric key to verify against either.
     [Fact]
     public async Task Hs256_forged_with_rsa_public_key_rejected()
     {

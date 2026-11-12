@@ -16,6 +16,7 @@
  * to be greater than 2」)과 빈 키셋 시험(「expected 1 to be greater than 1」). 지우기·개명 둘 다 단위 346 중 이 둘이다.
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
+import { createHmac, randomBytes } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { generateKeyPair, exportJWK, exportSPKI, SignJWT } from 'jose'
@@ -418,7 +419,8 @@ describe('JWKS 의 JWK 가 아닌 원소는 건너뛴다', () => {
 
 // ⚠️ 고정 — JWKS 의 대칭(`oct`) 키는 검증 키가 아니다(등록부 jwks-oct-key-usable-with-hs · 아홉 언어 실측은 PR 본문). 일곱
 // 언어는 HS 를 허용하면 그 키로 서명한 위조 토큰을 받았지만, node 는 jose 가 JWKS 에서 HS 를 받지 않아(「Unsupported "alg"
-// value for a JSON Web Key Set」) 처음부터 거부한다 — 코드 변경 없이 그 동작을 고정한다. jose 갱신이 이것을 바꾸면 여기서 운다.
+// value for a JSON Web Key Set」) 처음부터 거부했다. 이제는 검증기가 키 조회 전에 HS 를 거부해(등록부
+// hs-refusal-rests-on-libraries) 이 칸은 jose 의 JWKS 판정까지 가지 않는다 — jose 갱신과 무관하다.
 describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
   async function withKeys(
     keys: (rsaJwk: Record<string, unknown>) => unknown[],
@@ -490,6 +492,195 @@ describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
         ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
       },
     )
+  })
+})
+
+// HS(대칭) 서명은 설정이 허용해도 키를 찾기 전에 거부한다(등록부 hs-refusal-rests-on-libraries) — 검증 키는 JWKS(공개 문서)
+// 에서만 오므로 HMAC 비밀이 될 수 있는 것은 공개된 값뿐이다. 위 고정이 기대는 jose 의 거부는 키를 찾을 때(콜드면 /certs 를
+// 받은 뒤) 난다 — /certs 0 이 명시적 거부가 그보다 앞이라는 증거다. kid 는 키셋의 RSA 키를 가리킨다. 코드 교환의 id_token
+// 경로(`withAudience`)와 jose 가 받는 Uint8Array 도 같은 거부다.
+describe('HS 서명은 설정이 허용해도 키를 찾기 전에 거부한다', () => {
+  it.each(['HS256', 'HS384', 'HS512'])(
+    '%s: 세 경로 모두 /certs 0 의 같은 거부이고, 같은 검증기의 RS256 토큰은 통과한다',
+    async (alg) => {
+      const pair = await generateKeyPair('RS256')
+      const rsaJwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', use: 'sig', alg: 'RS256' }
+      const body = JSON.stringify({ keys: [rsaJwk] })
+      let certs = 0
+      const srv = createServer((_req, res) => {
+        certs += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(body)
+      })
+      await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+      try {
+        const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+        const v = JwtValidator.forJwksUri(uri, {
+          ...baseOpts,
+          allowedAlgs: ['RS256', alg],
+          jwksMinRefetchSeconds: 0,
+        })
+        const signed = (
+          header: { alg: string; kid: string },
+          key: Parameters<SignJWT['sign']>[0],
+        ) =>
+          new SignJWT({ sub: 'u', aud: 'my-client' })
+            .setProtectedHeader(header)
+            .setIssuer(ISS)
+            .setIssuedAt()
+            .setExpirationTime('5m')
+            .sign(key)
+        const forged = await signed(
+          { alg, kid: 'k1' },
+          new Uint8Array(64).map((_, i) => (i * 37 + 11) & 0xff),
+        )
+        const paths: Array<() => Promise<unknown>> = [
+          () => v.validate(forged),
+          () => v.withAudience('the-client').validate(forged),
+          () => v.validate(new TextEncoder().encode(forged) as unknown as string),
+        ]
+        for (const path of paths) {
+          const refused = await path().then(
+            () => undefined,
+            (e: unknown) => e,
+          )
+          expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+          expect({
+            message: (refused as Error).message,
+            cause: (refused as Error).cause,
+            certs,
+          }).toEqual({
+            message: `algorithm not allowed: ${alg} (a JWKS holds public keys only)`,
+            cause: undefined,
+            certs: 0,
+          })
+        }
+        // 대조 — 같은 검증기의 RS256 토큰은 통과하고, 계수기는 그 적재를 본다(위의 0 이 죽은 계수기의 0 이 아니다).
+        await expect(
+          v.validate(await signed({ alg: 'RS256', kid: 'k1' }, pair.privateKey)),
+        ).resolves.toMatchObject({ subject: 'u' })
+        expect(certs).toBeGreaterThan(0)
+      } finally {
+        await new Promise<void>((resolve) => srv.close(() => resolve()))
+      }
+    },
+  )
+})
+
+// HS 거부의 경계 — 거부는 길이 상한 뒤에, 읽을 수 있는 머리에서, 허용 목록이 jose 처럼(정확히) 통과시킨 「HS」 접두 alg 만
+// 한다. 그 밖은 jose 의 길과 문구다(원인이 달린 `JWT validation failed: …`).
+describe('HS 거부의 경계 — 상한 · 허용 목록 · 읽을 수 없는 머리 · 대소문자', () => {
+  const sdkRefusal = (alg: string) =>
+    `algorithm not allowed: ${alg} (a JWKS holds public keys only)`
+
+  async function withIdp(
+    allowedAlgs: string[],
+    run: (v: JwtValidator, certs: () => number) => Promise<void>,
+  ): Promise<void> {
+    const pair = await generateKeyPair('RS256')
+    const rsaJwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', use: 'sig', alg: 'RS256' }
+    const body = JSON.stringify({ keys: [rsaJwk] })
+    let certs = 0
+    const srv = createServer((_req, res) => {
+      certs += 1
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(body)
+    })
+    await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve))
+    try {
+      const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
+      const v = JwtValidator.forJwksUri(uri, { ...baseOpts, allowedAlgs, jwksMinRefetchSeconds: 0 })
+      await run(v, () => certs)
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()))
+    }
+  }
+
+  // 머리를 적힌 그대로 두려고 직접 조립한 HMAC-SHA256 토큰(kid k1) — jose 는 모르는 alg 이름으로 서명하지 않는다.
+  function handSigned(
+    header: Record<string, unknown>,
+    extra: Record<string, unknown> = {},
+  ): string {
+    const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+    const now = Math.floor(Date.now() / 1000)
+    const claims = {
+      sub: 'attacker',
+      aud: 'my-client',
+      iss: ISS,
+      iat: now,
+      exp: now + 300,
+      ...extra,
+    }
+    const input = `${b64({ typ: 'JWT', kid: 'k1', ...header })}.${b64(claims)}`
+    return `${input}.${createHmac('sha256', randomBytes(64)).update(input).digest('base64url')}`
+  }
+
+  const refusal = (p: Promise<unknown>): Promise<Error | undefined> =>
+    p.then(
+      () => undefined,
+      (e: unknown) => e as Error,
+    )
+
+  it('상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로, /certs 없이 거부된다', async () => {
+    await withIdp(['RS256', 'HS256'], async (v, certs) => {
+      const over = handSigned({ alg: 'HS256' }, { pad: 'x'.repeat((256_000 * 3) / 4) })
+      expect(over.length).toBeGreaterThan(256_000)
+      for (const path of [v, v.withAudience('the-client')]) {
+        const refused = await refusal(path.validate(over))
+        expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+        expect({ message: refused?.message, certs: certs() }).toEqual({
+          message: 'JWT validation failed: token exceeds 256000 bytes',
+          certs: 0,
+        })
+      }
+    })
+  })
+
+  it('허용 목록 밖의 HS256 은 jose 의 길이다 — jose 의 문구에 원인이 달린다', async () => {
+    await withIdp(['RS256'], async (v) => {
+      const refused = await refusal(v.validate(handSigned({ alg: 'HS256' })))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect({
+        message: refused?.message,
+        cause: (refused?.cause as { code?: unknown } | undefined)?.code,
+      }).toEqual({
+        message: 'JWT validation failed: "alg" (Algorithm) Header Parameter value not allowed',
+        cause: 'ERR_JOSE_ALG_NOT_ALLOWED',
+      })
+    })
+  })
+
+  it('읽을 수 없는 머리(「abc」)는 jose 가 판정한다', async () => {
+    await withIdp(['RS256', 'HS256'], async (v) => {
+      const abc = await refusal(v.validate('abc'))
+      expect(abc).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(abc?.message).toBe('JWT validation failed: Invalid Compact JWS')
+    })
+  })
+
+  it('alg 가 숫자인 머리는 jose 가 판정한다 — TypeError 가 아니라 jose 의 문구다', async () => {
+    await withIdp(['RS256', 'HS256'], async (v) => {
+      const numeric = await refusal(v.validate(handSigned({ alg: 1 })))
+      expect(numeric).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(numeric?.message).toBe(
+        'JWT validation failed: JWS "alg" (Algorithm) Header Parameter missing or invalid',
+      )
+      expect(numeric?.cause).not.toBeInstanceOf(TypeError)
+    })
+  })
+
+  // jose 의 핀은 대소문자를 가린다 — 허용 목록 [RS256, hs256] 에서 머리 hs256 은 「HS」 접두가 아니고, 머리 HS256 은 목록에 없다.
+  it.each([
+    ['hs256', 'JWT validation failed: Unsupported "alg" value for a JSON Web Key Set'],
+    ['HS256', 'JWT validation failed: "alg" (Algorithm) Header Parameter value not allowed'],
+  ])('허용 목록 [RS256, hs256] 과 머리 %s 는 jose 의 길이다', async (alg, joseWording) => {
+    await withIdp(['RS256', 'hs256'], async (v) => {
+      const refused = await refusal(v.validate(handSigned({ alg })))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(refused?.message).not.toBe(sdkRefusal(alg))
+      expect(refused?.message).toBe(joseWording)
+      expect(refused?.cause).toBeDefined()
+    })
   })
 })
 
