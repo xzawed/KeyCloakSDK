@@ -23,6 +23,10 @@ requests 가 `r.content` 로, aio 는 httpx `send` 가 `aread()` 로 본문 전�
   (urllib3·httpcore 는 끝을 읽어야 연결을 돌려준다).
 - 그 밖(성공 본문 · `raw` 로 부른 메서드의 2xx): 지금처럼 다 읽는다 — 성공 본문에는
   상한이 없다(목록은 정당하게 크다).
+- 파사드 호출(`facade` — `admin/_translate.call`·`aio/admin/_translate.acall` 이 건다)이 받은
+  3xx 는 결과가 아니다: 오류 응답과 똑같이 정리한 뒤 python-keycloak 에 넘기지 않고
+  `RedirectionStatus` 를 던진다 — 경계가 그 상태의 `KeycloakAdminError` 로 새로 만든다
+  (`_not_a_result`). `raw` 로 부른 메서드와 저수준 `raw_*` 는 3xx 응답을 지금처럼 받는다.
 
 요청의 `Accept-Encoding` 은 `token_cap` 처럼 `gzip, deflate` 로 둔다 — 여기서 상한 안에
 풀 수 있는 것만 청한다. ⚠️ `stream=True` 로 온 요청(호출자가 스스로 읽는다)은 손대지
@@ -67,10 +71,24 @@ _WIRE_BUDGET = ADMIN_ERROR_BODY_MAX_BYTES + FRAMING_ALLOWANCE_BYTES
 #: 본문을 결합한다(`create_client_authz_resource` 는 201 본문,
 #: `update_client_management_permissions` 는 PUT 의 200 본문).
 _NO_BODY: ContextVar[bool] = ContextVar("kcsdk_admin_no_body", default=False)
+#: 파사드 호출이 보낸 요청임을 표시한다 — `facade` 만 건다. 그 요청의 3xx 는 결과가 아니다
+#: (`_not_a_result`). `raw` 로 부른 메서드와 저수준 `raw_*` 에는 표시가 없다.
+_FACADE: ContextVar[bool] = ContextVar("kcsdk_admin_facade", default=False)
 
 _SyncSend = Callable[..., requests.Response]
 _AsyncSend = Callable[..., Awaitable[httpx.Response]]
 _Inflate = Callable[[bytes, int], bytes]
+
+
+class RedirectionStatus(Exception):
+    """파사드 요청이 받은 3xx — 경계(`admin/_translate.admin_failure`)가 그 상태의
+    `KeycloakAdminError` 로 새로 만드는 신호. 세션 안에서 나므로 python-keycloak 의 `raw_*` 가
+    `KeycloakConnectionError` 의 원인으로 감싼다(`token_cap.ResponseRefused` 와 같은 길)."""
+
+    def __init__(self, status: int, body: bytes) -> None:
+        super().__init__(f"HTTP {status}")
+        self.status = status
+        self.body = body
 
 
 @contextlib.contextmanager
@@ -82,6 +100,31 @@ def no_body() -> Iterator[None]:
         yield
     finally:
         _NO_BODY.reset(token)
+
+
+@contextlib.contextmanager
+def facade() -> Iterator[None]:
+    """이 블록 안의 admin 요청은 파사드 호출의 것이다 — 3xx 를 결과로 넘기지 않는다
+    (`_not_a_result`)."""
+    token = _FACADE.set(True)
+    try:
+        yield
+    finally:
+        _FACADE.reset(token)
+
+
+def _not_a_result(response: requests.Response | httpx.Response) -> None:
+    """파사드 요청의 3xx 는 결과가 아니다 — 오류 응답과 똑같이 정리된(본문은 상한까지 읽은) 뒤
+    그 상태와 본문으로 `RedirectionStatus` 를 던진다. 4xx 처럼 상태가 클래스를 정한다.
+
+    ⚠️ python-keycloak 에 넘기면 둘로 샜다(실측 2026-11-13 `tests/unit/test_admin_3xx_response.py`
+    — 300 · 302 · 399, sync · aio 같다): `get_group` 은 400 이상만 오류로 봐 3xx 의 JSON 객체를
+    그룹으로 돌려줬고, 목록 다섯은 `raise_error_from_response` 가 배열 본문의
+    `response.json()["message"]` 에서 `TypeError` 로 깨져 상태 없는
+    `KeycloakTransportError` 였다."""
+    status = response.status_code
+    if _FACADE.get() and 300 <= status < 400:
+        raise RedirectionStatus(status, response.content)
 
 
 def _ended(status: int, length: str | None) -> bool:
@@ -155,6 +198,7 @@ def bounded_send(send: _SyncSend) -> _SyncSend:
         # requests 가 `content` 에서 하는 일 그대로다 — 읽은 본문을 응답에 둔다.
         response._content = body
         response._content_consumed = True
+        _not_a_result(response)
         return response
 
     return bounded
@@ -214,6 +258,8 @@ def abounded_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.R
             response._content = body
             return response
 
-        return await within(request_seconds(request), exchange(), request)
+        response = await within(request_seconds(request), exchange(), request)
+        _not_a_result(response)
+        return response
 
     return bounded

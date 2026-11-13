@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import TypeVar
 
-from ..._internal.admin_body import no_body
+from ..._internal.admin_body import facade, no_body
 from ..._internal.lower import is_lower_failure, summarize
 from ...admin._translate import admin_failure, refused_grant, refused_guard
 from ...exceptions import (
@@ -36,12 +36,14 @@ async def acall(awaitable: Awaitable[T]) -> T:
 
     python-keycloak 의 실패가 아닌 예외는 그대로 전파한다(변환 대상이 아님). admin 하드닝의 거부는
     sync `call` 과 같이 새로 만든다(`refused_grant`·`refused_guard`). 리소스 파사드는
-    `await acall(self._admin.a_...(...))` 형태로 이 함수를 사용한다.
+    `await acall(self._admin.a_...(...))` 형태로 이 함수를 사용한다. sync `call` 과 같이 파사드
+    호출임을 표시한다(`facade` — 그 요청의 3xx 는 결과가 아니다).
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
     try:
-        return await awaitable
+        with facade():
+            return await awaitable
     except KeycloakAuthError as e:
         error, cause = refused_grant(e), None
     except KeycloakConfigError as e:
