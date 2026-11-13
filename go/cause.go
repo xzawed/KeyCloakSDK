@@ -186,6 +186,11 @@ type belowHTTPSlot struct {
 	// (*AuthError) — rust draws the same line (#951/#952 independent legs). status: the last response's code.
 	sent, arrived, cut atomic.Bool
 	status             atomic.Int64
+	// first3xx: the first 3xx any request of the marked call was answered with. began does not reset it (it resets arrived,
+	// cut and status), so a later 2xx of the same call — a retry a consumer turned on through Raw() — cannot hide it. Only
+	// the admin facade's call reads it (answered3xx), and a token request never lands in a facade call's slot: the facade
+	// fetches its token before call marks the ctx, and the SDK's own login marks a slot of its own.
+	first3xx atomic.Int64
 }
 
 // began starts the arrival record of a new request — the class follows the call's last request.
@@ -200,6 +205,24 @@ func (s *belowHTTPSlot) began() {
 
 // wasSent reports whether any request of the marked call reached the transport.
 func (s *belowHTTPSlot) wasSent() bool { return s != nil && s.sent.Load() }
+
+// answered3xx is the error of an admin facade call that gocloak reports as a success although a request of the call was
+// answered with a 3xx (first3xx), and nil otherwise; s is the slot call marked, never nil. gocloak's only error test is
+// resty's IsError() (status > 399) and resty binds a result only for a 2xx, so a 3xx that net/http returned instead of
+// following came back as a zero value and nil: Users.Get an empty *User, Search no users, Create the id "", Update and
+// Delete nil (measured 2026-11-13 on 24 of the 25 facade calls; Realms.Update checked 2xx itself). net/http follows only a
+// 301, 302, 303, 307 or 308 that carries a Location — and those the admin lane's errOnRedirect refuses, an error before
+// this — and returns every other 3xx as it is, a 300 with a Location included. The error is a *gocloak.APIError with that
+// status, so toSDKError classifies it as it does a 404 — an *AdminError carrying the code. The message is the SDK's (the
+// code and Go's status text), never the server's reason phrase or body.
+func (s *belowHTTPSlot) answered3xx() error {
+	code := int(s.first3xx.Load())
+	if code == 0 {
+		return nil
+	}
+	return &gocloak.APIError{Code: code, Message: "answered " + strings.TrimSpace(strconv.Itoa(code)+" "+http.StatusText(code)) +
+		", and a 3xx is not a success (the admin lane follows no redirect)"}
+}
 
 // fullyArrived reports whether the marked call's last request got a response whose body was not cut short. ⚠️ Not "the
 // slot is empty": the slot keeps only errors from beneath HTTP and the context's, so broken chunked framing leaves it empty,
@@ -277,6 +300,9 @@ func (t wireScrubTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if slot != nil {
 		slot.arrived.Store(true)
 		slot.status.Store(int64(resp.StatusCode))
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			slot.first3xx.CompareAndSwap(0, int64(resp.StatusCode))
+		}
 		resp.Body = arrivalBody{ReadCloser: resp.Body, slot: slot}
 	}
 	return resp, nil
