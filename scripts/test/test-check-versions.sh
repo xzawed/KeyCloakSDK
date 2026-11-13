@@ -38,6 +38,14 @@ assert_ok node "$GUARD" "$TMP"
 cp -r "$FIX/." "$TMP/"
 sed -i 's|</parent></project>|</parent><!-- <version>7.7.7</version> --></project>|' "$TMP/java/mod-b/pom.xml"
 assert_ok node "$GUARD" "$TMP"
+# 대조 셋 더(Grok 레그 지목) — distributionManagement 의 relocation 판 · 이름이 version 인 속성 · 루트의 외부 parent
+# (예: 외부 부모 POM 의 판은 reactor 의 판이 아니다).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|</parent></project>|</parent><distributionManagement><relocation><version>5.5.5</version></relocation></distributionManagement><properties><version>4.4.4</version></properties></project>|' "$TMP/java/mod-b/pom.xml"
+assert_ok node "$GUARD" "$TMP"
+cp -r "$FIX/." "$TMP/"
+sed -i 's|<project><version>|<project><parent><version>3.2.5</version></parent><version>|' "$TMP/java/pom.xml"
+assert_ok node "$GUARD" "$TMP"
 
 # 한 언어만 범프 — 언어 간 갈림은 **경고이지 실패가 아니다**.
 # SECURITY.md가 소비자에게 명시적으로 약속한다: "각 언어는 독립적으로 버저닝하며, 보안 수정은

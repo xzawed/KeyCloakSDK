@@ -73,13 +73,16 @@ const javaPoms = [
 // 자기 판(reactor 가 그 모듈을 그 판으로 짓는다 — 게시 좌표가 갈린다)을 못 본다(등록부
 // check-versions-java-child-pom-blind-spot). 그래서 둘을 따로 읽는다: parent 참조 판, 그리고 주석과 <version> 을
 // 품을 수 있는 블록을 걷어낸 뒤 남는 프로젝트 자신의 판. 둘 다 리터럴만 센다(`${project.version}` 류 참조는 뺀다).
+// parent 참조는 **자식만** 센다 — 루트의 parent 는 reactor 밖의 POM(예: 외부 부모)이라 그 판은 reactor 의 판이 아니다.
 const LITERAL_VERSION = /<version>((?!\$\{)[^<]+)<\/version>/
-const BLOCKS_WITH_VERSION = ['parent', 'dependencyManagement', 'dependencies', 'build', 'reporting', 'profiles']
+const BLOCKS_WITH_VERSION = [
+  'parent', 'dependencyManagement', 'dependencies', 'build', 'reporting', 'profiles', 'distributionManagement', 'properties',
+]
 const javaVersions = new Map()
 for (const rel of javaPoms) {
   const p = `java/${rel}`
   const text = read(p).replace(/<!--[\s\S]*?-->/g, '')
-  const parent = /<parent>([\s\S]*?)<\/parent>/.exec(text)
+  const parent = rel === 'pom.xml' ? null : /<parent>([\s\S]*?)<\/parent>/.exec(text)
   const parentVersion = parent ? LITERAL_VERSION.exec(parent[1])?.[1] : undefined
   if (parentVersion) javaVersions.set(`${p} (parent)`, parentVersion)
   let own = text
