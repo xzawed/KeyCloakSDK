@@ -14,6 +14,7 @@ import io.github.xzawed.keycloak.TokenCodingGuard
 import io.github.xzawed.keycloak.onIo
 import jakarta.ws.rs.Priorities
 import jakarta.ws.rs.ProcessingException
+import jakarta.ws.rs.RedirectionException
 import jakarta.ws.rs.WebApplicationException
 import jakarta.ws.rs.client.Client
 import jakarta.ws.rs.client.ClientBuilder
@@ -51,6 +52,7 @@ import org.keycloak.admin.client.spi.StreamMessageBodyReader
 import java.io.IOException
 import java.io.InputStream
 import java.net.SocketTimeoutException
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -308,6 +310,8 @@ internal class AdminEngine(
                     }
                 entity.entityStream = Settled(input, request.mutableProperties[EXCHANGE] as Exchange, limit)
             }
+            // 파사드 호출 안의 3xx 자원 응답은 그 호출의 실패다(adminCall) — raw() 는 그대로
+            noteRedirect(request.method, request.uri, response)
             return response
         } finally {
             // 이 스레드의 마감은 머리를 읽는 동안뿐이다 — 본문은 그것을 읽는 스레드가 읽기마다 다시 건다([Settled]). 남기면 이 스레드의 다음
@@ -509,10 +513,16 @@ private val ADMIN_BOUNDED_HEAD: ConnectionConfig =
  * ("RESTEASY004655" 류 소켓/타임아웃/TLS 실패 — admin-client는 네트워크 실패까지 이 타입으로 감싼다)은
  * [KeycloakTransportException]으로 변환한다. [CancellationException]은 구조적 동시성을 지키기 위해
  * catch 체인 최상단에서 최우선으로 재던진다.
+ *
+ * ⚠️ 3xx 자원 응답은 성공이 아니다 — 그 상태의 admin 예외다(분류는 4xx 와 같은 [translateAdminException]). RESTEasy 의 프록시는 엔티티를
+ * 돌려주는 메서드에서만 3xx 를 [RedirectionException] 으로 던지고, void 메서드(추출기가 400 이상만 던진다)와 Response 를 돌려주는
+ * 메서드에서는 넘겨 Location 없는 302 에 update · delete 열 호출과 realms · roles create 가 성공으로 돌아왔다(등록부
+ * go-admin-3xx-read-as-success 의 부류 재스캔 · `AdminRedirectStatusTest`, Java `AdminExceptions.call` 동형). 그 응답은 엔진이 알리고
+ * ([noteRedirect]) 블록이 끝난 IO 스레드에서 같은 [RedirectionException] 으로 바꾼다([refusingRedirects]).
  */
 internal suspend fun <T> adminCall(block: () -> T): T =
     try {
-        onIo(block)
+        onIo { refusingRedirects(block) }
     } catch (e: CancellationException) {
         throw e
     } catch (e: WebApplicationException) {
@@ -522,6 +532,41 @@ internal suspend fun <T> adminCall(block: () -> T): T =
         if (grant != null) throw KeycloakAuthException(grant, c = RedactedCause.of(e))
         throw KeycloakTransportException("Admin request failed", transportCause(e))
     }
+
+// 지금 스레드에서 도는 파사드 호출 하나가 받은 3xx 자원 응답 — 엔진이 알리고([noteRedirect]) [refusingRedirects] 가 판정한다. 파사드 호출
+// 밖(raw())에서는 null 이다.
+private val REDIRECTED = ThreadLocal<Array<Response?>>()
+
+// [adminCall] 의 블록을 그 호출의 3xx 기록과 함께 돈다(IO 스레드 — RESTEasy 의 동기 교환이 같은 스레드에서 돈다). 3xx 를 받았으면
+// RESTEasy 가 엔티티를 돌려주는 메서드에서 던지는 것과 같은 [RedirectionException] 으로 끝낸다.
+private fun <T> refusingRedirects(block: () -> T): T {
+    val outer = REDIRECTED.get()
+    val redirected = arrayOfNulls<Response>(1)
+    REDIRECTED.set(redirected)
+    try {
+        val result = block()
+        redirected[0]?.let { throw RedirectionException(it) }
+        return result
+    } finally {
+        REDIRECTED.set(outer) // 파사드 호출 밖은 null — 응답을 쥐고 있지 않는다
+    }
+}
+
+// 엔진([AdminEngine.invoke])이 응답마다 부른다 — 지금 스레드의 파사드 호출 안에서 온 3xx 자원 응답을 적는다(Java
+// `AdminExceptions.noteRedirect` 동형). 본문은 RESTEasy 가 오류 상태에 하듯 버퍼에 담는다(엔진이 건 오류 본문 상한 안 — 4xx 와 같은
+// keycloakError). ⚠️ 토큰 · logout 엔드포인트의 응답은 적지 않는다 — 엔진은 그 본문에 상한을 걸지 않아(그 레인의 상한은
+// [TokenResponseGuard] 가 건다) 여기서 버퍼에 담으면 끝없이 읽고, 그 실패는 인증 레인이 가른다([grantFailure]). 파사드 호출 밖(raw())도
+// 적지 않는다 — 그 동작은 그대로다.
+private fun noteRedirect(
+    method: String,
+    uri: URI,
+    response: Response,
+) {
+    val redirected = REDIRECTED.get()
+    if (redirected == null || response.status / 100 != 3 || TokenResponseGuard.guardsErrorBody(method, uri)) return
+    response.bufferEntity()
+    redirected[0] = response
+}
 
 // 원인 사슬을 따라가는 깊이 — 사슬은 순환할 수 있다(`initCause` 는 자기 자신만 막는다).
 private const val GRANT_CAUSE_DEPTH = 16
