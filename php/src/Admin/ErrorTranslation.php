@@ -23,6 +23,7 @@ use Xzawed\Keycloak\Exception\KeycloakForbiddenError;
 use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
 use Xzawed\Keycloak\Exception\KeycloakTransportError;
 use Xzawed\Keycloak\Exception\SanitizedCause;
+use Xzawed\Keycloak\Internal\AdminResponseBody;
 use Xzawed\Keycloak\Internal\BearerToken;
 use Xzawed\Keycloak\Internal\OAuthErrorCode;
 use Xzawed\Keycloak\Internal\ResponseFailure;
@@ -30,7 +31,9 @@ use Xzawed\Keycloak\Internal\TokenResponseCap;
 
 /**
  * fschmtt does not translate Guzzle exceptions (404/409/403 are all a raw ClientException), so they are translated here,
- * at the boundary.
+ * at the boundary. A 3xx is no answer either: `call()` runs the facade call through `AdminResponseBody::facadeCall()`,
+ * whose middleware refuses it, and it becomes a `KeycloakAdminError` with its status, as a 4xx without a class of its own
+ * does (registry go-admin-3xx-read-as-success).
  *
  * ⚠️ The underlying exception is attached not as the original but as a `SanitizedCause` copy, and the message is built here
  * (the same rule as `AuthClient` — the rationale is in `SanitizedCause`'s docblock). With the original attached, when admin's
@@ -84,7 +87,7 @@ final class ErrorTranslation
     {
         try {
             try {
-                return $fn();
+                return AdminResponseBody::facadeCall($fn);   // 이 호출이 받는 3xx 는 오류다 — 클래스 docblock
             } catch (VersionDetectionException $e) {
                 throw $e->getPrevious() ?? $e;   // fschmtt 0.44 의 감싸기를 벗긴다 — 클래스 docblock.
             }
@@ -105,6 +108,10 @@ final class ErrorTranslation
             if (self::isTokenGrant($e->getRequest())) {
                 throw self::grantFailed($e);
             }
+            throw new KeycloakAdminError(self::failed($e), $e->getResponse()->getStatusCode(), SanitizedCause::of($e));
+        } catch (BadResponseException $e) {
+            // 400 아래 — 파사드 호출이 받은 3xx 를 `AdminResponseBody` 가 거부했다(리다이렉트는 따라가지 않는다 — `HttpOptions`).
+            // 토큰 부여는 그 미들웨어가 건드리지 않는다(부여의 3xx 는 `BearerToken` 의 거부다). 제 형이 없는 4xx 와 같은 형·메시지·원인 사본.
             throw new KeycloakAdminError(self::failed($e), $e->getResponse()->getStatusCode(), SanitizedCause::of($e));
         } catch (ConnectException $e) {
             throw new KeycloakTransportError('admin request unreachable', previous: SanitizedCause::of($e));

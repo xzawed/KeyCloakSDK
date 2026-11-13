@@ -688,8 +688,10 @@ final class AdminResponseBodyTest extends TestCase
     }
 
     /**
-     * 3xx 본문도 오류 본문처럼 상한에서 잘린다(`allow_redirects` 가 꺼져 따라가지 않는다). ⚠️ 3xx 를 성공으로 읽는 것은 따로 열린
-     * 항목이다(등록부 go-admin-3xx-read-as-success) — 여기서는 받는 양만 잰다.
+     * 3xx 본문도 오류 본문처럼 상한에서 잘린다(`allow_redirects` 가 꺼져 따라가지 않는다). 그리고 파사드 호출은 그 3xx 를 상태를
+     * 실은 admin 오류로 낸다(등록부 go-admin-3xx-read-as-success — 25 호출 × 300·302·399 는 `AdminRedirectStatusTest`). 이 칸은
+     * 본문이 상한을 넘는 갈래다 — curl 은 짧은 쓰기에 전송을 끊고 미들웨어가 머리로 되살린 응답을, 스트림 처리기는 복사를 멈춘 응답을
+     * 거부해야 한다.
      */
     #[DataProvider('transports')]
     public function testARedirectBodyIsCutAtTheCap(string $transport): void
@@ -706,6 +708,9 @@ final class AdminResponseBodyTest extends TestCase
         self::note(sprintf('[%s] users.get 302: %d ms · server wrote %s · %s', $transport, $ms, var_export($sent, true), self::describe($result)));
         self::assertNotNull($sent);
         self::assertLessThan(self::HUGE, $sent, "서버가 $sent 바이트를 다 썼다 — 3xx 본문을 끝까지 읽었다");
+        self::assertInstanceOf(KeycloakAdminError::class, $result, self::describe($result));
+        self::assertSame(KeycloakAdminError::class, $result::class, self::describe($result));
+        self::assertSame(302, $result->getStatusCode());
     }
 
     /**
