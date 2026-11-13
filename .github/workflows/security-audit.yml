@@ -198,10 +198,14 @@ jobs:
       - name: 취약 패키지 감사 (배포 SDK 프로젝트)
         # 배포되는 SDK 프로젝트의 (전이 포함) 취약 패키지만 게이트한다 — 테스트 전용 의존성
         # (예: WireMock 경유 Scriban Moderate)은 배포물이 아니라 감사 대상에서 제외.
+        # ⚠️ 판정은 JSON 으로 한다 — dotnet-ci.yml 의 같은 단계와 같은 이유(scripts/check-dotnet-vulnerable.mjs 머리).
         run: |
-          report=$(dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive 2>&1)
-          echo "$report"
-          echo "$report" | grep -qi "no vulnerable packages" || { echo "::error::vulnerable packages in shipped SDK"; exit 1; }
+          f="$RUNNER_TEMP/dotnet-vulnerable.json"
+          rc=0
+          dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive --format json > "$f" || rc=$?
+          cat "$f"
+          node scripts/check-dotnet-vulnerable.mjs "$f"
+          test "$rc" -eq 0 || { echo "::error::dotnet list exited $rc"; exit 1; }
 
   php:
     name: Scheduled dependency audit — PHP (composer audit)

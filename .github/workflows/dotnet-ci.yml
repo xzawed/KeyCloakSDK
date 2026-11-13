@@ -4,9 +4,9 @@ on:
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
   push:
     branches: [main]
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-dotnet-vulnerable.mjs']
   pull_request:
-    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json']
+    paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/check-dotnet-vulnerable.mjs']
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
   workflow_dispatch:
   schedule:
@@ -89,10 +89,15 @@ jobs:
       - name: 취약 패키지 감사 (배포 SDK 프로젝트)
         # 배포되는 SDK 프로젝트의 (전이 포함) 취약 패키지만 게이트한다 — 테스트 전용 의존성
         # (예: WireMock 경유 Scriban Moderate)은 배포물이 아니라 감사 대상에서 제외.
+        # ⚠️ 판정은 JSON 으로 한다 — 텍스트 grep 은 대상이 여럿이면 깨끗한 대상의 줄에 걸려 취약 보고서를 통과시킨다
+        # (실측 · 종료코드 0/1/2: scripts/check-dotnet-vulnerable.mjs 머리). `dotnet list` 의 종료코드는 판정 뒤에 따로 본다.
         run: |
-          report=$(dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive 2>&1)
-          echo "$report"
-          echo "$report" | grep -qi "no vulnerable packages" || { echo "::error::vulnerable packages in shipped SDK"; exit 1; }
+          f="$RUNNER_TEMP/dotnet-vulnerable.json"
+          rc=0
+          dotnet list dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj package --vulnerable --include-transitive --format json > "$f" || rc=$?
+          cat "$f"
+          node scripts/check-dotnet-vulnerable.mjs "$f"
+          test "$rc" -eq 0 || { echo "::error::dotnet list exited $rc"; exit 1; }
       # ⚠️ **공개 API 파괴적 변경 게이트.** SDK 내장 Package Validation 이 `dotnet pack` 시점에
       # NuGet 의 기준선 패키지(`PackageValidationBaselineVersion`)를 받아 공개 표면을 대조한다 —
       # 별도 도구(ApiCompat CLI)를 들이지 않는다. rust `cargo-semver-checks` · python `griffe` ·

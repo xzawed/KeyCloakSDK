@@ -154,6 +154,12 @@ jobs:
         # 픽스처의 커버 데이터는 실제 도구가 낸 것이라(어느 도구의 어떤 명령인지는 자가테스트 머리가 소유한다) Docker 가 필요 없다.
         run: sh scripts/test/test-integration-coverage.sh
 
+      - name: .NET 취약 패키지 감사 판정 자가테스트(JSON — 한 대상만 취약 · 전이 · problems · 비-JSON · 픽스처만)
+        # dotnet-ci · security-audit 의 감사 단계가 쓰는 판정기(`scripts/check-dotnet-vulnerable.mjs`)다. 옛 텍스트 grep 은
+        # 대상이 둘이면 깨끗한 대상의 줄에 걸려 취약 보고서를 통과시켰다(실측 출력이 픽스처다 — 자가테스트 머리).
+        # 픽스처만 읽어 dotnet · 네트워크가 필요 없다.
+        run: sh scripts/test/test-check-dotnet-vulnerable.sh
+
       - name: KNOWN_GAPS ↔ 등록부 대조 가드 자가테스트(아홉 문법 · 주석 속 id 거름 · 공허 실패 · 픽스처만)
         # 적대 경로 행렬의 알려진 틈이 **열린** 등록부 항목을 가리키는지 보는 가드의 자가테스트다.
         # ⚠️ required 안에 두어도 안전한 이유: 임시 저장소에 픽스처를 만들어 가드를 돌릴 뿐이라 판정이
