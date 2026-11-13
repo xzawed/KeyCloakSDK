@@ -2626,4 +2626,81 @@ run report go "$T" --out "$D"
 assert_eq 3 "$RC" "[floor] DRIFT + BELOW 는 3 — 출력: $OUT"
 assert_contains "$OUT" "unowned never-executed function go/admin.go:AdminClient.Close" "[floor] 소유 문제도 함께 찍는다"
 
+# ── (5) admin 표면(`surface` — 등록부 integration-admin-surface-regression-unguarded) ──────────────────────
+# 25 연산 하나를 통합 스위트에서 지우면 그 함수가 미실행이 된다 — 표면 파일의 소유자 없는 미실행은 경고(1)가 아니라 게이트(4)다.
+# 픽스처: go 의 admin_users.go 는 경계 안(여섯 언어의 꼴), node 의 other.ts 는 경계 밖(node · python · java 의 꼴 — 단위로 재는
+# 리소스 파일)이고 그 함수 `other` 는 데이터에서 0 회다.
+surface() { # <lang> <json array body>
+  sed -i "s|^  \"$1\": {\$|  \"$1\": {\n    \"surface\": [$2],|" "$T/scripts/integration-coverage.json"
+  assert_contains "$(cat "$T/scripts/integration-coverage.json")" "\"surface\": [$2]" "(표면 주입이 착지했는지 먼저 본다)"
+}
+# 경계 안 표면 — 소유자가 있으면 그대로 통과한다.
+fresh; surface go '"go/admin_users.go"'
+run report go "$T" --out "$D"
+assert_eq 0 "$RC" "[surface] go 표면의 미실행 함수를 열린 항목이 소유하면 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "  admin surface: 1 files (0 outside the boundary — read from the same run, not counted above) · 1 never-executed function" "[surface] go 표면 요약"
+# 소유자를 지운다 — 연산 하나를 스위트에서 지운 꼴이다.
+sed -i '/"go\/admin_users.go:UsersResource.Delete"/d' "$T/scripts/integration-coverage.json"
+assert_not_contains "$(cat "$T/scripts/integration-coverage.json")" 'UsersResource.Delete' "(변이가 착지했는지 먼저 본다)"
+run report go "$T" --out "$D"
+assert_eq 4 "$RC" "[surface] go 표면의 소유자 없는 미실행은 exit 4 — 출력: $OUT"
+assert_contains "$OUT" "UNEXERCISED [go] admin surface function go/admin_users.go:UsersResource.Delete never ran in the integration run" "[surface] 무엇이 안 돌았는지 댄다"
+assert_contains "$OUT" "integration-coverage [go]: UNEXERCISED — " "[surface] go 요약이 UNEXERCISED"
+assert_contains "$OUT" "unowned never-executed function go/admin_users.go:UsersResource.Delete" "[surface] 경계 안이면 소유 경고(DRIFT)도 그대로 찍는다"
+# 과잉 판정 대조군 — 표면 **밖**(같은 경계 안 admin.go)의 소유자 없는 미실행은 여전히 경고(1)다.
+fresh; surface go '"go/admin_users.go"'
+sed -i '/"go\/admin.go:AdminClient.String"/d' "$T/scripts/integration-coverage.json"
+assert_not_contains "$(cat "$T/scripts/integration-coverage.json")" 'AdminClient.String' "(변이가 착지했는지 먼저 본다)"
+run report go "$T" --out "$D"
+assert_eq 1 "$RC" "[surface] 표면 밖의 소유자 없는 미실행은 DRIFT(1) 그대로 — 출력: $OUT"
+assert_not_contains "$OUT" "UNEXERCISED" "[surface] 표면 밖은 4 로 올리지 않는다"
+# 표면 미실행과 하한 미달이 겹치면 4 이고 하한 미달도 말한다.
+fresh; surface go '"go/admin_users.go"'; floor go statements 46
+sed -i '/"go\/admin_users.go:UsersResource.Delete"/d' "$T/scripts/integration-coverage.json"
+run report go "$T" --out "$D"
+assert_eq 4 "$RC" "[surface] 표면 미실행 + 하한 미달은 4 — 출력: $OUT"
+assert_contains "$OUT" "(also below the floor)" "[surface] 하한 미달도 함께 말한다"
+
+# 경계 밖 표면(node) — 같은 실행의 데이터를 그 파일로 한 번 더 읽는다. 수치는 경계만이다(표면을 섞지 않는다).
+fresh
+run report node "$T" --out "$D"
+BASE="$(printf '%s\n' "$OUT" | grep -oE 'integration-coverage \[node\]: OK — [^·]*' | sed 's/OK — //')"
+assert_contains "$BASE" "statements" "(기준 수치를 먼저 읽는다)"
+fresh; surface node '"node/src/other.ts"'
+run report node "$T" --out "$D"
+assert_eq 4 "$RC" "[surface] node 경계 밖 표면의 미실행 함수도 exit 4 — 출력: $OUT"
+assert_contains "$OUT" "UNEXERCISED [node] admin surface function node/src/other.ts:other never ran in the integration run" "[surface] 경계 밖 파일의 함수를 댄다"
+assert_contains "$OUT" "owner NONE (surface, outside the boundary)" "[surface] 경계 밖 표면의 미실행을 따로 찍는다"
+assert_contains "$OUT" "integration-coverage [node]: UNEXERCISED — $(printf '%s' "$BASE" | sed 's/ *$//')" "[surface] 경계 수치는 표면을 섞지 않는다"
+# 열린 항목이 소유하면 통과하고, 그 소유 항목은 「낡은 소유자」나 「핀 밖」으로 오판되지 않는다.
+sed -i '/^  "node": {$/,/^  },$/ s|^    "owners": {$|    "owners": {\n      "node/src/other.ts:other": "open-admin",|' "$T/scripts/integration-coverage.json"
+assert_contains "$(cat "$T/scripts/integration-coverage.json")" '"node/src/other.ts:other": "open-admin"' "(변이가 착지했는지 먼저 본다)"
+run report node "$T" --out "$D"
+assert_eq 0 "$RC" "[surface] node 표면 함수를 열린 항목이 소유하면 exit 0 — 출력: $OUT"
+assert_not_contains "$OUT" "stale owner node/src/other.ts" "[surface] 표면 소유자를 낡았다고 하지 않는다"
+run check "$T"
+assert_not_contains "$OUT" "node/src/other.ts:other names a file outside the pin" "[surface] check 가 표면 소유자를 핀 밖이라 하지 않는다"
+assert_contains "$OUT" "[node] admin surface: 1 files (1 outside the pin)" "[surface] check 가 표면을 요약한다"
+
+# 기록이 바이트를 대조하는 리더(dotnet) — run 이 표면 파일의 바이트를 기록하지 않았으면 그 데이터를 믿지 않는다(2).
+fresh; surface dotnet '"dotnet/src/Kc/Config.cs"'
+run report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[surface] 기록에 없는 표면 파일은 다른 바이트의 데이터로 본다 — 출력: $OUT"
+assert_contains "$OUT" "dotnet/src/Kc/Config.cs: the data was taken from other bytes" "[surface] 바이트 대조가 표면 파일에도 걸린다"
+
+# 형식 — 비었거나 · 정렬되지 않았거나 · 트리에 없는 파일이면 무결성 실패(2). 표면 판정이 조용히 꺼지면 안 된다.
+fresh
+sed -i 's|^  "go": {$|  "go": {\n    "surface": [],|' "$T/scripts/integration-coverage.json"
+run check "$T"
+assert_eq 2 "$RC" "[surface] 빈 표면은 2"
+assert_contains "$OUT" "go.surface must be a non-empty array of repository paths" "[surface] 빈 표면을 지목한다"
+fresh; surface go '"go/auth.go", "go/admin_users.go"'
+run check "$T"
+assert_eq 2 "$RC" "[surface] 정렬 안 된 표면은 2"
+assert_contains "$OUT" "go.surface must be sorted and free of duplicates" "[surface] 순서를 지목한다"
+fresh; surface go '"go/admin_gone.go"'
+run check "$T"
+assert_eq 2 "$RC" "[surface] 트리에 없는 표면 파일은 2"
+assert_contains "$OUT" "go.surface names go/admin_gone.go, which is not in the tree" "[surface] 없는 파일을 댄다"
+
 assert_report

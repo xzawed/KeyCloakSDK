@@ -1,6 +1,7 @@
 {
   "go": {
     "floor": { "metric": "statements", "percent": 75.8 },
+    "surface": ["go/admin_clients.go", "go/admin_groups.go", "go/admin_realms.go", "go/admin_roles.go", "go/admin_users.go"],
     "pinned": [
       "go/admin.go",
       "go/admin_clients.go",
@@ -23,6 +24,18 @@
   },
   "python": {
     "floor": { "metric": "bodies", "percent": 88.4 },
+    "surface": [
+      "python/src/keycloak_sdk/admin/clients.py",
+      "python/src/keycloak_sdk/admin/groups.py",
+      "python/src/keycloak_sdk/admin/realms.py",
+      "python/src/keycloak_sdk/admin/roles.py",
+      "python/src/keycloak_sdk/admin/users.py",
+      "python/src/keycloak_sdk/aio/admin/clients.py",
+      "python/src/keycloak_sdk/aio/admin/groups.py",
+      "python/src/keycloak_sdk/aio/admin/realms.py",
+      "python/src/keycloak_sdk/aio/admin/roles.py",
+      "python/src/keycloak_sdk/aio/admin/users.py"
+    ],
     "pinned": [
       "python/src/keycloak_sdk/admin/__init__.py",
       "python/src/keycloak_sdk/aio/admin/__init__.py",
@@ -35,6 +48,7 @@
   },
   "node": {
     "floor": { "metric": "statements", "percent": 86.5 },
+    "surface": ["node/src/admin/clients.ts", "node/src/admin/groups.ts", "node/src/admin/realms.ts", "node/src/admin/roles.ts", "node/src/admin/users.ts"],
     "pinned": [
       "node/src/auth.ts",
       "node/src/index.ts"
@@ -48,6 +62,7 @@
   },
   "rust": {
     "floor": { "metric": "lines", "percent": 86.9 },
+    "surface": ["rust/src/admin.rs"],
     "pinned": [
       "rust/src/admin.rs",
       "rust/src/auth.rs",
@@ -63,6 +78,13 @@
   },
   "php": {
     "floor": { "metric": "lines", "percent": 60.0 },
+    "surface": [
+      "php/src/Admin/ClientsResource.php",
+      "php/src/Admin/GroupsResource.php",
+      "php/src/Admin/RealmsResource.php",
+      "php/src/Admin/RolesResource.php",
+      "php/src/Admin/UsersResource.php"
+    ],
     "pinned": [
       "php/src/Admin/AdminClient.php",
       "php/src/Admin/ClientsResource.php",
@@ -89,6 +111,13 @@
   },
   "ruby": {
     "floor": { "metric": "bodies", "percent": 82.4 },
+    "surface": [
+      "ruby/lib/keycloak_sdk/admin/clients.rb",
+      "ruby/lib/keycloak_sdk/admin/groups.rb",
+      "ruby/lib/keycloak_sdk/admin/realms.rb",
+      "ruby/lib/keycloak_sdk/admin/roles.rb",
+      "ruby/lib/keycloak_sdk/admin/users.rb"
+    ],
     "pinned": [
       "ruby/lib/keycloak_sdk/admin/admin_client.rb",
       "ruby/lib/keycloak_sdk/admin/bearer_auth.rb",
@@ -110,6 +139,13 @@
   },
   "dotnet": {
     "floor": { "metric": "lines", "percent": 76.6 },
+    "surface": [
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/ClientsResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/GroupsResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/RealmsResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/RolesResource.cs",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/UsersResource.cs"
+    ],
     "pinned": [
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminResponseBody.cs",
@@ -135,6 +171,13 @@
   },
   "java": {
     "floor": { "metric": "bodies", "percent": 70.3 },
+    "surface": [
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/ClientsResource.java",
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/GroupsResource.java",
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/RealmsResource.java",
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/RolesResource.java",
+      "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/UsersResource.java"
+    ],
     "pinned": [
       "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java",
@@ -157,6 +200,13 @@
   },
   "kotlin": {
     "floor": { "metric": "bodies", "percent": 79.2 },
+    "surface": [
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Clients.kt",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Groups.kt",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Realms.kt",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Roles.kt",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt"
+    ],
     "pinned": [
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminSockets.kt",
