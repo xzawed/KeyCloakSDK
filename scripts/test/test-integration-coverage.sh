@@ -2641,7 +2641,7 @@ assert_eq 0 "$RC" "[surface] go 표면의 미실행 함수를 열린 항목이 �
 assert_contains "$OUT" "  admin surface: 1 files (0 outside the boundary — read from the same run, not counted above) · 1 never-executed function" "[surface] go 표면 요약"
 # 소유자를 지운다 — 연산 하나를 스위트에서 지운 꼴이다.
 sed -i '/"go\/admin_users.go:UsersResource.Delete"/d' "$T/scripts/integration-coverage.json"
-assert_not_contains "$(cat "$T/scripts/integration-coverage.json")" 'UsersResource.Delete' "(변이가 착지했는지 먼저 본다)"
+assert_not_contains "$(cat "$T/scripts/integration-coverage.json")" '"go/admin_users.go:UsersResource.Delete"' "(변이가 착지했는지 먼저 본다)"
 run report go "$T" --out "$D"
 assert_eq 4 "$RC" "[surface] go 표면의 소유자 없는 미실행은 exit 4 — 출력: $OUT"
 assert_contains "$OUT" "UNEXERCISED [go] admin surface function go/admin_users.go:UsersResource.Delete never ran in the integration run" "[surface] 무엇이 안 돌았는지 댄다"
@@ -2664,7 +2664,7 @@ assert_contains "$OUT" "(also below the floor)" "[surface] 하한 미달도 함�
 # 경계 밖 표면(node) — 같은 실행의 데이터를 그 파일로 한 번 더 읽는다. 수치는 경계만이다(표면을 섞지 않는다).
 fresh
 run report node "$T" --out "$D"
-BASE="$(printf '%s\n' "$OUT" | grep -oE 'integration-coverage \[node\]: OK — [^·]*' | sed 's/OK — //')"
+BASE="$(printf '%s\n' "$OUT" | grep -oE 'integration-coverage \[node\]: OK — [^·]*' | sed 's/.*OK — //')"
 assert_contains "$BASE" "statements" "(기준 수치를 먼저 읽는다)"
 fresh; surface node '"node/src/other.ts"'
 run report node "$T" --out "$D"
