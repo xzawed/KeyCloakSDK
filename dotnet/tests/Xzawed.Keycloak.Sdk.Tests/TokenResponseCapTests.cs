@@ -218,6 +218,29 @@ public sealed class AllocationCollection
     public const string Name = "allocation (runs alone)";
 }
 
+/// <summary>
+/// The smallest of several measurements of one call's allocation. The counter is process-wide, and running alone stops
+/// other tests, not background work (a previous test's fake IdP still serving, the runner reporting) — whatever allocates
+/// during a window only adds. One window measured 318,336 bytes on CI for a 2 KiB call that allocates ≈ 58 KB (Linux
+/// .NET 8.0.34 and Windows 8.0.23, 300 runs each: smallest 57,176, largest 89,224 — registry
+/// dotnet-allocation-test-process-wide-counter-flaky). A cost the call itself has is in every window, so the smallest
+/// window still shows it.
+/// </summary>
+internal static class Allocation
+{
+    internal static async Task<long> SmallestOfAsync(int windows, Func<Task> call)
+    {
+        var smallest = long.MaxValue;
+        for (var i = 0; i < windows; i++)
+        {
+            var before = GC.GetTotalAllocatedBytes(precise: true);
+            await call();
+            smallest = Math.Min(smallest, GC.GetTotalAllocatedBytes(precise: true) - before);
+        }
+        return smallest;
+    }
+}
+
 [Trait("Category", "Unit")]
 [Collection(AllocationCollection.Name)]
 public sealed class TokenResponseCapAllocationTests
@@ -260,7 +283,9 @@ public sealed class TokenResponseCapAllocationTests
         Assert.True(allocated < 8L * Cap, $"judging a {size}-byte body allocated {allocated} bytes — not bounded by the cap");
     }
 
-    /// <summary>A small body allocates in proportion to itself — nothing near the cap is reserved per response.</summary>
+    /// <summary>A small body allocates in proportion to itself — nothing near the cap is reserved per response. Judged on
+    /// the smallest of five windows (<see cref="Allocation"/>): the bound is ≈ 4.5× the call's cost, and one window of
+    /// background noise once crossed it.</summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -271,13 +296,33 @@ public sealed class TokenResponseCapAllocationTests
         await using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = idp.Url, Realm = "r", ClientId = "c", ClientSecret = "s" });
         Assert.Equal(token, (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken); // warm-up
 
-        var before = GC.GetTotalAllocatedBytes(precise: true);
-        var got = (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken;
-        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        string? got = null;
+        var allocated = await Allocation.SmallestOfAsync(5, async () => got = (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken);
 
-        _out.WriteLine($"2048 bytes {(chunked ? "chunked" : "content-length")}: allocated {allocated}");
+        _out.WriteLine($"2048 bytes {(chunked ? "chunked" : "content-length")}: allocated {allocated} (smallest of 5 windows)");
         Assert.Equal(token, got);
         Assert.True(allocated < Cap / 4, $"judging a 2 KiB body allocated {allocated} bytes — a quarter of the cap or more");
+    }
+
+    /// <summary>The measuring rule the bounds above rely on: noise in one window is dropped, a cost every call has is kept.</summary>
+    [Fact]
+    public async Task The_smallest_window_drops_one_noisy_window_but_keeps_a_cost_of_every_call()
+    {
+        var calls = 0;
+        var noisy = await Allocation.SmallestOfAsync(5, () =>
+        {
+            if (calls++ == 0)
+                GC.KeepAlive(new byte[Cap]);
+            return Task.CompletedTask;
+        });
+        Assert.True(noisy < Cap / 4, $"one window of {Cap} bytes of noise leaked into the measure: {noisy}");
+
+        var costly = await Allocation.SmallestOfAsync(5, () =>
+        {
+            GC.KeepAlive(new byte[Cap]);
+            return Task.CompletedTask;
+        });
+        Assert.True(costly >= Cap, $"a {Cap}-byte cost of every call was dropped: {costly}");
     }
 }
 
