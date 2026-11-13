@@ -9,13 +9,23 @@
 #    대해 client-credentials 발급 → validate를 구동한다.
 # 4) app boot: harness/apps/dotnet/Program.cs(무변경 COPY)를 설치된 패키지로 publish → 실행.
 # 상태는 호스트 마운트 /status의 마커 파일로 회수한다(컨테이너 생존 여부와 무관하게 오케스트레이터가 읽음).
+#
+# ⚠️ 대상 프레임워크 — 두 소비자가 이 스크립트 하나를 쓴다(출처 · 자산 단언이 한 자리에 있어야 가드가 본다).
+#   · consume/dotnet.Dockerfile   SDK 8 · TFM 기본(net8.0) — 이전 판 소비자. 네 단계 전부.
+#   · consume/dotnet10.Dockerfile SDK 10 · TFM=net10.0 · QUICKSTART_ONLY=1 — 게시본의 lib/net10.0 을 받는 소비자.
+#     app boot · conformance 는 하지 않는다(같은 포트 · 같은 신호 파일을 기본 소비자가 쓴다).
 set -u
 STATUS="${STATUS_DIR:-/status}"
 REG="${REGISTRY_URL:-http://bagetter:8080/v3/index.json}"
 # 릴리스 버전 — 오케스트레이터(install-verify.sh)가 -e PKG_VER로 주입한다(기본값은 단독 실행용).
 PKG_VER="${PKG_VER:-0.1.0}"
+TFM="${TFM:-net8.0}"
 mkdir -p "$STATUS"
-rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok"
+rm -f "$STATUS/installed.ok" "$STATUS/quickstart.ok" "$STATUS/asset.ok" "$STATUS/done"
+# 두 프로젝트를 이 소비자의 대상으로 — 파일은 net8.0 으로 적혀 있다(기본 소비자는 그대로다).
+for _p in /work/app/App.csproj /work/quickstart/Quickstart.csproj; do
+  sed -i "s#<TargetFramework>[^<]*</TargetFramework>#<TargetFramework>$TFM</TargetFramework>#" "$_p"
+done
 
 echo "[dotnet-run] 1/4 nuget.config 배치 — local(BaGetter) 소스 추가 + packageSourceMapping"
 cat > /work/nuget.config <<EOF
@@ -91,6 +101,21 @@ else
   sleep 3600; exit 1   # 컨테이너를 살려둬 진단 가능하게(오케스트레이터는 마커 부재로 실패 판정)
 fi
 
+# ⚠️ 자산 단언 — 게시본이 이 소비자의 대상에 맞는 자산을 내줬는가. `obj/project.assets.json` 의 **targets** 절에서 본다 —
+# libraries 절은 패키지 안의 파일을 **전부** 나열해(lib/net8.0 · lib/net10.0 둘 다) 어느 쪽이 골라졌는지 말하지 않는다.
+# 실측(2026-11-13): net10.0 프로젝트가 nuget.org 의 1.0.7(net8.0 전용)을 받으면 targets 에 lib/net8.0 이 든다 — net10.0 자산이
+# 없는 게시본은 여기서 걸린다. 다중 대상 패키지면 lib/net10.0 이다.
+_sel="$(sed -n '/"targets": {/,/"libraries": {/p' /work/app/obj/project.assets.json 2>/dev/null | grep -o '"lib/[^/"]*/Xzawed.Keycloak.Sdk.dll"' | head -1)"
+printf '%s\n' "${_sel:-<none>}" >"$STATUS/asset.txt"
+if [ "$_sel" = "\"lib/$TFM/Xzawed.Keycloak.Sdk.dll\"" ]; then
+  : > "$STATUS/asset.ok"
+  echo "[dotnet-run] asset OK — $TFM 소비자가 lib/$TFM 을 받았다"
+else
+  echo "[dotnet-run] asset FAILED — $TFM 소비자가 받은 자산: ${_sel:-<없음>}"
+  if [ "${QUICKSTART_ONLY:-0}" = 1 ]; then : > "$STATUS/done"; exit 1; fi
+  sleep 3600; exit 1
+fi
+
 echo "[dotnet-run] 3/4 quickstart 스모크 — dotnet add package(quickstart 프로젝트) + dotnet run"
 if (cd /work/quickstart && dotnet add package Xzawed.Keycloak.Sdk --version "$PKG_VER" && dotnet run) >/tmp/qs.log 2>&1; then
   : > "$STATUS/quickstart.ok"
@@ -98,6 +123,12 @@ if (cd /work/quickstart && dotnet add package Xzawed.Keycloak.Sdk --version "$PK
 else
   echo "[dotnet-run] quickstart FAILED(비치명 — app boot·conformance는 계속)"; cat /tmp/qs.log
   cp /tmp/qs.log "$STATUS/quickstart.log" 2>/dev/null || true
+fi
+
+if [ "${QUICKSTART_ONLY:-0}" = 1 ]; then
+  : > "$STATUS/done"
+  echo "[dotnet-run] $TFM 소비자 끝 — app boot · conformance 는 기본 소비자(net8.0)가 돈다"
+  exit 0
 fi
 
 echo "[dotnet-run] 4/4 app boot — dotnet publish(app) → dotnet App.dll (APP_PORT=${APP_PORT:-8090})"
