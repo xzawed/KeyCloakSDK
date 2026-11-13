@@ -71,13 +71,13 @@ tasks.withType<JavaCompile>().configureEach {
 // ⚠️ java/pom.xml의 Jackson 버전을 올릴 때는 여기도 함께 올린다 — 두 JVM SDK가 같은 트리를 쓴다.
 dependencies {
     constraints {
-        implementation("com.fasterxml.jackson.core:jackson-core:2.22.4")
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.22.4")
-        implementation("com.fasterxml.jackson.core:jackson-annotations:2.22") // 별도 버전 트랙
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.22.4")
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.4")
-        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.22.4")
-        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.22.4")
+        implementation("com.fasterxml.jackson.core:jackson-core:2.23.0")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.23.0")
+        implementation("com.fasterxml.jackson.core:jackson-annotations:2.23") // 별도 버전 트랙
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.23.0")
+        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.23.0")
+        implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-base:2.23.0")
+        implementation("com.fasterxml.jackson.module:jackson-module-jakarta-xmlbind-annotations:2.23.0")
     }
 
     // stdlib는 KGP 자동주입을 끄고(gradle.properties `kotlin.stdlib.default.dependency=false`)
@@ -106,7 +106,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("io.mockk:mockk:1.14.11")
+    testImplementation("io.mockk:mockk:1.14.12")
     testImplementation("org.wiremock:wiremock:3.13.2")
     testImplementation("org.testcontainers:testcontainers:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
