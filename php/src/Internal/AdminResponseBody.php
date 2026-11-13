@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Internal;
 
+use GuzzleHttp\Exception\BadResponseException;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\FnStream;
@@ -49,10 +50,45 @@ use Psr\Http\Message\StreamInterface;
  * retries a short write) — older versions read a body that announced its Content-Length to the end, and only the
  * amount held is capped.
  *
+ * A facade call (`Admin\ErrorTranslation::call` runs it through `facadeCall()`) takes no 3xx as an answer — registry
+ * go-admin-3xx-read-as-success. Redirects are not followed (`HttpOptions`) and `http_errors` raises only from 400 up, so a
+ * 3xx reached fschmtt as an answer: a lookup deserialized its body into the representation it returned and a command
+ * dropped it — all 25 facade calls returned as if they had succeeded (measured: 300 · 302 without `Location` · 399).
+ * Here the final response of a request a facade call sends, if it is a 3xx, is refused with a Guzzle
+ * `BadResponseException` carrying it (after its body is held, as above), and `Admin\ErrorTranslation` turns that into a
+ * `KeycloakAdminError` with the status, as it does a 4xx without a class of its own. It is decided when the request is
+ * sent, so every request of the call — fschmtt's re-GET after an import or update too — is judged the same way.
+ * ⚠️ A `raw()` call is not a facade call: it keeps fschmtt's reading of a 3xx. The count of running facade calls is
+ * process-wide state, so a `raw()` request sent while a facade call is running elsewhere in the process — possible only
+ * where calls interleave, as coroutines can — is refused as well.
+ *
  * @internal
  */
 final class AdminResponseBody
 {
+    /** 지금 도는 파사드 호출의 수 — `facadeCall()` 이 세고, 미들웨어가 요청을 보낼 때 읽는다(클래스 docblock). */
+    private static int $facadeCalls = 0;
+
+    /**
+     * Runs one admin facade call — a 3xx answer to any request it sends is refused (class docblock).
+     *
+     * ⚠️ `$fn` captures what the call sends (a representation can hold a password or a client secret) — the same reason
+     * as `Admin\ErrorTranslation::call`.
+     *
+     * @template T
+     * @param callable():T $fn
+     * @return T
+     */
+    public static function facadeCall(#[\SensitiveParameter] callable $fn): mixed
+    {
+        self::$facadeCalls++;
+        try {
+            return $fn();
+        } finally {
+            self::$facadeCalls--;
+        }
+    }
+
     /**
      * Admin handler-stack middleware — requests picked by `$isTokenRequest` (fschmtt's token grant) are sent as they are.
      *
@@ -65,6 +101,7 @@ final class AdminResponseBody
             if ($isTokenRequest($request)) {
                 return self::promise($handler($request, $options));
             }
+            $facade = self::$facadeCalls > 0;   // 파사드 호출이 보내는 요청 — 그 답의 3xx 를 거부한다(클래스 docblock)
             $direct = !self::mayUseProxy($options);   // 프록시가 끼어들 수 있으면 머리에서 끊지 않는다 — 클래스 docblock
             $head = null;     // 최종 응답의 머리
             $error = false;   // 300 이상 — 본문을 상한에서 자른다
@@ -114,8 +151,25 @@ final class AdminResponseBody
 
                     return Create::rejectionFor($reason);
                 },
-            );
+            )->then(static function (ResponseInterface $response) use ($request, $facade): ResponseInterface {
+                // 본문을 붙든 뒤에 본다 — 위의 두 갈래(끝까지 온 응답 · 상한에서 끊고 되살린 머리)가 같이 지난다.
+                return $facade ? self::refuseRedirect($request, $response) : $response;
+            });
         };
+    }
+
+    /**
+     * 파사드 호출의 답으로 3xx 를 받지 않는다(클래스 docblock) — 그 응답을 단 Guzzle 예외로 거부하고 `Admin\ErrorTranslation` 이
+     * 상태를 실은 `KeycloakAdminError` 로 바꾼다. 400 이상은 바깥의 http_errors 몫이다 — 여기서 먼저 던지면 4xx·5xx 의 형이 바뀐다.
+     */
+    private static function refuseRedirect(RequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $status = $response->getStatusCode();
+        if ($status >= 300 && $status < 400) {
+            throw new BadResponseException(sprintf('admin response HTTP %d is a redirect, which is not followed', $status), $request, $response);
+        }
+
+        return $response;
     }
 
     /**
