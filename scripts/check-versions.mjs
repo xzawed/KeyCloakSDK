@@ -81,7 +81,9 @@ const BLOCKS_WITH_VERSION = [
 const javaVersions = new Map()
 for (const rel of javaPoms) {
   const p = `java/${rel}`
-  const text = read(p).replace(/<!--[\s\S]*?-->/g, '')
+  // 주석은 공백으로 바꾼다(다른 스크립트의 stripXml 과 같다) — 빈 문자열로 지우면 `<!-<!---->-` 가 `<!--` 로 다시
+  // 이어진다(CodeQL 불완전한 다문자 정화 · #1060).
+  const text = read(p).replace(/<!--[\s\S]*?-->/g, ' ')
   const parent = rel === 'pom.xml' ? null : /<parent>([\s\S]*?)<\/parent>/.exec(text)
   const parentVersion = parent ? LITERAL_VERSION.exec(parent[1])?.[1] : undefined
   if (parentVersion) javaVersions.set(`${p} (parent)`, parentVersion)
