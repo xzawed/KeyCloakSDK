@@ -173,12 +173,19 @@ func (a *AdminClient) token(ctx context.Context) (string, error) {
 }
 
 // call runs a gocloak call and converts its error to the SDK taxonomy. fn gets ctx with the slot in which the transport
-// keeps the error gocloak flattens (cause.go) — so it must pass on the ctx it is given, not the caller's.
+// keeps the error gocloak flattens (cause.go) — so it must pass on the ctx it is given, not the caller's. Every facade
+// call goes through here, so this is also where the 2xx contract holds: a call gocloak reports as a success although a
+// request of it was answered with a 3xx fails with *AdminError carrying that status, as a 4xx does (answered3xx, cause.go).
+// On an error the value is T's zero value.
 func call[T any](ctx context.Context, fn func(context.Context) (T, error)) (T, error) {
 	ctx, below := withBelowHTTP(ctx)
 	v, err := fn(ctx)
+	if err == nil {
+		err = below.answered3xx()
+	}
 	if err != nil {
-		return v, toSDKError(err, below)
+		var zero T
+		return zero, toSDKError(err, below)
 	}
 	return v, nil
 }
