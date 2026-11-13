@@ -327,6 +327,30 @@ function checkSecurity(repo, cmd) {
   return 1
 }
 
+// ── 끝 판정 ───────────────────────────────────────────────────────────────────
+// 남은 드리프트가 있으면 `check` 도 `apply` 도 exit 1 이다. `apply` 는 룰셋만 고친다 — 보안 기능 · Actions
+// 워크플로 드리프트는 남는다. 예전에는 `check` 만 실패했고 `apply` 는 그 드리프트를 찍고도 「적용 완료.」 ·
+// exit 0 으로 끝나, 돌린 사람에게 남은 일이 없다고 말했다(등록부 repo-config-apply-exit0-on-security-drift).
+// 순수 함수로 둔다 — 자가테스트가 gh 없이 판정을 잰다(main() 의 배선은 모양으로 고정).
+export function finish(cmd, drift) {
+  if (!drift) return { code: 0, lines: [cmd === 'apply' ? '\n적용 완료.' : '\n설정 일치.'] }
+  const lines =
+    cmd === 'apply'
+      ? [`\n룰셋은 적용했다 — 그러나 ${drift}건 불일치가 남았다(아래는 \`apply\` 가 고치지 않는다).`]
+      : [
+          `\n${drift}건 불일치. **룰셋** 은 \`node scripts/repo-config.mjs apply\` 로 적용하고,`,
+          '실제 설정을 정답으로 받아들이려면 `node scripts/repo-config.mjs pull` 후 커밋하라.',
+        ]
+  // ⚠️ 위 명령들은 룰셋만 다룬다 — `apply`는 보안 기능을 건드리지 않는다(main() 의 보안 절 주석의 판정).
+  // 그 사실을 여기 적지 않으면, 보안 축 드리프트를 본 사람이 `apply`를 돌리고 아무것도 바뀌지 않은 채 끝난다.
+  lines.push(
+    '보안 기능(secret scanning · CodeQL · private vulnerability reporting)은 `apply` 대상이 아니다 —',
+    '사람이 판정해 GitHub 설정에서 켜거나, `gh api -X PUT repos/<o>/<r>/private-vulnerability-reporting` 처럼 직접 바꾼다.',
+    'Actions 워크플로 상태도 `apply` 대상이 아니다 — 위 목록의 `gh workflow disable|enable <id>` 로 고친다.',
+  )
+  return { code: 1, lines }
+}
+
 // ── 명령 ─────────────────────────────────────────────────────────────────────
 // 이 파일을 import해도 실행되지 않아야 한다 — 자가테스트가 네트워크·gh 없이
 // canonical()만 검증할 수 있어야 하기 때문이다.
@@ -396,18 +420,11 @@ function main() {
   drift += checkSecurity(repo, cmd)
   drift += checkWorkflows(repo)
 
-  if (cmd === 'check' && drift) {
-    console.log(`\n${drift}건 불일치. **룰셋** 은 \`node scripts/repo-config.mjs apply\` 로 적용하고,`)
-    console.log('실제 설정을 정답으로 받아들이려면 `node scripts/repo-config.mjs pull` 후 커밋하라.')
-    // ⚠️ 위 두 명령은 룰셋만 다룬다 — `apply`는 보안 기능을 건드리지 않는다(바로 위 주석의
-    // 판정). 그 사실을 여기 적지 않으면, 보안 축 드리프트를 본 사람이 `apply`를 돌리고
-    // "적용 완료"를 읽은 뒤 아무것도 바뀌지 않은 채 끝난다.
-    console.log('보안 기능(secret scanning · CodeQL · private vulnerability reporting)은 `apply` 대상이 아니다 —')
-    console.log('사람이 판정해 GitHub 설정에서 켜거나, `gh api -X PUT repos/<o>/<r>/private-vulnerability-reporting` 처럼 직접 바꾼다.')
-    console.log('Actions 워크플로 상태도 `apply` 대상이 아니다 — 위 목록의 `gh workflow disable|enable <id>` 로 고친다.')
-    process.exit(1)
-  }
-  console.log(cmd === 'apply' ? '\n적용 완료.' : '\n설정 일치.')
+  const { code, lines } = finish(cmd, drift)
+  for (const l of lines) console.log(l)
+  // exitCode 로 둔다 — process.exit() 는 파이프로 가는 stdout 의 남은 쓰기를 자를 수 있다(gh 호출은 전부 동기라
+  // 여기서 이벤트 루프가 비고 이 코드로 끝난다).
+  process.exitCode = code
 }
 
 // process.argv[1]은 `node -e '...'`로 import할 때 undefined다 — 가드 없이 호출하면

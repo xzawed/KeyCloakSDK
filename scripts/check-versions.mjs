@@ -69,12 +69,30 @@ const javaPoms = [
   'pom.xml',
   ...[...rootPom.matchAll(/<module>([^<]+)<\/module>/g)].map((m) => `${m[1].trim()}/pom.xml`),
 ]
+// ⚠️ 자식 POM 의 첫 리터럴 <version> 은 <parent> 블록의 것이다. 그것만 읽으면 자식이 parent 뒤에 따로 선언한
+// 자기 판(reactor 가 그 모듈을 그 판으로 짓는다 — 게시 좌표가 갈린다)을 못 본다(등록부
+// check-versions-java-child-pom-blind-spot). 그래서 둘을 따로 읽는다: parent 참조 판, 그리고 주석과 <version> 을
+// 품을 수 있는 블록을 걷어낸 뒤 남는 프로젝트 자신의 판. 둘 다 리터럴만 센다(`${project.version}` 류 참조는 뺀다).
+// parent 참조는 **자식만** 센다 — 루트의 parent 는 reactor 밖의 POM(예: 외부 부모)이라 그 판은 reactor 의 판이 아니다.
+const LITERAL_VERSION = /<version>((?!\$\{)[^<]+)<\/version>/
+const BLOCKS_WITH_VERSION = [
+  'parent', 'dependencyManagement', 'dependencies', 'build', 'reporting', 'profiles', 'distributionManagement', 'properties',
+]
 const javaVersions = new Map()
 for (const rel of javaPoms) {
   const p = `java/${rel}`
-  // `${project.version}` 같은 참조가 아니라 리터럴인 첫 <version>을 취한다.
-  const v = pick(p, /<version>((?!\$\{)[^<]+)<\/version>/, 'Java')
-  if (v) javaVersions.set(p, v)
+  // 주석은 공백으로 바꾼다(다른 스크립트의 stripXml 과 같다) — 빈 문자열로 지우면 `<!-<!---->-` 가 `<!--` 로 다시
+  // 이어진다(CodeQL 불완전한 다문자 정화 · #1060).
+  const text = read(p).replace(/<!--[\s\S]*?-->/g, ' ')
+  const parent = rel === 'pom.xml' ? null : /<parent>([\s\S]*?)<\/parent>/.exec(text)
+  const parentVersion = parent ? LITERAL_VERSION.exec(parent[1])?.[1] : undefined
+  if (parentVersion) javaVersions.set(`${p} (parent)`, parentVersion)
+  let own = text
+  for (const tag of BLOCKS_WITH_VERSION) own = own.replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, 'g'), '')
+  const ownVersion = LITERAL_VERSION.exec(own)?.[1]
+  if (ownVersion) javaVersions.set(p, ownVersion)
+  if (!parentVersion && !ownVersion)
+    errors.push(`${p} 에서 Java 버전을 추출하지 못했다 — 추출 실패도 실패로 취급한다(가드가 조용히 무력화되면 안 된다)`)
 }
 const distinctJava = new Set(javaVersions.values())
 if (distinctJava.size > 1) {
@@ -84,7 +102,7 @@ if (distinctJava.size > 1) {
   )
 }
 const javaVersion = [...distinctJava][0]
-if (javaVersion) found.push(['java', javaVersion, `${javaVersions.size}개 POM`])
+if (javaVersion) found.push(['java', javaVersion, `${javaPoms.length}개 POM`])
 
 // ── 매니페스트에 버전이 있는 나머지 언어 ──
 const manifests = [

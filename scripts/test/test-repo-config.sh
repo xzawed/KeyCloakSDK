@@ -358,4 +358,27 @@ assert_contains "$(cd "$DIR/.." && node -e "
   'RC=1' \
   'checkWorkflows 가 유령을 1 로 돌려준다(드리프트가 종료코드에 닿는다)'
 
+# ── apply 의 끝 판정 — 룰셋을 고친 뒤 남은 드리프트(보안 기능 · 워크플로 — apply 대상이 아니다)는 apply 에서도 실패다 ──
+# 예전에는 `check` 만 exit 1 이었고 `apply` 는 그 드리프트를 찍고도 「적용 완료.」 · exit 0 이었다(등록부
+# repo-config-apply-exit0-on-security-drift). 판정은 finish() 가 소유하고 main() 은 그 코드로 끝난다.
+FIN="import('./repo-config.mjs').then(({finish})=>{const r=finish(process.env.FIN_CMD,Number(process.env.FIN_DRIFT));
+  process.stdout.write('RC='+r.code+' '+r.lines.join('|'));});"
+out="$(cd "$DIR/.." && FIN_CMD=apply FIN_DRIFT=1 node -e "$FIN" || true)"
+assert_contains "$out" 'RC=1' 'apply 가 남은 보안 · 워크플로 드리프트를 exit 1 로 알린다'
+assert_contains "$out" '`apply` 대상이 아니다' 'apply 가 남은 드리프트를 고치는 길을 알린다'
+assert_not_contains "$out" '적용 완료' 'apply 가 드리프트를 두고 「적용 완료」라 하지 않는다'
+out="$(cd "$DIR/.." && FIN_CMD=apply FIN_DRIFT=0 node -e "$FIN" || true)"
+assert_contains "$out" 'RC=0' 'apply 가 남은 드리프트 없이 0 으로 끝난다'
+assert_contains "$out" '적용 완료' 'apply 가 끝을 알린다'
+out="$(cd "$DIR/.." && FIN_CMD=check FIN_DRIFT=2 node -e "$FIN" || true)"
+assert_contains "$out" 'RC=1' 'check 는 드리프트를 exit 1 로 알린다(그대로)'
+assert_contains "$out" '2건 불일치' 'check 가 드리프트 수를 찍는다(그대로)'
+out="$(cd "$DIR/.." && FIN_CMD=check FIN_DRIFT=0 node -e "$FIN" || true)"
+assert_contains "$out" 'RC=0' 'check 는 일치를 0 으로 끝낸다(그대로)'
+# 배선 — main() 이 finish 의 코드로 끝난다(주석 처리한 줄은 세지 않는다).
+assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*const \{ code, lines \} = finish\(cmd, drift\)')" \
+  'main() 이 끝 판정을 finish 에 맡긴다(배선)'
+assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*process\.exitCode = code$')" \
+  'main() 이 finish 의 종료코드로 끝난다(배선 — exit() 가 아니라 exitCode: 파이프 stdout 의 남은 쓰기를 자르지 않는다)'
+
 assert_report
