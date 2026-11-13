@@ -19,6 +19,26 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's|<parent><version>0.1.0-SNAPSHOT</version></parent>|<parent><version>0.2.0-SNAPSHOT</version></parent>|' "$TMP/java/mod-a/pom.xml"
 assert_fails node "$GUARD" "$TMP"
 
+# 변이 1b: 자식이 parent 블록 **뒤에** 다른 자기 판을 선언한다 — reactor 는 그 모듈을 그 판으로 짓는다(게시 좌표가
+# 갈린다). 예전 가드는 POM 의 첫 리터럴 <version>(자식에서는 parent 참조)만 읽어 이것을 못 봤다(등록부
+# check-versions-java-child-pom-blind-spot).
+cp -r "$FIX/." "$TMP/"
+sed -i 's|</parent></project>|</parent><version>0.2.0-SNAPSHOT</version></project>|' "$TMP/java/mod-b/pom.xml"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1 || true)"
+assert_contains "$OUT" '0.2.0-SNAPSHOT  java/mod-b/pom.xml' '자식의 자기 판을 그 POM 으로 지목한다'
+
+# 대조 셋 — 어긋남이 아닌 것을 잡으면 안 된다: 같은 판을 명시한 자식 · 의존성 · 빌드 블록 안의 리터럴 판 · 주석 속 판.
+cp -r "$FIX/." "$TMP/"
+sed -i 's|</parent></project>|</parent><version>0.1.0-SNAPSHOT</version></project>|' "$TMP/java/mod-b/pom.xml"
+assert_ok node "$GUARD" "$TMP"
+cp -r "$FIX/." "$TMP/"
+sed -i 's|</parent></project>|</parent><dependencies><dependency><version>9.9.9</version></dependency></dependencies><build><plugins><plugin><version>8.8.8</version></plugin></plugins></build></project>|' "$TMP/java/mod-b/pom.xml"
+assert_ok node "$GUARD" "$TMP"
+cp -r "$FIX/." "$TMP/"
+sed -i 's|</parent></project>|</parent><!-- <version>7.7.7</version> --></project>|' "$TMP/java/mod-b/pom.xml"
+assert_ok node "$GUARD" "$TMP"
+
 # 한 언어만 범프 — 언어 간 갈림은 **경고이지 실패가 아니다**.
 # SECURITY.md가 소비자에게 명시적으로 약속한다: "각 언어는 독립적으로 버저닝하며, 보안 수정은
 # 그 언어에서 준비되는 즉시 릴리스하고 나머지 여덟을 기다리지 않는다." 이 가드가 릴리스 경로
