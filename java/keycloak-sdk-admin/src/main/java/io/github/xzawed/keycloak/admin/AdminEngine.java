@@ -109,6 +109,8 @@ final class AdminEngine extends ApacheHttpClient43Engine implements HttpContextP
             ? Long.MAX_VALUE : ERROR_BODY_CAP;
         entity.setEntityStream(new Settled(in, (Exchange) request.getMutableProperties().get(EXCHANGE), limit));
       }
+      // 파사드 호출 안의 3xx 자원 응답은 그 호출의 실패다(AdminExceptions.call) — raw() 는 그대로
+      AdminExceptions.noteRedirect(request.getMethod(), request.getUri(), response);
       return response;
     } finally {
       // 이 스레드의 마감은 머리를 읽는 동안뿐이다 — 본문은 그것을 읽는 스레드가 읽기마다 다시 건다({@link Settled}). 남기면 이 스레드의
