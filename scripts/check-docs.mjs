@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, resolve, relative, dirname } from 'node:path'
 import * as ledger from './lib/changelog-ledger.mjs'
+import { dotnetTfms } from './lib/dotnet-tfm.mjs'
 
 // .superpowers는 gitignore된 작업 스크래치(실제 문서가 아님). .venv/venv/site-packages는
 // 파이썬 가상환경(+ 그 안의 vendored 서드파티 패키지)이라 실제 문서가 아니다 — 이게 없으면
@@ -566,7 +567,8 @@ const RUNTIME = {
   kotlin: ['kotlin/build.gradle.kts', (t) => /JvmTarget\.JVM_(\d+)/.exec(t)?.[1]],
   node: ['node/package.json', (t) => JSON.parse(t).engines?.node],
   go: ['go/go.mod', (t) => /^go\s+([\d.]+)/m.exec(t)?.[1]],
-  dotnet: ['dotnet/Directory.Build.props', (t) => /<TargetFramework>([^<]+)</.exec(t)?.[1]],
+  // 여러 대상(`<TargetFrameworks>net8.0;net10.0`)이면 **가장 낮은** TFM 이 소비자 하한이다 — 고르는 규칙은 lib 가 소유한다.
+  dotnet: ['dotnet/Directory.Build.props', (t) => dotnetTfms(t)[0]],
   php: ['php/composer.json', (t) => JSON.parse(t).require?.php],
   rust: ['rust/Cargo.toml', (t) => /^rust-version\s*=\s*"([^"]+)"/m.exec(t)?.[1]],
   ruby: ['ruby/keycloak-sdk.gemspec', (t) => /required_ruby_version\s*=\s*["']([^"']+)["']/.exec(t)?.[1]],

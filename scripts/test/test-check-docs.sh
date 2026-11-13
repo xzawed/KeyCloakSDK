@@ -358,6 +358,23 @@ assert_fails node "$GUARD" "$TMP"
 # 않고 남는다 — 다음 블록의 assert_ok를 오염시키지 않도록 다시 리셋한다.
 rm -rf "$TMP" && mkdir -p "$TMP"
 
+# dotnet 여러 대상(`<TargetFrameworks>`, `;` 구분) — 소비자 하한은 **가장 낮은** TFM 이다. 선언 순서가 아니라
+# 버전으로 고른다: 첫 항목으로 고르면 첫 순서에서, 마지막 항목으로 고르면 둘째 순서에서, 문자열 정렬
+# (「net10.0」<「net8.0」)로 고르면 둘 다에서 갈라진다. 가장 높은 것(10.0)을 주장하는 문서는 실패해야 한다.
+mkdir -p "$TMP/dotnet"
+for tfms in 'net10.0;net8.0' 'net8.0;net10.0'; do
+  printf '%s\n' "<Project><PropertyGroup><TargetFrameworks>$tfms</TargetFrameworks></PropertyGroup></Project>" > "$TMP/dotnet/Directory.Build.props"
+  printf '%s\n' '<!-- doc-guard: kind=runtime lang=dotnet -->' '.NET `8.0` 이상이 필요하다.' > "$TMP/runtime-dotnet.md"
+  assert_ok node "$GUARD" "$TMP"
+  printf '%s\n' '<!-- doc-guard: kind=runtime lang=dotnet -->' '.NET `10.0` 이상이 필요하다.' > "$TMP/runtime-dotnet.md"
+  assert_fails node "$GUARD" "$TMP"
+done
+# 모르는 모양(`netstandard2.0`)이 섞이면 남은 것 중에서 하한을 골라 초록을 내지 않고 실패한다.
+printf '%s\n' '<Project><PropertyGroup><TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks></PropertyGroup></Project>' > "$TMP/dotnet/Directory.Build.props"
+printf '%s\n' '<!-- doc-guard: kind=runtime lang=dotnet -->' '.NET `8.0` 이상이 필요하다.' > "$TMP/runtime-dotnet.md"
+assert_fails node "$GUARD" "$TMP"
+rm -rf "$TMP" && mkdir -p "$TMP"
+
 # ---- Finding 3: 앵커 뒤 첫 백틱 스팬이 아니라, 숫자를 포함해 "버전 모양"인
 # 첫 백틱 스팬을 주장으로 삼아야 한다 ----
 # 문서가 버전보다 먼저 다른 백틱 용어(코드명 등)를 언급하면, 구버전(무조건

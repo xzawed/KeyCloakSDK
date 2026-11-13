@@ -17,6 +17,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve, dirname, join, isAbsolute, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { dotnetTfms } from './lib/dotnet-tfm.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -26,9 +27,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 function req(file, re, what) {
   const path = join(ROOT, file)
   if (!existsSync(path)) throw new Error(`빌드 파일 없음: ${file} (좌표가 바뀌었다면 doctor.mjs도 함께 고쳐야 한다)`)
-  const m = re.exec(readFileSync(path, 'utf8'))
-  if (!m) throw new Error(`${file}에서 ${what}을(를) 찾지 못함 (선언 형태가 바뀌었다면 doctor.mjs도 함께 고쳐야 한다)`)
-  return { version: m[1], source: `${file} · ${what}` }
+  // re 는 정규식(첫 그룹이 버전) 또는 텍스트 → 버전 함수다(한 값을 고르려면 목록을 읽어야 하는 선언용 — dotnet 여러 대상).
+  const text = readFileSync(path, 'utf8')
+  const version = typeof re === 'function' ? re(text) : re.exec(text)?.[1]
+  if (!version) throw new Error(`${file}에서 ${what}을(를) 찾지 못함 (선언 형태가 바뀌었다면 doctor.mjs도 함께 고쳐야 한다)`)
+  return { version, source: `${file} · ${what}` }
 }
 
 // ── 버전 비교(숫자 세그먼트 사전식) ──────────────────────────────────────────
@@ -260,7 +263,9 @@ function langs() {
     dotnet: {
       label: 'C#/.NET',
       checks: [
-        check('dotnet (SDK)', probes('dotnet', ['--version']), req('dotnet/Directory.Build.props', /<TargetFramework>\s*net([\d.]+)\s*</, 'TargetFramework')),
+        // 여러 대상이면 **가장 높은** TFM 이 요구 SDK 다 — SDK 8 은 net10.0 대상을 복원조차 못 한다(NETSDK1045).
+        // ⚠️ 낮은 대상의 테스트는 그 판의 **런타임**도 있어야 돈다 — 이 줄은 SDK 만 본다(`dotnet --list-runtimes`).
+        check('dotnet (SDK)', probes('dotnet', ['--version']), req('dotnet/Directory.Build.props', (t) => dotnetTfms(t).at(-1)?.slice(3), 'TargetFramework(s) — 가장 높은 대상')),
       ],
     },
     php: {

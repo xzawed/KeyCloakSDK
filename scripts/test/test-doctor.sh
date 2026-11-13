@@ -35,11 +35,16 @@ assert_eq "$(grep -o '"node": *">=[0-9.]*"' "$ROOT/node/package.json" | head -1 
 # 흘러가면 안 된다. 그건 정확히 가드가 죽는 방식이다.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/scripts" "$TMP/java"
+mkdir -p "$TMP/scripts/lib" "$TMP/java"
 cp "$DOC" "$TMP/scripts/doctor.mjs"
+# ⚠️ doctor.mjs 가 import 하는 모듈도 함께 옮긴다 — 빠지면 아래 실패가 **모듈을 못 찾아서** 나고,
+# 단언은 「추출 실패를 실패로 낸다」가 아니라 「import 가 깨졌다」를 재며 초록으로 남는다.
+cp "$DIR/../lib/dotnet-tfm.mjs" "$TMP/scripts/lib/dotnet-tfm.mjs"
 # java/pom.xml만 최소 런타임 선언 없이 만들어 두면 추출이 실패해야 한다.
 printf '<project></project>\n' > "$TMP/java/pom.xml"
 assert_fails node "$TMP/scripts/doctor.mjs" java
+OUT2="$(node "$TMP/scripts/doctor.mjs" java 2>&1 || true)"
+assert_contains "$OUT2" "찾지 못함" '실패 사유가 추출 실패다(모듈 누락 같은 다른 이유가 아니다)'
 
 # ── 3. 알 수 없는 언어 인자는 조용히 무시되면 안 된다 ────────────────────────
 assert_fails node "$DOC" nosuchlang
@@ -132,5 +137,38 @@ assert_contains "$OUT7" "99.0.0" '요구를 만족하는 후보가 낡은 것을
 # ⚠️ 환경·순서에 기대지 않는다: readdir 순서는 OS 마다 다르고(NTFS 는 사전순, ext4 는
 # 해시순) PATH 에 진짜 go 가 있을 수도 없을 수도 있다. 두 단언 다 그 어느 쪽에도 안 걸린다.
 assert_not_contains "$OUT7" "1.0.0" '낡은 후보에 눌러앉아 보고하면 안 된다'
+
+# ── 8. dotnet 여러 대상 — 요구 SDK 는 **가장 높은** TFM 이다 ─────────────────────
+# `<TargetFrameworks>net8.0;net10.0</TargetFrameworks>` 는 SDK 8 로 복원조차 안 된다(NETSDK1045) — 그래서
+# 진단기가 요구하는 SDK 는 가장 높은 대상이다(소비자 하한 = 가장 낮은 대상은 check-docs 의 몫이다).
+# 선언 순서로 고르면 한 순서에서, 문자열 정렬(「net10.0」<「net8.0」)로 고르면 다른 순서에서 갈라진다.
+T8="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$T5" "$T8"' EXIT
+mkdir -p "$T8/scripts/lib"
+cp "$DOC" "$T8/scripts/doctor.mjs"
+cp "$DIR/../lib/dotnet-tfm.mjs" "$T8/scripts/lib/dotnet-tfm.mjs"
+# ⚠️ 진단기는 언어 필터와 무관하게 **모든** 언어의 선언을 먼저 읽는다 — 하나라도 없으면 dotnet 에 닿기 전에
+# 「빌드 파일 없음」으로 멈춘다. 그래서 읽는 파일 전부를 실제 트리에서 옮겨 두고 dotnet 것만 바꾼다.
+for f in $(grep -oE "req\('[^']+'" "$DOC" | sed -E "s/^req\('//; s/'$//" | sort -u); do
+  mkdir -p "$T8/$(dirname "$f")" && cp "$ROOT/$f" "$T8/$f"
+done
+dotnet_req() {
+  node "$T8/scripts/doctor.mjs" dotnet --json 2>/dev/null | node -e '
+    let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+      const r=JSON.parse(s).results.find(x=>x.tool==="dotnet (SDK)");
+      process.stdout.write(String(r&&r.required));
+    })'
+}
+for tfms in 'net10.0;net8.0' 'net8.0;net10.0'; do
+  printf '%s\n' "<Project><PropertyGroup><TargetFrameworks>$tfms</TargetFrameworks></PropertyGroup></Project>" > "$T8/dotnet/Directory.Build.props"
+  assert_eq '10.0' "$(dotnet_req)" "dotnet 요구 SDK = 가장 높은 대상 ($tfms)"
+done
+printf '%s\n' '<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>' > "$T8/dotnet/Directory.Build.props"
+assert_eq '8.0' "$(dotnet_req)" 'dotnet 요구 SDK = 단수 대상'
+# 선언이 없으면 「요구 없음 = 통과」가 아니라 실패다(2절과 같은 이유).
+printf '%s\n' '<Project><PropertyGroup></PropertyGroup></Project>' > "$T8/dotnet/Directory.Build.props"
+assert_fails node "$T8/scripts/doctor.mjs" dotnet
+OUT8="$(node "$T8/scripts/doctor.mjs" dotnet 2>&1 || true)"
+assert_contains "$OUT8" "찾지 못함" 'dotnet 대상 선언이 없으면 추출 실패로 보고한다'
 
 assert_report
