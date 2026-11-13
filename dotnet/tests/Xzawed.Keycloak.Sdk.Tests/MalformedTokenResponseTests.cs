@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -241,6 +242,51 @@ public sealed class MalformedTokenResponseTests
         report.AssertClean(_out);
     }
 
+    /// <summary>
+    /// 원시 서버는 풀이 재사용한 연결에도 답한다 — 한 번 답하고 닫던 서버에서는 풀이 그 연결을 다음 POST 에 다시 썼고, 닫힘과
+    /// 경합하면 본문을 이미 보낸 요청이라 재시도 없이 <c>ResponseEnded</c> 로 갈렸다(CI .NET 8 두 번 · 등록부
+    /// dotnet-rawserver-reads-once-flaky). 한 연결에 요청 셋 — 첫 요청은 헤더와 본문을 따로 보내 요청을 끝까지 읽는지도 본다.
+    /// </summary>
+    [Fact]
+    public async Task Raw_server_answers_every_request_on_one_kept_alive_connection()
+    {
+        const string raw = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+        using var server = new RawServer(raw);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var url = new Uri(server.Url);
+        using var tcp = new TcpClient();
+        await tcp.ConnectAsync(url.Host, url.Port, cts.Token);
+        var stream = tcp.GetStream();
+        var body = Encoding.ASCII.GetBytes("grant_type=client_credentials");
+        var head = Encoding.ASCII.GetBytes($"POST {Oidc}/token HTTP/1.1\r\nHost: {url.Authority}\r\n" +
+            $"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {body.Length}\r\n\r\n");
+        for (var i = 1; i <= 3; i++)
+        {
+            try
+            {
+                await stream.WriteAsync(head, cts.Token);
+                if (i == 1)
+                {
+                    await Task.Delay(100, cts.Token);
+                    Assert.True(tcp.Available == 0, "서버가 요청 본문을 받기 전에 답했다 — 요청을 끝까지 읽지 않는다");
+                }
+                await stream.WriteAsync(body, cts.Token);
+                var got = new byte[raw.Length];
+                for (var n = 0; n < got.Length;)
+                {
+                    var r = await stream.ReadAsync(got.AsMemory(n), cts.Token);
+                    Assert.True(r > 0, $"요청 {i}: 응답 전에 서버가 연결을 닫았다({n} 바이트 받음)");
+                    n += r;
+                }
+                Assert.Equal(raw, Encoding.ASCII.GetString(got));
+            }
+            catch (IOException e)
+            {
+                Assert.Fail($"요청 {i}: 서버가 연결을 닫았다 — {e.Message}");
+            }
+        }
+    }
+
     /// <summary>한 변형의 호출 결과를 모아 흐름·누출·알려진 누출을 한꺼번에 판정한다.</summary>
     private sealed class Report
     {
@@ -333,33 +379,86 @@ public sealed class MalformedTokenResponseTests
         }
     }
 
-    /// <summary>요청마다 같은 원시 응답을 쓰고 연결을 닫는 최소 서버.</summary>
+    /// <summary>
+    /// 요청마다 같은 원시 응답을 쓰는 최소 서버 — 연결마다 요청 전체(헤더 + Content-Length 본문, SDK 의 폼 요청)를 읽고 답하기를
+    /// 클라이언트가 닫을 때까지 되풀이한다. ⚠️ 답하고 바로 닫지 않는다: 응답이 닫힘을 알리지 않으면 풀이 그 연결을 다음 POST 에
+    /// 다시 쓰고, 닫힘이 그 뒤에 닿으면 본문을 보낸 요청이라 재시도 없이 <c>ResponseEnded</c> 다(SocketsHttpHandler
+    /// <c>HttpConnection.SendAsync</c>). 그래서 응답에는 틀(Content-Length · chunked)이 있어야 한다 — 틀이 없으면 닫힘이 끝이라
+    /// (RFC 9112 §6.3) 클라이언트가 오지 않을 닫힘을 기다린다.
+    /// </summary>
     private sealed class RawServer : IDisposable
     {
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource _cts = new();
+        private readonly List<Task> _connections = new();
+        private readonly byte[] _response;
         private readonly Task _loop;
 
         public RawServer(string raw)
         {
+            _response = Encoding.ASCII.GetBytes(raw);
             _listener.Start();
             Url = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}";
-            var bytes = Encoding.ASCII.GetBytes(raw);
             _loop = Task.Run(async () =>
             {
-                var buf = new byte[65536];
                 while (!_cts.IsCancellationRequested)
                 {
-                    using var client = await _listener.AcceptTcpClientAsync(_cts.Token);
-                    var stream = client.GetStream();
-                    _ = await stream.ReadAsync(buf, _cts.Token);
-                    await stream.WriteAsync(bytes, _cts.Token);
-                    await stream.FlushAsync(_cts.Token);
+                    var client = await _listener.AcceptTcpClientAsync(_cts.Token);
+                    lock (_connections)
+                        _connections.Add(Task.Run(() => ServeAsync(client)));
                 }
             });
         }
 
         public string Url { get; }
+
+        private async Task ServeAsync(TcpClient client)
+        {
+            using (client)
+            {
+                try
+                {
+                    var stream = client.GetStream();
+                    while (await ReadRequestAsync(stream, _cts.Token))
+                    {
+                        await stream.WriteAsync(_response, _cts.Token);
+                        await stream.FlushAsync(_cts.Token);
+                    }
+                }
+                catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException)
+                {
+                    // 클라이언트가 끊었다(형식이 틀린 응답이면 연결을 버린다) · 서버 종료.
+                }
+            }
+        }
+
+        /// <summary>요청 하나를 끝까지 읽는다 — 그 전에 연결이 닫히면 <c>false</c>.</summary>
+        private static async Task<bool> ReadRequestAsync(NetworkStream stream, CancellationToken ct)
+        {
+            var head = new List<byte>();
+            var one = new byte[1];
+            while (head.Count < 4 || head[^4] != '\r' || head[^3] != '\n' || head[^2] != '\r' || head[^1] != '\n')
+            {
+                if (await stream.ReadAsync(one, ct) == 0)
+                    return false;
+                head.Add(one[0]);
+            }
+            var length = 0;
+            foreach (var line in Encoding.ASCII.GetString(head.ToArray()).Split("\r\n"))
+            {
+                if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                    length = int.Parse(line["Content-Length:".Length..].Trim(), CultureInfo.InvariantCulture);
+            }
+            var body = new byte[length];
+            for (var got = 0; got < length;)
+            {
+                var n = await stream.ReadAsync(body.AsMemory(got), ct);
+                if (n == 0)
+                    return false;
+                got += n;
+            }
+            return true;
+        }
 
         public void Dispose()
         {
@@ -367,6 +466,10 @@ public sealed class MalformedTokenResponseTests
             _listener.Stop();
             try { _loop.Wait(TimeSpan.FromSeconds(5)); }
             catch (AggregateException) { /* 취소·리스너 종료 */ }
+            Task[] connections;
+            lock (_connections)
+                connections = _connections.ToArray();
+            Task.WaitAll(connections, TimeSpan.FromSeconds(5));
             _cts.Dispose();
         }
     }
