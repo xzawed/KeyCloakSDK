@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "problems": [
+    {
+      "level": "error",
+      "text": "You are running the 'list package' operation with an 'HTTP' source, 'http://127.0.0.1:9/v3/index.json [http://127.0.0.1:9/v3/index.json]'. NuGet requires HTTPS sources. To use HTTP sources, you must explicitly set 'allowInsecureConnections' to true in your NuGet.Config file. Refer to https://aka.ms/nuget-https-everywhere for more information."
+    }
+  ],
+  "sources": [
+    "http://127.0.0.1:9/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "/work/probe/Probe.csproj"
+    }
+  ]
+}

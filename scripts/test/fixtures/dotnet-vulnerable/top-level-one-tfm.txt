@@ -1,0 +1,11 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+
+The following sources were used:
+   https://api.nuget.org/v3/index.json
+
+Project `Probe` has the following vulnerable packages
+   [net10.0]: No vulnerable packages for this framework.
+   [net8.0]:
+   Top-level Package      Requested   Resolved   Severity   Advisory URL
+   > Newtonsoft.Json      12.0.1      12.0.1     High       https://github.com/advisories/GHSA-5crp-9r3c-p9vr

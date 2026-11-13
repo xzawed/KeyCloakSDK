@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "sources": [
+    "https://api.nuget.org/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "/work/probe/Probe.csproj",
+      "frameworks": [
+        {
+          "framework": "net10.0"
+        },
+        {
+          "framework": "net8.0",
+          "transitivePackages": [
+            {
+              "id": "Newtonsoft.Json",
+              "resolvedVersion": "12.0.1",
+              "vulnerabilities": [
+                {
+                  "severity": "High",
+                  "advisoryurl": "https://github.com/advisories/GHSA-5crp-9r3c-p9vr"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
