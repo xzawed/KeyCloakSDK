@@ -422,7 +422,9 @@ function main() {
 
   const { code, lines } = finish(cmd, drift)
   for (const l of lines) console.log(l)
-  process.exit(code)
+  // exitCode 로 둔다 — process.exit() 는 파이프로 가는 stdout 의 남은 쓰기를 자를 수 있다(gh 호출은 전부 동기라
+  // 여기서 이벤트 루프가 비고 이 코드로 끝난다).
+  process.exitCode = code
 }
 
 // process.argv[1]은 `node -e '...'`로 import할 때 undefined다 — 가드 없이 호출하면

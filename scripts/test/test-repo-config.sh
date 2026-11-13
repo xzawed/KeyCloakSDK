@@ -378,7 +378,7 @@ assert_contains "$out" 'RC=0' 'check 는 일치를 0 으로 끝낸다(그대로)
 # 배선 — main() 이 finish 의 코드로 끝난다(주석 처리한 줄은 세지 않는다).
 assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*const \{ code, lines \} = finish\(cmd, drift\)')" \
   'main() 이 끝 판정을 finish 에 맡긴다(배선)'
-assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*process\.exit\(code\)')" \
-  'main() 이 finish 의 종료코드로 끝난다(배선)'
+assert_eq "1" "$(sed -n '/^function main()/,/^}/p' "$CFG" | grep -cE '^[[:space:]]*process\.exitCode = code$')" \
+  'main() 이 finish 의 종료코드로 끝난다(배선 — exit() 가 아니라 exitCode: 파이프 stdout 의 남은 쓰기를 자르지 않는다)'
 
 assert_report
