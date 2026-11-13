@@ -139,12 +139,14 @@ jobs:
         run: node scripts/integration-coverage.mjs run dotnet --out "$RUNNER_TEMP/integration-coverage"
       # 나머지 대상의 통합은 커버리지 없이 돈다. 목록은 레그 매트릭스와 같은 원천(scripts/dotnet-tfms.mjs)에서 받는다 — ⚠️ 대입으로
       # 받는 것이 요점이다: `for t in $(…)` 에 바로 넣으면 그 명령이 실패해도 빈 목록으로 돌아 초록이 된다.
+      # ⚠️ `TreatNoTestsAsError` — `--filter` 에 맞는 시험이 0 개여도 `dotnet test` 는 0 으로 끝난다(실측: 없는 Category 로
+      # 0, 이 설정으로 1). 가장 낮은 대상은 report 가 「시험 0 개 실행」을 거부하지만 이 단계에는 그런 판정이 없다.
       - name: Integration tests (Docker) — 나머지 대상
         run: |
           rest=$(node scripts/dotnet-tfms.mjs | jq -r '.[1:][]')
           for tfm in $rest; do
             echo "::group::integration — $tfm"
-            dotnet test dotnet/Keycloak.Sdk.sln -c Release -f "$tfm" --filter "Category=Integration"
+            dotnet test dotnet/Keycloak.Sdk.sln -c Release -f "$tfm" --filter "Category=Integration" -- RunConfiguration.TreatNoTestsAsError=true
             echo "::endgroup::"
           done
       # ⚠️ 하한 — 값은 `scripts/integration-coverage.json` 의 `floor` 에만 둔다(등록부 `integration-coverage-never-measured`

@@ -119,8 +119,9 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+      # `TreatNoTestsAsError` — 필터에 맞는 시험이 0 개여도 `dotnet test` 는 0 으로 끝난다(dotnet-ci 의 같은 단계 주석).
       - name: Integration tests (Docker)
-        run: dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"
+        run: dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration" -- RunConfiguration.TreatNoTestsAsError=true
 
   release:
     needs: [version, integration, install-smoke] # 통합 E2E + 게시 산출물 설치 스모크 통과 후에만 pack/push
