@@ -21,8 +21,11 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
     <PackageReference Include="Keycloak.AuthServices.Sdk" Version="2.7.0" />
     <!-- AddKeycloak DI extension needs IServiceCollection/AddSingleton (DI.Abstractions), NOT IHttpClientFactory.
-         9.0.8 satisfies Keycloak.AuthServices.Sdk 2.7.0's transitive floor (>= 9.0.8); 9.0.x still supports net8.0. -->
+         9.0.8 satisfies Keycloak.AuthServices.Sdk 2.7.0's transitive floor (>= 9.0.8); 9.0.x still supports net8.0.
+         Majors above 9.x stay closed (keep-net8): the 11.0.0 nuspec has no net8.0 group (9.0.23's has). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.23" />
+    <!-- Build-time only, yet held on 10.x (keep-net8): 11.x adds System.IO.Hashing 11 (nuspec groups net10.0 · net472),
+         whose targets warn "doesn't support net8.0" on every build of this net8.0 library. 10.x ships net8.0 tasks. -->
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.404" PrivateAssets="All" />
   </ItemGroup>
   <ItemGroup>
