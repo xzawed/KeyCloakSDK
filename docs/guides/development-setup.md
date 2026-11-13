@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=9859 -->
+<!-- doc-budget: max-bytes=9920 -->
+<!-- 9859 → 9920 (2026-11-13): 래칫 조건 (1) — 교환이다. .NET 행의 `TargetFramework`(단수)는 net8.0;net10.0 다중 대상 뒤
+     거짓이 됐다. 참인 선언(`TargetFrameworks`, SDK 는 가장 높은 대상을 빌드해야 한다)과 새 요구(.NET 8 런타임)를 그것을
+     다시 재는 명령(`dotnet --list-runtimes`)과 함께 적었다. 압축으로 먼저 지불했다(초안 +72B → +61B). -->
 # Development environment setup
 
 How to get a **new machine** building this repository. Nine SDKs live here, each with its own
@@ -43,7 +46,7 @@ number, read that file (or just run `doctor`) — do not trust a number written 
 | Python | CPython | `python/pyproject.toml` — `requires-python` | a virtualenv (see §4) |
 | Node | Node.js | `node/package.json` — `engines.node` | — |
 | Go | Go toolchain | `go/go.mod` — `go` directive | — |
-| C# / .NET | .NET SDK | `dotnet/Directory.Build.props` — `TargetFrameworks` (the SDK must build the highest) | the .NET 8 runtime for the `net8.0` tests |
+| C# / .NET | .NET SDK | `dotnet/Directory.Build.props` — `TargetFrameworks` (SDK ≥ the highest) | .NET 8 runtime (`dotnet --list-runtimes`) |
 | PHP | PHP (NTS) + Composer | `php/composer.json` — `require.php` | extensions + `OPENSSL_CONF` (see §4) |
 | Rust | rustup (cargo + rustc) | `rust/Cargo.toml` — `rust-version` (MSRV) | MSVC Build Tools on Windows (see §4) |
 | Ruby | Ruby + Bundler | `ruby/keycloak-sdk.gemspec` — `required_ruby_version` | MSYS2/DevKit on Windows (see §4) |

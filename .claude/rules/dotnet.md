@@ -6,7 +6,11 @@ paths:
   - "harness/install/consume/dotnet/**"
   - ".github/workflows/dotnet-*.yml"
 ---
-<!-- doc-budget: max-bytes=7323 -->
+<!-- doc-budget: max-bytes=7338 -->
+<!-- 7323 → 7338 (2026-11-13): 래칫 조건 (1) — 교환이다. 툴체인 첫 줄 「(⚠️ this line claimed SDK 10; measured 8.0.424)」와
+     「3.0.0 is net10-only, so net8.0 stays on the 2.x line」은 net8.0;net10.0 다중 대상 뒤 거짓이 됐다(SDK 10 이 필요하고 두 대상이
+     2.x 다). 그 자리를 다시 재는 명령(`doctor.mjs dotnet` · `dotnet --list-runtimes`)이 붙은 참인 문장으로 바꿨다. 「local is
+     SDK 10」 해명 산문 한 문장을 지워 먼저 지불했다(초안 +59B → +15B). -->
 <!-- 7135 → 7323 (2026-10-29): 래칫 조건 (1) — 교환이다. 「it cannot be turned off short of abandoning ConfigurationManager」는
      거짓이 됐다: 강제 재조회는 이제 SDK 가 돌린다(ForcedRefetchConfigurationManager — IdentityModel 의 매니저는 그것을 배경에서
      돌려 요청한 첫 토큰이 IDX10503 으로 거부됐다). 그 절을 지우고 참인 이유(RequestRefresh 는 이유를 싣지 않는다)와, 다시 재는
@@ -21,7 +25,7 @@ paths:
 
 ## Toolchain
 
-**SDK 10+** builds both targets (`net8.0;net10.0`); the `net8.0` tests also need the **.NET 8 runtime** — `node scripts/doctor.mjs dotnet` checks the SDK, `dotnet --list-runtimes` the runtime. Commands run from `dotnet/`; `dotnet test` runs both targets, `-f net8.0` one.
+**SDK 10+** builds both targets (`net8.0;net10.0` — `node scripts/doctor.mjs dotnet` checks it); the `net8.0` tests also need the **.NET 8 runtime** (`dotnet --list-runtimes`). Commands run from `dotnet/`; `-f net8.0` runs one target.
 
 ```bash
 cd dotnet && dotnet build                                       # warnaserror · Nullable · AnalysisLevel 8.0
@@ -65,7 +69,7 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
 
 ## Dependency and structural decisions
 
-- ⚠️ **`Keycloak.AuthServices.Sdk` 2.7.0 is net8.0-only and 3.0.0 net10-only — both targets stay on 2.x, and net8.0 is the floor** (its `*Representation` types are public API). Anything below the `DI.Abstractions` floor that line requires is a hard NU1605 error; the floor and the reasoning are in the csproj comment beside the pin.
+- ⚠️ **`Keycloak.AuthServices.Sdk` 2.7.0 is net8.0-only (3.0.0 net10-only): both targets stay on 2.x, net8.0 is the floor** — its `*Representation` types are public API. Anything below the `DI.Abstractions` floor that line requires is a hard NU1605 error; the floor and the reasoning are in the csproj comment beside the pin.
 - ⚠️ **Keep-net8 closes `DI.Abstractions` majors above 9.x and `SourceLink.GitHub` above 10.x** — take patches; why: csproj comments by the pins. The DI pin lives only in the root `CLAUDE.md` table.
 - **`IHttpClientFactory` is deliberately not used** — a single long-lived `HttpClient` plus `PooledConnectionLifetime` (5 minutes) avoids stale DNS. This is a library used without DI, so it does not force a factory lifecycle onto the consumer.
 - The glue between `admin` and `auth` is `ITokenProvider` alone (`AuthClient : ITokenSource` is the default source) — §4 isomorphic.
