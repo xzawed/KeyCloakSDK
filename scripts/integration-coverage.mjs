@@ -91,6 +91,9 @@
 //            **이때는 수치를 내지 않는다**(인용될 숫자를 만들지 않는다). ⚠️ 레인 CI 주석은 이 표를 옮겨 적지 않고 여기를
 //            가리킨다 — 다섯 레인의 사본이 다 그 리더의 fail() 보다 좁았다(실측 2026-11-06).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
+//   4 UNEXERCISED  admin 표면(`integration-coverage.json` 의 `surface`)의 함수가 통합 실행에서 한 번도 안 돌았고 소유자도 없다 —
+//            수치는 유효하다. CI 는 실패로 본다(레인의 `[ "$rc" -le 1 ]`). 25 연산 하나를 스위트에서 지우면 여기로 온다
+//            (등록부 `integration-admin-surface-regression-unguarded`). 하한 아래이기도 하면 둘 다 말하고 4 다.
 //
 // 사용(LANG = go · python · node · rust · php · ruby · dotnet · java · kotlin):
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
@@ -179,6 +182,8 @@ out = resolve(out ?? join(tmpdir(), 'kcsdk-integration-coverage', lang ?? ''))
 const findings = []
 const fail = (l, msg) => void findings.push({ kind: 'FAIL', lang: l, msg })
 const drift = (l, msg) => void findings.push({ kind: 'DRIFT', lang: l, msg })
+// admin 표면의 함수가 통합 실행에서 한 번도 안 돌았고 소유자도 없다 — 경고(DRIFT)가 아니라 게이트(exit 4)다.
+const unexercised = (l, msg) => void findings.push({ kind: 'UNEXERCISED', lang: l, msg })
 const fails = (l) => findings.some((f) => f.kind === 'FAIL' && (f.lang === l || f.lang === null))
 const pct = (c, t) => (t ? `${((100 * c) / t).toFixed(1)}%` : 'n/a')
 const sortU = (xs) => [...new Set(xs)].sort()
@@ -280,9 +285,37 @@ function pinFor(l) {
     }
     floor = { metric: f.metric, percent: f.percent }
   }
-  return { pinned: e.pinned, owners, floor }
+  // admin 표면 — 이 파일들의 함수는 통합 실행에서 돌거나 열린 항목이 소유해야 한다(아니면 exit 4). 25 연산(users · clients ·
+  // realms · roles · groups × 다섯) 하나를 통합 스위트에서 지우면 그 함수가 미실행이 된다. 핀(경계) 안이면 같은 판정을 쓰고,
+  // 핀 밖이면(단위로 재는 리소스 파일 — node · python · java) 같은 실행의 데이터를 그 파일로 한 번 더 읽는다. 수치 · 하한에는
+  // 섞지 않는다. 없으면 이 판정이 꺼진다 — 목록을 비우는 것은 그 diff 가 판정이다.
+  let surface = []
+  if (e.surface !== undefined) {
+    if (!Array.isArray(e.surface) || e.surface.length === 0 || !e.surface.every((x) => typeof x === 'string')) {
+      fail(l, `${PINS}: ${l}.surface must be a non-empty array of repository paths`)
+      return null
+    }
+    const sorted = sortU(e.surface)
+    if (sorted.length !== e.surface.length || sorted.some((x, i) => x !== e.surface[i])) {
+      fail(l, `${PINS}: ${l}.surface must be sorted and free of duplicates`)
+      return null
+    }
+    for (const f of e.surface) if (!existsSync(join(root, f))) fail(l, `${PINS}: ${l}.surface names ${f}, which is not in the tree`)
+    surface = e.surface
+  }
+  return { pinned: e.pinned, owners, floor, surface }
 }
 const floorText = (pin) => (pin?.floor ? `floor ${pin.floor.metric} ≥ ${pin.floor.percent}%` : null)
+// run 이 바이트를 기록할 admin 표면 파일 — 판정은 report 가 한다. 여기서는 핀이 깨져 있어도 실패하지 않고 빈 목록이다
+// (run 의 종료코드는 테스트의 것이다).
+function surfaceOf(l) {
+  try {
+    const s = JSON.parse(readFileSync(join(root, PINS), 'utf8'))?.[l]?.surface
+    return Array.isArray(s) ? s.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
 // 파생 = 핀. 다르면 어느 쪽에만 있는지 이름으로 댄다.
 function matchesPin(l, d, pin) {
   const D = new Set(d.files)
@@ -2891,13 +2924,31 @@ function report(l) {
         if (!pin.owners[key]) drift(l, `unowned never-executed function ${key} — name an open item of ${REGISTRY} for it in ${PINS}`)
         else if (reg && !reg.open.has(x.owner)) drift(l, `${key} is owned by ${x.owner}, which is not an open item of ${REGISTRY}`)
       }
+      // admin 표면 — 핀 밖 파일은 같은 실행의 데이터를 그 파일들로 한 번 더 읽는다(미실행 함수만 쓴다 — 수치 · 하한에 섞지
+      // 않는다). 그 파일이 데이터에 없거나 다른 바이트의 것이면 리더가 FAIL 을 낸다(재지 않은 표면은 초록이 아니다).
+      const S = new Set(pin.surface)
+      const P = new Set(d.files)
+      const extra = pin.surface.filter((f) => !P.has(f))
+      const extraNever = extra.length ? (reader({ ...d, files: extra })?.never ?? []) : []
+      for (const x of extraNever) {
+        const key = `${x.file}:${x.name}`
+        neverKeys.add(key)
+        x.owner = pin.owners[key] ?? 'NONE'
+        if (pin.owners[key] && reg && !reg.open.has(x.owner)) drift(l, `${key} is owned by ${x.owner}, which is not an open item of ${REGISTRY}`)
+      }
+      for (const x of [...data.never, ...extraNever]) {
+        if (S.has(x.file) && x.owner === 'NONE') {
+          unexercised(l, `admin surface function ${x.file}:${x.name} never ran in the integration run — exercise it in the suite, or name an open item of ${REGISTRY} for it in ${PINS}`)
+        }
+      }
       for (const key of Object.keys(pin.owners)) if (!neverKeys.has(key)) drift(l, `stale owner ${key} — the integration run executes it now (or it no longer exists); drop the entry`)
-      printReport(l, d, data, tot, pin)
+      printReport(l, d, data, tot, pin, extraNever)
     }
   }
   emitFindings(l)
   const nf = findings.filter((f) => f.kind === 'FAIL' && (f.lang === l || f.lang === null)).length
   const nd = findings.filter((f) => f.kind === 'DRIFT' && f.lang === l).length
+  const nu = findings.filter((f) => f.kind === 'UNEXERCISED' && f.lang === l).length
   if (nf) {
     console.log(`integration-coverage [${l}]: FAIL — ${nf} integrity failure${nf > 1 ? 's' : ''}; no numbers are reported from a run that failed one`)
     return 2
@@ -2913,7 +2964,13 @@ function report(l) {
   const fl = floorText(pin) ? ` · ${floorText(pin)}` : ''
   // 하한 — 분모가 0 이면 위 「아무것도 안 돈 실행」이 이미 FAIL 이다. 정수식으로 비교한다(같으면 통과).
   const m = pin.floor && { statements: t, lines: t, bodies: b }[pin.floor.metric]
-  if (m && m.covered * 100 < pin.floor.percent * m.stmts) {
+  const below = m && m.covered * 100 < pin.floor.percent * m.stmts
+  // 표면 미실행이 하한보다 먼저다 — 둘 다면 둘 다 말하고 4 를 낸다(무엇을 고칠지가 더 구체적인 쪽).
+  if (nu) {
+    console.log(`integration-coverage [${l}]: UNEXERCISED — ${head}${fl}${below ? ' (also below the floor)' : ''} · ${nu} admin surface function${nu > 1 ? 's' : ''} never ran${problems}`)
+    return 4
+  }
+  if (below) {
     console.log(`integration-coverage [${l}]: BELOW — ${head}${fl} · ${fns}${owned}${problems}`)
     return 3
   }
@@ -2924,7 +2981,7 @@ function report(l) {
   console.log(`integration-coverage [${l}]: OK — ${head}${fl} · ${fns}${owned}`)
   return 0
 }
-function printReport(l, d, data, tot, pin) {
+function printReport(l, d, data, tot, pin, extraNever = []) {
   const unit = LINE_LANGS.has(l) ? 'line' : 'stmt'
   const stmt = (k) => `${k} ${unit}${k > 1 ? 's' : ''}`
   console.log(`[${l}] integration-only coverage — ${floorText(pin) ?? 'report mode, no floor'}`)
@@ -2967,6 +3024,14 @@ function printReport(l, d, data, tot, pin) {
           : 'none of its statements ran'
   console.log(`  never executed by the integration run — ${never.length} function${never.length === 1 ? '' : 's'} (${what}):`)
   for (const x of never) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.label ?? stmt(x.stmts)} · owner ${x.owner}`)
+  if (pin.surface.length) {
+    const P = new Set(d.files)
+    const outsideN = pin.surface.filter((f) => !P.has(f)).length
+    const S = new Set(pin.surface)
+    const surfNever = [...data.never.filter((x) => S.has(x.file)), ...extraNever]
+    console.log(`  admin surface: ${pin.surface.length} files (${outsideN} outside the boundary — read from the same run, not counted above) · ${surfNever.length} never-executed function${surfNever.length === 1 ? '' : 's'}`)
+    for (const x of extraNever) console.log(`  NEVER ${x.file}:${x.line} ${x.name} · ${x.label ?? stmt(x.stmts)} · owner ${x.owner} (surface, outside the boundary)`)
+  }
 }
 
 // ── check — 데이터 없이: 파생 ↔ 핀 ↔ 소유자 ───────────────────────────────────────────────
@@ -2982,13 +3047,15 @@ function check() {
     if (!pin) continue
     counts.push(`${l} ${pin.pinned.length}`)
     const P = new Set(pin.pinned)
+    const S = new Set(pin.surface)
     for (const [key, id] of Object.entries(pin.owners)) {
       owners++
       const at = key.indexOf(':')
-      if (at < 0 || !P.has(key.slice(0, at))) drift(l, `owner entry ${key} names a file outside the pin`)
+      if (at < 0 || !(P.has(key.slice(0, at)) || S.has(key.slice(0, at)))) drift(l, `owner entry ${key} names a file outside the pin${S.size ? ' and the admin surface' : ''}`)
       if (reg && !reg.open.has(id)) drift(l, `${key} is owned by ${id}, which is not an open item of ${REGISTRY}`)
     }
     console.log(`[${l}] owners: ${Object.keys(pin.owners).length} entries (${sortU(Object.values(pin.owners)).join(' · ') || 'none'})`)
+    if (S.size) console.log(`[${l}] admin surface: ${S.size} files (${pin.surface.filter((f) => !P.has(f)).length} outside the pin)`)
     console.log(`[${l}] ${floorText(pin)?.replace(/^floor /, 'floor: ') ?? 'floor: none (report mode)'}`)
   }
   for (const f of findings) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
@@ -3183,7 +3250,9 @@ function run(l) {
       .map((b) => /<version>\s*([^<\s]+)\s*<\/version>/.exec(b)?.[1])
     if (vers.length !== 1 || !/^\d+(?:\.\d+)+$/.test(vers[0] ?? '')) return stop(`${d.dir}/pom.xml must pin one jacoco-maven-plugin <version> — the report's JaCoCo has to match the agent (found ${vers.length})`)
     const ver = vers[0]
-    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    // 경계 파일 + admin 표면 파일 — report 가 표면 파일도 같은 실행의 바이트인지 대조한다.
+    const recorded = sortU([...d.files, ...surfaceOf(l)])
+    const shas = () => Object.fromEntries(recorded.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
     // 레인의 명령(`mvn -B -f java/pom.xml verify`)과 같은 리액터 · 골이다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트 보고가 남지
     // 않게) · 단위 테스트 끄기(`-Dtest=NONE` — surefire 와 failsafe 가 같은 에이전트 인자를 써 단위와 IT 가 한 exec 에 합쳐진다 — 실측) ·
@@ -3234,7 +3303,7 @@ function run(l) {
       if (existsSync(rep)) unit += readdirSync(rep).filter((n) => /^TEST-.*\.xml$/.test(n)).length
     }
     const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
-    const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+    const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
     writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
     return rc
   }
@@ -3265,7 +3334,9 @@ function run(l) {
     if (vers.length !== 1 || !/^\d+(?:\.\d+)+$/.test(vers[0] ?? '')) return stop(`java/pom.xml must pin one jacoco-maven-plugin <version> — the JVM lanes share it (found ${vers.length})`)
     const ver = vers[0]
     writeFileSync(init, KOTLIN_INIT)
-    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    // 경계 파일 + admin 표면 파일 — report 가 표면 파일도 같은 실행의 바이트인지 대조한다.
+    const recorded = sortU([...d.files, ...surfaceOf(l)])
+    const shas = () => Object.fromEntries(recorded.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
     // 레인의 명령(`./gradlew integrationTest`)과 같은 태스크다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트 결과가 남지 않게 —
     // 단위 결과가 남으면 「단위가 섞였다」로 못 가른다) · 초기화 스크립트 · CLI 받기.
@@ -3317,7 +3388,7 @@ function run(l) {
     const unitDir = join(cwd, 'build', 'test-results', 'test')
     const unit = existsSync(unitDir) ? readdirSync(unitDir).filter((x) => /^TEST-.*\.xml$/.test(x)).length : 0
     const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
-    const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+    const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
     writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'kotlin', exit: rc, jacoco: ver, module, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
     return rc
   }
@@ -3339,7 +3410,9 @@ function run(l) {
     writeFileSync(settings, DOTNET_SETTINGS)
     // 경계 파일의 바이트 — coverlet 의 데이터에는 소스 해시가 없다. 실행 앞뒤로 재서 같을 때만 기록에 싣는다(빌드가 그 바이트를
     // 컴파일했다). report 가 그것을 트리의 바이트와 대조한다.
-    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    // 경계 파일 + admin 표면 파일 — report 가 표면 파일도 같은 실행의 바이트인지 대조한다.
+    const recorded = sortU([...d.files, ...surfaceOf(l)])
+    const shas = () => Object.fromEntries(recorded.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
     // 레인의 명령(`dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"`)과 같은 해 · 구성 · 필터다.
     // ⚠️ 대상이 여럿(`<TargetFrameworks>` — 읽는 규칙은 scripts/lib/dotnet-tfm.mjs)이면 **가장 낮은 대상 하나**만 돈다 —
@@ -3364,7 +3437,7 @@ function run(l) {
       copyFileSync(att[0], data)
       if (existsSync(join(results, 'dotnet.trx'))) copyFileSync(join(results, 'dotnet.trx'), trx)
       const sha = (p) => (existsSync(p) ? createHash('sha1').update(readFileSync(p)).digest('hex') : null)
-      const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+      const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
       writeFileSync(DOTNET_RUN(), `${JSON.stringify({ run: 'dotnet', exit: rc, data_sha1: sha(data), trx_sha1: sha(trx), files: same ? before : null })}\n`)
     }
     return rc

@@ -76,7 +76,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. (비었다 — `dotnet-multi-target-net10`(#1052–#1055) · `rust-integration-floor-toolchain-drift`(#1056) 닫힘. 다음은 열린 항목에서 사람과 고른다.)
+1. `dotnet-net10-consumer-unmeasured` → `dotnet-rawserver-reads-once-flaky` → `dotnet-eol-dependency-lines`(유예 — 되살릴 조건부터 판정). 사용자 2026-11-13 「권장 순서대로」.
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -501,7 +501,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [ ] `dotnet-net10-consumer-unmeasured` **[M/S · 신규 2026-11-13]** 설치 harness 의 소비자는 SDK 8 · net8.0 앱 하나 — 게시본의 `lib/net10.0` 을 소비자로 받아 보는 자리가 없다(pack 의 Package Validation 이 두 대상의 표면을 대조할 뿐) · `harness/install/consume/dotnet.Dockerfile`
 
-## D. 원장 밖 — 91건 (열림 44)
+## D. 원장 밖 — 91건 (열림 43)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -563,7 +563,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `integration-code-exchange-never-run` **[H/M · 신규·닫힘 2026-09-27 #640–#648]** 코드 교환이 이제 **9/9 통합에서 실제 Keycloak 에 대고 돈다**. 수단은 브라우저 없는 로그인이다(인가 URL GET → `kc-form-login` POST, 쿠키 직접 되싣기 → `Location` 의 code·state). 정상 흐름(교환 → refresh → introspect → logout)과 거부 넷(nonce 불일치 · nonce 없음 · 재사용 코드 · JWKS 밖 키)을 돈다. **node 에서 id_token 서명 미검증 결함이 나와 고쳤다**(#648 → node `1.0.2`). 다시 재는 명령: `grep -rliE 'exchange_?code|ExchangeCode' <각 통합 디렉터리>` → 언어마다 ≥ 1. 옮길 때의 함정(Secure 쿠키 · audience 매퍼 · 위조 RS256 은 단위 층)은 각 헬퍼 머리 주석이 소유한다.
 - [x] `integration-coverage-never-measured` **[H/L · 닫힘 2026-11-08 #980]** 아홉 레인이 통합 실행만의 경계 커버리지를 리포트하고(#774 go·python 파일럿 · #953 · #955 · #957 · #960 · #971 · #975 · #977 kotlin) 하한을 건다(#936 · #956 · #959 · #962 · #973 · #976 · #980). 값은 `scripts/integration-coverage.json` 의 `floor`, 세 조건은 `scripts/integration-coverage.mjs` 머리 주석이 소유한다.
 - [x] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09 · 닫힘 2026-11-12 · #1035–#1041]** 아홉 통합 스위트(python 둘)가 admin 25 연산을 성공 경로 · 레코드 하나의 수명주기로 돈다(전제 최소 php 9/25 · 소유 미실행 40 → 0 · 칸별 판정은 PR 본문). 서사: `git show 9d07ef32:docs/superpowers/plans/remaining-work.md` 의 이 항목
-- [ ] `integration-admin-surface-regression-unguarded` **[M/S · 신규 2026-11-12]** 25 연산 하나를 통합에서 지워도 CI 가 안 운다 — 여섯 언어는 소유자 없는 미실행이 DRIFT(경고뿐), node · python · java 는 리소스 파일이 측정 핀 밖. 후보(Grok): admin 리소스 파일만 DRIFT 를 실패로 · `scripts/integration-coverage.mjs`
+- [x] `integration-admin-surface-regression-unguarded` **[M/S · 신규 2026-11-12 · 닫힘 2026-11-13 #1057]** 25 연산 하나를 통합에서 지우면 CI 가 운다 — `integration-coverage.json` 의 `surface`(아홉 언어 admin 리소스 파일)에서 소유자 없는 미실행은 exit 4. 프로브 go · node CAUGHT
 - [ ] `coverage-omit-overreach` **[M/M]** omit의 근거("단위테스트 불가한 네트워크 경계")가 실측으로 거짓이다 — Node는 이미 96.93%, Python은 98%인 코드를 게이트 밖에 두고 있다 · `node/vitest.config.ts:14`
   - **전 언어 실측(2026-09-27).** 단위만으로 java `AuthClient` 97.3%·`AdminClient` 100% 에 닿는다(세 모듈 exec 합산). 통합이 더하는 것은 **브랜치 1** 이다. dotnet `AuthClient` 는 단위와 합산이 같은 93.8% 다.
   - ⚠️ **「도달」은 「검증」이 아니다.** go 의 `TestHostilePathMatrix`(#636)는 단언 없이 모든 공개 메서드를 부른다. 그래서 단위 커버리지가 77.2% → 93.6% 로 오른다(`-skip TestHostilePathMatrix` 로 대조). omit 을 걷어낼 근거로 이 숫자를 쓰지 말 것.
