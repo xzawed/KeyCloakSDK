@@ -270,7 +270,54 @@ run_lang_dotnet() {
     return
   fi
   emit_signal "$lang" "installed=true"
-  [ -f "$status_dir/quickstart.ok" ] && emit_signal "$lang" "quickstartOk=true"
+  # 자산 — 기본 소비자(SDK 8 · net8.0)가 lib/net8.0 을 받았는가(dotnet-run.sh 의 자산 단언 — 실패면 설치 뒤에 멈춘다).
+  if [ ! -f "$status_dir/asset.ok" ]; then
+    fail_lang "$lang" install "net8.0 소비자가 받은 자산이 lib/net8.0 이 아니다: $(cat "$status_dir/asset.txt" 2>/dev/null)"
+    docker logs "$app_container" 2>&1 | tail -n 80 >&2 || true
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+
+  # net10.0 소비자 — 게시본의 lib/net10.0 을 SDK 10 소비자가 받는가(consume/dotnet10.Dockerfile — 같은 dotnet-run.sh 를
+  # TFM=net10.0 · QUICKSTART_ONLY=1 로 돈다). 출처 · 자산이 실패하면 언어 실패다. quickstartOk 는 두 소비자의 quickstart 가
+  # 다 통과해야 낸다. 기본 소비자의 앱은 그동안 떠 있다(아래 boot · conformance 가 그것을 본다).
+  log "[$lang] net10.0 소비자(SDK 10) — install → 자산 → quickstart"
+  local app10="install-app-dotnet10"
+  local status10="$PWD/report/status/${lang}-net10"
+  rm -rf "$status10"; mkdir -p "$status10"
+  if ! docker build -f "$(hostpath "$PWD/consume/dotnet10.Dockerfile")" -t install-consume-dotnet10 "$(hostpath "$harness_dir/..")"; then
+    fail_lang "$lang" install "consume/dotnet10.Dockerfile 빌드 실패"
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+  docker rm -f "$app10" >/dev/null 2>&1 || true
+  if ! docker run -d --name "$app10" --network install-net \
+      -v "$(hostpath "$status10"):/status" \
+      -e PKG_VER="$PKG_VER" \
+      -e REGISTRY_URL=http://bagetter:8080/v3/index.json \
+      -e KC_SERVER_URL=http://keycloak:8080 -e KC_REALM=it-realm \
+      -e KC_CLIENT_ID=it-client -e KC_CLIENT_SECRET=it-secret install-consume-dotnet10 >/dev/null; then
+    fail_lang "$lang" install "net10.0 소비자 컨테이너 기동(docker run) 실패"
+    docker rm -f "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+  # 끝 마커(done)를 기다린다 — 설치 · 출처 실패는 컨테이너가 진단용으로 살아 있어 마커가 안 생기므로 제한시간이 판정한다.
+  local waited=0
+  while [ ! -f "$status10/done" ] && [ "$waited" -lt 240 ]; do sleep 2; waited=$((waited + 2)); done
+  if [ ! -f "$status10/installed.ok" ] || [ ! -f "$status10/asset.ok" ]; then
+    fail_lang "$lang" install "net10.0 소비자 설치 실패 — 출처 · 자산 단언(받은 자산: $(cat "$status10/asset.txt" 2>/dev/null))"
+    docker logs "$app10" 2>&1 | tail -n 80 >&2 || true
+    docker rm -f "$app10" "$app_container" >/dev/null 2>&1 || true
+    return
+  fi
+  if [ -f "$status_dir/quickstart.ok" ] && [ -f "$status10/quickstart.ok" ]; then
+    emit_signal "$lang" "quickstartOk=true"
+  else
+    log "[$lang] quickstart — net8.0 $([ -f "$status_dir/quickstart.ok" ] && echo OK || echo FAIL) · net10.0 $([ -f "$status10/quickstart.ok" ] && echo OK || echo FAIL) (비치명 — quickstartOk 를 내지 않는다)"
+    docker logs "$app10" 2>&1 | tail -n 40 >&2 || true
+  fi
+  docker rm -f "$app10" >/dev/null 2>&1 || true
+
   if curl -fsS "http://localhost:${app_port_host}/healthz" >/dev/null 2>&1; then
     emit_signal "$lang" "appBoot=true"
   else
