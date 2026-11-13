@@ -539,8 +539,9 @@ private val REDIRECTED = ThreadLocal<Array<Response?>>()
 
 // [adminCall] 의 블록을 그 호출의 3xx 기록과 함께 돈다(IO 스레드 — RESTEasy 의 동기 교환이 같은 스레드에서 돈다). 3xx 를 받았으면
 // RESTEasy 가 엔티티를 돌려주는 메서드에서 던지는 것과 같은 [RedirectionException] 으로 끝낸다.
+// 파사드 호출은 겹치지 않는다 — 블록은 admin-client 위임만 부른다. 그래서 칸은 이 호출의 것이고 끝나면 지운다(IO 스레드 풀에 값을
+// 남기지 않는다 — Java AdminExceptions.call 동형, Sonar S5164).
 private fun <T> refusingRedirects(block: () -> T): T {
-    val outer = REDIRECTED.get()
     val redirected = arrayOfNulls<Response>(1)
     REDIRECTED.set(redirected)
     try {
@@ -548,7 +549,7 @@ private fun <T> refusingRedirects(block: () -> T): T {
         redirected[0]?.let { throw RedirectionException(it) }
         return result
     } finally {
-        REDIRECTED.set(outer) // 파사드 호출 밖은 null — 응답을 쥐고 있지 않는다
+        REDIRECTED.remove() // 파사드 호출 밖에는 칸이 없다 — 응답을 쥐고 있지 않는다
     }
 }
 

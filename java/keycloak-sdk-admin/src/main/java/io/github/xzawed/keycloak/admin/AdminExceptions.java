@@ -29,7 +29,8 @@ final class AdminExceptions {
    * {@link RedirectionException} 으로 바꿔 {@link #translate} 를 태운다.
    */
   public static <T> T call(Supplier<T> action) {
-    Response[] outer = REDIRECTED.get();
+    // 파사드 호출은 겹치지 않는다 — 람다는 admin-client 위임만 부른다(다른 파사드 호출을 부르지 않는다). 그래서 칸은 이 호출의
+    // 것이고 끝나면 지운다(스레드 풀의 스레드에 값을 남기지 않는다 — Sonar S5164).
     Response[] redirected = new Response[1];
     REDIRECTED.set(redirected);
     try {
@@ -45,7 +46,7 @@ final class AdminExceptions {
       // WebApplicationException(상태 있음)과 달리 SDK 전송 예외로 변환한다(§4 경계, Kotlin 동형).
       throw new KeycloakTransportException("admin transport failure", e);
     } finally {
-      REDIRECTED.set(outer); // 파사드 호출 밖은 null — 응답을 쥐고 있지 않는다
+      REDIRECTED.remove(); // 파사드 호출 밖에는 칸이 없다 — 응답을 쥐고 있지 않는다
     }
   }
 
