@@ -2,7 +2,8 @@
 # publish/dotnet.sh — Xzawed.Keycloak.Sdk를 로컬 BaGetter 레지스트리에 게시한다(dotnet 참조 구현은 node).
 #
 # 1) 팩(pack): Alpine dotnet SDK 이미지(docker run — 별도 빌더 이미지를 만들 필요 없이 공식
-#    mcr.microsoft.com/dotnet/sdk:8.0-alpine을 직접 사용)에서 dotnet/ 서브트리를 마운트해
+#    mcr.microsoft.com/dotnet/sdk:10.0-alpine을 직접 사용 — SDK 프로젝트가 net8.0;net10.0 을 대상으로 해
+#    SDK 8 로는 복원조차 못 한다, NETSDK1045)에서 dotnet/ 서브트리를 마운트해
 #    `dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o /out
 #     -p:Version=0.1.0 -p:ContinuousIntegrationBuild=true`를 실행한다. 이 단계는 기본 브리지
 #    네트워크(실 nuget.org에 대한 dotnet restore가 필요 — Alpine/musl이라 Windows Docker Desktop
@@ -20,9 +21,10 @@
 #    이미 같은 이유로 EnableSourceLink=false를 쓰는 선례를 그대로 따른다.
 # 2) 게시: 동일 이미지로 install-net에 접속해 BaGetter(NuGet V3 HTTP)에 `dotnet nuget push`.
 #    --skip-duplicate로 멱등 재실행(node처럼 unpublish→재게시가 필요 없음 — 레지스트리가 스킵 처리).
-#    ⚠️ mcr.microsoft.com/dotnet/sdk:8.0-alpine(SDK 8.0.422)의 `dotnet nuget push`엔
-#    `--allow-insecure-connections` 옵션 자체가 없다(실측 확인 — `--help`에 미열거, 지정 시
-#    "Unrecognized option" 오류로 즉시 실패. 이 플래그는 더 최신 NuGet 클라이언트에서 추가됐다).
+#    ⚠️ SDK 8(sdk:8.0-alpine · 8.0.422)의 `dotnet nuget push`엔 `--allow-insecure-connections`
+#    옵션 자체가 없었다(실측 확인 — `--help`에 미열거, 지정 시 "Unrecognized option" 오류로 즉시 실패.
+#    이 플래그는 더 최신 NuGet 클라이언트에서 추가됐다). 이미지를 SDK 10 으로 올린 뒤에도 아래
+#    nuget.config 경로를 그대로 쓴다 — 플래그가 있든 없든 같은 방식으로 동작하는 쪽이다.
 #    대신 `-s|--source`에 **URL이 아니라 nuget.config의 소스 key 이름**을 넘기고, 그 nuget.config에
 #    `allowInsecureConnections="true"`를 선언해야 한다(공식 문서가 권장하는 폴백과 일치 — CLI로는
 #    이 옵션을 켤 수 없다는 NuGet/Home#14047 논의와도 일치). push_once가 OUT_DIR에 최소
@@ -42,7 +44,7 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 PKG_NAME="Xzawed.Keycloak.Sdk"
 PKG_VER="${PKG_VER:-0.1.0}"
 NUPKG="${PKG_NAME}.${PKG_VER}.nupkg"
-BUILDER_IMAGE="mcr.microsoft.com/dotnet/sdk:8.0-alpine"
+BUILDER_IMAGE="mcr.microsoft.com/dotnet/sdk:10.0-alpine"
 OUT_DIR="$INSTALL_DIR/publish/out"
 REGISTRY_URL="http://bagetter:8080/v3/index.json"
 API_KEY="LOCALKEY"

@@ -45,6 +45,7 @@ assert_eq "ok" "$(ok_if "$_enough" "$_nf")" \
 # `저장소<TAB>이유`. **이유 없이 줄을 늘리지 말 것.**
 BI_MULTI="$(cat <<'EOF'
 eclipse-temurin	jdk 는 빌드 단계·jre 는 런타임 단계다 — 갈리는 것이 의도다(런타임에 컴파일러를 싣지 않는다)
+mcr.microsoft.com/dotnet/sdk	앱 빌드는 10.0(SDK 프로젝트가 net10.0 도 대상이라 SDK 8 은 복원조차 못 한다 — NETSDK1045), 설치 소비자는 8.0 — SDK 8 의 net8.0 앱이 게시본에서 net8.0 자산을 고르는지 재는 자리라 갈리는 것이 의도다(consume/dotnet.Dockerfile 머리)
 EOF
 )"
 

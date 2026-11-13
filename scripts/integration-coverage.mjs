@@ -108,6 +108,7 @@ import { spawnSync } from 'node:child_process'
 import { join, dirname, resolve, posix, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
+import { dotnetTfms } from './lib/dotnet-tfm.mjs'
 
 const PINS = 'scripts/integration-coverage.json'
 const REGISTRY = 'docs/superpowers/plans/remaining-work.md'
@@ -3336,9 +3337,15 @@ function run(l) {
     const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
     // 레인의 명령(`dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"`)과 같은 해 · 구성 · 필터다.
+    // ⚠️ 대상이 여럿(`<TargetFrameworks>` — 읽는 규칙은 scripts/lib/dotnet-tfm.mjs)이면 **가장 낮은 대상 하나**만 돈다 —
+    // 대상마다 첨부가 하나씩 생겨 아래 「첨부 하나」 불변식이 멈추고, 두 대상의 데이터를 합치면 같은 경계 파일을 두 번 센다.
+    // 하한(소비자가 받는 가장 낮은 자산)이 재는 대상이다. 나머지 대상의 통합은 레인 잡이 커버리지 없이 돈다.
+    const props = join(cwd, 'Directory.Build.props')
+    const tfms = existsSync(props) ? dotnetTfms(readFileSync(props, 'utf8')) : []
+    const framework = tfms.length > 1 ? ['--framework', tfms[0]] : []
     const rc = spawnStep(
       'dotnet',
-      ['test', slns[0], '-c', 'Release', '--filter', 'Category=Integration', '--collect:XPlat Code Coverage', '--settings', settings,
+      ['test', slns[0], '-c', 'Release', ...framework, '--filter', 'Category=Integration', '--collect:XPlat Code Coverage', '--settings', settings,
         '--results-directory', results, '--logger', 'trx;LogFileName=dotnet.trx'],
       cwd,
     )

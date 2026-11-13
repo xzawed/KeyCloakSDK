@@ -22,7 +22,7 @@ internal sealed class FailureBackoff
 
     private readonly Func<DateTimeOffset> _now;
     private readonly Func<double> _jitter;
-    // `System.Threading.Lock` is .NET 9+; this library targets net8.0.
+    // `System.Threading.Lock` is .NET 9+; this library still targets net8.0 (alongside net10.0).
     private readonly object _gate = new();
     private int _failures;
     private DateTimeOffset? _lastFailure;

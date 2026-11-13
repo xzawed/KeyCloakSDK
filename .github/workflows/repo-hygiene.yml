@@ -160,6 +160,11 @@ jobs:
         # 픽스처만 읽어 dotnet · 네트워크가 필요 없다.
         run: sh scripts/test/test-check-dotnet-vulnerable.sh
 
+      - name: .NET 대상 목록 CLI 자가테스트(버전 오름차순 · 선언 없음 · 모르는 모양 → 2 · 실제 트리)
+        # dotnet-ci 의 대상 레그 매트릭스와 통합 잡의 대상이 `scripts/dotnet-tfms.mjs` 의 출력에서 나온다 — 빈 배열이 레그 0 개의
+        # 「초록」이 되지 않게 선언이 없거나 모르는 모양이면 2 다. 임시 파일과 실제 트리의 props 만 읽는다.
+        run: sh scripts/test/test-dotnet-tfms.sh
+
       - name: KNOWN_GAPS ↔ 등록부 대조 가드 자가테스트(아홉 문법 · 주석 속 id 거름 · 공허 실패 · 픽스처만)
         # 적대 경로 행렬의 알려진 틈이 **열린** 등록부 항목을 가리키는지 보는 가드의 자가테스트다.
         # ⚠️ required 안에 두어도 안전한 이유: 임시 저장소에 픽스처를 만들어 가드를 돌릴 뿐이라 판정이

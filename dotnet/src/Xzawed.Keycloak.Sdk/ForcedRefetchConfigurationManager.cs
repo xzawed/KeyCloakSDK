@@ -37,7 +37,7 @@ internal sealed class ForcedRefetchConfigurationManager : BaseConfigurationManag
     /// second — and nothing outside that method.</summary>
     private readonly AsyncLocal<Task?> _asked = new();
 
-    // `System.Threading.Lock` is .NET 9+; this library targets net8.0.
+    // `System.Threading.Lock` is .NET 9+; this library still targets net8.0 (alongside net10.0).
     private readonly object _gate = new();
     private DateTimeOffset? _decided;
     private Task? _running;

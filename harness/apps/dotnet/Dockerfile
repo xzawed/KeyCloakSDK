@@ -4,7 +4,9 @@
 # 돌려줘 `dotnet restore`가 NU1301로 막힌다(musl은 동일 환경에서 정상 해석 — dig/getent
 # 실측 비교로 확인). musl은 CI(Linux 네이티브 Docker)에서도 문제없이 동작하므로 이식성 있는
 # 근본 해결책이다(호스트별 extra_hosts/IP 고정 불필요).
-FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+# ⚠️ SDK 10: ProjectReference 대상(SDK 프로젝트)이 net8.0;net10.0 을 대상으로 해 SDK 8 로는 복원조차 못 한다(NETSDK1045).
+# 앱은 net8.0 그대로라 SDK 프로젝트의 net8.0 빌드를 받고, 아래 aspnet:8.0 에서 돈다.
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 # ProjectReference 대상(SDK)과 앱 소스를 상대경로 보존해 복사(tests 제외)
 COPY dotnet/Directory.Build.props ./dotnet/
