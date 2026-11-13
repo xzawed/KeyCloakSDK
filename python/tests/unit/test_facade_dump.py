@@ -100,6 +100,13 @@ EXEMPT: dict[str, str] = {
     "keycloak_sdk._internal.token_cap.ResponseRefused": (
         "세션 안의 신호 — 경계가 `KeycloakAuthError` 로 새로 만들고 신호는 버린다"
     ),
+    # 파사드 요청이 받은 3xx 의 내부 신호(`_internal/admin_body.py`). 위와 같은 길이다 —
+    # python-keycloak 의 `raw_*` 가 `KeycloakConnectionError` 의 원인으로 감싸고, 경계
+    # (`admin/_translate.admin_failure`)가 그 상태의 `KeycloakAdminError` 를 except 밖에서 새로
+    # 만든다.
+    "keycloak_sdk._internal.admin_body.RedirectionStatus": (
+        "세션 안의 신호 — 경계가 `KeycloakAdminError` 로 새로 만들고 신호는 버린다"
+    ),
 }
 
 #: 알려진 누출 — `"뿌리|카나리아"` → 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**

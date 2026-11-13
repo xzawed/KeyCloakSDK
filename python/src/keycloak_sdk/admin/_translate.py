@@ -16,7 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
-from .._internal.admin_body import no_body
+from .._internal.admin_body import RedirectionStatus, facade, no_body
 from .._internal.admin_grant import is_grant_failure
 from .._internal.lower import grant_failure, is_lower_failure, refused_body, summarize
 from ..exceptions import (
@@ -51,14 +51,20 @@ def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError
     401 포함)이고 본문을 싣는다.
     """
     status = getattr(exc, "response_code", None)
-    body = getattr(exc, "response_body", None)
+    if status is None:
+        return KeycloakTransportError(str(exc))
+    return by_status(status, getattr(exc, "response_body", None))
+
+
+def by_status(status: int, body: object) -> KeycloakAdminError:
+    """상태로 고른 admin 오류(`translate` 의 매핑) — 본문은 그대로 문자열로 싣는다. 파사드
+    요청이 받은 3xx(`_internal/admin_body.py` 의 `RedirectionStatus`)도 이것으로 4xx 와 같은
+    판정을 받는다."""
     body_str: str | None
     if isinstance(body, (bytes, bytearray)):
         body_str = body.decode("utf-8", "backslashreplace")
     else:
         body_str = str(body) if body else None
-    if status is None:
-        return KeycloakTransportError(str(exc))
     if status == 404:
         return KeycloakNotFoundError(status, body_str)
     if status == 409:
@@ -82,12 +88,18 @@ def admin_failure(
     그 밖의 `KeycloakError`(admin REST 응답)는 `translate` 그대로다. python-keycloak 이 admin
     REST 응답을 못 쓴 실패(`TypeError`·`KeyError`)는 HTTP 상태가 없으므로 이 경계의 규칙대로
     전송 쪽이다. 예전에는 raw 로 새어 본문을 인용했다.
+
+    파사드 요청이 받은 3xx 는 python-keycloak 에 닿지 않는다 — 세션이 던진 `RedirectionStatus`
+    (`raw_*` 가 감싼 원인)를 그 상태의 오류로 새로 만든다(`by_status` — 4xx 와 같은 판정).
     """
     if is_grant_failure(exc):
         return grant_failure(exc)
     refused = refused_body(exc)
     if refused is not None:
         return refused
+    signal = exc.__cause__
+    if isinstance(signal, RedirectionStatus):
+        return by_status(signal.status, signal.body)
     if isinstance(exc, KeycloakError):
         return translate(exc)
     return KeycloakTransportError(
@@ -126,12 +138,13 @@ def call(fn: Callable[[], T]) -> T:
     python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
     admin 하드닝의 거부(그랜트·bearer 검사, 연결 무장 실패)는 같은 타입으로 새로 만든다
     (`refused_grant`·`refused_guard`). 원본은 `except` **밖에서** 다시 던져 `__context__` 로도
-    닿지 않게 한다.
+    닿지 않게 한다. 파사드 호출임을 표시해(`facade`) 그 요청의 3xx 를 결과로 넘기지 않는다.
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
     try:
-        return fn()
+        with facade():
+            return fn()
     except KeycloakAuthError as e:
         error, cause = refused_grant(e), None
     except KeycloakConfigError as e:
