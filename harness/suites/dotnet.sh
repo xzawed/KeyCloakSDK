@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # harness/suites/dotnet.sh — C#/.NET SDK 자체 단위테스트+커버리지(coverlet)+포맷검사를
-# mcr.microsoft.com/dotnet/sdk:8.0-alpine 컨테이너에서 실행한다(CLAUDE.md .NET 툴체인:
+# mcr.microsoft.com/dotnet/sdk:10.0-alpine 컨테이너에서 실행한다(CLAUDE.md .NET 툴체인:
 # `dotnet test --filter "Category!=Integration"` + coverlet.msbuild으로 라인/브랜치 커버리지를
 # 수집·보고 + `dotnet format --verify-no-changes`). 마지막 줄에 JSON 신호 1줄을 출력한다. 커버리지
 # 게이트(90/85)는 이 스위트가 강제하지 않고 report/score.mjs가 신호로 적용한다(java.sh와 동형 — 스위트는
@@ -17,6 +17,10 @@
 # 내장 DNS가 nuget.org의 CNAME 체인을 glibc 리졸버에 실패로 돌려줘 `dotnet restore`가 NU1301로 막힌다
 # (다른 8개 suite/app 이미지와 동일한 Alpine 정책 — CLAUDE.md 하네스 게차). CI Linux는 Debian도 무해하나
 # 정책 일치·로컬 Windows 실행 가능화를 위해 통일.
+#
+# ⚠️ SDK 10 이미지 · `-f net10.0`: SDK 프로젝트가 `net8.0;net10.0` 을 대상으로 해 SDK 8 이미지는 복원조차 못 한다
+# (NETSDK1045). sdk:10.0-alpine 에는 .NET 8 런타임이 없어 net8.0 시험은 테스트 호스트가 뜨지 않으므로 이 스위트는
+# net10.0 만 돈다 — 두 대상은 레인 CI(dotnet-ci 의 대상 레그)가 돈다. 이전 판 소비자 검증은 install 의 SDK 8 소비자가 맡는다.
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (dotnet/ 는 $ROOT/dotnet)
@@ -27,10 +31,10 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-RAW=$(docker run --rm -v "$ROOT/dotnet:/src-ro:ro" mcr.microsoft.com/dotnet/sdk:8.0-alpine sh -c '
+RAW=$(docker run --rm -v "$ROOT/dotnet:/src-ro:ro" mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -c '
   cp -r /src-ro /src && cd /src
   find . -name "*.cs" -exec sed -i "s/\r$//" {} +
-  dotnet test --filter "Category!=Integration" \
+  dotnet test -f net10.0 --filter "Category!=Integration" \
     --collect:"XPlat Code Coverage" \
     --settings coverlet.runsettings \
     --results-directory /tmp/cov \
@@ -85,10 +89,10 @@ INTEGRATION=0
 if [ "${SUITE_INTEGRATION:-0}" = "1" ]; then
   # Testcontainers.Keycloak(실제 Keycloak, Docker-in-Docker) 필요 — best-effort opt-in.
   IRAW=$(docker run --rm -v "$ROOT/dotnet:/src-ro:ro" -v /var/run/docker.sock:/var/run/docker.sock \
-    mcr.microsoft.com/dotnet/sdk:8.0-alpine sh -c '
+    mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -c '
       cp -r /src-ro /src && cd /src
       find . -name "*.cs" -exec sed -i "s/\r$//" {} +
-      dotnet test --filter "Category=Integration" 2>&1
+      dotnet test -f net10.0 --filter "Category=Integration" 2>&1
     ' 2>&1 || true)
   IOUT=$(printf '%s' "$IRAW" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
   INTEGRATION=$(printf '%s\n' "$IOUT" | grep -oiE 'Passed:[[:space:]]+[0-9]+' | tail -1 | grep -oE '[0-9]+$')

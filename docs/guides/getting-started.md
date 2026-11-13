@@ -48,7 +48,7 @@ A guide to installing the Keycloak polyglot SDK locally and running your first t
 | **Python** | **3.10+** | Includes `py.typed` (PEP 561) — consumer-side mypy type checking possible |
 | **Node.js** | **22+** | ESM-only · async-only · includes `.d.ts` type declarations |
 | **Go** | **1.26+** | Raised from 1.25 by `1.1.0` (`x/oauth2` v0.37 · `x/sync` v0.23) — see [Go](#go) · sync + `context.Context` |
-| **C# / .NET** | **8+** | async-first (`Task<T>` + `CancellationToken`) · targets `net8.0` |
+| **C# / .NET** | **8+** | async-first (`Task<T>` + `CancellationToken`) · targets `net8.0` (+ `net10.0` after `1.0.7`) |
 | **PHP** | **8.3+** | `final readonly class` value types · exception-based (`KeycloakException` hierarchy) |
 | **Rust** | **1.88+** | MSRV required by edition 2024 + let-chains · async-only (tokio) · `thiserror`-based `KeycloakError` |
 | **Ruby** | **3.2+** | sync-only · exception hierarchy (`KeycloakSdk::Error`) · gem `keycloak-sdk` / require `keycloak_sdk` |
@@ -366,7 +366,7 @@ func main() {
 ### 1) Required runtime — .NET 8+
 
 <!-- doc-guard: kind=runtime lang=dotnet -->
-.NET **8 or newer** (`net8.0`) is required. The idiom is async-first (every network method takes `Task<T>` + a trailing `CancellationToken ct = default`, and only `CreateAuthorizationRequest` is purely synchronous). Docker is needed only for integration tests.
+.NET **8 or newer** (`net8.0`) is required; releases after `1.0.7` also ship a `net10.0` build, which .NET 10+ apps pick up on their own. The idiom is async-first (every network method takes `Task<T>` + a trailing `CancellationToken ct = default`, and only `CreateAuthorizationRequest` is purely synchronous). Docker is needed only for integration tests.
 
 ### 2) Local installation (from a clone)
 

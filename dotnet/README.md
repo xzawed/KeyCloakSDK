@@ -12,7 +12,7 @@ Part of a **nine-language polyglot SDK** (Java · Python · Node · Go · C# · 
 
 ## Requirements
 
-- **.NET 8+** — the package targets `net8.0`.
+- **.NET 8+** — the package targets `net8.0`; releases after `1.0.7` also carry a `net10.0` build, which .NET 10+ apps pick up on their own.
 - A Keycloak server to connect to (integration-tested against Keycloak 26.6).
 
 Every network method returns `Task<T>` and takes a trailing `CancellationToken ct = default`; only `CreateAuthorizationRequest` is synchronous, because it needs no network.

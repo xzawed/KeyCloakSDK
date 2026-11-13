@@ -1,12 +1,17 @@
 <Project>
   <PropertyGroup>
+    <!-- net8.0 is the floor: the admin dependency (Keycloak.AuthServices.Sdk 2.7.0) ships only a net8.0 asset and its
+         *Representation types are public API, so no lower target is possible. net10.0 is the current LTS. A .NET 9 or 11
+         app takes the net8.0 or net10.0 asset. Building needs SDK 10; the net8.0 tests also need the .NET 8 runtime.
+         The lowest target is the consumer floor (scripts/check-docs.mjs) and the highest the SDK a contributor needs
+         (scripts/doctor.mjs) — both read this list through scripts/lib/dotnet-tfm.mjs. -->
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <!-- Pin the analyzer band to 8.0 so a newer local SDK (10.x) and CI SDK (8.x) agree under warnaserror -->
+    <!-- Pin the analyzer band to 8.0 so an SDK newer than CI's (10.x) cannot add warnings under warnaserror that CI never sees -->
     <AnalysisLevel>8.0</AnalysisLevel>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>

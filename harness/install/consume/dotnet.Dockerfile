@@ -9,6 +9,9 @@
 # (restore)이므로 node보다도 더 이 설계가 자연스럽다 — 빌드타임엔 네트워크 의존 단계가 전혀 없다.
 # 상태(installed/quickstartOk)는 호스트 마운트 `/status`의 마커 파일로 회수한다(컨테이너 생존 여부와
 # 무관하게 오케스트레이터가 읽는다).
+# ⚠️ SDK 8 · net8.0 앱을 일부러 둔다 — 패키지가 net8.0;net10.0 을 싣게 된 뒤 이 이미지가 「이전 판 소비자」(SDK 8 의
+# net8.0 앱이 게시본을 받아 net8.0 자산을 고른다)를 재는 자리다. 빌드 · 팩 이미지(publish/dotnet.sh · apps/dotnet)는
+# SDK 10 이어야 하지만 이것까지 올리면 그 검증이 사라진다.
 FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS app
 WORKDIR /work
 

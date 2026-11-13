@@ -114,7 +114,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
-          dotnet-version: '8.0.x'
+          # SDK 10 이 두 대상(net8.0 · net10.0)을 빌드하고, net8.0 시험은 SDK 8 이 함께 까는 .NET 8 런타임에서 돈다
+          # — 이 단계는 두 대상의 통합을 다 돈다(dotnet-ci 는 레그를 나눈다).
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - name: Integration tests (Docker)
         run: dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"
 
@@ -130,7 +134,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
-          dotnet-version: '8.0.x'
+          # pack 이 두 대상을 싣는다 — SDK 10 이 필요하고, 아래 단위 시험의 net8.0 은 .NET 8 런타임에서 돈다.
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - name: Verify (build + unit tests)
         run: |
           dotnet build dotnet/Keycloak.Sdk.sln -c Release

@@ -21,7 +21,7 @@ paths:
 
 ## Toolchain
 
-System install — ask `node scripts/doctor.mjs dotnet` for the SDK actually present (⚠️ this line claimed SDK 10; measured 8.0.424). Commands run from `dotnet/`.
+**SDK 10+** builds both targets (`net8.0;net10.0`); the `net8.0` tests also need the **.NET 8 runtime** — `node scripts/doctor.mjs dotnet` checks the SDK, `dotnet --list-runtimes` the runtime. Commands run from `dotnet/`; `dotnet test` runs both targets, `-f net8.0` one.
 
 ```bash
 cd dotnet && dotnet build                                       # warnaserror · Nullable · AnalysisLevel 8.0
@@ -40,7 +40,7 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
   ```
   ⚠️ **The numbers are not written here.** `check-coverage.mjs` prints lines, branches and the headroom on every run — read them from it. Every figure ever transcribed into this line went false as the denominators moved, while the rule around it still read as verified.
 - Releasing goes `dotnet-v*` tag → `dotnet-release.yml` (human approval gate). The `integration` job is in `needs:` ahead of publishing.
-- The solution uses the old format, `Keycloak.Sdk.sln` — newer SDKs default to `.slnx`. `AnalysisLevel=8.0` pins the analyzer band so a locally-installed SDK newer than CI's cannot introduce warnings CI never sees. ⚠️ This line used to justify both by "local is SDK 10", which was false; both settings are still right, the stated reason was not. `GenerateDocumentationFile` and the packaging props are conditioned on `IsTestProject != true` — without that, the test projects fail the build with CS1591.
+- The solution uses the old format, `Keycloak.Sdk.sln` — newer SDKs default to `.slnx`. `AnalysisLevel=8.0` pins the analyzer band so a locally-installed SDK newer than CI's cannot introduce warnings CI never sees. `GenerateDocumentationFile` and the packaging props are conditioned on `IsTestProject != true` — without that, the test projects fail the build with CS1591.
 
 ## Two coverage traps
 
@@ -65,7 +65,7 @@ cd dotnet && dotnet pack src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c R
 
 ## Dependency and structural decisions
 
-- ⚠️ **`Keycloak.AuthServices.Sdk` 3.0.0 is net10-only, so net8.0 stays on the 2.x line.** Anything below the `DI.Abstractions` floor that line requires is a hard NU1605 error; the floor and the reasoning are in the csproj comment beside the pin.
+- ⚠️ **`Keycloak.AuthServices.Sdk` 2.7.0 is net8.0-only and 3.0.0 net10-only — both targets stay on 2.x, and net8.0 is the floor** (its `*Representation` types are public API). Anything below the `DI.Abstractions` floor that line requires is a hard NU1605 error; the floor and the reasoning are in the csproj comment beside the pin.
 - ⚠️ **Keep-net8 closes `DI.Abstractions` majors above 9.x and `SourceLink.GitHub` above 10.x** — take patches; why: csproj comments by the pins. The DI pin lives only in the root `CLAUDE.md` table.
 - **`IHttpClientFactory` is deliberately not used** — a single long-lived `HttpClient` plus `PooledConnectionLifetime` (5 minutes) avoids stale DNS. This is a library used without DI, so it does not force a factory lifecycle onto the consumer.
 - The glue between `admin` and `auth` is `ITokenProvider` alone (`AuthClient : ITokenSource` is the default source) — §4 isomorphic.

@@ -43,7 +43,7 @@ number, read that file (or just run `doctor`) — do not trust a number written 
 | Python | CPython | `python/pyproject.toml` — `requires-python` | a virtualenv (see §4) |
 | Node | Node.js | `node/package.json` — `engines.node` | — |
 | Go | Go toolchain | `go/go.mod` — `go` directive | — |
-| C# / .NET | .NET SDK | `dotnet/Directory.Build.props` — `TargetFramework` | — |
+| C# / .NET | .NET SDK | `dotnet/Directory.Build.props` — `TargetFrameworks` (the SDK must build the highest) | the .NET 8 runtime for the `net8.0` tests |
 | PHP | PHP (NTS) + Composer | `php/composer.json` — `require.php` | extensions + `OPENSSL_CONF` (see §4) |
 | Rust | rustup (cargo + rustc) | `rust/Cargo.toml` — `rust-version` (MSRV) | MSVC Build Tools on Windows (see §4) |
 | Ruby | Ruby + Bundler | `ruby/keycloak-sdk.gemspec` — `required_ruby_version` | MSYS2/DevKit on Windows (see §4) |
