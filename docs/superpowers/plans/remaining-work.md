@@ -76,7 +76,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. `dotnet-rawserver-reads-once-flaky` → `dotnet-eol-dependency-lines`(유예 — 되살릴 조건부터 판정). 사용자 2026-11-13 「권장 순서대로」.
+1. (비었다 — 사용자 순서 셋: #1058 · #1059 닫힘, `dotnet-eol-dependency-lines` 는 판정 뒤 유예 유지. 다음은 열린 항목에서 사람과 고른다.)
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -303,7 +303,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** 착수 전 재판정이 **또 넓혔다** — `security.md` 가 명시한 백오프 두 성질(**성공이 카운터를 되돌린다**·**클레임 실패는 재조회가 아니다**)이 DoS 속성인데 1차 재판정에서 비보안으로 분류돼 있었다. ⚠️ **aio 프로덕션 코드는 여덟을 이미 갖고 있었다** — 이 PR 은 행동을 바꾸지 않고 **고정**한다(고정되지 않은 성질은 다음 리팩터에서 조용히 사라진다). 변이 6/6 `CAUGHT`(alg 핀에 ES256 몰래 추가 · rate-limit 게이트 삭제 · 백오프 성공리셋 제거 · 클레임실패 억제 제거 · verifier 마스킹 제거 · urlencode 무인코딩화). ⚠️ **남은 비보안 비대칭 넷은 열어 둔다**(`constructs_real_openid_when_not_injected`·`injected_openid_is_used_verbatim`·`wrap_passes_through_successful_result`·`wrap_translates_error_with_response_code_but_no_json_body`) — 보안 축이 아니고, 그 넷까지 미러링하는 것은 **동형성 항목**이지 이 항목이 아니다. 옛 서술:
 
-## C. 품질 부채 — 145건 (열림 62)
+## C. 품질 부채 — 145건 (열림 61)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -423,7 +423,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 - [ ] `dotnet-allocation-test-process-wide-counter-flaky` **[L/S · 신규 2026-10-23]** 2 KiB 할당 시험이 프로세스 전체 카운터로 재서 같은 SHA 에서 갈렸다(318,336 B ≥ `Cap / 4`, 재실행 초록) · `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/TokenResponseCapTests.cs:271`
 <!-- dotnet-allocation-test-process-wide-counter-flaky: A_2_KiB_body_allocates_nothing_near_the_cap(chunked: False). run 39893087370 attempt 1(.NET SDK 10.0.x, #824) 빨강 · attempt 2 초록 · 같은 SHA 434fab6 의 push 실행 39893081688 초록 — 재실행 전 dotnet-ci 최근 60 회 중 실패는 이 하나. GC.GetTotalAllocatedBytes 는 프로세스 전체이고 DisableParallelization 은 동시에 도는 시험을 막을 뿐 시험 밖의 배경 작업은 막지 못한다. 원인 미측정 — 후보: 앞 시험이 남긴 가짜 IdP 의 ServeAsync · 러너 보고. 고칠 후보: k 회 측정의 최솟값(잡음은 더하기만 한다). -->
-- [ ] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27]** `RawServer` 가 요청을 한 번만 읽고 닫는다 — g4 의 `IntrospectAsync` 가 401 대신 `ResponseEnded` 로 두 번 갈렸다(#852·#863, .NET 8). 기제 미측정 · `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/MalformedTokenResponseTests.cs:353`
+- [x] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27 · 닫힘 2026-11-13 #1059]** 기제 — 닫힘을 알리지 않은 응답 뒤 닫힌 연결을 풀이 다음 POST 에 재사용했고, 본문을 보낸 요청은 재시도되지 않는다(응답 뒤 200 ms 지연 재현 40/100 · `Connection: close` 대조 0). keep-alive 로 고침 · 고정 테스트 `Raw_server_answers_every_request_on_one_kept_alive_connection`
 - [x] `rust-integration-floor-toolchain-drift` **[H/S · 신규 · 닫힘 2026-11-13 #1056]** rustc 1.100.0 이 `.map_err(|e| …)?` 줄을 돌지 않은 클로저에 귀속시켜 같은 소스가 527/594 → 511/588 — 실행 판정은 불변(함수 100 · 잃은 줄의 클로저 11 이 두 판 다 0 회), 하한 88.5 → 86.9. 판정 방법은 `scripts/integration-coverage.mjs` 머리
 
 ### 가드·CI — 20
@@ -481,7 +481,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 - [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
 - [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** 한 파일의 두 결함 — 야간 감사가 보는 rust 하네스 락을 Dockerfile 이 COPY 하지 않았고(1.0 이전 그래프를 6주 감사한 거짓 초록) · `FROM rust:alpine` 무버전. ⚠️ 락 재생성은 MSRV 인지 해석이 필요하다 — `scripts/regen-harness-rust-lock.sh` 가 소유 · 재스캔 · 변이는 `git log -S'H3-harness-image-and-lock-pins' -- docs/superpowers/plans/remaining-work.md`
-- [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** ⚠️ **가드 부재가 아니라 실제 노출이었다.** `ClientCredentialsTokenProvider` 의 기본 `inspect` 가 캐시된 **액세스 토큰을 원문으로** 찍었다 — `@cached` 가 `ts.access_token`(원시 String)이라 `TokenSet#inspect` 의 마스킹이 닿지 않는다. 형제인 `Config`·`TokenSet` 은 `inspect` 재정의가 있는데 **이 타입만 없던** 불일치다. **실행으로 재현**했다(읽기 아님): `p provider` → `@cached="AT-CENSUS-TOKEN-…"`. 고친 뒤 재측정 → `cached="***"`. ⚠️ 캐시 **유무는 남긴다**(빈 캐시에 `***` 를 찍으면 「토큰이 있다」는 거짓 신호다 — 대조군 spec 이 고정). ruby 123/123 · 커버리지 99.61/96.72 · rubocop 청정 · 변이 `CAUGHT`(수정 전 상태로 되돌리는 변이). ⚠️ **아홉 전수는 실행으로 갈랐다** — node 는 안전(`#cached` 비노출 실측) · python 은 공개 캐싱 provider 없음 · java·kotlin·dotnet·rust 는 기본 표현이 필드를 안 찍음 · go 는 provider 가 미노출 타입.
+- [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** ⚠️ **가드 부재가 아니라 실제 노출이었다.** `ClientCredentialsTokenProvider` 의 기본 `inspect` 가 캐시된 **액세스 토큰을 원문으로** 찍었다 — `@cached` 가 원시 String 이라 `TokenSet#inspect` 의 마스킹이 닿지 않았다(형제 `Config`·`TokenSet` 만 재정의). `p provider` 로 재현 → 고친 뒤 `cached="***"`, 캐시 **유무는 남긴다**(빈 캐시의 `***` 는 거짓 신호 — 대조군 spec). 아홉 전수도 실행으로 갈랐다 — 나머지 여덟은 노출 없음. 수치 · 언어별 근거: `git show e4e7c63f:docs/superpowers/plans/remaining-work.md`
 - [x] `php-var-dump-bypasses-all-masking` **[M/M · 닫힘 2026-09-12 · 범위 재정의]** 덤프 경로 마스킹은 아홉 언어 균일 계약으로 불가능했다 — 훅이 있는 셋(php `__debugInfo` · go `GoStringer` · ruby `pretty_print`)만 구현하고 나머지는 경계로 적었다(왕복 직렬화 훅은 일부러 안 넣었다). 계약은 `SECURITY.md` 가 소유한다 · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `harness-orphan-container-reads-as-build-failure` **[L/S · 닫힘 2026-09-16 · 부류로 넓혀서]** 중단된 하네스 런이 남긴 컨테이너가 다음 런을 막는데, 신호가 **원인을 잘못 가리킨다** · `harness/verify.sh:30`
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
@@ -516,7 +516,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `vitest-v4-migration` **[L/M · 닫힘 2026-09-10 #450]** vitest 3에 묶인 유일한 이유가 테스트 두 파일의 `vi.mock` 클래스 팩토리 셋이었다 · `node/test/unit/client.test.ts:1`
 - [ ] `tenth-language-deferrals` **[L/S]** 「10번째 언어가 들어올 때」가 여러 유예의 공통 트리거인데, 그때 무엇을 함께 해야 하는지가 한 곳에 없다 · `docs/guides/add-a-language-playbook.md:105`
 - [ ] `release-readiness-remote-tag-print` **[L/S]** 릴리스 준비도 도구가 로컬 클론의 태그만 보고 「태그 없음」을 답한다 — 되살릴 조건은 두 값을 나란히 인쇄하는 것 · `scripts/release-readiness.sh:93`
-- [ ] `dotnet-eol-dependency-lines` **[M/M · 신규 2026-11-13]** .NET 9 EOL(2026-11-10)로 `DI.Abstractions` 9.x 가 끝났다(9.0.23 마지막) — 10.x 는 net8.0 묶음이 있으나 올리면 net8 소비자의 전이 하한이 오른다(#57 · #1049 가 메이저를 무시로 닫음). admin `Keycloak.AuthServices.Sdk` 는 2.7.0 net8.0 전용 · 3.0.0 net10.0 전용이라 두 대상이 2.x 에 묶인다. 되살릴 조건: 9.x · 2.x 취약점이나 지원 종료 공지, 또는 net8.0 대상 제거 · `dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj`
+- [ ] `dotnet-eol-dependency-lines` **[M/M · 신규 2026-11-13 · 판정 2026-11-13 유예 유지]** .NET 9 EOL(2026-11-10)로 `DI.Abstractions` 9.x 가 끝났다(9.0.23 마지막) — 10.x 는 net8.0 묶음이 있으나 올리면 net8 소비자의 전이 하한이 오른다(#57 · #1049 가 메이저를 무시로 닫음). admin `Keycloak.AuthServices.Sdk` 는 net8.0 을 싣는 마지막 판이 2.7.0 이다(2.8.0 부터 net10.0 전용 — NuGet 등록 `dependencyGroups`). 되살릴 조건: 9.x · 2.7.0 취약점이나 지원 종료 공지, 또는 net8.0 대상 제거 — 판정 2026-11-13 셋 다 아니다(GHSA `gh api '/advisories?ecosystem=nuget&affects=<패키지>'` 0 · dotnet-ci 전이 취약 감사 0 · 상류 릴리스 노트에 공지 없음 · 대상 `net8.0;net10.0`) · `dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj`
 
 ### 미완 마커 — 3
 
