@@ -26,6 +26,14 @@ _mkstub() { # <name> <exit> <stdout>
   printf '#!/bin/sh\nprintf %s "%s"\nexit %s\n' "'%s'" "$3" "$2" > "$STUB/$1"
   chmod +x "$STUB/$1"
 }
+# curl 본문은 파일로 두고 그대로 낸다 — `_mkstub` 은 본문을 큰따옴표로 감싸 써서 JSON 의 큰따옴표가
+# 벗겨진다(그래서 이 파일의 curl 스텁은 오래 실제 p2 모양을 한 번도 내지 못했다. 느슨한 소스 grep 은
+# 그래도 통과했고, 따옴표까지 보는 버전 대조에서 드러났다).
+_mkbody() { # <exit> <본문>
+  printf '%s' "$2" > "$STUB/curl.body"
+  printf '#!/bin/sh\ncat "%s"\nexit %s\n' "$STUB/curl.body" "$1" > "$STUB/curl"
+  chmod +x "$STUB/curl"
+}
 _run() { # → "<exit>|<출력 한 줄>"
   _o="$(PATH="$STUB:$PATH" sh "$SH" 0.2.0 2>&1)" && _c=0 || _c=$?
   printf '%s|%s' "$_c" "$(printf '%s' "$_o" | tr '\n' ',')"
@@ -35,10 +43,10 @@ _run() { # → "<exit>|<출력 한 줄>"
 # (p2 본문의 실제 모양: `"version":"v1.5.2"` — 실측 2026-11-14).
 _P2_OK='{"packages":{"xzawed/keycloak-sdk":[{"version":"v0.2.0","source":{"url":"https://github.com/xzawed/keycloak-sdk-php.git"}}]}}'
 _mkstub git 0 'abc123	refs/tags/v0.2.0'
-_mkstub curl 0 "$_P2_OK"
+_mkbody 0 "$_P2_OK"
 assert_contains "$(_run)" "0|" '전부 확인되면 exit 0'
 assert_contains "$(_run)" "✅ 미러에 v0.2.0 태그가 있다" '미러 확인 문구'
-assert_contains "$(_run)" "✅ Packagist 가 v0.2.0 을 서빙한다" 'Packagist 버전 확인 문구'
+assert_contains "$(_run)" "✅ Packagist 에 v0.2.0 버전이 있다" 'Packagist 버전 확인 문구'
 
 # (2) 미러에 태그 없음 — git 이 성공하되 **빈 출력**(ls-remote 가 매치 없을 때의 실제 모양).
 _mkstub git 0 ''
@@ -47,13 +55,13 @@ assert_contains "$(_run)" "::error::미러에 v0.2.0 태그가 없다" '그 이�
 
 # (3) Packagist 가 다른 소스 — 본문에 미러 이름이 없다.
 _mkstub git 0 'abc123	refs/tags/v0.2.0'
-_mkstub curl 0 '{"packages":{"xzawed/keycloak-sdk":[{"source":{"url":"https://example.invalid/other.git"}}]}}'
+_mkbody 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v0.2.0","source":{"url":"https://example.invalid/other.git"}}]}}'
 assert_contains "$(_run)" "1|" 'Packagist 소스가 다르면 exit 1'
 assert_contains "$(_run)" "::error::Packagist" '그 이유를 말한다'
 
 # (4) 확인 불가 — 두 도구가 비정상 종료(네트워크 장애·미설치와 같은 모양).
 _mkstub git 127 ''
-_mkstub curl 127 ''
+_mkbody 127 ''
 assert_contains "$(_run)" "0|" '⚠️ 조회 실패는 exit 0 — 바깥 장애가 머지를 막지 않는다'
 assert_contains "$(_run)" "실패로 치지 않는다" '확인 불가를 명시한다'
 assert_not_contains "$(_run)" "::error::" '확인 불가를 오류로 지어내지 않는다'
@@ -61,9 +69,9 @@ assert_not_contains "$(_run)" "::error::" '확인 불가를 오류로 지어내�
 # (5) Packagist 가 미러를 서빙하지만 그 버전은 없다 — 미러가 갔는데 Packagist 가 집어 가지 않았다
 # (자동 갱신이 끊겼거나, split 직후라 아직이다). 사람이 페이지를 보던 확인을 기계로 옮긴 자리다.
 _mkstub git 0 'abc123	refs/tags/v0.2.0'
-_mkstub curl 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v0.1.9","source":{"url":"https://github.com/xzawed/keycloak-sdk-php.git"}}]}}'
+_mkbody 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v0.1.9","source":{"url":"https://github.com/xzawed/keycloak-sdk-php.git"}}]}}'
 assert_contains "$(_run)" "1|" 'Packagist 에 그 버전이 없으면 exit 1'
-assert_contains "$(_run)" "::error::Packagist 에 v0.2.0 이 없다" '그 이유를 말한다'
+assert_contains "$(_run)" "::error::Packagist 에 v0.2.0 버전이 없다" '그 이유를 말한다'
 assert_not_contains "$(_run)" "::error::Packagist 가 이 미러를" '소스는 맞다 — 소스 오류로 지어내지 않는다'
 
 # (6) **CI 의 실제 호출 형태 — 인자 없이**(repo-hygiene `php-mirror` 잡). 위 다섯은 전부 버전을
@@ -86,7 +94,7 @@ for a in "$@"; do last="$a"; done
 exit 0
 EOF
 chmod +x "$STUB/git"
-_mkstub curl 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v1.2.3","source":{"url":"https://github.com/xzawed/keycloak-sdk-php.git"}}]}}'
+_mkbody 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v1.2.3","source":{"url":"https://github.com/xzawed/keycloak-sdk-php.git"}}]}}'
 _LOG="$FX/git.log"
 _o6="$(PATH="$STUB:$PATH" STUB_LOG="$_LOG" sh "$FX/check-php-mirror.sh" 2>&1)" && _c6=0 || _c6=$?
 assert_eq "0" "$_c6" '무인자 + 릴리스 PR 상태 → exit 0(직전 게시본이 미러에 있다)'

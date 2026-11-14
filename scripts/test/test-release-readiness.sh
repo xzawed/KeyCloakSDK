@@ -186,7 +186,7 @@ _php_verdict() { # <직전 게시본 rc> <새 버전 9.9.9 rc> <packagist rc> �
 assert_contains "$(_php_verdict 0 1 0)" "✅ 미러 v7.7.7" 'php 태그 전 정상: 직전 게시본 + Packagist 소스 → 초록'
 assert_contains "$(_php_verdict 0 1 0)" "v9.9.9" 'php 태그 전 정상: 새 버전이 아직 비어 있음을 말한다'
 # 번 버전 — 미러에 이미 있으면 split 의 태그 push 가 일부러 실패한다(main 은 이미 force-push 된 뒤다).
-assert_contains "$(_php_verdict 0 0 0)" "⚠️ 미러에 v9.9.9 이 이미 있다" 'php: 새 버전이 미러에 이미 있으면 경고(예전엔 ✅)'
+assert_contains "$(_php_verdict 0 0 0)" "⚠️ 미러에 v9.9.9 태그가 이미 있다" 'php: 새 버전이 미러에 이미 있으면 경고(예전엔 ✅)'
 assert_contains "$(_php_verdict 2 0 2)" "이미 있다" 'php: 확인된 위험은 다른 프로브의 확인 불가에 묻히지 않는다'
 assert_contains "$(_php_verdict 1 1 0)" "⚠️ 미러에 직전 게시본 v7.7.7" 'php: 직전 게시본이 미러에 없으면 경고'
 assert_contains "$(_php_verdict 0 1 1)" "Packagist" 'php: Packagist 가 다른 소스면 그렇게 말한다'
