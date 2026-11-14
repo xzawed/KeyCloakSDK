@@ -105,5 +105,13 @@ assert_eq " ruby" "$(bi_stale "$_bi_fp" "$(printf 'alpine\t이유\nruby\t이유'
   "[베이스 이미지·음성대조] 갈리지 않은 저장소의 면제를 낡았다고 못 한다"
 assert_eq "alpine node" "$(bi_noreason "$(printf 'alpine\nnode\t\nruby\t이유')")" \
   "[베이스 이미지·음성대조] 이유 없는 면제(탭 없음 · 빈 이유)를 못 잡는다"
+# 떠다니는 태그 — `latest` 하나만이 아니라 **태그 없음**(맨 이름 · 경로 · 레지스트리 포트)도 잡아야 하고, 앞 단계
+# 별칭(`FROM build`)과 `scratch` 는 이미지가 아니다. 실측 2026-11-14: 태그 없는 둘은 한 번도 잡힌 적이 없다.
+printf '%s\n' 'FROM node:latest AS build' 'FROM build AS test' 'FROM alpine' \
+  'FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/sdk AS sdk' 'FROM scratch' 'FROM localhost:5000/tools' \
+  > "$_bi_fx/c.Dockerfile"
+_bi_fl="$(printf '%s\n' c.Dockerfile | bi_pairs "$_bi_fx" | sort -u)"
+assert_eq "alpine localhost:5000/tools mcr.microsoft.com/dotnet/sdk node" "$(bi_float "$_bi_fl")" \
+  "[베이스 이미지·음성대조] 떠다니는 태그(latest · 태그 없음)를 다 못 잡거나 별칭 · scratch 를 이미지로 본다"
 
 assert_report
