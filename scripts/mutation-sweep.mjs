@@ -140,8 +140,13 @@ function main() {
   const timeout = Number(opt('--timeout') ?? 1800) * 1000
   let bad = 0
   for (const i of run) {
-    const r = spawnSync('sh', ['scripts/probe.sh', '--site', i.site, i.mutation, 'sh', i.test], {
-      cwd: root, env: { ...process.env, ...i.env }, encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024, windowsHide: true,
+    // ⚠️ 값은 환경 변수로 넘기고 sh 에는 고정된 -c 스크립트 하나만 준다. Windows 에서 node 가 MSYS sh 를 띄우면 공백 없는
+    // 인자에 중괄호 확장이 걸려 SITE 가 갈리거나 깨졌다(실측 2026-11-14: `{1,6}NEVER` → 인자 둘 · `${_cpj:+false}` →
+    // INVALID). 공백이 든 -c 스크립트는 다시 펼쳐지지 않고, 그 안의 "$SWEEP_…" 는 따옴표째 그대로 넘어간다.
+    const r = spawnSync('sh', ['-c', 'exec sh scripts/probe.sh --site "$SWEEP_SITE" "$SWEEP_MUTATION" sh "$SWEEP_TEST"'], {
+      cwd: root,
+      env: { ...process.env, ...i.env, SWEEP_SITE: i.site, SWEEP_MUTATION: i.mutation, SWEEP_TEST: i.test },
+      encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024, windowsHide: true,
     })
     const v = r.error ? 'TIMEOUT' : ({ 0: 'CAUGHT', 1: 'SILENT', 2: 'INVALID' }[r.status] ?? `RC${r.status}`)
     console.log(`${v.padEnd(7)} ${i.kind.padEnd(3)} ${i.desc}`)
