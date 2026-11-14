@@ -95,8 +95,12 @@ assert_contains "$(cat "$FX/summary.md" 2>/dev/null)" '| main 직전 성공 | 48
 _r="$(cli --log "$FX/now810.log" --base-log "$FX/now810.log")"
 assert_eq '0' "${_r%%|*}" '같은 수면 진입점도 exit 0'
 assert_contains "$_r" '→ 810 (이 실행 ' '초록이어도 두 수를 낸다'
-assert_eq '2' "$(cli --log "$FX/none.log" --base-log "$FX/base487.log" | cut -d'|' -f1)" '로그에 색인 수가 없으면 진입점도 exit 2'
-assert_eq '2' "$(cli --log "$FX/now810.log" | cut -d'|' -f1)" '--base-log 없이 --log 만이면 exit 2'
-assert_eq '2' "$(cli --log "$FX/absent.log" --base-log "$FX/now810.log" | cut -d'|' -f1)" '읽을 수 없는 로그면 exit 2'
+# 종료 코드는 첫 `|` 앞이다 — 사용법은 두 줄이라 `cut` 은 둘째 줄을 통째로 돌려준다(실측).
+_r="$(cli --log "$FX/none.log" --base-log "$FX/base487.log")"
+assert_eq '2' "${_r%%|*}" '로그에 색인 수가 없으면 진입점도 exit 2'
+_r="$(cli --log "$FX/now810.log")"
+assert_eq '2' "${_r%%|*}" '--base-log 없이 --log 만이면 exit 2'
+_r="$(cli --log "$FX/absent.log" --base-log "$FX/now810.log")"
+assert_eq '2' "${_r%%|*}" '읽을 수 없는 로그면 exit 2'
 
 assert_report
