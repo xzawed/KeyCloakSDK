@@ -25,6 +25,11 @@ assert_eq "yes" "$([ -d "$WFDIR" ] && echo yes || echo no)" "[릴리스동시성
 # 판정기 — <워크플로 디렉터리> → _tagged(`tags:` 트리거를 가진 워크플로 = 이 검사의 대상) · _missing(최상위
 # `concurrency:` 가 없다) · _cancels(cancel-in-progress 가 false 가 아니다)를 설정한다(앞 공백 없이 공백 구분).
 # 살아 있는 검사와 끝의 음성 대조가 같은 함수를 부른다.
+# 최상위 `concurrency:` 블록 — 그 다음 줄부터 다음 최상위 키 전까지(CR 은 벗긴다). cancel-in-progress 는 여기서만
+# 읽는다 — 파일 전체에서 찾으면 잡 수준 concurrency 의 false 가 최상위의 true 를 가린다(실측 2026-11-14).
+rc_top_block() { # <워크플로>
+  awk '{ sub(/\r$/, "") } /^concurrency:/ { inb = 1; next } inb && /^[^[:space:]#]/ { exit } inb' "$1"
+}
 rc_scan() {
   _tagged=''; _missing=''; _cancels=''
   for f in "$1"/*.yml; do
@@ -33,7 +38,7 @@ rc_scan() {
     b="$(basename "$f")"
     _tagged="$_tagged $b"
     if grep -qE '^concurrency:' "$f"; then
-      grep -qE '^[[:space:]]+cancel-in-progress:[[:space:]]*false' "$f" || _cancels="$_cancels $b"
+      rc_top_block "$f" | grep -qE '^[[:space:]]+cancel-in-progress:[[:space:]]*false[[:space:]]*(#.*)?$' || _cancels="$_cancels $b"
     else
       _missing="$_missing $b"
     fi
