@@ -104,6 +104,8 @@ NEW:  process.exit(0) // PROBE-REC
 SITE:process.exit(0) // PROBE-REC
 
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
+# ⚠️ SITE 는 공백을 담거나 글롭 문자({} * ? [ · 따옴표)를 피한다 — Windows 에서 node → MSYS sh 로 넘어가는 공백 없는 인자는
+# 글롭을 타 `${x}` 가 `$x` 로, `{1,6}X` 가 두 인자로 갈린다(실측 2026-11-15: 스윕이 INVALID). OLD · NEW 는 환경 변수라 안전하다.
 
 ### DM1
 FILE:scripts/test/test-deploy-md.sh
@@ -187,7 +189,7 @@ FILE:scripts/test/test-deploy-facts.sh
 TEST:scripts/test/test-deploy-facts.sh
 OLD:  [ "${_cpj:-없음}" = "false" ] && echo ok || echo "${_cpj:-없음}"
 NEW:  [ "${_cpj:+false}" = "false" ] && echo ok || echo "${_cpj:-없음}"
-SITE:${_cpj:+false}
+SITE:_cpj:+false
 
 ### DF10-first
 FILE:scripts/test/test-deploy-facts.sh
@@ -201,7 +203,7 @@ FILE:scripts/test/test-deploy-facts.sh
 TEST:scripts/test/test-deploy-facts.sh
 OLD:  [ "${_cpk:-없음}" = "false" ] && echo ok || echo "${_cpk:-없음}"
 NEW:  [ "${_cpk:+false}" = "false" ] && echo ok || echo "${_cpk:-없음}"
-SITE:${_cpk:+false}
+SITE:_cpk:+false
 
 ### DF11-first
 FILE:scripts/test/test-deploy-facts.sh
@@ -298,8 +300,8 @@ SITE:"$_hdr" | tail -n +99
 FILE:scripts/test/test-remaining-work-shape.sh
 TEST:scripts/test/test-remaining-work-shape.sh
 OLD:RW_ARCHIVE_RE='archive/docs-history-2026-09'
-NEW:RW_ARCHIVE_RE=''
-SITE:RW_ARCHIVE_RE=''
+NEW:RW_ARCHIVE_RE='' # PROBE-EMPTY-NEEDLE
+SITE:PROBE-EMPTY-NEEDLE
 
 ### RW7
 FILE:scripts/test/test-remaining-work-shape.sh
@@ -327,7 +329,7 @@ FILE:scripts/test/test-readme-badges.sh
 TEST:scripts/test/test-readme-badges.sh
 OLD:is_stable() { case "$1" in 0.*) return 1 ;; *) return 0 ;; esac; }
 NEW:is_stable() { case "$1" in NEVER0.*) return 1 ;; *) return 0 ;; esac; }
-SITE:NEVER0.*)
+SITE:in NEVER0
 
 ### RB5x
 FILE:scripts/test/test-readme-badges.sh
@@ -341,7 +343,7 @@ FILE:scripts/test/test-readme-mirror.sh
 TEST:scripts/test/test-readme-mirror.sh
 OLD:rm_headings() { grep -oE '^#{1,6} ' "$1" | tr -d ' ' | tr '\n' '-'; }
 NEW:rm_headings() { grep -oE '^#{1,6}NEVER ' "$1" | tr -d ' ' | tr '\n' '-'; }
-SITE:{1,6}NEVER
+SITE:NEVER ' "$1"
 
 ### RM2
 FILE:scripts/test/test-readme-mirror.sh
