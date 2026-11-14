@@ -505,7 +505,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 92건 (열림 43)
+## D. 원장 밖 — 92건 (열림 42)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -525,7 +525,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 미완 마커 — 3
 
 - [ ] `harness-suites-untested-here-marker` **[M/M]** 하네스 스위트 4종(python·rust·ruby·kotlin)이 「미실행 검증(untested-here)」 마커를 단 채 스코어카드를 만든다 · `harness/suites/python.sh:6`
-- [ ] `release-yml-unpaid-measurement` **[M/S]** release.yml 헤더의 「미납 실측」 블록이 전제(태그 미푸시)가 무너진 뒤에도 그대로 남아 있다 · `.github/workflows/release.yml:16`
+- [x] `release-yml-unpaid-measurement` **[M/S · 닫힘 2026-11-14 #1072]** v1.1.0 · v1.2.4 로그에 사후 마커 — 빚은 갚았고, 블록은 「마지막으로 잰 핀과 다르면 다음 태그에서 잰다」로
 - [ ] `install-verify-not-implemented-wording` **[L/S]** install-verify.sh의 유일한 TODO — not_implemented가 원인을 「언어 태스크 대기 중」으로 오귀속한다 · `harness/install/install-verify.sh:100`
 
 ### 로드맵·기능 갭 — 16
