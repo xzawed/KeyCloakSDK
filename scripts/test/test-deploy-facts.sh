@@ -210,12 +210,13 @@ assert_eq "7" "$_ab_seen" "df_api_baseline 이 선언한 자리가 정확히 일
 # 기대값을 리터럴 `false` 로 박는 것이 맞다 — 이것은 버전처럼 움직이는 값이 아니라 **정책**이고,
 # 바꾸려면 사람이 이 어서션을 함께 지워야 한다(그게 목적이다).
 # 판정기 둘 — <파일> → ok | 읽은 값(없으면 없음). 아래 음성 대조가 같은 함수를 먹인다.
+# ⚠️ **모든 자리를 읽는다**(서로 다른 값을 정렬해 한 줄로) — 첫 자리만 읽으면 뒤에 붙은 true 가 숨는다.
 _cp_java_check() {
-  _cpj="$(grep -oE '<autoPublish>[^<]*' "$1" | sed 's/.*>//' | head -1)"
+  _cpj="$(grep -oE '<autoPublish>[^<]*' "$1" | sed 's/.*>//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
   [ "${_cpj:-없음}" = "false" ] && echo ok || echo "${_cpj:-없음}"
 }
 _cp_kt_check() {
-  _cpk="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$1" | sed 's/.*= *//' | head -1)"
+  _cpk="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$1" | sed 's/.*= *//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
   [ "${_cpk:-없음}" = "false" ] && echo ok || echo "${_cpk:-없음}"
 }
 assert_eq "ok" "$(_cp_java_check "$_ab_root/java/pom.xml")" \
@@ -283,13 +284,14 @@ assert_eq "keycloak-sdk-examples" "${_last_mod:-없음}" \
 # ⚠️ 사본을 지울 수 있는 곳은 이 커밋에서 지웠다(CI 인자 2곳은 기본값과 바이트 동일이라
 # 무위험, `test-harness-registries.sh` 의 루프는 순서 무관이라 SSOT 파생). 남은 넷은
 # **실행 순서를 갖거나 그것을 설명하는 산문**이라 지울 수 없어서 대조한다.
-_LANG_RE='^(go|dotnet|node|python|java|php|rust|ruby|kotlin)$'
 _ssot_set="$(printf '%s\n' $DEPLOY_LANGS | sort | tr '\n' ' ')"
 
-# 파일에서 패턴에 맞는 **첫 줄**을 골라 언어 토큰만 뽑아 정렬된 집합으로 돌려준다.
+# 파일에서 패턴에 맞는 **첫 줄**을 골라, 그 줄의 언어 목록 — 공백으로 이은 소문자 낱말 둘 이상의 연속 — 의 낱말을
+# **전부** 정렬된 집합으로 돌려준다. ⚠️ 아는 아홉만 남기는 거름망(옛 `_LANG_RE`)을 두지 않는다 — 모르는 토큰을
+# 버리면 `… kotlin zig` 사본이 집합 대조를 통과한다(아래 음성 대조). 목록 밖 낱말이 그 연속에 붙으면 시끄럽게 운다.
 langset_of() { # $1=파일(루트 상대) $2=패턴 [$3=루트 — 아래 음성 대조가 픽스처 루트를 준다]
   grep -E -- "$2" "${3:-$DIR/../..}/$1" 2>/dev/null | head -1 \
-    | tr -c 'a-z' '\n' | grep -Ex "$_LANG_RE" | sort -u | tr '\n' ' '
+    | LC_ALL=C grep -oE '[a-z]+( +[a-z]+)+' | tr -s ' ' '\n' | sort -u | tr '\n' ' '
 }
 
 _copy_sites=0
