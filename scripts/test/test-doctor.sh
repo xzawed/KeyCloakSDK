@@ -171,4 +171,70 @@ assert_fails node "$T8/scripts/doctor.mjs" dotnet
 OUT8="$(node "$T8/scripts/doctor.mjs" dotnet 2>&1 || true)"
 assert_contains "$OUT8" "찾지 못함" 'dotnet 대상 선언이 없으면 추출 실패로 보고한다'
 
+# ── 9. 규약 변수의 SSOT — 규칙 · 문서 · 진단기가 부르는 KCSDK_* 는 전부 가이드의 표에 행이 있다 ──────
+# 등록부 docs-kcsdk-env-ssot: CLAUDE.md 는 「설치 · 환경변수 규약은 development-setup.md」라 가리키는데 그 표에는
+# 셋(KCSDK_TOOLS · KCSDK_JDK21 · KCSDK_PY)만 있었고, php.md 가 쓰는 KCSDK_PHP · KCSDK_OPENSSL_CNF 는 규칙 파일에만
+# 있었다(실측 2026-11-14). 스크립트 내부 변수(KCSDK_ITCOV_*)는 규약이 아니라 뺀다. 보는 범위는 추적되는 모든 문서
+# (등록부는 경위라 뺀다)와 scripts/ 의 실행 스크립트다 — 규칙 넷만 보던 첫 판을 독립 레그(Grok Q6)가 「README 에
+# 새 변수가 생기면 못 본다」고 짚었다. 시험 고정물(java · ruby 의 KCSDK_MEASURE 류)은 문서 밖이라 대상이 아니다.
+# ⚠️ git 경로 지정의 `*` 는 하위 디렉터리까지 맞는다 — scripts/test/(이 파일의 예시 이름)는 명시적으로 뺀다.
+GUIDE9="$ROOT/docs/guides/development-setup.md"
+_outside9() { # 가이드 밖에서 부르는 이름 — git grep 이 실패하면 비고, 아래 하한이 운다(fail-closed)
+  git -C "$ROOT" grep -ohE 'KCSDK_[A-Z0-9_]+' -- '*.md' ':!docs/superpowers/plans/remaining-work.md' \
+    ':!docs/guides/development-setup.md' 'scripts/' ':!scripts/test/' 2>/dev/null \
+    | grep -v '^KCSDK_ITCOV_' | sort -u
+}
+_used9() { # $1 = 가이드 — 가이드 밖과 그 가이드가 부르는 이름
+  { _outside9; grep -oE 'KCSDK_[A-Z0-9_]+' "$1"; } | grep -v '^KCSDK_ITCOV_' | sort -u
+}
+_rows9() { # $1 = 가이드 — 표의 행 머리(`| `KCSDK_X` |`)
+  grep -oE '^\| `KCSDK_[A-Z0-9_]+`' "$1" | grep -oE 'KCSDK_[A-Z0-9_]+' | sort -u
+}
+_missing9() { # $1 = 가이드 — 표에 행이 없는 이름(공백으로 이음)
+  _rows="$(_rows9 "$1")"
+  _used9 "$1" | while IFS= read -r v; do
+    printf '%s\n' "$_rows" | grep -qxF -- "$v" || printf '%s ' "$v"
+  done
+}
+# 공허 하한 — 가이드 밖 추출이 깨지면 가이드 자신의 이름만 남아 「쓰는 것 = 행」이 되어 조용히 통과한다.
+# ⚠️ 세어서 박는다: 실측 5(2026-11-14).
+_n9="$(_outside9 | grep -c . || true)"
+_short=1; [ "$_n9" -ge 5 ] && _short=0
+assert_eq "ok" "$(ok_if "$_short" "$_n9")" "[KCSDK] 가이드 밖에서 부르는 규약 변수를 5개 미만 찾았다($_n9) — 추출이 깨졌나?"
+assert_eq "" "$(_missing9 "$GUIDE9")" "[KCSDK] development-setup.md 의 표에 행이 없는 규약 변수 — 표에 더하라"
+# 음성 대조 — 표에서 한 행을 빼면 울어야 한다(대조가 공허하지 않다는 증거).
+grep -v '^| `KCSDK_PY`' "$GUIDE9" > "$T5/guide9.md"
+assert_eq "KCSDK_PY " "$(_missing9 "$T5/guide9.md")" "[KCSDK·음성대조] 표에서 KCSDK_PY 행을 빼도 검출기가 침묵했다"
+# KCSDK_PY 의 값은 `python/` 기준이다 — 읽는 쪽 전부(doctor 의 pyProbes · `cd python && "$KCSDK_PY"`)가 그렇게 푼다.
+# 가이드가 루트 기준(`python/.venv/…`)을 기본값 · 예시로 적었고, 그대로 설정하면 명령은 127 인데 doctor 는 PATH 의
+# python 으로 넘어가 ok 를 냈다(실측 2026-11-14 — 그 폴백은 아래 9b 가 막는다). 가이드의 값 자리에 `python/` 로
+# 시작하는 KCSDK_PY 가 없어야 한다.
+_rootrel9() { grep -nE '`KCSDK_PY` \| `python/|KCSDK_PY="python/' "$1" || true; }
+assert_eq "" "$(_rootrel9 "$GUIDE9")" "[KCSDK] 가이드가 KCSDK_PY 를 루트 기준 경로로 적는다 — 값은 python/ 기준이다"
+printf '%s\n' 'export KCSDK_PY="python/.venv/bin/python"' > "$T5/guide9b.md"
+assert_eq "1:export KCSDK_PY=\"python/.venv/bin/python\"" "$(_rootrel9 "$T5/guide9b.md")" "[KCSDK·음성대조] 루트 기준 예시를 못 잡았다"
+
+# ── 9b. KCSDK_PY 가 설정되면 doctor 는 **그것 하나만** 본다 ─────────────────────────
+# 명령(`cd python && "${KCSDK_PY:-…}"`)에는 폴백이 없다. 그런데 doctor 는 그 값이 없거나 낡으면 건너뛰고 PATH 의
+# python 으로 ok 를 냈다 — 존재하지 않는 값도 ok(실측 2026-11-14). 진단이 명령과 다른 해석기를 보면 틀린 설정이
+# 초록으로 남는다. 절대경로로 준다(`python/` 기준 풀이는 절대경로를 그대로 둔다).
+py_line() { printf '%s\n' "$1" | grep -E '^[[:space:]]+python[[:space:]]' | head -1; }
+mkdir -p "$T5/fakepy"
+printf '%s\n' '#!/bin/sh' 'echo "Python 97.531.0"' > "$T5/fakepy/python"
+printf '%s\n' '#!/bin/sh' 'echo "Python 1.0.0"' > "$T5/fakepy/old"
+chmod +x "$T5/fakepy/python" "$T5/fakepy/old"
+OUT9p="$(KCSDK_PY="$T5/fakepy/python" node "$DOC" python 2>&1 || true)"
+assert_contains "$(py_line "$OUT9p")" "97.531.0" '[KCSDK_PY] 설정된 해석기의 버전이 보고돼야 한다(양성 대조)'
+OUT9q="$(KCSDK_PY="$T5/fakepy/nope" node "$DOC" python 2>&1 || true)"
+assert_contains "$(py_line "$OUT9q")" "MISSING" '[KCSDK_PY] 설정된 해석기가 없는데 PATH 의 python 으로 넘어갔다'
+OUT9r="$(KCSDK_PY="$T5/fakepy/old" node "$DOC" python 2>&1 || true)"
+assert_contains "$(py_line "$OUT9r")" "TOO OLD" '[KCSDK_PY] 설정된 해석기가 낡았는데 PATH 의 python 으로 넘어갔다'
+# 경로 구분자가 없는 값은 **명령 이름**이다 — 명령(`"$KCSDK_PY"`)과 integration-coverage.mjs 가 PATH 에서 찾는다.
+# python/ 기준으로 풀면 `python/kcsdkpy97` 을 찾다 MISSING 이 된다(9b 초안이 그랬다).
+mkdir -p "$T5/pybin"
+printf '%s\n' '#!/bin/sh' 'echo "Python 97.531.4"' > "$T5/pybin/kcsdkpy97"
+chmod +x "$T5/pybin/kcsdkpy97"
+OUT9s="$(PATH="$T5/pybin:$PATH" KCSDK_PY=kcsdkpy97 node "$DOC" python 2>&1 || true)"
+assert_contains "$(py_line "$OUT9s")" "97.531.4" '[KCSDK_PY] 명령 이름은 PATH 에서 찾아야 한다(명령 · integration-coverage 와 같은 규칙)'
+
 assert_report
