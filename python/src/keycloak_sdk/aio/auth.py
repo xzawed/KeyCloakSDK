@@ -32,7 +32,7 @@ from .._internal.jwt import JwtValidator, check_token_size, refuse_hs_algorithm
 from .._internal.lower import auth_failure, is_lower_failure, summarize
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
-from .._internal.token_cap import cap_openid
+from .._internal.token_cap import Answered, answering, cap_openid
 from .._internal.wire import bound_reads
 from ..auth import AuthorizationUrl, _generate_pkce_pair
 from ..config import KeycloakConfig
@@ -111,12 +111,14 @@ class AsyncAuthClient:
         변환한다. ⚠️ 상류 메시지도 원본 예외도 옮기지 않는다 — 응답 본문을 싣는다. `sent` 는 그
         요청이 client secret 말고 보낸 비밀 값이다(되울림은 싣지 않는다, `carried_code`).
         """
+        answered = Answered()  # 그 호출이 받은 마지막 응답의 상태(`token_cap.py`)
         try:
-            return await awaitable
+            with answering(answered):
+                return await awaitable
         except Exception as exc:
             if not is_lower_failure(exc):
                 raise
-            error = auth_failure(exc, sent=(self._config.client_secret, *sent))
+            error = auth_failure(exc, sent=(self._config.client_secret, *sent), answered=answered)
             cause = summarize(exc)
         raise error from cause
 

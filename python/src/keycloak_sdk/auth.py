@@ -31,7 +31,7 @@ from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
 from ._internal.secrets import mask
-from ._internal.token_cap import cap_openid
+from ._internal.token_cap import Answered, answering, cap_openid
 from ._internal.wire import bound_reads
 from .config import KeycloakConfig
 from .exceptions import (
@@ -138,12 +138,14 @@ class AuthClient:
         싣는다(토큰·되돌린 `client_secret`). 규칙과 실측은 `_internal/lower.py`. 원본은 `except`
         **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
         """
+        answered = Answered()  # 그 호출이 받은 마지막 응답의 상태(`token_cap.py`)
         try:
-            return fn()
+            with answering(answered):
+                return fn()
         except Exception as exc:
             if not is_lower_failure(exc):
                 raise
-            error = auth_failure(exc, sent=(self._config.client_secret, *sent))
+            error = auth_failure(exc, sent=(self._config.client_secret, *sent), answered=answered)
             cause = summarize(exc)
         raise error from cause
 
