@@ -16,7 +16,7 @@ from typing import TypeVar
 
 from keycloak.exceptions import KeycloakError
 
-from .._internal.admin_body import RedirectionStatus, facade, no_body
+from .._internal.admin_body import Answer, RedirectionStatus, facade, no_body
 from .._internal.admin_grant import is_grant_failure
 from .._internal.lower import grant_failure, is_lower_failure, refused_body, summarize
 from ..exceptions import (
@@ -75,7 +75,7 @@ def by_status(status: int, body: object) -> KeycloakAdminError:
 
 
 def admin_failure(
-    exc: BaseException,
+    exc: BaseException, answer: Answer | None = None
 ) -> KeycloakAdminError | KeycloakTransportError | KeycloakAuthError:
     """`is_lower_failure` 인 실패의 분류.
 
@@ -86,8 +86,12 @@ def admin_failure(
     `KeycloakAuthError` 로 거부한다(`refused_grant`).
 
     그 밖의 `KeycloakError`(admin REST 응답)는 `translate` 그대로다. python-keycloak 이 admin
-    REST 응답을 못 쓴 실패(`TypeError`·`KeyError`)는 HTTP 상태가 없으므로 이 경계의 규칙대로
-    전송 쪽이다. 예전에는 raw 로 새어 본문을 인용했다.
+    REST 응답을 못 쓴 실패(`TypeError`·`KeyError`·`RecursionError`)에는 HTTP 상태가 없다 — 그
+    호출이 받은 마지막 응답(`answer`, `_internal/admin_body.py`)이 400 이상이면 그 상태의 오류다
+    (`by_status`): python-keycloak 이 깨진 자리가 그 오류 본문의 해석이다(JSON 이 객체가 아니면
+    `["message"]` 에서 — 예전에는 상태 없는 전송 오류였다, 등록부
+    `python-admin-list-error-array-body`). 2xx 를 못 쓴 것은 이 경계의 규칙대로 전송 쪽이다.
+    예전에는 raw 로 새어 본문을 인용했다.
 
     파사드 요청이 받은 3xx 는 python-keycloak 에 닿지 않는다 — 세션이 던진 `RedirectionStatus`
     (`raw_*` 가 감싼 원인)를 그 상태의 오류로 새로 만든다(`by_status` — 4xx 와 같은 판정).
@@ -102,6 +106,8 @@ def admin_failure(
         return by_status(signal.status, signal.body)
     if isinstance(exc, KeycloakError):
         return translate(exc)
+    if answer is not None and answer.status is not None and answer.status >= 400:
+        return by_status(answer.status, answer.body)
     return KeycloakTransportError(
         f"Keycloak admin API returned an unusable response ({type(exc).__name__})"
     )
@@ -138,12 +144,14 @@ def call(fn: Callable[[], T]) -> T:
     python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
     admin 하드닝의 거부(그랜트·bearer 검사, 연결 무장 실패)는 같은 타입으로 새로 만든다
     (`refused_grant`·`refused_guard`). 원본은 `except` **밖에서** 다시 던져 `__context__` 로도
-    닿지 않게 한다. 파사드 호출임을 표시해(`facade`) 그 요청의 3xx 를 결과로 넘기지 않는다.
+    닿지 않게 한다. 파사드 호출임을 표시해(`facade`) 그 요청의 3xx 를 결과로 넘기지 않고, 받은
+    마지막 응답을 `answer` 에 둔다(`admin_failure` 가 읽는다).
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
+    answer = Answer()
     try:
-        with facade():
+        with facade(answer):
             return fn()
     except KeycloakAuthError as e:
         error, cause = refused_grant(e), None
@@ -152,5 +160,5 @@ def call(fn: Callable[[], T]) -> T:
     except Exception as e:
         if not is_lower_failure(e):
             raise
-        error, cause = admin_failure(e), summarize(e)
+        error, cause = admin_failure(e, answer), summarize(e)
     raise error from cause
