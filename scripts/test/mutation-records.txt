@@ -533,3 +533,116 @@ TEST:scripts/test/test-osv-audit-gate.sh
 OLD:    d && /^[[:space:]]*exit 1$/ { found = 1 }
 NEW:    d { found = 1 }
 SITE:d { found = 1 }
+
+# 인라인 판정의 음성 대조 — test-security-defaults.sh · test-publication-claims.sh(실측 2026-11-14 SILENT → CAUGHT).
+### S9
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:  _rk="$(sd_code_count_raw "$1" "$2")"
+NEW:  _rk="$(sd_code_count_raw "$1" "")"
+SITE:sd_code_count_raw "$1" "")
+
+### S9-exact
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:  [ "$_rk" = 1 ] && printf ok || printf 'COUNT=%s' "$_rk"
+NEW:  [ "$_rk" -ge 1 ] && printf ok || printf 'COUNT=%s' "$_rk"
+SITE:[ "$_rk" -ge 1 ]
+
+### S12
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:$(sd_nonce_canary "$L")
+NEW:$(sd_nonce_canary "$L" | sed d)
+SITE:sd_nonce_canary "$L" | sed d
+
+### S13
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:  _cp="$(sd_backoff_cap "$L")"
+NEW:  _cp="$(sd_backoff_cap "$L" | sed d)"
+SITE:sd_backoff_cap "$L" | sed d
+
+### S15
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:$(sd_mask_canary "$L")
+NEW:$(sd_mask_canary "$L" | sed d)
+SITE:sd_mask_canary "$L" | sed d
+
+### S16
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:$(sd_mask2_hook "$L")
+NEW:$(sd_mask2_hook "$L" | sed d)
+SITE:sd_mask2_hook "$L" | sed d
+
+### S20
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:  _rest="${_l#*"$3"}"
+NEW:  _rest="x${_l#*"$3"}"
+SITE:_rest="x${_l
+
+### S20-code
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:  _l="$(sd_code_lines "$ROOT/$2" | grep -m1 -F -- "$3" || true)"
+NEW:  _l="$(grep -m1 -F -- "$3" "$ROOT/$2" || true)"
+SITE:grep -m1 -F -- "$3" "$ROOT/$2"
+
+### S-rows-floor
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:  assert_eq "ok" "$(ok_if "$([ "$_rf_n" -ge 1 ] && echo 0 || echo 1)" "ROWS=$_rf_n")" \
+NEW:  assert_eq "ok" "$(ok_if "$([ "$_rf_n" -ge 0 ] && echo 0 || echo 1)" "ROWS=$_rf_n")" \
+SITE:"$_rf_n" -ge 0 ]
+
+### S-needle-hook
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:sd_hook_ok() { [ -n "$2" ] || { printf 'EMPTY-NEEDLE'; return 0; }; _sn="$(sd_code_count_raw "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
+NEW:sd_hook_ok() { _sn="$(sd_code_count_raw "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; } # PROBE-REC
+SITE:printf MISSING; } # PROBE-REC
+
+### S-needle-canary
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-security-defaults.sh
+OLD:sd_canary_ok() { [ -n "$2" ] || { printf 'EMPTY-NEEDLE'; return 0; }; _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
+NEW:sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; } # PROBE-REC
+SITE:printf 'COUNT=%s' "$_sn"; } # PROBE-REC
+
+### P1
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:pc_banner() { sed -n '1,12p' "$1" | grep -m1 '^> \*\*' || true; }
+NEW:pc_banner() { printf '%s\n' '> **probe-const is on x**'; }
+SITE:probe-const is on x
+
+### P4
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:  assert_eq "ok" "$(pc_claim_in "$(cat "$ROOT/$1")" "$2")" \
+NEW:  assert_eq "ok" "$(pc_claim_in "$(cat "$ROOT/$1")" "")" \
+SITE:"$(cat "$ROOT/$1")" "")"
+
+### P4-bound
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:      if pc_left_bound "$_pci_pre" && pc_right_bound "$_pci_l"; then printf 'ok'; return 0; fi
+NEW:      if :; then printf 'ok'; return 0; fi # PROBE-REC
+SITE:if :; then printf 'ok'; return 0; fi # PROBE-REC
+
+### P5
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:  assert_not_contains "$2" "no stable release yet" \
+NEW:  set -- "$1" ""; assert_not_contains "$2" "no stable release yet" \
+SITE:set -- "$1" ""; assert_not_contains
+
+### P8
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:  _ko_t="$(cat "$ROOT/README.ko.md")"
+NEW:  _ko_t="아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다 / 아홉 전부 정식 릴리스를 공개 레지스트리에 게시했습니다"
+SITE:번호는 갈렸습니다 / 아홉
