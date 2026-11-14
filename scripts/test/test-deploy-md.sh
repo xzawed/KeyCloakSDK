@@ -68,6 +68,11 @@ done
 # 두 도우미 스크립트 참조
 assert_contains "$body" "scripts/release-readiness.sh" "readiness 참조"
 assert_contains "$body" "scripts/release-trigger.sh" "trigger 참조"
+# PHP 게시 확인은 미러 확인 스크립트를 부른다 — 런북이 오래 그것을 몰라 미러 태그와 Packagist 페이지를
+# 사람 눈에 맡겼다(deploy-php-mirror-gap). 이름 등장만 보면 주석 속 사본에도 참이라 §9 PHP 절의
+# 「Deployment check」 줄로 좁힌다. 절 제목이 바뀌면 빈 값이 되어 여기서 빨개진다.
+_dm_php_check="$(awk '/^### 9\. PHP/{f=1;next} f&&/^### /{f=0} f&&/^- Deployment check:/' "$DOC")"
+assert_contains "$_dm_php_check" "sh scripts/check-php-mirror.sh <X.Y.Z>" "§9 PHP 게시 확인이 check-php-mirror.sh <버전> 을 부른다"
 
 # ⚠️ **참조가 있다는 것과 그 명령이 맞는 답을 준다는 것은 다르다.** 위 `assert_contains` 는
 # 스크립트 **이름의 등장**만 보므로, `--version` 이 빠져 엉뚱한 답을 주는 호출에도 참이다 —
