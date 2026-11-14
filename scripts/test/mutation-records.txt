@@ -102,3 +102,264 @@ TEST:scripts/test/test-check-sonar-index.sh
 OLD:  process.exit(d.code)
 NEW:  process.exit(0) // PROBE-REC
 SITE:process.exit(0) // PROBE-REC
+
+# ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
+
+### DM1
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:    printf '%s\n' $2 | grep -qx "$_dm_l" || _dm_m="$_dm_m $_dm_l"
+NEW:    printf '%s\n' $2 $_dm_l | grep -qx "$_dm_l" || _dm_m="$_dm_m $_dm_l"
+SITE:$2 $_dm_l |
+
+### DM1-floor
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:_dm_tree="$(df_tree_langs "$DIR/../..")"
+NEW:_dm_tree="$(df_tree_langs "$DIR/../../.no-such-tree")"
+SITE:.no-such-tree
+
+### DM3
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:  printf '%s\n' "$1" | grep -qE "(^|[^A-Za-z0-9_])$2([^A-Za-z0-9_]|\$)" && echo ok || echo MISSING
+NEW:  printf '%s\n' "$1$2" | grep -qE "(^|[^A-Za-z0-9_])$2([^A-Za-z0-9_]|\$)" && echo ok || echo MISSING
+SITE:"$1$2"
+
+### DM3-boundary
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:  printf '%s\n' "$1" | grep -qE "(^|[^A-Za-z0-9_])$2([^A-Za-z0-9_]|\$)" && echo ok || echo MISSING
+NEW:  printf '%s\n' "$1" | grep -qF -- "$2" && echo ok || echo MISSING
+SITE:grep -qF -- "$2"
+
+### DM4
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:  _dr="$(df_dryrun "$L" 2>/dev/null || true)"
+NEW:  _dr="$(df_dryrun "$L" 2>/dev/null >/dev/null || true)"
+SITE:2>/dev/null >/dev/null
+
+### DM6
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:  for _form in $_rs_forms; do case "$2" in *"$_form"*) _rs_ok=ok ;; esac; done
+NEW:  for _form in $_rs_forms; do case "$2" in *) _rs_ok=ok ;; esac; done
+SITE:in *) _rs_ok=ok
+
+### DM6-oneline
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:  _rs_name="$(node -e 'const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof j.name === "string" ? j.name : "")' "$1" 2>/dev/null || true)"
+NEW:  _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$1" | head -1)"
+SITE:_rs_name="$(sed -n
+
+### DM6-noname
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:  [ -n "$_rs_name" ] || { printf 'NONAME'; return 0; }
+NEW:  : # PROBE-NONAME-GUARD-OFF
+SITE:PROBE-NONAME-GUARD-OFF
+
+### DM8
+FILE:scripts/test/test-deploy-md.sh
+TEST:scripts/test/test-deploy-md.sh
+OLD:_dm_bad_calls() { printf '%s\n' "$1" | grep -oE 'release-readiness\.sh +[a-z]+' || true; }
+NEW:_dm_bad_calls() { printf '%s\n' "$1" | grep -oE 'release-readiness\.shNEVER +[a-z]+' || true; }
+SITE:shNEVER
+
+### DF7
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:    assert_eq "match" "$(printf '%s' "$2" | grep -qE "$(df_version_re "$1")" && echo match || echo nomatch)" \
+NEW:    assert_eq "match" "$(printf '%s' "$2" | grep -qE "" && echo match || echo nomatch)" \
+SITE:grep -qE "" && echo match
+
+### DF7-else
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:    assert_eq "" "$2" "$1 은 미게시인데 df_published_version 이 값을 갖는다"
+NEW:    assert_eq "$2" "$2" "$1 은 미게시인데 df_published_version 이 값을 갖는다"
+SITE:assert_eq "$2" "$2"
+
+### DF10
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:  [ "${_cpj:-없음}" = "false" ] && echo ok || echo "${_cpj:-없음}"
+NEW:  [ "${_cpj:+false}" = "false" ] && echo ok || echo "${_cpj:-없음}"
+SITE:${_cpj:+false}
+
+### DF10-first
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:  _cpj="$(grep -oE '<autoPublish>[^<]*' "$1" | sed 's/.*>//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+NEW:  _cpj="$(grep -oE '<autoPublish>[^<]*' "$1" | sed 's/.*>//' | head -1)"
+SITE:"$1" | sed 's/.*>//' | head -1
+
+### DF11
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:  [ "${_cpk:-없음}" = "false" ] && echo ok || echo "${_cpk:-없음}"
+NEW:  [ "${_cpk:+false}" = "false" ] && echo ok || echo "${_cpk:-없음}"
+SITE:${_cpk:+false}
+
+### DF11-first
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:  _cpk="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$1" | sed 's/.*= *//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+NEW:  _cpk="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$1" | sed 's/.*= *//' | head -1)"
+SITE:sed 's/.*= *//' | head -1
+
+### DF14
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:  assert_eq "$_ssot_set" "$_got" \
+NEW:  assert_eq "$_ssot_set" "$_ssot_set" \
+SITE:"$_ssot_set" "$_ssot_set"
+
+### DF14-whitelist
+FILE:scripts/test/test-deploy-facts.sh
+TEST:scripts/test/test-deploy-facts.sh
+OLD:    | LC_ALL=C grep -oE '[a-z]+( +[a-z]+)+' | tr -s ' ' '\n' | sort -u | tr '\n' ' '
+NEW:    | LC_ALL=C grep -oE '[a-z]+( +[a-z]+)+' | tr -s ' ' '\n' | grep -Ex 'go|dotnet|node|python|java|php|rust|ruby|kotlin' | sort -u | tr '\n' ' '
+SITE:grep -Ex 'go|dotnet|node|python|java|php|rust|ruby|kotlin'
+
+### DR10
+FILE:scripts/test/test-dispatch-release.sh
+TEST:scripts/test/test-dispatch-release.sh
+OLD:dr_warnings()  { grep -c '::warning::' "$1" || true; }
+NEW:dr_warnings()  { grep -c '::warningNEVER::' "$1" || true; }
+SITE:::warningNEVER::
+
+### DR11
+FILE:scripts/test/test-dispatch-release.sh
+TEST:scripts/test/test-dispatch-release.sh
+OLD:dr_echo_out()  { grep -cE '^[^#]*echo "\$OUT"' "$1" || true; }
+NEW:dr_echo_out()  { grep -cE '^[^#]*echoNEVER "\$OUT"' "$1" || true; }
+SITE:echoNEVER
+
+### DR11-comment
+FILE:scripts/test/test-dispatch-release.sh
+TEST:scripts/test/test-dispatch-release.sh
+OLD:dr_echo_out()  { grep -cE '^[^#]*echo "\$OUT"' "$1" || true; }
+NEW:dr_echo_out()  { grep -cE 'echo "\$OUT"' "$1" || true; } # PROBE-NO-COMMENT-EXCL
+SITE:PROBE-NO-COMMENT-EXCL
+
+### DR13
+FILE:scripts/test/test-dispatch-release.sh
+TEST:scripts/test/test-dispatch-release.sh
+OLD:dr_publishes() { grep -cE '(npm|cargo|gem|twine|dotnet nuget) publish|gh release create' "$1" || true; }
+NEW:dr_publishes() { grep -cE 'NEVERMATCH' "$1" || true; }
+SITE:'NEVERMATCH'
+
+### RL1
+FILE:scripts/test/test-release-concurrency.sh
+TEST:scripts/test/test-release-concurrency.sh
+OLD:      _missing="$_missing $b"
+NEW:      : "$_missing $b"
+SITE:: "$_missing $b"
+
+### RL2
+FILE:scripts/test/test-release-concurrency.sh
+TEST:scripts/test/test-release-concurrency.sh
+OLD:      rc_top_block "$f" | grep -qE '^[[:space:]]+cancel-in-progress:[[:space:]]*false[[:space:]]*(#.*)?$' || _cancels="$_cancels $b"
+NEW:      rc_top_block "$f" | grep -qE '' || _cancels="$_cancels $b"
+SITE:grep -qE '' || _cancels
+
+### RL2-scope
+FILE:scripts/test/test-release-concurrency.sh
+TEST:scripts/test/test-release-concurrency.sh
+OLD:  awk '{ sub(/\r$/, "") } /^concurrency:/ { inb = 1; next } inb && /^[^[:space:]#]/ { exit } inb' "$1"
+NEW:  cat "$1" # PROBE-WHOLE-FILE
+SITE:PROBE-WHOLE-FILE
+
+### CL3
+FILE:scripts/test/test-changelog-landing.sh
+TEST:scripts/test/test-changelog-landing.sh
+OLD:    | grep -c '[^[:space:]]' || true
+NEW:    | grep -c '' || true
+SITE:grep -c '' || true
+
+### CL4
+FILE:scripts/test/test-changelog-landing.sh
+TEST:scripts/test/test-changelog-landing.sh
+OLD:_grew() { [ "$2" -gt "$1" ] && echo grew || echo flat; }
+NEW:_grew() { [ "$2" -ge "$2" ] && echo grew || echo flat; }
+SITE:-ge "$2" ]
+
+### RW3
+FILE:scripts/test/test-remaining-work-shape.sh
+TEST:scripts/test/test-remaining-work-shape.sh
+OLD:  _bad="$(printf '%s' "$_hdr" | tail -n +2)"
+NEW:  _bad="$(printf '%s' "$_hdr" | tail -n +99)"
+SITE:"$_hdr" | tail -n +99
+
+### RW6
+FILE:scripts/test/test-remaining-work-shape.sh
+TEST:scripts/test/test-remaining-work-shape.sh
+OLD:RW_ARCHIVE_RE='archive/docs-history-2026-09'
+NEW:RW_ARCHIVE_RE=''
+SITE:RW_ARCHIVE_RE=''
+
+### RW7
+FILE:scripts/test/test-remaining-work-shape.sh
+TEST:scripts/test/test-remaining-work-shape.sh
+OLD:_rw_preamble() { awk '/^# /{p=1; next} p && /^## /{exit} p' "$1"; }
+NEW:_rw_preamble() { cat "$1"; }
+SITE:_rw_preamble() { cat "$1"; }
+
+### RB1
+FILE:scripts/test/test-readme-badges.sh
+TEST:scripts/test/test-readme-badges.sh
+OLD:REGISTRY_RE='img\.shields\.io/(npm|pypi|crates|nuget|gem|packagist|maven-central|maven-metadata|hexpm|golang)/'
+NEW:REGISTRY_RE='img\.shields\.io/NEVER(npm|pypi|crates|nuget|gem|packagist|maven-central|maven-metadata|hexpm|golang)/'
+SITE:io/NEVER(
+
+### RB5
+FILE:scripts/test/test-readme-badges.sh
+TEST:scripts/test/test-readme-badges.sh
+OLD:status_of() { badges "$1" | grep -oE 'badge/status-[0-9]+\.[0-9]+-' | sed 's|.*badge/status-||;s|-$||' | head -1; }
+NEW:status_of() { badges "$1" | grep -oE 'badge/status-[0-9]+\.[0-9]+-' | sed 's|.*badge/status-||;s|-$||' | head -1 | sed "s/.*/$MIN_MM/"; }
+SITE:sed "s/.*/$MIN_MM/"
+
+### RB5-stable
+FILE:scripts/test/test-readme-badges.sh
+TEST:scripts/test/test-readme-badges.sh
+OLD:is_stable() { case "$1" in 0.*) return 1 ;; *) return 0 ;; esac; }
+NEW:is_stable() { case "$1" in NEVER0.*) return 1 ;; *) return 0 ;; esac; }
+SITE:NEVER0.*)
+
+### RB5x
+FILE:scripts/test/test-readme-badges.sh
+TEST:scripts/test/test-readme-badges.sh
+OLD:    if [ "$_n1" -lt "$_c1" ] || { [ "$_n1" -eq "$_c1" ] && [ "$_n2" -lt "$_c2" ]; }; then _min="$_mm"; fi
+NEW:    if [ "$_n1" -lt "$_c1" ] || { [ "$_n1" -eq "$_c1" ] && [ "$_n2" -lt "$_c2" ]; }; then :; fi
+SITE:then :; fi
+
+### RM1
+FILE:scripts/test/test-readme-mirror.sh
+TEST:scripts/test/test-readme-mirror.sh
+OLD:rm_headings() { grep -oE '^#{1,6} ' "$1" | tr -d ' ' | tr '\n' '-'; }
+NEW:rm_headings() { grep -oE '^#{1,6}NEVER ' "$1" | tr -d ' ' | tr '\n' '-'; }
+SITE:{1,6}NEVER
+
+### RM2
+FILE:scripts/test/test-readme-mirror.sh
+TEST:scripts/test/test-readme-mirror.sh
+OLD:rm_rows()   { grep -c '^|' "$1" || true; }
+NEW:rm_rows()   { grep -c '^NEVER|' "$1" || true; }
+SITE:'^NEVER|'
+
+### RM3
+FILE:scripts/test/test-readme-mirror.sh
+TEST:scripts/test/test-readme-mirror.sh
+OLD:rm_fences() { grep -c '^```' "$1" || true; }
+NEW:rm_fences() { grep -c '^```NEVER' "$1" || true; }
+SITE:```NEVER
+
+### RC2
+FILE:scripts/test/test-readme-contract.sh
+TEST:scripts/test/test-readme-contract.sh
+OLD:_ko_line="$(grep -m1 '파사드 뒤' "$KO" || true)"
+NEW:_ko_line="$(grep -m1 '파사드 뒤' "$KO" || true)$_en_line"
+SITE:|| true)$_en_line"
