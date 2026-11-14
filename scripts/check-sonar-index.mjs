@@ -17,7 +17,7 @@
 //   ⚠️ 문턱 안의 단계로 나눠 줄면 못 본다 — 성공한 실행이 다음 기준이 된다(Grok 레그). 겨누는 것은 설정 한 줄에
 //   한 번에 무너지는 것(#304)이고, 실패한 실행은 기준이 되지 않으므로 그 빨강은 고칠 때까지 남는다.
 import { spawnSync } from 'node:child_process'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 export const MAX_DROP = 0.1
@@ -68,35 +68,48 @@ function jobLogCount(repo, runId) {
 
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
+const USAGE = 'usage: GITHUB_REPOSITORY=<owner/repo> check-sonar-index.mjs --run <run id>\n' +
+  '       check-sonar-index.mjs --log <저장한 잡 로그> --base-log <기준 잡 로그>   (조회 없이 같은 판정)'
+
 function main() {
   const argv = process.argv.slice(2)
-  const at = argv.indexOf('--run')
-  const runId = at >= 0 ? argv[at + 1] : undefined
+  const opt = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined }
+  const runId = opt('--run')
   const repo = process.env.GITHUB_REPOSITORY
-  if (!/^\d+$/.test(runId ?? '') || !/^[\w.-]+\/[\w.-]+$/.test(repo ?? '')) {
-    console.error('usage: GITHUB_REPOSITORY=<owner/repo> check-sonar-index.mjs --run <run id>')
-    process.exit(2)
-  }
-  // 잡이 끝난 직후엔 로그가 아직 안 붙어 있을 수 있다 — 몇 번 다시 본다.
   let current = null
-  for (let i = 0; i < 6 && current == null; i++) {
-    if (i) pause(10_000)
-    current = jobLogCount(repo, runId)
-  }
   let baseline = null
+  let currentRun = runId
   let baselineRun = null
-  const runs = gh(['api', `repos/${repo}/actions/workflows/${WORKFLOW}/runs?branch=main&event=push&status=success&per_page=20`,
-    '--jq', '.workflow_runs[].id'])
-  for (const id of (runs ?? '').split('\n').map((s) => s.trim()).filter((s) => s && s !== runId).slice(0, BASE_TRIES)) {
-    baseline = jobLogCount(repo, id)
-    if (baseline != null) { baselineRun = id; break }
+  if (opt('--log') !== undefined || opt('--base-log') !== undefined) {
+    // 저장한 로그로 같은 판정 — 되살릴 실험의 두 실행을 다시 재는 길이자, 진입점을 조회 없이 시험하는 길이다.
+    const read = (p) => { try { return readFileSync(p, 'utf8') } catch { return null } }
+    const log = read(opt('--log') ?? '')
+    const base = read(opt('--base-log') ?? '')
+    if (log == null || base == null) { console.error(USAGE); process.exit(2) }
+    current = indexedCount(log)
+    baseline = indexedCount(base)
+    currentRun = opt('--log')
+    baselineRun = opt('--base-log')
+  } else {
+    if (!/^\d+$/.test(runId ?? '') || !/^[\w.-]+\/[\w.-]+$/.test(repo ?? '')) { console.error(USAGE); process.exit(2) }
+    // 잡이 끝난 직후엔 로그가 아직 안 붙어 있을 수 있다 — 몇 번 다시 본다.
+    for (let i = 0; i < 6 && current == null; i++) {
+      if (i) pause(10_000)
+      current = jobLogCount(repo, runId)
+    }
+    const runs = gh(['api', `repos/${repo}/actions/workflows/${WORKFLOW}/runs?branch=main&event=push&status=success&per_page=20`,
+      '--jq', '.workflow_runs[].id'])
+    for (const id of (runs ?? '').split('\n').map((s) => s.trim()).filter((s) => s && s !== runId).slice(0, BASE_TRIES)) {
+      baseline = jobLogCount(repo, id)
+      if (baseline != null) { baselineRun = id; break }
+    }
   }
-  const d = decide({ current, baseline, currentRun: runId, baselineRun })
+  const d = decide({ current, baseline, currentRun, baselineRun })
   for (const l of d.lines) console.log(l)
   if (process.env.GITHUB_STEP_SUMMARY) {
     const row = (n, r) => (n == null ? '못 읽음' : `${n} (실행 ${r})`)
     appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-      `### SonarCloud 색인 수\n\n| | 색인 |\n|---|---|\n| 이 실행 | ${row(current, runId)} |\n| main 직전 성공 | ${row(baseline, baselineRun)} |\n\n${d.lines.join('\n')}\n`)
+      `### SonarCloud 색인 수\n\n| | 색인 |\n|---|---|\n| 이 실행 | ${row(current, currentRun)} |\n| main 직전 성공 | ${row(baseline, baselineRun)} |\n\n${d.lines.join('\n')}\n`)
   }
   process.exit(d.code)
 }
