@@ -104,8 +104,6 @@ NEW:  process.exit(0) // PROBE-REC
 SITE:process.exit(0) // PROBE-REC
 
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
-# ⚠️ SITE 는 공백을 담거나 글롭 문자({} * ? [ · 따옴표)를 피한다 — Windows 에서 node → MSYS sh 로 넘어가는 공백 없는 인자는
-# 글롭을 타 `${x}` 가 `$x` 로, `{1,6}X` 가 두 인자로 갈린다(실측 2026-11-15: 스윕이 INVALID). OLD · NEW 는 환경 변수라 안전하다.
 
 ### DM1
 FILE:scripts/test/test-deploy-md.sh
