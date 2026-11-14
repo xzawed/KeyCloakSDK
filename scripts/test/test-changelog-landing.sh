@@ -57,6 +57,15 @@ _unreleased_lines() {
   awk '/^## \[Unreleased\]/ { f = 1; next } f && /^## / { exit } f && NF { n++ } END { print n + 0 }'
 }
 
+# 커밋 메시지들(stdin) → `[no-changelog: <이유>]` 면제 수. **이유가 빈칸이 아닌 것만** 센다.
+_exemptions() {
+  sed -n 's/.*\[no-changelog:[[:space:]]*\([^]]*\)\].*/\1/p' \
+    | grep -c '[^[:space:]]' || true
+}
+
+# 착지 판정 — <착지 전 줄 수> <착지 후 줄 수> → grew | flat. 줄어든 것은 자란 것이 아니다.
+_grew() { [ "$2" -gt "$1" ] && echo grew || echo flat; }
+
 # ── 음성 대조 — 판정기가 실제로 가르는가 ──────────────────────────────────────────
 # ⚠️ 살아 있는 상태만 단언하면 판정기를 지워도 초록이 된다(등록부 `selftests-with-no-negative-case`).
 
@@ -104,6 +113,16 @@ assert_eq "0" "$(printf '%s\n' '## [Unreleased]
 ' | _unreleased_lines)" \
   "[착지게이트] 공백만 있는 절은 0 이어야 한다 — 빈 줄 하나로 통과되면 소음이 된다"
 
+# 면제 판정 — 이유가 빈 표지는 면제가 아니다. 살아 있는 검사는 빈 이유를 한 번도 본 적이 없다(실측 2026-11-14 SILENT).
+assert_eq "1" "$(printf '%s\n' 'fix(go): 주석 [no-changelog: 주석만 고쳤다]' | _exemptions)" \
+  "[착지게이트] 이유가 있는 면제 표지 하나를 세야 한다"
+assert_eq "0" "$(printf '%s\n' 'fix: a [no-changelog: ]' 'fix: b [no-changelog:]' 'fix: c [no-changelog:    ]' 'fix: d' | _exemptions)" \
+  "[착지게이트] 이유가 빈 면제 표지를 세면 안 된다 — 빈 이유로 게이트가 꺼진다"
+
+# 자람 판정 — 살아 있는 비교는 기준점 = HEAD 이면 건너뛰어 main 에서는 돌지 않는다(실측 2026-11-14 SILENT). 세 경우를 먹인다.
+assert_eq "grew flat flat" "$(_grew 3 4) $(_grew 3 3) $(_grew 4 3)" \
+  "[착지게이트] 자람 판정이 grew(3→4) · flat(3→3) · flat(4→3, 줄었다) 을 가르지 못한다"
+
 # ── 공허 방지 — 글롭이 **언어마다** 실제로 무언가를 잡는가 ──────────────────────────
 # ⚠️ 숫자 하한(「N 개 이상」)을 두지 않는다. 파일이 정당하게 줄면 그 수를 다시 맞춰야 하고,
 # 그렇게 재보정되는 수는 결국 아무도 안 본다. **언어마다 ≥1** 은 재보정되지 않는 규칙이고,
@@ -146,17 +165,15 @@ else
   if [ -z "$_ship" ]; then
     printf '[착지게이트] 이 범위는 게시 라이브러리 소스를 건드리지 않았다 — 대상 아님\n'
   else
-    # 면제: `[no-changelog: <이유>]` 에서 **이유가 비어 있지 않은 것**만 센다.
-    _exempt="$(cd "$ROOT" && git log --format='%B' "$_base..$_head" \
-      | sed -n 's/.*\[no-changelog:[[:space:]]*\([^]]*\)\].*/\1/p' \
-      | grep -c '[^[:space:]]' || true)"
+    # 면제: `[no-changelog: <이유>]` 에서 **이유가 비어 있지 않은 것**만 센다(위 _exemptions).
+    _exempt="$(cd "$ROOT" && git log --format='%B' "$_base..$_head" | _exemptions)"
     _before="$(cd "$ROOT" && git show "$_base:CHANGELOG.md" | _unreleased_lines)"
     _after="$(_unreleased_lines < "$ROOT/CHANGELOG.md")"
     if [ "$_exempt" -gt 0 ]; then
       printf '[착지게이트] `[no-changelog: …]` 면제 %s 건 — 게시 소스 %s 개 변경을 통과시킨다\n' \
         "$_exempt" "$(printf '%s\n' "$_ship" | grep -c .)"
     else
-      assert_eq "grew" "$([ "$_after" -gt "$_before" ] && echo grew || echo flat)" \
+      assert_eq "grew" "$(_grew "$_before" "$_after")" \
         "[착지게이트] 게시 소스를 고쳤는데 [Unreleased] 가 안 자랐다($_before → $_after 줄). 소비자에게 무엇이 바뀌는지 한 줄 적거나, 안 바뀐다면 커밋에 '[no-changelog: 이유]' 를 남겨라. 대상: $(printf '%s\n' "$_ship" | tr '\n' ' ')"
     fi
   fi
