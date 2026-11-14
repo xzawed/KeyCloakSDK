@@ -27,6 +27,8 @@ requests 가 `r.content` 로, aio 는 httpx `send` 가 `aread()` 로 본문 전�
   3xx 는 결과가 아니다: 오류 응답과 똑같이 정리한 뒤 python-keycloak 에 넘기지 않고
   `RedirectionStatus` 를 던진다 — 경계가 그 상태의 `KeycloakAdminError` 로 새로 만든다
   (`_not_a_result`). `raw` 로 부른 메서드와 저수준 `raw_*` 는 3xx 응답을 지금처럼 받는다.
+  그 밖의 응답은 python-keycloak 에 넘기되 그 호출의 `Answer` 에 적는다 — python-keycloak 이
+  오류 응답을 쓰지 못하고 깨지면 경계가 그 상태로 판정한다.
 
 요청의 `Accept-Encoding` 은 `token_cap` 처럼 `gzip, deflate` 로 둔다 — 여기서 상한 안에
 풀 수 있는 것만 청한다. ⚠️ `stream=True` 로 온 요청(호출자가 스스로 읽는다)은 손대지
@@ -71,9 +73,9 @@ _WIRE_BUDGET = ADMIN_ERROR_BODY_MAX_BYTES + FRAMING_ALLOWANCE_BYTES
 #: 본문을 결합한다(`create_client_authz_resource` 는 201 본문,
 #: `update_client_management_permissions` 는 PUT 의 200 본문).
 _NO_BODY: ContextVar[bool] = ContextVar("kcsdk_admin_no_body", default=False)
-#: 파사드 호출이 보낸 요청임을 표시한다 — `facade` 만 건다. 그 요청의 3xx 는 결과가 아니다
-#: (`_not_a_result`). `raw` 로 부른 메서드와 저수준 `raw_*` 에는 표시가 없다.
-_FACADE: ContextVar[bool] = ContextVar("kcsdk_admin_facade", default=False)
+#: 파사드 호출이 보낸 요청임을 표시하고 그 호출의 `Answer` 를 쥔다 — `facade` 만 건다. 그 요청의
+#: 3xx 는 결과가 아니다(`_not_a_result`). `raw` 로 부른 메서드와 저수준 `raw_*` 에는 표시가 없다.
+_FACADE: ContextVar[Answer | None] = ContextVar("kcsdk_admin_facade", default=None)
 
 _SyncSend = Callable[..., requests.Response]
 _AsyncSend = Callable[..., Awaitable[httpx.Response]]
@@ -91,6 +93,25 @@ class RedirectionStatus(Exception):
         self.body = body
 
 
+class Answer:
+    """파사드 호출이 받은 **마지막** admin 응답 — 상태와, 400 이상이면 상한 안의 본문.
+
+    python-keycloak 이 오류 응답을 쓰지 못하고 깨지면 그 실패에는 상태가 없다 —
+    `raise_error_from_response` 는 오류 본문을 `response.json()["message"]` 로 읽고 `KeyError` ·
+    `ValueError` 만 잡아, JSON 이 객체가 아니면 `TypeError`, 아주 깊이 중첩되면 `RecursionError` 로
+    깨진다. 경계(`admin/_translate.admin_failure`)가 이것으로 그 상태의 오류를 만든다.
+
+    ⚠️ 오류 응답을 세션에서 가로채지 않는다 — python-keycloak 의 401 재시도(그랜트를 새로 받고 한
+    번 더 보낸다)가 그 응답을 봐야 한다. 그래서 마지막 것만 둔다: 재시도가 받은 응답이 앞의 401 을
+    덮는다(재시도의 2xx 를 못 쓴 실패를 앞의 401 로 보고하지 않는다). 성공 본문은 담지 않는다."""
+
+    __slots__ = ("body", "status")
+
+    def __init__(self) -> None:
+        self.status: int | None = None
+        self.body = b""
+
+
 @contextlib.contextmanager
 def no_body() -> Iterator[None]:
     """이 블록 안의 admin 요청은 성공 본문을 읽지 않는다 — 파사드의 쓰기 호출(create 는
@@ -103,10 +124,10 @@ def no_body() -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def facade() -> Iterator[None]:
-    """이 블록 안의 admin 요청은 파사드 호출의 것이다 — 3xx 를 결과로 넘기지 않는다
-    (`_not_a_result`)."""
-    token = _FACADE.set(True)
+def facade(answer: Answer) -> Iterator[None]:
+    """이 블록 안의 admin 요청은 파사드 호출의 것이다 — 3xx 를 결과로 넘기지 않고, 그 밖의 응답은
+    `answer` 에 적는다(`_not_a_result`)."""
+    token = _FACADE.set(answer)
     try:
         yield
     finally:
@@ -121,10 +142,17 @@ def _not_a_result(response: requests.Response | httpx.Response) -> None:
     — 300 · 302 · 399, sync · aio 같다): `get_group` 은 400 이상만 오류로 봐 3xx 의 JSON 객체를
     그룹으로 돌려줬고, 목록 다섯은 `raise_error_from_response` 가 배열 본문의
     `response.json()["message"]` 에서 `TypeError` 로 깨져 상태 없는
-    `KeycloakTransportError` 였다."""
+    `KeycloakTransportError` 였다.
+
+    그 밖의 응답은 그 호출의 `Answer` 에 적는다(성공 본문은 담지 않는다 — 목록은 정당하게 크다)."""
+    answer = _FACADE.get()
+    if answer is None:
+        return
     status = response.status_code
-    if _FACADE.get() and 300 <= status < 400:
+    if 300 <= status < 400:
         raise RedirectionStatus(status, response.content)
+    answer.status = status
+    answer.body = response.content if status >= 400 else b""
 
 
 def _ended(status: int, length: str | None) -> bool:
