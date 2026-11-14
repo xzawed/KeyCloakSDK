@@ -98,5 +98,12 @@ assert_eq "1/0" "$(osv_gap "$_osv_fx/comment.yml")" \
   "[osv·음성대조] 주석 속 게이트 언급을 게이트로 센다 — 진짜 게이트가 빠져도 생산자 수와 맞는다"
 assert_eq "1/0" "$(osv_gap "$_osv_fx/echo.yml")" \
   "[osv·음성대조] 문자열 속 게이트 언급을 게이트로 센다 — 진짜 게이트가 빠져도 생산자 수와 맞는다"
+# `exit 1` 없이 닫히는 게이트 블록 — 메시지만 찍고 지나가는 fail-open 이다. 닫는 `fi` **뒤의** `exit 1` 은 셈에
+# 들지 않아야 한다(경계 규칙). 실측 2026-11-14 SILENT: 이 셈을 「블록 안 아무 줄」로 깨도 초록이었다.
+printf '%s\n' '      - run: |' '          ./gradlew -q dependencies > dep-tree.txt' \
+  "          if grep -qE ' FAILED\$' dep-tree.txt; then" '            echo "::error::해석 실패"' '          fi' \
+  '          exit 1' > "$_osv_fx/noexit.yml"
+assert_eq "1 0" "$(osv_scan "$_osv_fx/noexit.yml")" \
+  "[osv·음성대조] exit 1 없이 닫히는 게이트 블록을 exit 1 로 끝난다고 센다(블록 밖 exit 1 을 세거나 블록 안 아무 줄을 센다)"
 
 assert_report
