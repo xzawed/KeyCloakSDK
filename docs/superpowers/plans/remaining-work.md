@@ -505,7 +505,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 92건 (열림 44)
+## D. 원장 밖 — 92건 (열림 43)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -536,7 +536,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 - [x] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #663–#671 · 아홉 언어]** id_token `aud` 는 `expectedAudience` 가 아니라 clientId 로 검증한다(판정 (a) 2026-09-27 · OIDC Core §3.1.3.7) — 근거 · 수용 기준은 #663 본문. `azp` 는 다루지 않는다.
 - [ ] `node-auth-error-no-oauth-code` **[L/S · 신규 2026-09-27]** node `KeycloakAuthError` 에만 OAuth `error` 코드가 없다. python 은 `.error`, go 는 `OAuthError`, rust 는 `oauth_error` 로 공개한다. `scrubCause` 가 name·message·code 만 남겨, `invalid_grant` 를 공개 API 로 가를 수 없다. 코드 교환 이식 테스트는 그래서 `OAUTH_RESPONSE_BODY_ERROR` 까지만 단언한다 · `node/src/errors.ts`
-- [ ] `node-admin-error-no-status` **[L/S · 신규 2026-11-13]** node `KeycloakAdminError` 에만 상태 필드가 없다 — 3xx 가드도 메시지 접두 `HTTP <상태>:` 에서 읽었다 · `node/src/errors.ts:43`
+- [x] `node-admin-error-no-status` **[L/S · 신규 2026-11-13 · 닫힘 2026-11-14 #1070]** `KeycloakAdminError.status` — 404 · 409 · 403 하위 클래스는 늘 제 상태, 3xx 가드도 필드로 단언
 - [x] `nonce-failure-leaves-session-alive` **[L/S · 신규·닫힘 2026-09-27 · 판정 (b) 기각]** 검증에 실패한 교환의 토큰을 revoke 하지 않는다 — 버리고 원래 오류를 던지는 지금 동작이 계약이다(사용자가 권장안으로 결정). 실서버 실측: 거부된 교환은 로그인 때 생긴 세션을 끝내지 않는다(idle 1800s · max 36000s). revoke 는 SDK 가 버린 refresh token 이 있어야만 가능하다. 근거: OIDC Core 는 revoke 를 요구하지 않고, RFC 7009 §2.2 는 무효 토큰에도 200 이며, 주입된 코드면 남의 grant 에 손댄다(Grok 독립 판정도 (b)). **되살릴 조건**: 검증 통과 뒤의 실패에 한정한 제품 요구 + 잔존 수명 실측 + Keycloak `/revoke` 범위 실측. ⚠️ 이 실측이 `python-traceback-locals-carry-tokens` 를 찾았다.
 - [x] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #666]** python 에서 거부된 교환의 토큰이 예외 traceback 의 **프레임 로컬**에 남았다 — `TracebackException(capture_locals=True)` 와 Sentry Python(기본값)이 찍고, `str`·`repr`·`format_exception` 에는 없어 누출 테스트가 못 봤다. 원인 사슬 스크럽(#617–#624)은 `__cause__` 만 보았다. 비밀을 다루는 공개 진입점을 `@scrub_frames`(`_internal/frames.py`)로 감싸, 실패하면 안쪽 프레임·사슬 traceback·인자를 떼고 **같은 예외**를 던진다(sync·aio · `authorization_url` · 생성자 포함). 다른 언어는 예외가 로컬을 들고 다니지 않는다(php 호출 인자는 `php-exception-trace-third-party-args`).
 

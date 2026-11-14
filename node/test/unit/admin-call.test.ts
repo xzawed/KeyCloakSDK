@@ -17,6 +17,7 @@ describe('requireFound — 부재를 NotFound 로 통일한다', () => {
   it('null 과 undefined 만 던진다 — falsy 값은 통과시킨다', () => {
     expect(() => requireFound(null, 'x')).toThrow(KeycloakNotFoundError)
     expect(() => requireFound(undefined, 'x')).toThrow(KeycloakNotFoundError)
+    expect(() => requireFound(null, 'x')).toThrow(expect.objectContaining({ status: 404 }))
     // ⚠️ `0`·`''`·`false` 는 **있는 값**이다. `!value` 로 바꾸면 여기서 떨어진다.
     expect(requireFound(0, 'x')).toBe(0)
     expect(requireFound('', 'x')).toBe('')
