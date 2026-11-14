@@ -201,17 +201,51 @@ func run(ctx context.Context, fn func(context.Context) error) error {
 // Code 0 when there was no HTTP response. So an APIError with a real HTTP status
 // (>0) becomes *AdminError (matching the sentinels via Is), while a Code-0 error
 // or any non-APIError becomes *TransportError (matching Java/Python/Node, where
-// network failures map to a transport-level error). gocloak's Message is text, so a
-// deadline's error is lost in it; the transport kept it in below (cause.go), and the
-// cause joins it to err — errors.Is(err, context.DeadlineExceeded) holds, and the
-// APIError stays reachable with errors.As as before.
+// network failures map to a transport-level error) — unless the call's last request
+// got a response that is not a 2xx in full (answeredWithoutStatus). gocloak's Message
+// is text, so a deadline's error is lost in it; the transport kept it in below
+// (cause.go), and the cause joins it to err — errors.Is(err, context.DeadlineExceeded)
+// holds, and the APIError stays reachable with errors.As as before.
 func toSDKError(err error, below *belowHTTPSlot) error {
 	var apiErr *gocloak.APIError
 	if errors.As(err, &apiErr) && apiErr.Code != 0 {
 		return &AdminError{StatusCode: apiErr.Code, Msg: apiErr.Message, Cause: err}
 	}
+	if code := answeredWithoutStatus(below); code != 0 {
+		return &AdminError{StatusCode: code, Msg: unreadAnswer(code), Cause: err}
+	}
 	if lost := below.lost(err); lost != nil {
 		return &TransportError{Msg: err.Error(), Cause: errors.Join(err, lost)}
 	}
 	return &TransportError{Msg: err.Error(), Cause: err}
+}
+
+// answeredWithoutStatus is the status of the response a failure gocloak reports without one (Code 0) did get: the call's
+// last request got it in full and it is not a 2xx — 0 otherwise. Two failures land here, and the response decides them
+// as it does an error body gocloak can read (the login lane draws the same line — loginError):
+//   - an error body resty cannot bind into gocloak's error struct — JSON that is not an object (an array, a string, a
+//     number, a boolean) or nested past encoding/json's depth limit. resty returns the failed bind as the request's error
+//     and gocloak folds it into Code 0, dropping the status;
+//   - a redirect errOnRedirect refused (a 301 · 302 · 303 · 307 · 308 with a Location — not following it is right).
+//
+// Measured 2026-11-14 on the 25 facade calls: both were *TransportError without a status; the other eight languages
+// give that status's admin error for both. A response cut short (cut) or a 2xx whose body does not bind stays
+// *TransportError — the latter is the lane's rule for an undecodable resource body.
+func answeredWithoutStatus(below *belowHTTPSlot) int {
+	if !below.fullyArrived() {
+		return 0
+	}
+	if code := int(below.status.Load()); code >= 300 {
+		return code
+	}
+	return 0
+}
+
+// unreadAnswer is the message of answeredWithoutStatus's *AdminError — the SDK's words, never gocloak's (its text is the
+// decoder's or net/http's, which names the redirect target the server chose).
+func unreadAnswer(code int) string {
+	if code < 400 {
+		return strings.TrimSpace(http.StatusText(code) + " (the admin lane follows no redirect)")
+	}
+	return strings.TrimSpace(http.StatusText(code) + " (an error body gocloak could not read)")
 }
