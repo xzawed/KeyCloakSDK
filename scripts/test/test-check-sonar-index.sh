@@ -75,4 +75,28 @@ assert_eq '2' "$_rc" '--run 이 숫자가 아니면 exit 2'
 _rc=0; env -u GITHUB_REPOSITORY node "$SCRIPT" --run 12 >/dev/null 2>&1 || _rc=$?
 assert_eq '2' "$_rc" 'GITHUB_REPOSITORY 가 없으면 exit 2'
 
+# ── 6. 진입점 끝까지 — 저장한 로그로 같은 판정을 돌려 판정이 **프로세스 종료 코드**까지 가는지 본다 ───────
+# decide() 만 먹이면 `process.exit(d.code)` 를 `process.exit(0)` 으로 바꿔도 초록이다 — 위 5 절의 exit 2 는 인자
+# 검사 길이라 판정 길을 안 지난다(등록부 selftests-with-no-negative-case 가 그 부류다).
+FX="$(mktemp -d)"
+trap 'rm -rf "$FX"' EXIT
+printf '%s\n%s\n' "$NOISE" "$LINE" > "$FX/now810.log"
+printf 'INFO  487 files indexed (done)\n' > "$FX/base487.log"
+printf 'INFO  159 files indexed (done)\n' > "$FX/now159.log"
+printf '%s\n' "$NOISE" > "$FX/none.log"
+cli() { # <인자…> → "<종료 코드>|<출력>"
+  _o="$(GITHUB_STEP_SUMMARY="$FX/summary.md" node "$SCRIPT" "$@" 2>&1)" && _c=0 || _c=$?
+  printf '%s|%s' "$_c" "$_o"
+}
+_r="$(cli --log "$FX/now159.log" --base-log "$FX/base487.log")"
+assert_eq '1' "${_r%%|*}" '⚠️ 진입점도 #304 모양(487 → 159)에서 exit 1 — 판정이 종료 코드까지 간다'
+assert_contains "$_r" '::error::색인이 -67.4% 줄었다' '진입점이 줄어든 폭을 말한다'
+assert_contains "$(cat "$FX/summary.md" 2>/dev/null)" '| main 직전 성공 | 487 (실행 ' '요약에 기준 수를 남긴다'
+_r="$(cli --log "$FX/now810.log" --base-log "$FX/now810.log")"
+assert_eq '0' "${_r%%|*}" '같은 수면 진입점도 exit 0'
+assert_contains "$_r" '→ 810 (이 실행 ' '초록이어도 두 수를 낸다'
+assert_eq '2' "$(cli --log "$FX/none.log" --base-log "$FX/base487.log" | cut -d'|' -f1)" '로그에 색인 수가 없으면 진입점도 exit 2'
+assert_eq '2' "$(cli --log "$FX/now810.log" | cut -d'|' -f1)" '--base-log 없이 --log 만이면 exit 2'
+assert_eq '2' "$(cli --log "$FX/absent.log" --base-log "$FX/now810.log" | cut -d'|' -f1)" '읽을 수 없는 로그면 exit 2'
+
 assert_report
