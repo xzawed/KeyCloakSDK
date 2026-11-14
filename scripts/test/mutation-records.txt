@@ -49,6 +49,11 @@ TEST:test-selftest-hygiene.sh
 JUDGE:check-versions.mjs
 WHY:install-smoke.yml 의 문장을 check-versions.mjs 의 동작과 대조할 뿐 — 판정은 test-check-versions.sh 가 본다(M1 CAUGHT)
 
+### exclude-integration-boundary
+TEST:test-integration-coverage.sh
+JUDGE:coverage-boundary.mjs
+WHY:integration-coverage 는 coverage-boundary 의 JSON(findings)을 읽고 종료 코드를 쓰지 않는다 — M1 이 바꾸는 것이 없다(그 FAIL 처리는 이 시험이 exit 2 로 단언한다). 거부는 test-coverage-boundary.sh 가 본다(M1 CAUGHT)
+
 ### release-readiness-version-typo
 FILE:scripts/release-readiness.sh
 TEST:scripts/test/test-release-readiness.sh
