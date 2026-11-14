@@ -130,14 +130,31 @@ final class FailureBackoffTest extends TestCase
 
     public function testDefaultJitterStaysWithinTheBand(): void
     {
-        // 100회면 밴드를 벗어나는 구현(예: 0..1)이 잡힌다.
-        $b = new FailureBackoff();
+        // 시계를 멈추고 jitter 는 기본값 그대로 — 매번 성공으로 되돌리니 remaining() 이 곧 첫 창(BASE × jitter)이다.
+        // ⚠️ 예전 판은 실제 시계로 0 < r ≤ CAP 만 봐, jitter 가 0..25 어디여도 통과했다 — 「0..1 이 잡힌다」던 주석은
+        // 거짓이었다(wall-clock-ordering-in-tests 재측정). 대역 [0.5, 1.0) 을 끝까지 단언한다.
+        $b = new FailureBackoff(static fn (): float => 1000.0);
         for ($i = 0; $i < 100; $i++) {
             $b->recordFailure();
             $r = $b->remaining();
-            self::assertGreaterThan(0.0, $r);
-            self::assertLessThanOrEqual(FailureBackoff::CAP_SECONDS, $r);
+            self::assertGreaterThanOrEqual(0.5 * FailureBackoff::BASE_SECONDS, $r, '기본 jitter 가 대역 아래로 내려갔다');
+            self::assertLessThan(FailureBackoff::BASE_SECONDS, $r, '기본 jitter 가 대역 위로 올라갔다');
             $b->recordSuccess();
         }
+    }
+
+    public function testScheduleIsTheCrossLanguageValues(): void
+    {
+        // 0.2 s 에서 두 배씩, 5 s 상한 — 백오프를 가진 일곱 언어가 함께 움직이는 값이다(.claude/rules/security.md).
+        // 다른 시험들은 창을 상수로 계산해 비교하므로 상수가 바뀌면 함께 바뀐다 — 값 자체를 **창으로** 고정한다
+        // (상수를 단언하면 phpstan 이 「항상 참」으로 거부한다). 2 의 거듭제곱 곱이라 정확히 같다.
+        $now = 1000.0;
+        $b = $this->backoff($now);
+        $seen = [];
+        for ($i = 0; $i < 7; $i++) {
+            $b->recordFailure();
+            $seen[] = $b->remaining();
+        }
+        self::assertSame([0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0], $seen);
     }
 }
