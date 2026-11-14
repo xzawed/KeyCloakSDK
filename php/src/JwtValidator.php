@@ -83,7 +83,8 @@ final class JwtValidator
 
         // (1) 헤더 사전 게이트 — firebase 디코드 이전에 우리가 직접 첫 세그먼트를 파싱해 alg를
         // RS256로 핀하고 none/미서명/다른 alg를 즉시 거부한다. firebase의 &$headers out-param은
-        // 디코드가 *성공한 후에만* 채워지므로 사전 게이트로 쓸 수 없다(순서 함정).
+        // decode *안에서* 채워진다 — 헤더를 푼 직후(서명 검증 전, 넘긴 값이 null 이 아닐 때만)지만
+        // decode 는 이미 키를 받으므로 키를 고르기 전의 사전 게이트로 쓸 수 없다(JwtHeadersOutParamTest).
         $header = $this->decodeHeader($jwt);
         $alg = isset($header['alg']) && is_string($header['alg']) ? $header['alg'] : null;
         if ($alg === null || !in_array($alg, $this->config->signatureAlgorithms, true)) {
