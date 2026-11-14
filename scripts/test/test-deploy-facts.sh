@@ -209,12 +209,31 @@ assert_eq "7" "$_ab_seen" "df_api_baseline 이 선언한 자리가 정확히 일
 #
 # 기대값을 리터럴 `false` 로 박는 것이 맞다 — 이것은 버전처럼 움직이는 값이 아니라 **정책**이고,
 # 바꾸려면 사람이 이 어서션을 함께 지워야 한다(그게 목적이다).
-_cp_java="$(grep -oE '<autoPublish>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//' | head -1)"
-_cp_kt="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$_ab_root/kotlin/build.gradle.kts" | sed 's/.*= *//' | head -1)"
-assert_eq "false" "${_cp_java:-없음}" \
+# 판정기 둘 — <파일> → ok | 읽은 값(없으면 없음). 아래 음성 대조가 같은 함수를 먹인다.
+_cp_java_check() {
+  _cpj="$(grep -oE '<autoPublish>[^<]*' "$1" | sed 's/.*>//' | head -1)"
+  [ "${_cpj:-없음}" = "false" ] && echo ok || echo "${_cpj:-없음}"
+}
+_cp_kt_check() {
+  _cpk="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$1" | sed 's/.*= *//' | head -1)"
+  [ "${_cpk:-없음}" = "false" ] && echo ok || echo "${_cpk:-없음}"
+}
+assert_eq "ok" "$(_cp_java_check "$_ab_root/java/pom.xml")" \
   "java/pom.xml 의 <autoPublish> 가 false 가 아니다 — Central 은 게시 후 철회가 없고 사람의 Publish 클릭이 유일한 회복 지점이다"
-assert_eq "false" "${_cp_kt:-없음}" \
+assert_eq "ok" "$(_cp_kt_check "$_ab_root/kotlin/build.gradle.kts")" \
   "kotlin/build.gradle.kts 의 automaticRelease 가 false 가 아니다 — 위와 같은 이유(자매 레인이라 함께 무너진다)"
+# 음성 대조 — 두 번째 자리의 true 를 짚는다. 첫 자리만 읽으면 프로파일 · 조건 분기에 붙은 true 가 숨는다
+# (실측 2026-11-14 SILENT). 같은 값이 둘이면 통과한다(오탐 대조).
+_cp_fx="$(mktemp -d)"
+printf '%s\n' '<autoPublish>false</autoPublish>' '<profile>' '  <autoPublish>true</autoPublish>' '</profile>' > "$_cp_fx/pom.xml"
+printf '%s\n' 'publishToMavenCentral(automaticRelease = false)' 'if (ci) { publishToMavenCentral(automaticRelease = true) }' > "$_cp_fx/build.gradle.kts"
+printf '%s\n' '<autoPublish>false</autoPublish>' '<autoPublish>false</autoPublish>' > "$_cp_fx/pom-twice.xml"
+assert_eq "false true" "$(_cp_java_check "$_cp_fx/pom.xml")" \
+  "[음성대조] 두 번째 <autoPublish>true 를 _cp_java_check 가 놓친다 — 첫 자리만 읽는다"
+assert_eq "false true" "$(_cp_kt_check "$_cp_fx/build.gradle.kts")" \
+  "[음성대조] 두 번째 automaticRelease = true 를 _cp_kt_check 가 놓친다 — 첫 자리만 읽는다"
+assert_eq "ok" "$(_cp_java_check "$_cp_fx/pom-twice.xml")" "[대조] false 가 두 자리면 통과해야 한다 — 오탐"
+rm -rf "$_cp_fx"
 
 # ---- examples 모듈을 Central 번들에서 빼는 유일한 자리 ----
 #
@@ -268,14 +287,14 @@ _LANG_RE='^(go|dotnet|node|python|java|php|rust|ruby|kotlin)$'
 _ssot_set="$(printf '%s\n' $DEPLOY_LANGS | sort | tr '\n' ' ')"
 
 # 파일에서 패턴에 맞는 **첫 줄**을 골라 언어 토큰만 뽑아 정렬된 집합으로 돌려준다.
-langset_of() {
-  grep -E -- "$2" "$DIR/../../$1" 2>/dev/null | head -1 \
+langset_of() { # $1=파일(루트 상대) $2=패턴 [$3=루트 — 아래 음성 대조가 픽스처 루트를 준다]
+  grep -E -- "$2" "${3:-$DIR/../..}/$1" 2>/dev/null | head -1 \
     | tr -c 'a-z' '\n' | grep -Ex "$_LANG_RE" | sort -u | tr '\n' ' '
 }
 
 _copy_sites=0
-check_langset() { # $1=파일 $2=패턴 $3=설명
-  _got="$(langset_of "$1" "$2")"
+check_langset() { # $1=파일 $2=패턴 $3=설명 [$4=루트]
+  _got="$(langset_of "$1" "$2" "${4:-}")"
   # 공허 방지 — 패턴이 낡아 0건이 되면 "불일치 0"이 통과로 보인다.
   assert_ok test -n "$_got"
   [ -n "$_got" ] || return 0
@@ -291,6 +310,26 @@ check_langset harness/install/install-verify.sh '^# Usage:' 'Usage 주석'
 
 # 공허 방지 — 대조한 자리가 줄면 이 검사는 아무것도 안 보면서 초록이 된다.
 assert_eq "4" "$_copy_sites" "언어 목록 사본을 4곳 대조해야 한다 — 자리가 줄었으면 패턴이 낡았거나 사본이 옮겨갔다"
+
+# ⚠️ 음성 대조 — 사본에 아홉 밖의 토큰이 붙으면 check_langset 자신이 운다. 모르는 토큰을 조용히 버리면
+# `… kotlin zig` 사본이 집합 대조를 통과한다(실측 2026-11-14 SILENT). 실패 단언은 되감고 「늘었는가」만 남긴다.
+_ls_fx="$(mktemp -d)"
+printf '%s\n' 'LANGS=("${@:-go dotnet node python java php rust ruby kotlin zig}")' > "$_ls_fx/verify.sh"
+printf '%s\n' 'LANGS=("${@:-go dotnet node python java php rust ruby kotlin}")' > "$_ls_fx/same.sh"
+_ls_sites="$_copy_sites"
+_a_save
+check_langset verify.sh '^LANGS=' '음성 대조 사본' "$_ls_fx" 2>/dev/null
+_ls_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _ls_grew=0
+_a_restore
+_a_save
+check_langset same.sh '^LANGS=' '오탐 대조 사본' "$_ls_fx" 2>/dev/null
+_ls_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _ls_quiet=0
+_a_restore
+_copy_sites="$_ls_sites"
+rm -rf "$_ls_fx"
+assert_eq "ok" "$(ok_if "$_ls_grew" DID-NOT-FAIL)" \
+  "[음성대조] 아홉 밖의 토큰(zig)이 붙은 언어 목록 사본을 check_langset 이 통과시켰다 — 사본의 토큰을 버리지 말 것"
+assert_eq "ok" "$(ok_if "$_ls_quiet" CRIED)" "[대조] 아홉 그대로인 사본을 check_langset 이 실패로 본다 — 오탐"
 
 # ⚠️ **뿌리를 트리에 못 박는다.** 위 `check_langset` 넷은 사본을 `DEPLOY_LANGS` 와 대조할 뿐이라,
 # 열 번째 언어가 들어와도 **다섯이 서로 정합한 채 조용하다**(실측 2026-09-12: 추적된 `zig/` 를
