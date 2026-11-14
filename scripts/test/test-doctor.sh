@@ -229,5 +229,12 @@ OUT9q="$(KCSDK_PY="$T5/fakepy/nope" node "$DOC" python 2>&1 || true)"
 assert_contains "$(py_line "$OUT9q")" "MISSING" '[KCSDK_PY] 설정된 해석기가 없는데 PATH 의 python 으로 넘어갔다'
 OUT9r="$(KCSDK_PY="$T5/fakepy/old" node "$DOC" python 2>&1 || true)"
 assert_contains "$(py_line "$OUT9r")" "TOO OLD" '[KCSDK_PY] 설정된 해석기가 낡았는데 PATH 의 python 으로 넘어갔다'
+# 경로 구분자가 없는 값은 **명령 이름**이다 — 명령(`"$KCSDK_PY"`)과 integration-coverage.mjs 가 PATH 에서 찾는다.
+# python/ 기준으로 풀면 `python/kcsdkpy97` 을 찾다 MISSING 이 된다(9b 초안이 그랬다).
+mkdir -p "$T5/pybin"
+printf '%s\n' '#!/bin/sh' 'echo "Python 97.531.4"' > "$T5/pybin/kcsdkpy97"
+chmod +x "$T5/pybin/kcsdkpy97"
+OUT9s="$(PATH="$T5/pybin:$PATH" KCSDK_PY=kcsdkpy97 node "$DOC" python 2>&1 || true)"
+assert_contains "$(py_line "$OUT9s")" "97.531.4" '[KCSDK_PY] 명령 이름은 PATH 에서 찾아야 한다(명령 · integration-coverage 와 같은 규칙)'
 
 assert_report

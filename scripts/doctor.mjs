@@ -171,9 +171,10 @@ function probes(cmd, args, explicit = []) {
 // `KCSDK_PY`의 값은 `python/` 기준 상대경로다(기본값 `.venv/Scripts/python.exe`) — 명령이 `cd python && "${KCSDK_PY:-…}"` 로 푼다.
 // ⚠️ 설정돼 있으면 **그것 하나만** 본다. 명령에는 폴백이 없는데 doctor 는 없거나 낡은 값을 건너뛰고 PATH 의 python 으로
 // ok 를 냈다(실측 2026-11-14: 루트 기준 `python/.venv/…` 도, 존재하지 않는 값도 ok — 같은 값으로 명령은 127).
+// 경로면 python/ 에서 풀고, 구분자 없는 명령 이름이면 PATH 에 맡긴다(integration-coverage.mjs 와 같은 규칙).
 function pyProbes() {
   const v = process.env.KCSDK_PY
-  if (v) return [[resolve(ROOT, 'python', winPath(v)), ['--version']]]
+  if (v) return [[/[\\/]/.test(v) ? resolve(ROOT, 'python', winPath(v)) : v, ['--version']]]
   const venv = [join(ROOT, 'python', '.venv', 'Scripts', 'python.exe'), join(ROOT, 'python', '.venv', 'bin', 'python')]
   return [...probes('python', ['--version'], venv), ['python3', ['--version']]]
 }
