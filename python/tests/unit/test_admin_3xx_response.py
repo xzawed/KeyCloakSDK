@@ -105,15 +105,24 @@ def _body(op: str) -> bytes:
     return json.dumps([rep] if op in LISTS else rep).encode()
 
 
+#: 따라갈 수 있는 리다이렉트의 표적 — 이 경로에 온 요청은 admin 요청으로 세지 않는다.
+_TARGET = "/redirected-target"
+
+
 @dataclass
 class _Idp:
-    """토큰 엔드포인트는 정상으로, 그 밖의 모든 요청은 정한 3xx(Location 없음)와 본문으로 답한다."""
+    """토큰 엔드포인트는 정상으로, 그 밖의 모든 요청은 정한 3xx 와 본문으로 답한다.
+
+    `follow_to` 가 있으면 3xx 에 표적을 가리키는 `Location` 을 달고, 표적은 `follow_to` 를
+    200 으로 준다(따라갈 수 있는 리다이렉트)."""
 
     status: int
     body: bytes
+    follow_to: bytes | None = None
     url: str = ""
     admin: list[tuple[str, str]] = field(default_factory=list)
     grants: int = 0
+    targets: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def admin_methods(self) -> list[str]:
@@ -133,15 +142,24 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
             if length:
                 self.rfile.read(length)
             path = urlsplit(self.path).path
+            location = None
             if path == _TOKEN:
                 with idp.lock:
                     idp.grants += 1
                 status, reason, payload = 200, "OK", json.dumps(_GRANT).encode()
+            elif path == _TARGET and idp.follow_to is not None:
+                with idp.lock:
+                    idp.targets += 1
+                status, reason, payload = 200, "OK", idp.follow_to
             else:
                 with idp.lock:
                     idp.admin.append((self.command, path))
                 status, reason, payload = idp.status, STATUSES[idp.status], idp.body
+                if idp.follow_to is not None:
+                    location = idp.url + _TARGET
             self.send_response(status, reason)
+            if location is not None:
+                self.send_header("Location", location)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
@@ -156,8 +174,8 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
 
 
 @contextlib.contextmanager
-def _fake_idp(status: int, body: bytes) -> Iterator[_Idp]:
-    idp = _Idp(status, body)
+def _fake_idp(status: int, body: bytes, follow_to: bytes | None = None) -> Iterator[_Idp]:
+    idp = _Idp(status, body, follow_to)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(idp))
     idp.url = f"http://127.0.0.1:{server.server_address[1]}"
     threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
@@ -215,6 +233,26 @@ async def test_a_3xx_without_location_is_an_admin_error(lane: str, status: int, 
     assert type(err) is KeycloakAdminError, f"{cell}: {err!r}"
     assert err.status_code == status, f"{cell}: 상태 {err.status_code}"
     assert err.keycloak_error == _body(op).decode(), f"{cell}: 본문 {err.keycloak_error!r}"
+
+
+# 따라갈 수 있는 리다이렉트도 결과가 아니다(등록부 admin-followable-redirect-class-divergent).
+# `Location` 이 있는 302 에 파사드는 그 상태의 `KeycloakAdminError` 이고 따라가지 않는다. 표적은
+# 그 호출의 성공 본문을 200 으로 준다 — 따라가면 결과가 나오거나 표적에 요청이 남는다.
+# 실측 2026-11-14: 25 연산에 두 레인 50/50 — 이미 옳았다(아홉 중 go 만 상태 없는 전송 오류였다).
+@pytest.mark.parametrize("op", sorted(OPS))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_followable_302_is_an_admin_error_and_not_followed(lane: str, op: str) -> None:
+    method, act = OPS[op]
+    with _fake_idp(302, b"{}", follow_to=_body(op)) as idp:
+        async with _client(lane, idp.url) as kc:
+            result, err = await _attempt(lane, kc, lambda c: act(c.admin))
+        seen = idp.admin_methods()
+        targets = idp.targets
+    cell = f"{lane} 302+Location {op}"
+    assert (seen, targets) == ([method], 0), f"{cell}: admin 요청 {seen} · 표적 요청 {targets}"
+    assert result is None, f"{cell}: 결과를 돌려줬다 — {result!r}"
+    assert type(err) is KeycloakAdminError, f"{cell}: {err!r}"
+    assert err.status_code == 302, f"{cell}: 상태 {err.status_code}"
 
 
 # 대조 — `raw` 탈출구는 바뀌지 않는다: 같은 세션의 저수준 `raw_get` 은 3xx 응답을 그대로 받고,
