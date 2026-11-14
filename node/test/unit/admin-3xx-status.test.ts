@@ -15,12 +15,39 @@
  * 엔드포인트에서 정상으로 받는다. 칸마다 admin 요청이 정확히 하나 나갔는지도 본다 — 요청 없이 난 오류는 그 응답의 판정이
  * 아니다. 전제(서버의 3xx 에 `Location` 이 없다)는 리다이렉트를 따르지 않는 `fetch` 로 상태마다 한 번 잰다. `TC_PRINT=1`
  * 이면 상태마다 통과 수와 칸마다의 결과를 찍는다.
+ *
+ * 같은 스물다섯 · 같은 토큰 경로로 두 칸을 더 지킨다(실측 2026-11-14: A 300/300 · 대조군 50/50 · B 25/25 — 이미 옳았다).
+ *  (A) 객체가 아닌 JSON 오류 본문 — 등록부 `python-admin-list-error-array-body` 의 부류 재스캔(python 은 목록 다섯이 배열
+ *      본문의 4xx · 5xx 에 상태 없는 전송 오류다). 404 · 500 × 본문 일곱(대조군 `{"error":"x"}` 과 `[]` · `"boom"` · `42` ·
+ *      `true` · `null` · 깊이 100000 의 배열 200,000 바이트): 404 는 `KeycloakNotFoundError` 그 자체(머리말 없음), 500 은
+ *      `KeycloakAdminError` 그 자체에 `HTTP 500:` 이고 admin 요청은 정확히 하나다 — 본문이 바꾸는 것은 메시지뿐이다.
+ *  (B) 따를 수 있는 리다이렉트 — 등록부 `admin-followable-redirect-class-divergent`(go 는 `*TransportError` 로 갈린다).
+ *      302 가 `Location: <서버>/redirected-target` 을 달고 그곳은 그 호출의 성공 본문을 200 으로 준다 — 따라가면 성공으로
+ *      읽힌다. `KeycloakAdminError` 그 자체에 `HTTP 302:` · admin 요청 하나 · 대상 요청 0 이어야 한다(`redirect: 'manual'`).
+ * 두 칸 모두 틀린 칸을 모아 끝에 한 번 단언한다. `TC_PRINT=1` 이면 `[body]` · `[redirect]` 줄도 찍는다.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { type AdminClient, KeycloakAdminError, KeycloakClient } from '../../src/index.js'
-import { startFakeIdp, type FakeIdp } from './fake-idp.js'
+import {
+  type AdminClient,
+  KeycloakAdminError,
+  KeycloakClient,
+  KeycloakNotFoundError,
+} from '../../src/index.js'
+import { REDIRECTED_PATH, startFakeIdp, type FakeIdp } from './fake-idp.js'
 
 const STATUSES = [300, 302, 399] as const
+
+/** (A) 오류 상태와 오류 본문 — 객체 대조군과 객체가 아닌 JSON 여섯(깊이 100000 의 배열은 200,000 바이트). */
+const ERROR_STATUSES = [404, 500] as const
+const ERROR_BODIES: ReadonlyArray<readonly [string, string]> = [
+  ['object', '{"error":"x"}'],
+  ['array', '[]'],
+  ['string', '"boom"'],
+  ['number', '42'],
+  ['boolean', 'true'],
+  ['null', 'null'],
+  ['deep', '['.repeat(100_000) + ']'.repeat(100_000)],
+]
 
 // 성공 본문 — 리소스 모양의 객체(단건 · 생성 · 갱신 · 삭제)와 그 배열(목록 · 검색).
 const USER = { id: 'u1', username: 'alice', enabled: true }
@@ -78,6 +105,20 @@ function outcome(r: { readonly v: unknown } | { readonly e: unknown }): string {
     : `${r.e.constructor.name}(${status})`
 }
 
+/**
+ * 이 상태에 node 가 주는 admin 오류인가 — 404 는 `KeycloakNotFoundError` 그 자체(머리말이 없다 — `mapHttpError`), 그 밖은
+ * `KeycloakAdminError` 그 자체에 머리말 `HTTP <상태>:`. 다른 하위 클래스 · 전송 오류 · 값은 아니다.
+ */
+function isAdminErrorFor(e: unknown, status: number): boolean {
+  if (status === 404)
+    return e instanceof KeycloakNotFoundError && e.constructor === KeycloakNotFoundError
+  return (
+    e instanceof KeycloakAdminError &&
+    e.constructor === KeycloakAdminError &&
+    statusOf(e) === status
+  )
+}
+
 let idp: FakeIdp
 let kc: KeycloakClient
 
@@ -133,6 +174,85 @@ describe('Location 없는 3xx — 등록부 go-admin-3xx-read-as-success 부류 
       note(`[3xx] ${status}: ${passed}/${OPS.length} cells pass`)
     }
     note(`[3xx] token endpoint requests: ${idp.counts.token}`)
+    expect(wrong, `${wrong.length} cell(s) wrong:\n${wrong.join('\n')}`).toEqual([])
+  })
+})
+
+describe('객체가 아닌 JSON 오류 본문 — 등록부 python-admin-list-error-array-body 부류 재스캔', () => {
+  it('파사드 호출 스물다섯 × 404 · 500 × 본문 일곱 — 그 상태의 오류 클래스로 실패한다', async () => {
+    const admin = await kc.admin()
+    const wrong: string[] = []
+    for (const status of ERROR_STATUSES) {
+      for (const [shape, body] of ERROR_BODIES) {
+        // 전제 — 서버가 이 상태로 이 본문을 바이트 그대로 `application/json` 으로 보낸다.
+        idp.admin = { status, head: body }
+        const probe = await fetch(`${idp.origin}/admin/realms/r/users/u1`, { redirect: 'manual' })
+        const answered = await probe.text()
+        if (
+          probe.status !== status ||
+          probe.headers.get('content-type') !== 'application/json' ||
+          answered !== body
+        )
+          wrong.push(
+            `${status} ${shape} premise: the server answered ${probe.status} · ${String(probe.headers.get('content-type'))} · ${answered.length} chars`,
+          )
+
+        let passed = 0
+        for (const [name, , run] of OPS) {
+          const before = idp.counts.admin
+          const r = await run(admin).then(
+            (v: unknown) => ({ v }),
+            (e: unknown) => ({ e }),
+          )
+          const sent = idp.counts.admin - before
+          const ok = 'e' in r && isAdminErrorFor(r.e, status) && sent === 1
+          const line = `${status} ${shape} ${name}: ${outcome(r)} · admin requests ${sent}`
+          note(`[body] ${line}`)
+          if (ok) passed += 1
+          else wrong.push(line)
+        }
+        note(`[body] ${status} ${shape}: ${passed}/${OPS.length} cells pass`)
+      }
+    }
+    expect(wrong, `${wrong.length} cell(s) wrong:\n${wrong.join('\n')}`).toEqual([])
+  }, 60_000)
+})
+
+describe('따를 수 있는 리다이렉트 — 등록부 admin-followable-redirect-class-divergent', () => {
+  it('파사드 호출 스물다섯 × Location 있는 302 — 따라가지 않고 KeycloakAdminError(302)로 실패한다', async () => {
+    const admin = await kc.admin()
+    const wrong: string[] = []
+    const location = `${idp.origin}${REDIRECTED_PATH}`
+    // 전제 — 302 에 그 `Location` 이 있고, 그곳은 200 으로 답한다(따라갔다면 성공으로 읽혔을 응답).
+    idp.admin = { status: 302, head: '{}', headers: { location } }
+    idp.redirected = { head: JSON.stringify([USER]) }
+    const probe = await fetch(`${idp.origin}/admin/realms/r/users`, { redirect: 'manual' })
+    await probe.body?.cancel()
+    const target = await fetch(location, { redirect: 'manual' })
+    await target.body?.cancel()
+    if (probe.status !== 302 || probe.headers.get('location') !== location || target.status !== 200)
+      wrong.push(
+        `premise: the server answered ${probe.status} with Location ${String(probe.headers.get('location'))} · the target ${target.status}`,
+      )
+
+    let passed = 0
+    for (const [name, body, run] of OPS) {
+      idp.redirected = { head: JSON.stringify(body) }
+      const before = idp.counts.admin
+      const followedBefore = idp.counts.redirected
+      const r = await run(admin).then(
+        (v: unknown) => ({ v }),
+        (e: unknown) => ({ e }),
+      )
+      const sent = idp.counts.admin - before
+      const followed = idp.counts.redirected - followedBefore
+      const ok = 'e' in r && isAdminErrorFor(r.e, 302) && sent === 1 && followed === 0
+      const line = `302 ${name}: ${outcome(r)} · admin requests ${sent} · target requests ${followed}`
+      note(`[redirect] ${line}`)
+      if (ok) passed += 1
+      else wrong.push(line)
+    }
+    note(`[redirect] 302: ${passed}/${OPS.length} cells pass`)
     expect(wrong, `${wrong.length} cell(s) wrong:\n${wrong.join('\n')}`).toEqual([])
   })
 })

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "net/http"
 require_relative "../support/body_server"
 
 # Location 없는 3xx 는 admin 파사드 호출의 결과가 아니다 — 오류다(등록부 go-admin-3xx-read-as-success 부류 재스캔, ruby 칸).
@@ -12,6 +13,17 @@ require_relative "../support/body_server"
 #
 # 칸마다 오류 클래스(`AdminError` 그 자체 — 404 가 받는 계층, 하위 클래스 아님)와 그 상태를 **함께** 본다. 전송 · 해석 오류는
 # 실패다 — 본문 모양이 어긋나 난 오류가 거짓 초록을 내지 않게. 호출이 그 동사 · 경로의 admin 요청 하나로 서버에 닿았는지도 본다.
+#
+# 같은 25 연산으로 두 칸을 더 지킨다(실측 2026-11-14: A 300/300 · 대조군 50/50 · B 25/25 — 이미 옳았다, SDK 무변경).
+#  (A) 객체가 아닌 JSON 오류 본문 — 등록부 python-admin-list-error-array-body 의 부류 재스캔(python 은 목록 다섯이 배열
+#      본문의 4xx · 5xx 에 상태 없는 전송 오류다). 404 · 500 × 본문 일곱(대조군 `{"error":"x"}` 과 `[]` · `"boom"` · `42` ·
+#      `true` · `null` · 깊이 100000 의 배열 200,000 바이트): 404 는 `NotFoundError`, 500 은 `AdminError` 그 자체 — 그
+#      상태를 싣고 — 이고 admin 요청은 그 호출의 것 하나다. 본문이 클래스를 바꾸면 그 칸은 실패다.
+#  (B) 따를 수 있는 리다이렉트 — 등록부 admin-followable-redirect-class-divergent(go 는 `*TransportError` 로 갈린다).
+#      302 가 `Location: <서버>/redirected-target` 을 달고 그곳은 그 호출의 성공 본문을 200 으로 준다 — 따라가면 성공으로
+#      읽힌다. `AdminError` 그 자체에 302 · admin 요청 하나 · 대상 요청 0 이어야 한다. `http_spec.rb` 는 follow_redirects
+#      미들웨어가 목록에 없는지만 본다 — 302 를 실제로 모는 것은 이 칸이다.
+# 두 칸은 서버 하나 · 클라이언트 하나로 칸 전부를 돌고(`AdminErrorShapeSpec`), 틀린 칸을 모아 끝에 한 번 단언한다.
 module Admin3xxSpec
   REALM = "r"
   BASE = "/admin/realms/#{REALM}".freeze
@@ -96,6 +108,59 @@ module Admin3xxSpec
   end
 end
 
+# (A) 본문 모양 · (B) 따를 수 있는 302 칸의 도우미 — 25 연산 표 · 성공 본문 · 클라이언트 · 결과 기록은 Admin3xxSpec 의 것이다.
+# 칸마다 서버를 새로 띄우지 않는다: 서버 하나가 25 경로와 리다이렉트 대상을 `plan`(칸마다 바꿔 끼우는 답)으로 답하고 클라이언트
+# 하나가 토큰을 한 번 받아 칸 전부를 돈다 — 칸의 요청은 그 호출 동안 서버에 닿은 것만 센다.
+module AdminErrorShapeSpec
+  STATUSES = [404, 500].freeze
+  # 객체 대조군과 객체가 아닌 JSON 여섯 — 깊이 100000 의 배열은 200,000 바이트다.
+  BODIES = {
+    "object" => '{"error":"x"}',
+    "array" => "[]",
+    "string" => '"boom"',
+    "number" => "42",
+    "boolean" => "true",
+    "null" => "null",
+    "deep" => ("[" * 100_000) + ("]" * 100_000)
+  }.freeze
+  TARGET = "/redirected-target"
+
+  module_function
+
+  # 그 상태에 ruby 가 주는 오류 — 404 는 NotFoundError, 그 밖은 AdminError 그 자체(하위 클래스 아님) — 와 그 상태.
+  def error_for(status)
+    [status == 404 ? KeycloakSdk::NotFoundError : KeycloakSdk::AdminError, status]
+  end
+
+  def server(plan)
+    server = BodyServer.new(framing: :length)
+    token = { access_token: "at-shape", token_type: "Bearer", expires_in: 300 }.to_json
+    server.route(Admin3xxSpec::TOKEN) { [200, {}, token, 0] }
+    Admin3xxSpec::OPS.each_value { |(_, path, _)| server.route(path) { plan.fetch(:reply) } }
+    server.route(TARGET) { [200, {}, plan.fetch(:target), 0] }
+    server
+  end
+
+  # 전제 — 서버가 실제로 보낸 [상태, content-type, Location, 본문](리다이렉트를 따르지 않는 Net::HTTP 로).
+  def answered(server, path)
+    resp = Net::HTTP.get_response(URI("#{server.url}#{path}"))
+    [resp.code.to_i, resp["content-type"], resp["location"], resp.body.to_s]
+  end
+
+  # 칸 하나 — 옳으면 nil, 틀렸으면 그 까닭. 옳은 칸: 그 상태의 오류(`want`) · 그 호출의 admin 요청 하나 · 대상 요청 0.
+  def wrong_cell(label, server, admin, entry, want)
+    verb, path, call = entry
+    before = server.requests.size
+    got = Admin3xxSpec.outcome { call.call(admin) }
+    seen = server.requests.drop(before).map { |r| [r.verb, r.path] }
+    sent = seen.select { |(_, p)| p.start_with?("/admin") }
+    followed = seen.count { |(_, p)| p == TARGET }
+    return if got.first(2) == want && sent == [[verb, path]] && followed.zero?
+
+    "#{label}: #{got.inspect[0, 160]} · admin requests #{sent.inspect} · target requests #{followed}"
+  end
+end
+
 RSpec.describe KeycloakSdk::Admin::AdminClient do
   let(:spec) { Admin3xxSpec }
 
@@ -129,5 +194,49 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
         expect(got.first(2)).to eq([KeycloakSdk::AdminError, status]), "#{status} #{op} → #{got.inspect}"
       end
     end
+  end
+
+  # (A) 404 · 500 × 본문 일곱 — 등록부 python-admin-list-error-array-body 의 부류 재스캔.
+  it "fails every call on a 404 or 500 with any JSON error body as the error of that status" do
+    shape = AdminErrorShapeSpec
+    plan = { target: "{}" }
+    server = shape.server(plan)
+    kc = spec.client(server)
+    admin = kc.admin
+    wrong = shape::STATUSES.product(shape::BODIES.to_a).flat_map do |status, (name, body)|
+      plan[:reply] = [status, {}, body, 0]
+      premise = shape.answered(server, "#{Admin3xxSpec::BASE}/users/u1")
+      cells = Admin3xxSpec::OPS.map do |op, entry|
+        shape.wrong_cell("#{status} #{name} #{op}", server, admin, entry, shape.error_for(status))
+      end
+      premise_wrong = "#{status} #{name} premise: #{premise.first(3).inspect} · #{premise.last.bytesize} bytes"
+      [(premise_wrong unless premise == [status, "application/json", nil, body]), *cells]
+    end.compact
+    expect(wrong).to be_empty, "#{wrong.size} cell(s) wrong:\n#{wrong.join("\n")}"
+  ensure
+    kc&.close
+    server&.close
+  end
+
+  # (B) 따를 수 있는 302 — 등록부 admin-followable-redirect-class-divergent. 대상은 그 호출의 성공 본문을 200 으로 준다.
+  it "fails every call on a 302 with a followable Location as AdminError 302 without following it" do
+    shape = AdminErrorShapeSpec
+    plan = { target: spec.body("users.list") }
+    server = shape.server(plan)
+    location = "#{server.url}#{shape::TARGET}"
+    plan[:reply] = [302, { "Location" => location }, "{}", 0]
+    kc = spec.client(server)
+    admin = kc.admin
+    premise = [shape.answered(server, "#{Admin3xxSpec::BASE}/users").first(3), shape.answered(server, shape::TARGET)[0]]
+    wrong = [("premise: #{premise.inspect}" unless premise == [[302, "application/json", location], 200])]
+    Admin3xxSpec::OPS.each do |op, entry|
+      plan[:target] = spec.body(op)
+      wrong << shape.wrong_cell("302 #{op}", server, admin, entry, shape.error_for(302))
+    end
+    wrong.compact!
+    expect(wrong).to be_empty, "#{wrong.size} cell(s) wrong:\n#{wrong.join("\n")}"
+  ensure
+    kc&.close
+    server&.close
   end
 end

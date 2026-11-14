@@ -16,6 +16,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Xzawed\Keycloak\Admin\AdminClient;
 use Xzawed\Keycloak\Exception\KeycloakAdminError;
+use Xzawed\Keycloak\Exception\KeycloakNotFoundError;
 use Xzawed\Keycloak\KeycloakConfig;
 
 /**
@@ -33,11 +34,28 @@ use Xzawed\Keycloak\KeycloakConfig;
  * (`FullFlowIT`). The fake Keycloak is the raw-socket server of `AdminResponseBodyTest` (`Fixtures/admin-body-server.php`);
  * it answers the token grant and the version lookup normally. Both transports run (curl and the stream handler of an
  * install without ext-curl — `AdminResponseBodyTest::useTransport`).
+ *
+ * The same 25 calls guard two more cases (measured 2026-11-14, curl: A 300/300 · control 50/50 · B 25/25 — already right,
+ * no SDK change). Each runs every cell under one transport, collects the wrong ones and asserts once.
+ *  (A) A non-object JSON error body — the class rescan of registry `python-admin-list-error-array-body` (there python's
+ *      five list calls end an array-bodied 4xx · 5xx as a status-less transport error). 404 · 500 × seven bodies (the
+ *      object control `{"error":"x"}`, then `[]` · `"boom"` · `42` · `true` · `null` · a 100000-deep array of 200,000
+ *      bytes): 404 ends as `KeycloakNotFoundError`, 500 as `KeycloakAdminError` itself, carrying that status, after exactly
+ *      one admin request — the call's own; `GET /admin/serverinfo` is fschmtt's version lookup, not the call's.
+ *  (B) A followable redirect — registry `admin-followable-redirect-class-divergent` (go diverges as `*TransportError`). A
+ *      302 carries `Location: <server>/redirected-target`, which answers 200 with the call's success body, so a follow
+ *      would read as success: the call must end as `KeycloakAdminError` itself carrying 302, after exactly one admin
+ *      request and none to the target.
+ * Their request counts wait for a sentinel request's own log line (`requestsOfThisCell`).
  */
 final class AdminRedirectStatusTest extends TestCase
 {
     private const BASE = '/admin/realms/r';
     private const STATUSES = [300, 302, 399];
+    /** (A)'s statuses — the bodies are `errorBodies()`. */
+    private const ERROR_STATUSES = [404, 500];
+    /** Where (B)'s 302 points — not an admin path, so it is counted apart. */
+    private const TARGET = '/redirected-target';
     private const USER = '{"id":"u1","username":"u"}';
     private const CLIENT = '{"id":"c1","clientId":"c"}';
     private const REALM = '{"realm":"x"}';
@@ -308,14 +326,16 @@ final class AdminRedirectStatusTest extends TestCase
     }
 
     /**
-     * The routes of one call — its own request answered with `$status`, fschmtt's re-GET (if any) with `$backStatus`.
+     * The routes of one call — its own request answered with `$status` (with `$head` in place of its success body when
+     * given, and `$headers` added), fschmtt's re-GET (if any) with `$backStatus`.
      *
+     * @param array<string, string> $headers
      * @return array<string, array<string, mixed>>
      */
-    private static function routesOf(string $name, int $status, int $backStatus = 200): array
+    private static function routesOf(string $name, int $status, int $backStatus = 200, ?string $head = null, array $headers = []): array
     {
         [$method, $path, , $body, $back] = self::calls()[$name];
-        $routes = [$method . ' ' . $path => ['status' => $status, 'head' => $body]];
+        $routes = [$method . ' ' . $path => ['status' => $status, 'head' => $head ?? $body] + ($headers === [] ? [] : ['headers' => $headers])];
         foreach ($back as $key => $backBody) {
             $routes[$key] = ['status' => $backStatus, 'head' => $backBody];
         }
@@ -423,5 +443,183 @@ final class AdminRedirectStatusTest extends TestCase
         self::assertSame('u1', $got->getId());
         self::assertAdminErrorWithStatus($status, $facade, "facade users.get $status");
         self::assertNull($gone, self::describe($gone));
+    }
+
+    /** @return array<string, array{string}> */
+    public static function transportRows(): array
+    {
+        return ['curl' => ['curl'], 'stream' => ['stream']];
+    }
+
+    /**
+     * (A)'s error bodies — the object control first, then six non-object JSON values (the deep one is 200,000 bytes).
+     *
+     * @return array<string, string>
+     */
+    private static function errorBodies(): array
+    {
+        return [
+            'object' => '{"error":"x"}',
+            'array' => '[]',
+            'string' => '"boom"',
+            'number' => '42',
+            'boolean' => 'true',
+            'null' => 'null',
+            'deep' => str_repeat('[', 100_000) . str_repeat(']', 100_000),
+        ];
+    }
+
+    /**
+     * The redirect target, answering 200 with `$body` to every method a facade call sends (a follow keeps it or turns GET).
+     *
+     * @return array<string, array{status: int, head: string}>
+     */
+    private static function targetRoutes(string $body): array
+    {
+        $routes = [];
+        foreach (['GET', 'POST', 'PUT', 'DELETE'] as $method) {
+            $routes["$method " . self::TARGET] = ['status' => 200, 'head' => $body];
+        }
+
+        return $routes;
+    }
+
+    /**
+     * A plain GET on its own connection, following nothing — `[status, headers (lower-cased names), body]`.
+     *
+     * @return array{0: int, 1: array<string, string>, 2: string}
+     */
+    private static function rawGet(string $path): array
+    {
+        $conn = @fsockopen('127.0.0.1', self::$port, $errno, $errstr, 5.0);
+        self::assertNotFalse($conn, "the fake Keycloak is not listening: $errstr");
+        stream_set_timeout($conn, 10);
+        fwrite($conn, "GET $path HTTP/1.1\r\nHost: 127.0.0.1:" . self::$port . "\r\nConnection: close\r\n\r\n");
+        $raw = (string) stream_get_contents($conn);
+        fclose($conn);
+        [$head, $body] = array_pad(explode("\r\n\r\n", $raw, 2), 2, '');
+        $lines = explode("\r\n", $head);
+        $status = (int) (explode(' ', array_shift($lines))[1] ?? 0);
+        $headers = [];
+        foreach ($lines as $line) {
+            [$name, $value] = array_pad(explode(':', $line, 2), 2, '');
+            $headers[strtolower(trim($name))] = trim($value);
+        }
+
+        return [$status, $headers, $body];
+    }
+
+    /**
+     * Every request the server answered under this nonce, as `METHOD /path` — read once a sentinel request's own line is in
+     * the log. The fixture serves one connection at a time and logs each request (under `LOCK_EX`) after closing it, so the
+     * sentinel's line comes after every line of the cell; a read made right after the sentinel's response came back empty
+     * in 41 of 375 cells (measured 2026-11-14, Windows) — hence the poll.
+     *
+     * @return list<string>
+     */
+    private static function requestsOfThisCell(): array
+    {
+        $sentinel = '/sentinel-' . self::$nonce;
+        self::rawGet($sentinel);
+        for ($i = 0; $i < 250; $i++) {
+            $seen = [];
+            $done = false;
+            $lines = @file(self::$dir . '/sent.log', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines === false ? [] : $lines as $line) {
+                $r = json_decode($line, true);
+                $method = \is_array($r) ? ($r['method'] ?? null) : null;
+                $path = \is_array($r) ? ($r['path'] ?? null) : null;
+                if (!\is_array($r) || ($r['nonce'] ?? null) !== self::$nonce || !\is_string($method) || !\is_string($path)) {
+                    continue;
+                }
+                if ($path === $sentinel) {
+                    $done = true;
+                } else {
+                    $seen[] = "$method $path";
+                }
+            }
+            if ($done) {
+                return $seen;
+            }
+            usleep(20_000);
+        }
+        self::fail("the sentinel request $sentinel was never logged");
+    }
+
+    /**
+     * A body-shape or followable-302 cell — null when it is right: the facade's admin error for `$status` (404 is
+     * `KeycloakNotFoundError`, anything else `KeycloakAdminError` itself) carrying it, after exactly one admin request, the
+     * call's own `$request` (fschmtt's version lookup is not the call's), and no request to the redirect target.
+     *
+     * @param list<string> $seen
+     */
+    private static function wrongCell(string $cell, mixed $result, array $seen, int $status, string $request): ?string
+    {
+        $admin = array_values(array_filter($seen, static fn (string $r): bool => str_contains($r, ' /admin/') && !str_ends_with($r, ' /admin/serverinfo')));
+        $followed = \count(array_filter($seen, static fn (string $r): bool => str_ends_with($r, ' ' . self::TARGET)));
+        $class = $status === 404 ? KeycloakNotFoundError::class : KeycloakAdminError::class;
+        if ($result instanceof KeycloakAdminError && $result::class === $class && $result->getStatusCode() === $status && $admin === [$request] && $followed === 0) {
+            return null;
+        }
+
+        return "$cell: " . self::describe($result) . ' · admin requests ' . json_encode($admin) . " · target requests $followed";
+    }
+
+    /**
+     * (A) A 404 or 500 whose JSON body is not an object ends each call as the admin error of that status — the same as the
+     * object control does.
+     */
+    #[DataProvider('transportRows')]
+    public function testANonObjectJsonErrorBodyEndsAsTheErrorOfItsStatus(string $transport): void
+    {
+        $this->useTransport($transport);
+        $wrong = [];
+        foreach (self::ERROR_STATUSES as $status) {
+            foreach (self::errorBodies() as $shape => $body) {
+                // The premise — the server sends this status with exactly this body, as JSON.
+                self::route(['GET ' . self::BASE . '/users/u1' => ['status' => $status, 'head' => $body]]);
+                [$answered, $headers, $sent] = self::rawGet(self::BASE . '/users/u1');
+                if ($answered !== $status || ($headers['content-type'] ?? null) !== 'application/json' || $sent !== $body) {
+                    $wrong[] = "$status $shape premise: the server answered $answered · " . ($headers['content-type'] ?? 'no content-type') . ' · ' . \strlen($sent) . ' bytes';
+                }
+                foreach (self::calls() as $name => [$method, $path, $call]) {
+                    self::route(self::routesOf($name, $status, head: $body));
+                    $admin = new AdminClient(self::config());
+                    $result = self::outcome(static fn () => $call($admin));
+                    self::note(sprintf('[%s] %s %d %s: %s', $transport, $name, $status, $shape, self::describe($result)));
+                    $wrong[] = self::wrongCell("$status $shape $name [$transport]", $result, self::requestsOfThisCell(), $status, "$method $path");
+                }
+            }
+        }
+        $wrong = array_values(array_filter($wrong, static fn (?string $w): bool => $w !== null));
+        self::assertSame([], $wrong, \count($wrong) . " cell(s) wrong:\n" . implode("\n", $wrong));
+    }
+
+    /**
+     * (B) A 302 whose `Location` points at a target that would answer the call's success is not followed: each call ends as
+     * `KeycloakAdminError` itself carrying 302.
+     */
+    #[DataProvider('transportRows')]
+    public function testAFollowable302IsNotFollowedAndEndsAsAnAdminError302(string $transport): void
+    {
+        $this->useTransport($transport);
+        $location = 'http://127.0.0.1:' . self::$port . self::TARGET;
+        $wrong = [];
+        // The premise — the 302 carries that Location, and the target answers 200 (what a follow would read as success).
+        self::route(['GET ' . self::BASE . '/users' => ['status' => 302, 'headers' => ['Location' => $location], 'head' => '{}']] + self::targetRoutes('[' . self::USER . ']'));
+        [$answered, $headers] = self::rawGet(self::BASE . '/users');
+        [$targetAnswered] = self::rawGet(self::TARGET);
+        if ($answered !== 302 || ($headers['location'] ?? null) !== $location || $targetAnswered !== 200) {
+            $wrong[] = "premise: the server answered $answered with Location " . ($headers['location'] ?? 'none') . " · the target $targetAnswered";
+        }
+        foreach (self::calls() as $name => [$method, $path, $call, $body]) {
+            self::route(self::routesOf($name, 302, head: '{}', headers: ['Location' => $location]) + self::targetRoutes($body));
+            $admin = new AdminClient(self::config());
+            $result = self::outcome(static fn () => $call($admin));
+            self::note(sprintf('[%s] %s 302 followable: %s', $transport, $name, self::describe($result)));
+            $wrong[] = self::wrongCell("302 $name [$transport]", $result, self::requestsOfThisCell(), 302, "$method $path");
+        }
+        $wrong = array_values(array_filter($wrong, static fn (?string $w): bool => $w !== null));
+        self::assertSame([], $wrong, \count($wrong) . " cell(s) wrong:\n" . implode("\n", $wrong));
     }
 }
