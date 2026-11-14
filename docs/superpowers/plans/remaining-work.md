@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=143454 max-raw-bytes=157980 -->
+<!-- doc-budget: max-bytes=142839 max-raw-bytes=157739 -->
+<!-- max-bytes 143454 → 142839 · max-raw-bytes 157980 → 157739: push-lane-failures-still-silent 마감 — 열린 항목의 긴 착수
+     서사가 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -505,7 +507,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 92건 (열림 42)
+## D. 원장 밖 — 92건 (열림 41)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -598,7 +600,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `jwks-empty-keyset-jvm-dotnet-undetermined` **[M/S · 신규 2026-09-22 · 닫힘 2026-09-24]** 셋 다 **오염됐다** — 판정 불가가 아니었다. ⚠️ dotnet 은 첫 판정이 「면역」이었는데 LKG 폴백이 가린 것이었다(현재 설정 키 0 · LKG 끄면 IDX10500) — 그래서 테스트가 LKG 를 끄고 단언한다(켜면 수정 없이도 초록, 대조군 실측). `RefreshInterval = 0` 은 IDX10107 로 거부된다(하한 1s) · JwksEmptyKeyset 테스트 셋(변이 3/3 CAUGHT + 대조군 SILENT)
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
 - [x] `codeql-kotlin-extractor-lags-kgp` **[M/M · 신규 2026-09-21 · 닫힘 2026-11-04 · 전제 소멸]** CodeQL 이 KGP 2.4.20 을 받는다 — 그 판을 올린 #572(09-25) 뒤 실행 847 전부 success(11-04) · `gh run list --workflow=340524379 --status failure` 넷은 전부 그 전(#465·#491·#515) · #515 는 09-22 병합 없이 닫혀 옛 되살릴 조건이 죽었다. 되살릴 조건: KGP 범프 PR 의 `Analyze (java-kotlin)` 이 `KotlinVersionTooRecentError` 로 빨갛다 — required 가 아니니 그 PR 은 병합하지 않는다.
-- [ ] `push-lane-failures-still-silent` **[M/S · 신규 2026-09-21]** `nightly-alert` 은 **`schedule` 만** 본다 — `sonarcloud` 처럼 push 로만 도는 레인의 빨강은 여전히 아무에게도 안 간다(실측: 09-16~09-21 닷새 무성, 그 창은 `nightly-failure-reaches-nobody` 의 야간 창과 **겹치지 않는다**) · `.github/workflows/nightly-alert.yml:38`. ⚠️ 그리고 `nightly-alert` **자기 실패는 못 잡는다**(`workflow_run` 은 자기를 감시 못 한다). schedule 로 넓힌 판정은 소음을 피하려던 것이라, 넓히려면 「민 사람이 이미 보는 실패」와 「main 에서 조용히 빨간 실패」를 가르는 기준이 먼저 필요하다.
+- [x] `push-lane-failures-still-silent` **[M/S · 신규 2026-09-21 · 닫힘 2026-11-14 #1075]** 기준: PR 실행은 민 사람이 보고 main push 실행은 아무도 안 본다 — 잡이 둘을 받고 가드가 목록을 예약 ∪ main push 로 파생한다
 - [x] `registry-truth-check` **[H/M · 닫힘 2026-09-24]** `scripts/check-registry-truth.mjs` — 유예(Maven 72h·나머지 24h, 시계=태그 또는 SSOT 커밋)로 「첫 404 로 실패 결론」을 피하고, Maven 은 metadata 가 아니라 pom 200 으로 판정 · 주간 `published-floor.yml` · 자가테스트 47/0 · 변이 8/8 CAUGHT
 - [x] `stale-release-comments` **[H/S · 닫힘 2026-09-09 #447]** 릴리스 경로의 주석 **여섯**이 낡았고, 그중 하나는 다음 릴리스를 정반대로 오도했다 · `.github/workflows/install-smoke.yml:57`
 - [x] `post-1-0-registry-missing` **[M/S]** 1.0 이후 잔여작업 등록부가 저장소 어디에도 없다 — 안 닫힌 항목은 복원 불가능하다 · `docs/README.md:49`
