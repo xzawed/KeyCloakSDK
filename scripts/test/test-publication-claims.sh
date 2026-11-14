@@ -323,8 +323,48 @@ done
 #       "(`0.1.0.rc1`, RubyGems). The other four" 줄에 그 키워드가 없어 **0건**이 됐다.
 # 그래서 어디에 무엇이 적혀 있어야 하는지를 그냥 적는다. 문구를 바꾸면 시끄럽게 실패하고,
 # 그때 이 목록을 함께 고치는 것이 맞다 — DEPLOY.md 가드가 쓰는 것과 같은 관용이다.
+#
+# ⚠️ **주장의 경계에서 맞춘다**(`pc_claim_in` → `ok` · `EMPTY` · `MISSING` · `UNBOUNDED`). 파일 전체 포함 검사는 접두를
+# 받았다 — 「a stable」 이 「a stable release candidate」 를, 「아홉」 이 「열아홉」 을(실측 2026-11-14 SILENT 둘 · 아래 대조군이
+# 재현한다). 앞은 줄 머리 · 공백 · 문장부호 · 대시여야 하고, 뒤는 (공백을 건너) 줄 끝이거나 ASCII 낱말 글자(`[A-Za-z0-9_-]`)가
+# 아니어야 한다. 한글 조사는 낱말에 붙으므로(「…언어는」) 뒤의 한글은 잇는 말로 보지 않는다. ASCII 집합만 써서 바이트로 보든
+# (dash · C 로캘) 글자로 보든(bash UTF-8) 같은 판정이 난다. UNBOUNDED 면 기대 문자열을 주장의 끝(문장부호 · 강조 끝)까지 늘린다.
+PC_PUNCT='.,;:!?()[]{}*`"<>|/#'"'"
+PC_WORD='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
+pc_left_bound() { # $1=그 줄에서 주장 앞의 글 — 비었거나 공백 · 문장부호 · 대시로 끝나는가
+  case "$1" in ''|*' '|*'—'|*'–') return 0 ;; esac
+  _plb="${1#"${1%?}"}"
+  case "$PC_PUNCT" in *"$_plb"*) return 0 ;; esac
+  return 1
+}
+pc_right_bound() { # $1=그 줄에서 주장 뒤의 글 — 공백을 건넌 첫 글자가 ASCII 낱말 글자가 아닌가
+  _prb="$1"
+  while :; do case "$_prb" in ' '*) _prb="${_prb# }" ;; *) break ;; esac; done
+  _prb="${_prb%"${_prb#?}"}"
+  [ -n "$_prb" ] || return 0
+  case "$PC_WORD" in *"$_prb"*) return 1 ;; esac
+  return 0
+}
+pc_claim_in() { # $1=본문 $2=기대 문자열
+  [ -n "$2" ] || { printf 'EMPTY'; return 0; }
+  case "$1" in *"$2"*) ;; *) printf 'MISSING'; return 0 ;; esac
+  while IFS= read -r _pci_l; do
+    _pci_pre=''
+    while :; do
+      case "$_pci_l" in *"$2"*) ;; *) break ;; esac
+      _pci_pre="$_pci_pre${_pci_l%%"$2"*}"
+      _pci_l="${_pci_l#*"$2"}"
+      if pc_left_bound "$_pci_pre" && pc_right_bound "$_pci_l"; then printf 'ok'; return 0; fi
+      _pci_pre="$_pci_pre$2"
+    done
+  done <<EOF
+$(printf '%s\n' "$1" | grep -F -- "$2" || true)
+EOF
+  printf 'UNBOUNDED'
+}
 claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
-  assert_contains "$(cat "$ROOT/$1")" "$2" "$1 의 $3 가 DF_PUBLISHED 파생 게시/미게시 수($pub_n/$unpub_n)와 다르다"
+  assert_eq "ok" "$(pc_claim_in "$(cat "$ROOT/$1")" "$2")" \
+    "$1 의 $3 가 DF_PUBLISHED 파생 게시/미게시 수($pub_n/$unpub_n)와 다르다 — 기대 [$2]"
 }
 # 대조군 — claim_at **자신**을 결함 사본 루트에 태운다(사본 금지). 「a stable」 접두가 「a stable release candidate」 를 받는
 # 부류(아래 2026-08-18 판정이 DEPLOY.md 에서 기록한 것)다 — 실측 2026-11-14 SILENT: 기대 문자열을 빈 값으로 바꿔도 초록.
@@ -439,16 +479,17 @@ if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
     claim_at README.md "All $pub_en languages have shipped a stable release, and the numbers differ" "상단 배너(갈린 함대)"
     claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 릴리스를 냈고, 번호는 갈렸다" "현재 상태(갈린 함대)"
   fi
-  claim_at README.md "All $pub_en have shipped a stable release"                 "하단 서술"
-  claim_at SECURITY.md "All $pub_en SDKs have shipped a stable"                  "게시 열거"
-  claim_at docs/guides/getting-started.md "All $pub_en are on a public registry" "상단 배너"
+  # ⚠️ 기대 문자열은 **주장의 끝까지** 적는다 — 접두(「…a stable」)는 경계 판정에서 UNBOUNDED 다(실측 2026-11-14: 이 넷이 그랬다).
+  claim_at README.md "All $pub_en have shipped a stable release to a public registry" "하단 서술"
+  claim_at SECURITY.md "All $pub_en SDKs have shipped a stable release to a public registry" "게시 열거"
+  claim_at docs/guides/getting-started.md "All $pub_en are on a public registry with a stable release" "상단 배너"
 
   claim_at CLAUDE.md "9개 중 ${pub_n}개가 정식 게시"                                    "문서 언어 규칙 절"
 
   claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
 
   claim_at docs/roadmap/language-support.md "**All $pub_en are now live as stable releases**" "step-0(게시 수)"
-  claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a stable release" "머리말(게시 수)"
+  claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a stable release through the human-gated publish step" "머리말(게시 수)"
 
   # ⚠️ 부정 어서션 — 긍정만 걸면 정식 문장을 **추가**하고 옛 "정식 없음"을 **남겨둔** 자기모순이
   # 통과한다. 위 published/unpublished 갈래가 「미게시」로 막는 것과 같은 부류다.
@@ -472,6 +513,8 @@ if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   done
 elif [ "$unpub_n" -eq 0 ]; then
   # 아홉 전부 게시됐으나 일부(또는 전부)가 프리릴리스. "나머지 N개" 수사는 존재해선 안 된다.
+  # ⚠️ 이 갈래와 아래 미게시 갈래는 잠들어 있다(오늘 상태로 못 깨운다). 경계 판정(`pc_claim_in`)을 같이 타므로 영어 접두 주장
+  # (SECURITY 「…a first」 등)은 깨어나는 PR 에서 UNBOUNDED 로 운다 — 그때 기대 문자열을 주장의 끝까지 늘린다.
   claim_at README.md "First release candidates are live for all $pub_en languages" "상단 배너"
   claim_at README.md "All $pub_en have shipped their first release candidates"     "하단 서술"
   claim_at SECURITY.md "All $pub_en SDKs have shipped a first"                     "게시 열거"
@@ -554,7 +597,11 @@ assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
 
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
 # 판정을 함수로 둔다 — 아래 대조군이 결함 사본 루트에 이 함수를 태운다(실측 2026-11-14 SILENT: 파일 읽기를 상수 문장으로
-# 바꿔도 초록이었다 — 이 판정에 먹인 결함 사본이 없었다).
+# 바꿔도 초록이었다 — 이 판정에 먹인 결함 사본이 없었다). 판정은 claim_at 과 같은 경계 판정(`pc_claim_in`)이다 — 「아홉」 은
+# 「열아홉」 의 부분 문자열이다.
+pc_ko_at() { # $1=기대 문자열 $2=메시지 — pc_ko_mirror 가 읽은 본문(_ko_t)에서
+  assert_eq "ok" "$(pc_claim_in "$_ko_t" "$1")" "$2 — 기대 [$1]"
+}
 pc_ko_mirror() {
   _ko_t="$(cat "$ROOT/README.ko.md")"
   if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
@@ -563,27 +610,28 @@ pc_ko_mirror() {
     # ⚠️ 영문 쪽과 같은 이유로 갈래가 둘이다 — 함대가 갈리면 "전부 정식 `X`"라고 말할 X 가 없다.
     # 여기에도 `0.1.0` 리터럴이 박혀 있었다(= SSOT 두 번째 정의 자리).
     if [ -n "$fleet_ver" ]; then
-      assert_contains "$_ko_t" "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
+      pc_ko_at "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
         "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
     else
-      assert_contains "$_ko_t" "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
+      pc_ko_at "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
         "README.ko.md 상단 배너가 갈린 함대를 말하지 않는다(한 숫자로 말하면 거짓이다)"
     fi
-    assert_contains "$_ko_t" "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
+    pc_ko_at "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
       "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
   elif [ "$unpub_n" -eq 0 ]; then
-    assert_contains "$_ko_t" "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
+    pc_ko_at "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
       "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-    assert_contains "$_ko_t" "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
+    pc_ko_at "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
       "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
   else
-    assert_contains "$_ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
-    assert_contains "$_ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
+    pc_ko_at "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
+    pc_ko_at "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
   fi
 }
 pc_ko_mirror
 # 대조군 — pc_ko_mirror **자신**을 결함 사본 루트에 태운다. 수사 「$pub_ko」 는 「열$pub_ko」(더 큰 수)의 부분 문자열이다 —
-# 파일 전체 포함 검사는 그 사본을 받았다. 양성 — 라이브 사본에서는 조용하다(「늘 운다」와 구분).
+# 파일 전체 포함 검사는 그 사본을 받았다(경계 판정은 앞 글자가 한글이라 거부한다). 양성 — 라이브 사본에서는 조용하다(「늘
+# 운다」와 구분). 라이브 사본에서 만들므로 어느 갈래가 깨어 있어도 같은 대조가 선다.
 pc_ko_probe() { # $1=sed 식(빈 값이면 라이브 사본 그대로) → PC_KP: GREW | QUIET | NOT-LANDED
   _kp_tmp="$(mktemp -d)"
   sed "$1" "$ROOT/README.ko.md" > "$_kp_tmp/README.ko.md" || true
