@@ -1,5 +1,8 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=73940 -->
+<!-- doc-budget: max-bytes=74002 -->
+<!-- 73940 → 74002 (2026-11-14): 래칫 조건 (1) — §9 PHP 게시 확인의 눈 확인 둘(미러 태그 · Packagist 페이지)을
+     `check-php-mirror.sh <X.Y.Z>` 로 바꾸고 그 출력을 읽는 법(`ℹ️` 는 exit 0 이다)을 적었다. 같은 변경이 거짓 넷을
+     지웠다 — §5 「green = 레지스트리 URL 2xx 아님」 · 「Go 만 ℹ️ 가 아니다」 두 자리 · §2-D 의 없는 「§0 Step 0 rehearsal」. -->
 <!-- 76133 → 73940 (2026-10-28, 둘째 회차): §1 · §4 · §5 의 이력 산문과 사본을 덜었다 — 「used to be · now」 경위,
      증명 실행 괄호, PR 번호 목록, 날짜 붙은 측정 문장, §4 step 4 와 §7 이 같이 하던 설명. 거짓 셋을 고쳤다: §4 step 1 의
      「npm lockfile 드리프트는 아무것도 안 잡는다」(지금은 `scripts/check-versions.mjs` 가 잡는다) · §5 가 가리키던 §0 의
@@ -354,7 +357,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```bash
   git tag php-v0.1.0-rc.1 && git push origin php-v0.1.0-rc.1
   ```
-- Deployment check: confirm the `split` job of GitHub Actions `php-release.yml` succeeded (it prints the pushed mirror commit) → `sh scripts/check-php-mirror.sh <X.Y.Z>`: the mirror carries `vX.Y.Z`, Packagist serves the mirror and lists `vX.Y.Z` (a miss right after the split is usually lag — re-run in a few minutes; a persistent one means Packagist no longer follows the mirror). The GitHub Release here is created *after* the mirror push, so its existence is evidence the push happened.
+- Deployment check: confirm the `split` job of GitHub Actions `php-release.yml` succeeded (it prints the pushed mirror commit) → `sh scripts/check-php-mirror.sh <X.Y.Z>`, every line `✅` (`ℹ️` = could not look; it exits 0 on that): the mirror carries `vX.Y.Z`, Packagist serves the mirror and lists `vX.Y.Z` (a miss right after the split is usually lag — re-run in a few minutes; a persistent one means Packagist no longer follows the mirror). The GitHub Release here is created *after* the mirror push, so its existence is evidence the push happened.
 - Install: `composer require xzawed/keycloak-sdk`
 
 ---
