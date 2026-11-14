@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=141179 max-raw-bytes=156584 -->
+<!-- doc-budget: max-bytes=141179 max-raw-bytes=156086 -->
+<!-- max-raw-bytes 156584 → 156086: wall-clock-ordering-in-tests 마감(#1088) — 남은 자리 주석이 닫힌 한 줄이 되고, go 비행
+     시험 한 줄만 token-provider-cache-invariants 의 주석으로 옮겼다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 141742 → 141179 · max-raw-bytes 156896 → 156584: coverage-omit-overreach 재판정 마감(#1087) — 하위 측정
      메모 둘이 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 142839 → 141742 · max-raw-bytes 157739 → 156896: docs-commands-that-do-not-work 마감(#1080) — 열린 항목의 하위
@@ -310,7 +312,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 148건 (열림 49)
+## C. 품질 부채 — 148건 (열림 48)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -333,6 +335,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- 2026-10-03 #710 재스캔(.NET): JwtValidator.cs:122/127 이 ErrorCause.MessageOf(IdentityModel 예외)로 메시지를 만든다 — kid "k\nINJ-FORGED-LINE" → Message·ToString 에 INJ. kid 는 IdP 가 아니라 토큰을 내민 쪽이 고른다(로그 위조). alg·iss·aud 의 LF 는 메시지에 안 닿았다. admin 타입 경로 AdminClient.cs:66/74 (ErrorDescription 원문, LF 그대로)·raw 경로 :98-100 (본문 통째) 도 실측. 다른 여덟 언어의 kid 인용은 미측정. 2026-10-05 물결 4 레그: .NET admin 오류 본문이 KeycloakAdminException 메시지에 원문으로 실려, 받은 bearer 를 되울리는 admin 서버면 그것을 찍는다(SendRawAsync·IdFromLocationAsync 의 MapHttpError, raw·타입드 401·404 16/16 LEAK=bearer, 6f23931 도 같음 — 보낸 bearer 를 가릴지 php 처럼 본문을 버릴지 판정). go AdminError.Msg 도 apiErr.Message 를 그대로 싣는다(admin.go:178, 카나리아 1 히트 — cause.go 는 토큰·introspection 레인만 정화). · 2026-10-09 (secret-echo JVM 구현 레그): java getKeycloakError() 가 admin 리소스 오류 본문을 그대로 돌려준다 — 그 요청은 Bearer 를 실었다(되울리면 남는다). -->
 - [ ] `config-validation-gaps` **[L/M]** 설정 진입점이 값을 검증하지 않고 잘못된 기본값으로 대체한다 · `node/src/config.ts:74-87`
 - [ ] `token-provider-cache-invariants` **[L/S]** 토큰 프로바이더 캐시가 설정을 무시하거나 중복 발급한다 · `go/tokenprovider.go:36-60`
+<!-- 시험 쪽: go TestProviderSingleFlight 는 50 ms time.Sleep 비행에 기댄다 — 60 ms 주입에 2/3 실패(2026-10-03 · 원인은 비행 안에서 캐시를 다시 안 보는 것). 고칠 때 결정적으로 바꾼다(wall-clock-ordering-in-tests 에서 옮김) -->
 - [ ] `coverage-omit-hides-security-paths` **[L/L]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
 - [ ] `cross-language-surface-divergence` **[L/L]** 같은 개념의 공개 표면이 언어마다 갈린다 — 필드·타입명·메서드명·정규화 위치 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/IntrospectionResult.java:5-9`
 - [ ] `php-oauth2-delegation-drift` **[L/S]** PHP가 league 프로바이더에 위임하면서 요청 모양이 다른 SDK와 갈린다 · `php/src/AuthClient.php:161-166`
@@ -427,8 +430,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `guard-paths-never-exercised` **[M/M · 닫힘 2026-11-14 #1085]** check-coverage 변이 아홉이 main 에서 SILENT 9 → CAUGHT 9(합산 · 브랜치 없음 · 형식 · 경계 …) · 부류는 `selftests-with-no-negative-case`
 - [ ] `selftests-with-no-negative-case` **[M/L]** 일곱 자가테스트가 라이브 상태만 단언한다 — 판정기가 나쁜 입력을 거부한다는 증거가 없다 · `scripts/test/test-deploy-md.sh:7`
 - [ ] `probes-that-discard-the-result` **[M/M]** 프로브가 결과를 버린다 — 예외 타입 미단언·반환값 미단언 · `php/tests/Unit/Jwks/JwksStoreTest.php:188`
-- [ ] `wall-clock-ordering-in-tests` **[M/M]** 동시성·시간창 테스트가 벽시계에 매달려 있다 — 조용한 퇴화와 거짓 실패. rust·ruby·go 는 닫았다(#701 #706 #707 #709). 남은 다섯 언어의 자리는 아래 주석 — ⚠️ 시계를 얼리면 창 크기 검출이 사라지니 결정적 창 크기 시험을 함께 둔다 · `python/tests/unit/test_auth.py:992`
-<!-- wall-clock 남은 자리(2026-10-03 첫 물결 재스캔, 정적 읽기 + 표시한 것은 주입 실측): python tests/unit/test_auth.py:992 · aio/test_auth.py:734 · W3c test_hostile_path_matrix.py:1258 / php JwksStoreTest.php:333 · FailureBackoffTest.php:103 · W3c HostilePathMatrixTest.php:1481 / dotnet BackoffConfigurationManagerTests.cs:137 · W3c HostilePathMatrixTests.cs:950 / node W3c hostile-path-matrix.test.ts:1557 / ruby jwks_store_spec.rb:135(주입 0.25 s → 3/3 실패) · W3c hostile_path_matrix_spec.rb:810 / go tokenprovider_test.go:29 TestProviderSingleFlight(50 ms 비행, 주입 60 ms → 2/3 실패, 경합만으로 0/300 — 원인은 비행 안에서 캐시를 다시 안 보는 것, token-provider-cache-invariants). java·kotlin 은 30 s 창이라 실노출 없음. go 원래 지목(jwt_test.go:322)은 경합만으로 13/200 실패했다. -->
+- [x] `wall-clock-ordering-in-tests` **[M/M · 닫힘 2026-11-14 #1088]** 붕괴 시험을 멈춘 시계로 · 창 크기는 결정적 시험(변이 CAUGHT) · W3c 는 도달 확인 · go 비행은 `token-provider-cache-invariants`
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 - [x] `dotnet-allocation-test-process-wide-counter-flaky` **[L/S · 신규 2026-10-23 · 닫힘 2026-11-13 #1061]** 다섯 창의 최솟값(`Allocation.SmallestOfAsync`) — 호출 비용 ≈ 58 KB(300 회 실측), 잡음은 더하기만 한다 · 그 규칙을 고정하는 시험
 - [x] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27 · 닫힘 2026-11-13 #1059]** 기제 — 닫힘을 알리지 않은 응답 뒤 닫힌 연결을 풀이 다음 POST 에 재사용했고, 본문을 보낸 요청은 재시도되지 않는다(응답 뒤 200 ms 지연 재현 40/100 · `Connection: close` 대조 0). keep-alive 로 고침 · 고정 테스트 `Raw_server_answers_every_request_on_one_kept_alive_connection`
