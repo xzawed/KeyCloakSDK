@@ -1,5 +1,5 @@
-<!-- doc-budget: max-bytes=13845 -->
-<!-- 13568 → 13845 (2026-11-14, +277B). 규약 (1) — 교환: README.md 와 같은 두 자리(nonce 생략 · 은닉 예외 넷) —
+<!-- doc-budget: max-bytes=13862 -->
+<!-- 13568 → 13862 (2026-11-14, +294B). 규약 (1) — 교환: README.md 와 같은 두 자리(nonce 생략 · 은닉 예외 넷) —
      test-readme-contract.sh 가 대조한다. -->
 <!-- 13527 → 13568 (2026-10-29, +41B). 규약 (1) — 교환: README.md 와 같은 자리(「미해결 kid에만」이 300 초 수명 뒤로
      무조건 문장으로는 거짓 — 가드 1h). -->
@@ -141,7 +141,7 @@ pip install -e KeyCloakSDK/python
 
 ## 무엇이 동일하고, 무엇이 다른가
 
-- **인증: 일곱 오퍼레이션은 아홉에 모두 있다** — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate. 시그니처는 같지 않습니다: PHP·Rust는 `redirectUri`를 설정에서 읽고, Python 시작점은 `authorization_url`입니다. 아홉 모두 인가 요청에서 nonce를 발급하고, 호출자가 그 nonce를 `exchange*`에 넘기면 `id_token`을 검증합니다(인자는 아홉 모두 옵셔널입니다. 생략하면 여덟은 id_token 검증을 건너뛰고, Node는 교환이 실패합니다 — Keycloak이 id_token에 넣은 nonce를 openid-client가 거부합니다). 값 타입 이름은 전부 `TokenSet` / `ValidatedToken` / `IntrospectionResult`이되 필드 집합은 조금 다릅니다(`expires_in`은 Java·Python·Kotlin에 없습니다). `expiresAt` **부재**는 아홉 모두 「만료됨」으로 읽습니다 — 만료 시각을 모른다는 것은 서버가 `expires_in`을 안 보냈다는 뜻이고, 그때 안전한 쪽은 재발급입니다. Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
+- **인증: 일곱 오퍼레이션은 아홉에 모두 있다** — client-credentials 토큰 · 인가 요청(PKCE S256) · 코드 교환 · refresh · introspect · logout · validate. 시그니처는 같지 않습니다: PHP·Rust는 `redirectUri`를 설정에서 읽고, Python 시작점은 `authorization_url`입니다. 아홉 모두 인가 요청에서 nonce를 발급하고, 호출자가 그 nonce를 `exchange*`에 넘기면 `id_token`을 검증합니다(인자는 아홉 모두 옵셔널입니다. 생략하면 여덟은 id_token 검증을 건너뛰고, Node는 id_token에 nonce가 있으면 교환이 실패합니다 — 기대하지 않은 nonce를 openid-client가 거부합니다). 값 타입 이름은 전부 `TokenSet` / `ValidatedToken` / `IntrospectionResult`이되 필드 집합은 조금 다릅니다(`expires_in`은 Java·Python·Kotlin에 없습니다). `expiresAt` **부재**는 아홉 모두 「만료됨」으로 읽습니다 — 만료 시각을 모른다는 것은 서버가 `expires_in`을 안 보냈다는 뜻이고, 그때 안전한 쪽은 재발급입니다. Go·Rust는 error 값을 반환하고, 나머지 일곱은 `Keycloak*` 예외 계층을 던집니다.
 - **Admin: 리소스 다섯도, 이제 연산 다섯도 같다.** 아홉 모두 users · clients · realms · roles · groups 에 생성·조회·목록·갱신·삭제를 노출합니다 — **모든 언어가 25/25**이고, 그 밖은 `raw` 탈출구로 갑니다. 남은 차이는 커버리지가 아니라 모양입니다: Rust만 파사드가 평평하고(`admin.update_role(name, rep)`) 나머지는 중첩(`admin.roles().update(…)`)이며, 목록 페이지네이션이 **명시적**인(호출자가 반드시 넘겨야 하고 기본값이 없는) 언어는 **넷**입니다 — Rust·Go·Java·Kotlin. 정확한 표는 [Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)입니다.
 
 ---
@@ -151,7 +151,7 @@ pip install -e KeyCloakSDK/python
 아홉 개 SDK 모두 **같은 클레임 검사 규칙**(알고리즘 핀닝, `iss` 정확일치, `aud` 포함검사, `exp` 필수, 클록 스큐 제한)을 탑재합니다 — 하위 라이브러리 기본값이 아닙니다.
 JWKS 키 집합 수명 300초는 아홉 공통이고, 그 안에서 JWKS 재조회 rate-limit은 아홉 공통, **「미해결 kid에만」은 여덟 언어**입니다. .NET은 `Microsoft.IdentityModel`의 `ConfigurationManager`가 서명 실패도 키 회전으로 보아 재조회하므로, rate-limit이 증폭 상한입니다 — [dotnet/README.md](dotnet/README.md).
 
-토큰·시크릿은 로그·직렬화에서 마스킹되고, TLS 검증은 기본 활성입니다. 하위 라이브러리 타입은 파사드 뒤에 두고, 예외는 넷입니다 — admin representation과 `raw()`([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)), 그리고 Rust 저수준 생성자가 받는 `reqwest::Client`와 `JwksStore::get_key()`가 돌려주는 `Jwk`(둘 다 `keycloak_sdk`에서 재노출됩니다).
+토큰·시크릿은 로그·직렬화에서 마스킹되고, TLS 검증은 기본 활성입니다. 하위 라이브러리 타입은 파사드 뒤에 두고, 예외는 넷입니다 — admin representation과 `raw()`·그 오류([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)), 그리고 Rust 저수준 생성자가 받는 `reqwest::Client`와 `JwksStore::get_key()`가 돌려주는 `Jwk`(둘 다 `keycloak_sdk` 재노출).
 
 ---
 
