@@ -23,7 +23,25 @@ osv_producers() { grep -c '> dep-tree\.txt' "$1" 2>/dev/null || true; }
 # fail-closed 게이트 — 맨 `FAILED` 가 아니라 ` FAILED$`. 그것이 Gradle 렌더러의 접미사이고
 # (`+--- <group>:<artifact>:<version> FAILED`), Maven 좌표에는 공백이 못 들어가므로 정상 좌표가
 # 이 패턴을 만들 수 없다(실측: 실패 트리 9/9 동일 · 정상 트리 352줄에서 둘 다 0).
-osv_gates() { grep -cF "if grep -qE ' FAILED\$' dep-tree.txt; then" "$1" 2>/dev/null || true; }
+OSV_GATE="if grep -qE ' FAILED\$' dep-tree.txt; then"
+# ⚠️ **언급이 아니라 문장을 센다** — 앞 공백을 걷은 줄 **전체**가 게이트 문장과 같아야 게이트다. 부분 문자열로 세면
+# 주석 · 문자열 속 같은 글자가 빠진 게이트를 대신해 수가 맞았다(실측 2026-11-14 — 아래 음성 대조가 재현한다).
+# 한 번 훑어 「<게이트 수> <그중 닫는 fi 앞에 exit 1 이 있는 블록 수>」를 낸다 — 두 판정이 같은 여는 자리를 쓴다.
+# 블록 경계 규칙은 아래 두 번째 루프의 주석이 소유한다.
+osv_scan() {
+  awk -v pat="$OSV_GATE" '
+    { sub(/\r$/, ""); t = $0; sub(/^[[:space:]]+/, "", t) }
+    t == pat {
+      g++; d = 1; found = 0
+      match($0, /^[[:space:]]*/); close_re = "^" substr($0, 1, RLENGTH) "fi$"
+      next
+    }
+    d && $0 ~ close_re { if (found) n++; d = 0; next }
+    d && /^[[:space:]]*exit 1$/ { found = 1 }
+    END { print g + 0, n + 0 }
+  ' "$1" 2>/dev/null || true
+}
+osv_gates() { osv_scan "$1" | cut -d' ' -f1; }
 # 워크플로 하나의 판정 — 생산자 수와 게이트 수가 같으면 빈 출력, 다르면 「생산자/게이트」. 라이브 루프와 아래 음성
 # 대조가 **같은 함수**를 부른다(실측 2026-11-14 SILENT: 이 비교를 「늘 같다」로 깨도 초록이었다).
 osv_gap() {
@@ -55,25 +73,15 @@ assert_eq "ok" "$([ "$_files" -ge 2 ] && printf ok || printf "TOO-FEW($_files)")
 # 게이트가 **판정을 가르지 않는다**는 것도 본다 — 메시지는 갈려도 `exit 1` 은 어느 갈래에서도
 # 돌아야 한다. 갈래마다 exit 를 두면 한쪽을 지워도 문법은 성립해 조용히 fail-open 이 된다.
 for WF in $(git ls-files '.github/workflows/*.yml'); do
-  _g="$(osv_gates "$WF")"; _g=${_g:-0}
-  [ "$_g" -gt 0 ] || continue
-  # 게이트 블록마다 그 **안에** `exit 1` 이 있어야 한다.
+  _s="$(osv_scan "$WF")"; _g="${_s%% *}"; _e="${_s#* }"
+  [ "${_g:-0}" -gt 0 ] || continue
+  # 게이트 블록마다 그 **안에** `exit 1` 이 있어야 한다(osv_scan 의 두 번째 수).
   # ⚠️ 앞을 향해 무한정 찾으면 안 된다 — 초판이 그랬고, 게이트의 `exit 1` 을 지웠는데 같은 스텝
   # **뒤쪽**(OSV 대조 스텝)의 `exit 1` 이 셈을 채워 변이가 `SILENT` 로 통과했다(실측 2026-09-07).
-  # 그래서 닫는 `fi` 를 경계로 삼는다. 패턴은 `index()` 로 문자열 비교해 정규식 이스케이프를 없앤다.
+  # 그래서 닫는 `fi` 를 경계로 삼는다. 패턴은 문자열 비교(앞 공백을 걷은 줄 전체)라 정규식 이스케이프가 없다.
   # ⚠️ 첫 `fi` 로 닫으면 안 된다 — `harness-kotlin` 게이트는 **중첩 if/fi** 를 품고 있어서
   # 안쪽 `fi` 에서 멈추면 그 뒤의 `exit 1` 을 못 본다(실측 2026-09-07: 2개 중 1개만 셌다).
   # 게이트와 **같은 들여쓰기**의 `fi` 가 그 블록의 닫는 자리다.
-  _e="$(awk -v pat="if grep -qE ' FAILED\$' dep-tree.txt; then" '
-    index($0, pat) {
-      d = 1; found = 0
-      match($0, /^[[:space:]]*/); close_re = "^" substr($0, 1, RLENGTH) "fi$"
-      next
-    }
-    d && $0 ~ close_re { if (found) n++; d = 0; next }
-    d && /^[[:space:]]*exit 1$/ { found = 1 }
-    END { print n + 0 }
-  ' "$WF")"
   assert_eq "$_g" "$_e" \
     "[osv] $(basename "$WF") 의 fail-closed 게이트 $_g 개 중 $_e 개만 exit 1 로 끝난다 — 메시지만 가르고 판정은 가르지 않아야 한다"
 done
