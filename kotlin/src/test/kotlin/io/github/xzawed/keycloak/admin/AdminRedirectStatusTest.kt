@@ -21,6 +21,10 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -43,6 +47,19 @@ import kotlin.test.assertTrue
 //
 // 대조: 같은 표 · 같은 본문의 404 는 25 호출 모두 KeycloakAdminException.NotFound(404)다 — 표의 배선(호출마다 그 요청 하나가 서버에
 // 닿는다)과 「4xx 가 받는 분류」를 같은 하네스로 보인다. 칸마다 서버가 받은 admin 요청이 그 호출의 메서드 · 경로 하나인지도 본다.
+//
+// 오류 본문의 모양은 분류를 바꾸지 않는다 — 404 · 500 이 객체가 아닌 JSON 본문(배열 · 문자열 · 수 · 불리언 · null · 깊이 10만의 배열
+// 200,000 바이트)을 싣고 와도 25 호출 모두 그 상태의 갈래(404 → KeycloakAdminException.NotFound · 500 → .Other)에 그 상태를 싣고 서버는
+// 그 호출의 요청 하나를 받는다. 객체 본문 {"error":"x"} 가 대조다(등록부 python-admin-list-error-array-body 의 부류 재스캔 ·
+// `a non-object error body is the status leaf on every call`).
+//
+// 따라갈 수 있는 리다이렉트도 성공이 아니다 — 302 가 `Location: <서버>/redirected-target` 을 싣고 와도(그 대상은 그 호출의 성공 본문으로
+// 200 을 낸다) 25 호출 모두 KeycloakAdminException.Other(302)이고 대상에는 요청이 가지 않는다(등록부
+// admin-followable-redirect-class-divergent · `a followable redirect is an admin error and is not followed`). 따라가는 클라이언트는 같은
+// 서버에서 그 대상에 닿는다(`control - a following client reaches the redirect target`) — 그 대조가 없으면 「가지 않는다」가 망가진
+// Location 에도 통과한다.
+//
+// 실측 2026-11-14(main ad16554d · Windows · JDK 21.0.8 · 루프백): A 300/300(대조 50/50) · B 25/25 — 이미 옳았다(SDK 무변경).
 //
 // 토큰 엔드포인트의 3xx 는 이 규칙 밖이다 — 토큰 레인이 가르고 그 상한이 본문을 끊는다(`a token endpoint redirect is left to the token lane`).
 //
@@ -69,6 +86,24 @@ private const val ARS_HUGE = 64L shl 20
 
 // 끊긴 교환에서 서버가 써도 되는 본문 — 상한 + 소켓 버퍼를 넉넉히 넘는 16 MiB(`AdminRejectedResponseCutTest` 와 같은 한도).
 private const val ARS_WRITTEN_BOUND = 16L shl 20
+
+// 따라갈 수 있는 리다이렉트의 대상 경로 — 서버는 그곳에 그 호출의 성공 본문으로 200 을 낸다.
+private const val ARS_TARGET_PATH = "/redirected-target"
+
+// 오류 본문 모양의 두 상태 — 갈래가 따로인 404 와 「그 밖」인 500.
+private val ARS_ERROR_STATUSES = intArrayOf(404, 500)
+
+// 이름 · 오류 본문 — 대조인 객체와 객체가 아닌 JSON 여섯(깊이 10만의 배열은 200,000 바이트).
+private val ARS_ERROR_BODIES =
+    listOf(
+        "object" to """{"error":"x"}""",
+        "array" to "[]",
+        "string" to "\"boom\"",
+        "number" to "42",
+        "boolean" to "true",
+        "null" to "null",
+        "deep" to "[".repeat(100_000) + "]".repeat(100_000),
+    )
 
 private fun arsList(element: String): String = "[$element]"
 
@@ -153,6 +188,74 @@ internal class AdminRedirectStatusTest {
         }
     }
 
+    // 350 칸(25 호출 × 404 · 500 × 본문 일곱) — 칸마다 그 상태의 갈래(404 → NotFound · 500 → Other)에 그 상태를 싣고, 서버는 그 호출의 요청
+    // 하나를 받는다. 실패한 칸을 모아 끝에서 한 번 단언한다 — 한 칸의 실패가 다른 칸을 가리지 않는다.
+    @Test
+    @Timeout(300)
+    fun `a non-object error body is the status leaf on every call`() {
+        val failed = mutableListOf<String>()
+        for (status in ARS_ERROR_STATUSES) {
+            val leaf = if (status == 404) KeycloakAdminException.NotFound::class else KeycloakAdminException.Other::class
+            val expected = status
+            for ((shape, body) in ARS_ERROR_BODIES) {
+                for (op in ArsOp.entries) {
+                    ArsRawServer(status, body).use { server ->
+                        val thrown = arsRun(server, op)
+                        val e = thrown as? KeycloakAdminException
+                        if (e == null || e::class != leaf || e.status != expected || server.adminRequests != listOf(op.request)) {
+                            failed += "$shape · ${arsRow(op, status, thrown, server)}"
+                        }
+                    }
+                }
+            }
+        }
+        val cells = ARS_ERROR_STATUSES.size * ARS_ERROR_BODIES.size * ArsOp.entries.size
+        println("[AdminRedirectStatusTest] 오류 본문 모양 $cells 칸 중 실패 ${failed.size}")
+        assertEquals(emptyList(), failed, "${failed.size}/$cells 칸이 그 상태의 갈래 · 그 상태 · 그 호출의 요청 하나가 아니다")
+    }
+
+    // 25 칸 — 302 가 ARS_TARGET_PATH 를 가리키는 Location 과 본문 {} 를 싣고, 그 대상은 그 호출의 성공 본문으로 200 을 낸다. 칸마다
+    // KeycloakAdminException.Other 에 302 를 싣고, 서버는 그 호출의 요청 하나를 받으며 대상에는 요청이 가지 않는다. 실패한 칸을 모아 끝에서
+    // 한 번 단언한다.
+    @Test
+    @Timeout(60)
+    fun `a followable redirect is an admin error and is not followed`() {
+        val failed = mutableListOf<String>()
+        val expected = 302
+        for (op in ArsOp.entries) {
+            ArsRawServer(302, "{}", target = op.body).use { server ->
+                val thrown = arsRun(server, op)
+                val e = thrown as? KeycloakAdminException.Other
+                val requests = server.adminRequests == listOf(op.request) && server.targetRequests.isEmpty()
+                if (e == null || e.status != expected || !requests) {
+                    failed += "${arsRow(op, 302, thrown, server)} · redirect target requests ${server.targetRequests}"
+                }
+            }
+        }
+        val cells = ArsOp.entries.size
+        println("[AdminRedirectStatusTest] 따라갈 수 있는 리다이렉트 $cells 칸 중 실패 ${failed.size}")
+        assertEquals(emptyList(), failed, "${failed.size}/$cells 칸이 302 를 실은 admin 예외 · 요청 하나 · 대상 0 이 아니다")
+    }
+
+    // 대조 — 따라가는 클라이언트(JDK HttpClient · Redirect.ALWAYS)는 같은 서버에서 ARS_TARGET_PATH 에 닿아 성공 본문을 받는다. 이것이 없으면
+    // 위의 「대상에는 요청이 가지 않는다」가 망가진 Location 에도 통과한다.
+    @Test
+    @Timeout(30)
+    fun `control - a following client reaches the redirect target`() {
+        ArsRawServer(302, "{}", target = ARS_USER).use { server ->
+            // ⚠️ `.use { }` 를 쓰지 않는다 — HttpClient 가 AutoCloseable 인 것은 Java 21 부터다(소비자 하한 17 · AdminRedirectHardeningTest)
+            val follower = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build()
+            val response =
+                follower.send(
+                    HttpRequest.newBuilder(URI("http://127.0.0.1:${server.port}$ARS_USERS/x")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(),
+                )
+            assertEquals(200, response.statusCode())
+            assertEquals(ARS_USER, response.body())
+            assertEquals(listOf("GET $ARS_TARGET_PATH"), server.targetRequests)
+        }
+    }
+
     // 토큰 엔드포인트의 3xx 는 이 규칙의 것이 아니다 — 엔진은 토큰 응답 본문에 상한을 걸지 않으므로(그 레인의 상한은 TokenResponseGuard 가
     // 건다) 이 규칙이 그것을 버퍼에 담으면 끝까지 읽는다. 파사드 호출 안의 토큰 부여가 64 MiB 본문의 302 를 받으면 호출은 admin 예외가
     // 아니고(토큰 레인이 가른다) admin 요청은 나가지 않으며 서버는 ARS_WRITTEN_BOUND 를 넘어 쓰지 못한다. 규칙에서 토큰 엔드포인트를 빼는
@@ -228,21 +331,30 @@ private fun arsReason(status: Int): String =
         300 -> "Multiple Choices"
         302 -> "Found"
         404 -> "Not Found"
+        500 -> "Internal Server Error"
         else -> "Unassigned"
     }
 
 // 원시 HTTP/1.1 서버(연결 하나에 요청 여럿) — 토큰 엔드포인트는 쓸 수 있는 토큰을, /admin/ 아래는 고른 상태와 JSON 본문을(Location
 // 없이) 내고 그 요청의 「메서드 경로」(질의 뺌)를 적는다. 그 밖은 빈 404 다. 토큰 엔드포인트의 상태가 200 이 아니면 그 상태와 tokenSize
-// 바이트의 본문(토큰 뒤 공백)을 내고 쓴 바이트를 센다.
+// 바이트의 본문(토큰 뒤 공백)을 내고 쓴 바이트를 센다. target 이 있으면 admin 응답이 ARS_TARGET_PATH 를 가리키는 Location 을 싣고, 그 대상은
+// target 본문으로 200 을 내며 받은 요청을 적는다.
 private class ArsRawServer(
     status: Int,
     body: String,
     private val tokenStatus: Int = 200,
     private val tokenSize: Long = 0,
+    target: String? = null,
 ) : AutoCloseable {
     private val socket = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     private val adminReply: ByteArray
+
+    // 리다이렉트 대상의 응답 — target 이 없으면 null(그 경로도 빈 404 다).
+    private val targetReply: ByteArray?
     val adminRequests: MutableList<String> = CopyOnWriteArrayList()
+
+    // 리다이렉트 대상이 받은 요청의 「메서드 경로」.
+    val targetRequests: MutableList<String> = CopyOnWriteArrayList()
     val tokenWritten = AtomicLong()
 
     // 200 이 아닌 토큰 응답의 쓰기가 끝났다(성공 · 실패).
@@ -250,10 +362,15 @@ private class ArsRawServer(
 
     init {
         val b = body.toByteArray(Charsets.UTF_8)
+        val location = if (target == null) "" else "Location: http://127.0.0.1:${socket.localPort}$ARS_TARGET_PATH\r\n"
         adminReply =
             arsLatin1(
-                "HTTP/1.1 $status ${arsReason(status)}\r\nContent-Type: application/json\r\nContent-Length: ${b.size}\r\n\r\n",
+                "HTTP/1.1 $status ${arsReason(status)}\r\nContent-Type: application/json\r\n${location}Content-Length: ${b.size}\r\n\r\n",
             ) + b
+        targetReply =
+            target?.toByteArray(Charsets.UTF_8)?.let {
+                arsLatin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${it.size}\r\n\r\n") + it
+            }
         Thread(::serve, "admin-3xx-server").apply { isDaemon = true }.start()
     }
 
@@ -323,6 +440,10 @@ private class ArsRawServer(
             path.startsWith("/admin/") -> {
                 adminRequests.add(request)
                 out.write(adminReply)
+            }
+            targetReply != null && path == ARS_TARGET_PATH -> {
+                targetRequests.add(request)
+                out.write(targetReply)
             }
             else -> out.write(arsLatin1("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"))
         }

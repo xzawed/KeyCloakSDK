@@ -1,6 +1,6 @@
 /**
- * 진짜 openid-client·admin-client 를 붙이는 프로세스 안 가짜 Keycloak realm — discovery·token·introspect·certs·admin.
- * 응답 본문은 **정확한 바이트 수**로 덧댈 수 있다(`head` 뒤에 JSON 공백을 붙여 `total` 바이트를 만든다 — 공백은
+ * 진짜 openid-client·admin-client 를 붙이는 프로세스 안 가짜 Keycloak realm — discovery·token·introspect·certs·admin
+ * (+ admin 리다이렉트의 `Location` 이 가리킬 수 있는 {@link REDIRECTED_PATH}). 응답 본문은 **정확한 바이트 수**로 덧댈 수 있다(`head` 뒤에 JSON 공백을 붙여 `total` 바이트를 만든다 — 공백은
  * JSON 값 뒤에 와도 유효하므로 덧댄 본문도 쓸 수 있는 응답이다). 전송은 청크·`Content-Length`·gzip 셋이다.
  *
  * ⚠️ 이 파일은 `*.test.ts` 가 아니다 — 테스트 파일을 import 하면 그 파일의 describe 가 가져온 쪽에서도 등록된다
@@ -12,12 +12,17 @@ import { gzipSync } from 'node:zlib'
 
 export type Transfer = 'chunked' | 'cl' | 'gzip'
 
+/** 리다이렉트 대상 — admin 이 아닌 경로라 `counts.admin` 에 들지 않고 `counts.redirected` 로 센다. */
+export const REDIRECTED_PATH = '/redirected-target'
+
 /** 한 엔드포인트가 다음에 돌려줄 응답. `total` 이 있으면 본문은 정확히 그 바이트 수다. */
 export interface BodyPlan {
   readonly status?: number
   readonly head: string
   readonly total?: number
   readonly transfer?: Transfer
+  /** 더 다는 응답 머리(예: `location`) — 같은 이름이면 `content-type` · 틀 머리(`content-length` 등)가 이긴다. */
+  readonly headers?: Readonly<Record<string, string>>
 }
 
 export interface FakeIdp {
@@ -28,12 +33,15 @@ export interface FakeIdp {
   /** `undefined` 면 기본 discovery 문서. */
   discovery: BodyPlan | undefined
   admin: BodyPlan
+  /** {@link REDIRECTED_PATH} 의 응답(메서드는 가리지 않는다). */
+  redirected: BodyPlan
   readonly counts: {
     discovery: number
     token: number
     introspect: number
     admin: number
     certs: number
+    redirected: number
   }
   /** 마지막으로 받은 값 — admin 의 Authorization 헤더, introspect 의 `token`, 토큰 요청의 `refresh_token`. */
   readonly last: { adminAuthorization?: string; introspectToken?: string; refreshToken?: string }
@@ -63,7 +71,7 @@ export async function startFakeIdp(): Promise<FakeIdp> {
     const total = plan.total ?? head.length
     if (total < head.length) throw new Error(`plan total ${total} < head ${head.length}`)
     const transfer = plan.transfer ?? 'cl'
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    const headers: Record<string, string> = { ...plan.headers, 'content-type': 'application/json' }
     idp.bytesWritten = 0
     if (transfer === 'gzip') {
       const wire = gzipSync(Buffer.concat([head, Buffer.alloc(total - head.length, 0x20)]))
@@ -133,6 +141,11 @@ export async function startFakeIdp(): Promise<FakeIdp> {
       await readForm(req)
       return send(res, idp.admin)
     }
+    if (path === REDIRECTED_PATH) {
+      idp.counts.redirected += 1
+      await readForm(req)
+      return send(res, idp.redirected)
+    }
     res.writeHead(404).end()
   }
 
@@ -156,7 +169,8 @@ export async function startFakeIdp(): Promise<FakeIdp> {
     },
     discovery: undefined,
     admin: { head: '[]' },
-    counts: { discovery: 0, token: 0, introspect: 0, admin: 0, certs: 0 },
+    redirected: { head: '{}' },
+    counts: { discovery: 0, token: 0, introspect: 0, admin: 0, certs: 0, redirected: 0 },
     last: {},
     bytesWritten: 0,
     setJwks: (value) => {

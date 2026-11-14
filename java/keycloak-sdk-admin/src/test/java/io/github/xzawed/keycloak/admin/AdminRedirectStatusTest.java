@@ -13,8 +13,13 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -47,6 +52,19 @@ import org.keycloak.representations.idm.UserRepresentation;
  * <p>대조: 같은 표 · 같은 본문의 404 는 25 호출 모두 {@link KeycloakNotFoundException}(404)이다 — 표의 배선(호출마다 그 요청 하나가
  * 서버에 닿는다)과 「4xx 가 받는 분류」를 같은 하네스로 보인다. 칸마다 서버가 받은 admin 요청이 그 호출의 메서드 · 경로 하나인지도 본다.
  *
+ * <p>오류 본문의 모양은 분류를 바꾸지 않는다 — 404 · 500 이 객체가 아닌 JSON 본문(배열 · 문자열 · 수 · 불리언 · null · 깊이 10만의 배열
+ * 200,000 바이트)을 싣고 와도 25 호출 모두 그 상태의 갈래(404 → {@link KeycloakNotFoundException} · 500 → {@link KeycloakAdminException}
+ * 그 자체)에 그 상태를 싣고 서버는 그 호출의 요청 하나를 받는다. 객체 본문 {@code {"error":"x"}} 이 대조다(등록부
+ * python-admin-list-error-array-body 의 부류 재스캔 · {@link #aNonObjectErrorBody_isTheStatusLeafOnEveryCall}).
+ *
+ * <p>따라갈 수 있는 리다이렉트도 성공이 아니다 — 302 가 {@code Location: <서버>/redirected-target} 을 싣고 와도(그 대상은 그 호출의 성공
+ * 본문으로 200 을 낸다) 25 호출 모두 {@link KeycloakAdminException} 그 자체(302)이고 대상에는 요청이 가지 않는다(등록부
+ * admin-followable-redirect-class-divergent · {@link #aFollowableRedirect_isAnAdminErrorAndIsNotFollowed}). 따라가는 클라이언트는 같은
+ * 서버에서 그 대상에 닿는다({@link #control_aFollowingClient_reachesTheRedirectTarget}) — 그 대조가 없으면 「가지 않는다」가 망가진
+ * Location 에도 통과한다.
+ *
+ * <p>실측 2026-11-14(main ad16554d · Windows · JDK 21.0.8 · 루프백): A 300/300(대조 50/50) · B 25/25 — 이미 옳았다(SDK 무변경).
+ *
  * <p>토큰 엔드포인트의 3xx 는 이 규칙 밖이다 — 토큰 레인이 가르고 그 상한이 본문을 끊는다
  * ({@link #aTokenEndpointRedirect_isLeftToTheTokenLane}).
  *
@@ -73,6 +91,15 @@ class AdminRedirectStatusTest {
   private static final long HUGE = 64L << 20;
   /** 끊긴 교환에서 서버가 써도 되는 본문 — 상한 + 소켓 버퍼를 넉넉히 넘는 16 MiB({@code AdminRejectedResponseCutTest} 와 같은 한도). */
   private static final long WRITTEN_BOUND = 16L << 20;
+  /** 따라갈 수 있는 리다이렉트의 대상 경로 — 서버는 그곳에 그 호출의 성공 본문으로 200 을 낸다. */
+  private static final String TARGET = "/redirected-target";
+  /** 오류 본문 모양의 두 상태 — 갈래가 따로인 404 와 「그 밖」인 500. */
+  private static final int[] ERROR_STATUSES = {404, 500};
+  /** 이름 · 오류 본문 — 대조인 객체와 객체가 아닌 JSON 여섯(깊이 10만의 배열은 200,000 바이트). */
+  private static final String[][] ERROR_BODIES = {
+    {"object", "{\"error\":\"x\"}"}, {"array", "[]"}, {"string", "\"boom\""}, {"number", "42"}, {"boolean", "true"},
+    {"null", "null"}, {"deep", "[".repeat(100_000) + "]".repeat(100_000)}
+  };
 
   @FunctionalInterface
   private interface Call {
@@ -194,6 +221,78 @@ class AdminRedirectStatusTest {
   }
 
   /**
+   * 350 칸(25 호출 × 404 · 500 × 본문 일곱) — 칸마다 그 상태의 갈래(404 → {@link KeycloakNotFoundException} · 500 →
+   * {@link KeycloakAdminException} 그 자체)에 그 상태를 싣고, 서버는 그 호출의 요청 하나를 받는다. 실패한 칸을 모아 끝에서 한 번
+   * 단언한다 — 한 칸의 실패가 다른 칸을 가리지 않는다.
+   */
+  @Test
+  @Timeout(300)
+  void aNonObjectErrorBody_isTheStatusLeafOnEveryCall() throws Exception {
+    List<String> failed = new ArrayList<>();
+    for (int status : ERROR_STATUSES) {
+      Class<?> leaf = status == 404 ? KeycloakNotFoundException.class : KeycloakAdminException.class;
+      int expected = status;
+      for (String[] body : ERROR_BODIES) {
+        for (Op op : Op.values()) {
+          try (RawServer server = new RawServer(status, body[1])) {
+            Throwable thrown = run(server, op);
+            if (thrown.getClass() != leaf || ((KeycloakAdminException) thrown).getStatus() != expected
+                || !server.adminRequests.equals(List.of(op.request))) {
+              failed.add(body[0] + " · " + row(op, status, thrown, server));
+            }
+          }
+        }
+      }
+    }
+    int cells = ERROR_STATUSES.length * ERROR_BODIES.length * Op.values().length;
+    System.out.println("[AdminRedirectStatusTest] 오류 본문 모양 " + cells + " 칸 중 실패 " + failed.size());
+    assertEquals(List.of(), failed, () -> failed.size() + "/" + cells + " 칸이 그 상태의 갈래 · 그 상태 · 그 호출의 요청 하나가 아니다");
+  }
+
+  /**
+   * 25 칸 — 302 가 {@link #TARGET} 을 가리키는 Location 과 본문 {@code {}} 을 싣고, 그 대상은 그 호출의 성공 본문으로 200 을 낸다. 칸마다
+   * {@link KeycloakAdminException} 그 자체에 302 를 싣고, 서버는 그 호출의 요청 하나를 받으며 대상에는 요청이 가지 않는다. 실패한 칸을
+   * 모아 끝에서 한 번 단언한다.
+   */
+  @Test
+  @Timeout(60)
+  void aFollowableRedirect_isAnAdminErrorAndIsNotFollowed() throws Exception {
+    List<String> failed = new ArrayList<>();
+    int expected = 302;
+    for (Op op : Op.values()) {
+      try (RawServer server = new RawServer(302, "{}", 200, 0, op.body)) {
+        Throwable thrown = run(server, op);
+        if (thrown.getClass() != KeycloakAdminException.class || ((KeycloakAdminException) thrown).getStatus() != expected
+            || !server.adminRequests.equals(List.of(op.request)) || !server.targetRequests.isEmpty()) {
+          failed.add(row(op, 302, thrown, server) + " · redirect target requests " + server.targetRequests);
+        }
+      }
+    }
+    int cells = Op.values().length;
+    System.out.println("[AdminRedirectStatusTest] 따라갈 수 있는 리다이렉트 " + cells + " 칸 중 실패 " + failed.size());
+    assertEquals(List.of(), failed, () -> failed.size() + "/" + cells + " 칸이 302 를 실은 admin 예외 · 요청 하나 · 대상 0 이 아니다");
+  }
+
+  /**
+   * 대조 — 따라가는 클라이언트(JDK HttpClient · {@code Redirect.ALWAYS})는 같은 서버에서 {@link #TARGET} 에 닿아 성공 본문을 받는다. 이것이
+   * 없으면 위의 「대상에는 요청이 가지 않는다」가 망가진 Location 에도 통과한다.
+   */
+  @Test
+  @Timeout(30)
+  void control_aFollowingClient_reachesTheRedirectTarget() throws Exception {
+    try (RawServer server = new RawServer(302, "{}", 200, 0, USER)) {
+      // ⚠️ try-with-resources 를 쓰지 않는다 — HttpClient 가 AutoCloseable 인 것은 Java 21 부터다(소비자 하한 17 · AdminRedirectHardeningTest)
+      HttpClient follower = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
+      HttpResponse<String> response = follower.send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + USERS + "/x")).GET().build(),
+          HttpResponse.BodyHandlers.ofString());
+      assertEquals(200, response.statusCode());
+      assertEquals(USER, response.body());
+      assertEquals(List.of("GET " + TARGET), server.targetRequests);
+    }
+  }
+
+  /**
    * 토큰 엔드포인트의 3xx 는 이 규칙의 것이 아니다 — 엔진은 토큰 응답 본문에 상한을 걸지 않으므로(그 레인의 상한은
    * {@code TokenResponseGuard} 가 건다) 이 규칙이 그것을 버퍼에 담으면 끝까지 읽는다. 파사드 호출 안의 토큰 부여가 64 MiB 본문의 302 를
    * 받으면 호출은 admin 예외가 아니고(토큰 레인이 가른다) admin 요청은 나가지 않으며 서버는 {@link #WRITTEN_BOUND} 를 넘어 쓰지 못한다.
@@ -288,6 +387,7 @@ class AdminRedirectStatusTest {
       case 300 -> "Multiple Choices";
       case 302 -> "Found";
       case 404 -> "Not Found";
+      case 500 -> "Internal Server Error";
       default -> "Unassigned";
     };
   }
@@ -295,14 +395,19 @@ class AdminRedirectStatusTest {
   /**
    * 원시 HTTP/1.1 서버(연결 하나에 요청 여럿) — 토큰 엔드포인트는 쓸 수 있는 토큰을, {@code /admin/} 아래는 고른 상태와 JSON 본문을
    * (Location 없이) 내고 그 요청의 「메서드 경로」(질의 뺌)를 적는다. 그 밖은 빈 404 다. 토큰 엔드포인트의 상태가 200 이 아니면 그 상태와
-   * {@code tokenSize} 바이트의 본문(토큰 뒤 공백)을 내고 쓴 바이트를 센다.
+   * {@code tokenSize} 바이트의 본문(토큰 뒤 공백)을 내고 쓴 바이트를 센다. {@code target} 이 있으면 admin 응답이 {@link #TARGET} 을
+   * 가리키는 Location 을 싣고, 그 대상은 {@code target} 본문으로 200 을 내며 받은 요청을 적는다.
    */
   private static final class RawServer implements AutoCloseable {
     private final ServerSocket socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
     private final byte[] adminReply;
     private final int tokenStatus;
     private final long tokenSize;
+    /** 리다이렉트 대상의 응답 — {@code target} 이 없으면 null(그 경로도 빈 404 다). */
+    private final byte[] targetReply;
     final List<String> adminRequests = new CopyOnWriteArrayList<>();
+    /** 리다이렉트 대상이 받은 요청의 「메서드 경로」. */
+    final List<String> targetRequests = new CopyOnWriteArrayList<>();
     final AtomicLong tokenWritten = new AtomicLong();
     /** 200 이 아닌 토큰 응답의 쓰기가 끝났다(성공 · 실패). */
     final CountDownLatch tokenReplied = new CountDownLatch(1);
@@ -312,14 +417,28 @@ class AdminRedirectStatusTest {
     }
 
     RawServer(int status, String body, int tokenStatus, long tokenSize) throws IOException {
+      this(status, body, tokenStatus, tokenSize, null);
+    }
+
+    RawServer(int status, String body, int tokenStatus, long tokenSize, String target) throws IOException {
       this.tokenStatus = tokenStatus;
       this.tokenSize = tokenSize;
       byte[] b = body.getBytes(StandardCharsets.UTF_8);
       ByteArrayOutputStream reply = new ByteArrayOutputStream();
       reply.writeBytes(latin1("HTTP/1.1 " + status + " " + reason(status) + "\r\nContent-Type: application/json\r\n"
+          + (target == null ? "" : "Location: http://127.0.0.1:" + port() + TARGET + "\r\n")
           + "Content-Length: " + b.length + "\r\n\r\n"));
       reply.writeBytes(b);
       adminReply = reply.toByteArray();
+      if (target == null) {
+        targetReply = null;
+      } else {
+        byte[] success = target.getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream ok = new ByteArrayOutputStream();
+        ok.writeBytes(latin1("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + success.length + "\r\n\r\n"));
+        ok.writeBytes(success);
+        targetReply = ok.toByteArray();
+      }
       Thread t = new Thread(this::serve, "admin-3xx-server");
       t.setDaemon(true);
       t.start();
@@ -381,6 +500,9 @@ class AdminRedirectStatusTest {
       } else if (path.startsWith("/admin/")) {
         adminRequests.add(request);
         out.write(adminReply);
+      } else if (targetReply != null && path.equals(TARGET)) {
+        targetRequests.add(request);
+        out.write(targetReply);
       } else {
         out.write(latin1("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
       }
