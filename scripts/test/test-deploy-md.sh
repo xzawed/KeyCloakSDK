@@ -74,16 +74,24 @@ assert_contains "$body" "scripts/release-trigger.sh" "trigger 참조"
 _dm_php_check="$(awk '/^### 9\. PHP/{f=1;next} f&&/^### /{f=0} f&&/^- Deployment check:/' "$DOC")"
 assert_contains "$_dm_php_check" "sh scripts/check-php-mirror.sh <X.Y.Z>" "§9 PHP 게시 확인이 check-php-mirror.sh <버전> 을 부른다"
 
-# 런북이 룰셋을 안다 — `.github/rulesets/*.json` · `.github/rulesets-mirror/*.json` 의 정의마다 DEPLOY.md 가 그 이름
-# (백틱 경계 — `RELEASE-TAGS-CREATE` 는 `…-GO` 안에도 있다)이나 파일 이름(`.json` 까지)을 적는다. 미러 룰셋 둘(#311)을
-# 런북이 오래 몰라 §6 이 룰셋이 막는 철회 경로를 안내했다(deploy-php-mirror-gap · deploy-narrative-stale).
+# 런북이 룰셋을 안다 — `.github/rulesets/*.json` · `.github/rulesets-mirror/*.json` 의 정의마다 DEPLOY.md 가 그 이름이나
+# 파일을 적는다. 미러 룰셋 둘(#311)을 런북이 오래 몰라 §6 이 룰셋이 막는 철회 경로를 안내했다(deploy-php-mirror-gap ·
+# deploy-narrative-stale). ⚠️ 경계까지 본다 — 이름은 백틱으로(`RELEASE-TAGS-CREATE` 는 `…-GO` 안에도 있다), 파일은
+# 디렉터리까지(미러의 `tags-immutable.json` 은 본 저장소 것과 이름이 같아, 맨 파일 이름이면 음성 대조가 그렇게 통과했다).
 _dm_rs_n=0
 for _f in "$DIR/../../.github/rulesets"/*.json "$DIR/../../.github/rulesets-mirror"/*.json; do
   [ -f "$_f" ] || continue
   _dm_rs_n=$((_dm_rs_n + 1))
   _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$_f" | head -1)"
   _rs_base="$(basename "$_f")"
-  case "$body" in *"\`$_rs_name\`"* | *"$_rs_base"*) _rs_ok=ok ;; *) _rs_ok=MISSING ;; esac
+  case "$_f" in
+    */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
+    *) _rs_forms="\`$_rs_name\`|\`$_rs_base|rulesets/$_rs_base" ;;
+  esac
+  _rs_ok=MISSING
+  _ifs="$IFS"; IFS='|'
+  for _form in $_rs_forms; do case "$body" in *"$_form"*) _rs_ok=ok ;; esac; done
+  IFS="$_ifs"
   assert_eq "ok" "$_rs_ok" "[배포 문서] 룰셋 $_rs_base($_rs_name)을 DEPLOY.md 가 모른다"
 done
 assert_eq "ok" "$([ "$_dm_rs_n" -ge 6 ] && echo ok || echo "ONLY-$_dm_rs_n")" \
