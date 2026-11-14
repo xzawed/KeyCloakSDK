@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=12549 -->
+<!-- doc-budget: max-bytes=12798 -->
+<!-- 12549 → 12798 (2026-11-14, +249B). 규약 (1) — 교환: §4 계약의 거짓 둘을 고쳤다 — 「nonce 를 생략하면 아홉 모두
+     id_token 검증을 건너뛴다」(node 는 교환이 실패한다) · 「예외는 representation 과 raw()」(Rust 의 reqwest · Jwk 가
+     빠졌다). 증가분을 test-readme-contract.sh 가 lib.rs 재노출 · node 시험과 대조한다. -->
 <!-- 12497 → 12549 (2026-10-29, +52B). 규약 (1) — 교환: 「JWKS refetch … only on an unresolved key id」 가 JWKS 키 집합
      300 초 수명(판정 2026-10-29 — 가드 1h 가 아홉 선언을 대조한다) 뒤로 무조건 문장으로는 거짓이 되어 그 자리를 고쳤다. -->
 
@@ -142,7 +145,7 @@ pip install -e KeyCloakSDK/python
 
 ## What's identical, and what isn't
 
-- **Auth: the same seven operations exist in all nine** — client-credentials token · authorization request (PKCE S256) · code exchange · refresh · introspect · logout · validate. Signatures are not identical: PHP and Rust take `redirectUri` from config rather than as an argument; Python names the start `authorization_url`. All nine issue a nonce on the authorization request; `exchange*` validates the `id_token` against it when the caller passes that nonce back (the parameter is optional on all nine — omit it and id_token validation is skipped). The types are named `TokenSet` / `ValidatedToken` / `IntrospectionResult` everywhere; a few fields differ (`expires_in` is not on Java/Python/Kotlin). All nine treat a **missing** `expiresAt` as *expired*, not as fresh — an unknown expiry means the server omitted `expires_in`, and the safe reading there is "re-issue". Go and Rust return error values; the other seven raise a `Keycloak*` hierarchy.
+- **Auth: the same seven operations exist in all nine** — client-credentials token · authorization request (PKCE S256) · code exchange · refresh · introspect · logout · validate. Signatures are not identical: PHP and Rust take `redirectUri` from config rather than as an argument; Python names the start `authorization_url`. All nine issue a nonce on the authorization request; `exchange*` validates the `id_token` against it when the caller passes that nonce back (the parameter is optional on all nine; omit it and eight skip id_token validation, while Node fails the exchange — openid-client refuses the nonce Keycloak put in the id_token). The types are named `TokenSet` / `ValidatedToken` / `IntrospectionResult` everywhere; a few fields differ (`expires_in` is not on Java/Python/Kotlin). All nine treat a **missing** `expiresAt` as *expired*, not as fresh — an unknown expiry means the server omitted `expires_in`, and the safe reading there is "re-issue". Go and Rust return error values; the other seven raise a `Keycloak*` hierarchy.
 - **Admin: five resources everywhere, and now the same five operations.** All nine expose users · clients · realms · roles · groups with create · get · list · update · delete — **25/25 in every language** — plus a `raw` escape hatch for anything past that. What still differs is shape, not coverage: Rust's facade is flat (`admin.update_role(name, rep)`) where the rest nest (`admin.roles().update(…)`), and list pagination is explicit — the caller must pass it, with no defaults — in **four**: Rust, Go, Java and Kotlin. The exact table is the [Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix).
 
 ---
@@ -152,7 +155,7 @@ pip install -e KeyCloakSDK/python
 All nine ship **the same claim-check rules** (algorithm pinning, exact `iss`, `aud` containment, mandatory `exp`, bounded clock skew) — not the underlying library defaults.
 A JWKS key set lives 300 seconds on all nine; before that, JWKS refetch is rate-limited on all nine and **“only on an unresolved key id” is eight languages**. .NET’s `Microsoft.IdentityModel` `ConfigurationManager` also refetches on a bad signature, so the rate-limit is the amplification cap — see [dotnet/README.md](dotnet/README.md).
 
-Secrets and tokens are masked in logs and serialization, and TLS verification is on by default. Auth-path types stay behind the facade; admin representations and `raw()` are documented exceptions ([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)).
+Secrets and tokens are masked in logs and serialization, and TLS verification is on by default. Lower-library types stay behind the facade except in four places: admin representations and `raw()` ([Admin capability matrix](docs/reference/admin-capability.md#admin-capability-matrix)), and in Rust the `reqwest::Client` the low-level constructors take and the `Jwk` that `JwksStore::get_key()` returns (both re-exported from `keycloak_sdk`).
 
 ---
 

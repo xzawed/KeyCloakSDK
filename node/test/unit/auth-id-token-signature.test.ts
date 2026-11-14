@@ -114,6 +114,18 @@ function idToken(
     .sign(key)
 }
 
+/** nonce 클레임이 없는 id_token — nonce 없이 시작한 흐름에서 Keycloak 이 내는 모양이다. */
+function idTokenWithoutNonce(key: CryptoKey): Promise<string> {
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
+    .setIssuer(`${idp.origin}/realms/r`)
+    .setSubject('u1')
+    .setAudience(CLIENT_ID)
+    .setIssuedAt()
+    .setExpirationTime('1m')
+    .sign(key)
+}
+
 /** JWKS 의 `k1` 로 서명한 액세스 토큰 — `validate` 가 재정의 audience 로 잰다. */
 function accessToken(audience: string): Promise<string> {
   return new SignJWT({})
@@ -180,6 +192,26 @@ describe('exchangeCode — 진짜 openid-client 로 id_token 을 잰다', () => 
     idp.idToken = ''
     const refused = await refusal(exchange())
     expect(refused).toBeInstanceOf(KeycloakAuthError)
+  })
+
+  // ⚠️ 루트 README(영·한)의 「nonce 를 생략하면」 문장의 근거다. 여덟 언어는 하위 라이브러리가 nonce 를 보지 않아
+  // SDK 검증만 건너뛰고 교환에 성공한다. node 는 openid-client(oauth4webapi)가 기대 nonce 가 없을 때도 id_token 의
+  // nonce 를 「없어야 한다」와 대조해 교환 자체를 거부한다 — `auth.test.ts` 는 openid-client 를 목킹해 이것을 못 본다.
+  // `scripts/test/test-readme-contract.sh` 가 아래 제목을 찾는다.
+  it('nonce 를 넘기지 않으면 nonce 를 실은 id_token 의 교환을 openid-client 가 거부한다', async () => {
+    idp.idToken = await idToken(signed, NONCE)
+    const refused = await refusal(
+      client().auth.exchangeCode('code', 'https://app.example/cb', 'verifier'),
+    )
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(innermost(refused).message).toBe('unexpected ID Token "nonce" claim value')
+  })
+
+  it('대조군: nonce 없이 시작한 흐름(id_token 에 nonce 없음)은 nonce 없이 교환된다', async () => {
+    idp.idToken = await idTokenWithoutNonce(signed)
+    await expect(
+      client().auth.exchangeCode('code', 'https://app.example/cb', 'verifier'),
+    ).resolves.toMatchObject({ idToken: idp.idToken })
   })
 })
 
