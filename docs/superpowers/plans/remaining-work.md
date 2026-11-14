@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=141742 max-raw-bytes=156896 -->
+<!-- doc-budget: max-bytes=141179 max-raw-bytes=156584 -->
+<!-- max-bytes 141742 → 141179 · max-raw-bytes 156896 → 156584: coverage-omit-overreach 재판정 마감(#1087) — 하위 측정
+     메모 둘이 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 142839 → 141742 · max-raw-bytes 157739 → 156896: docs-commands-that-do-not-work 마감(#1080) — 열린 항목의 하위
      불릿이 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 143454 → 142839 · max-raw-bytes 157980 → 157739: push-lane-failures-still-silent 마감 — 열린 항목의 긴 착수
@@ -507,7 +509,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 93건 (열림 40)
+## D. 원장 밖 — 93건 (열림 39)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -572,9 +574,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `integration-coverage-never-measured` **[H/L · 닫힘 2026-11-08 #980]** 아홉 레인이 통합 실행만의 경계 커버리지를 리포트하고(#774 go·python 파일럿 · #953 · #955 · #957 · #960 · #971 · #975 · #977 kotlin) 하한을 건다(#936 · #956 · #959 · #962 · #973 · #976 · #980). 값은 `scripts/integration-coverage.json` 의 `floor`, 세 조건은 `scripts/integration-coverage.mjs` 머리 주석이 소유한다.
 - [x] `integration-admin-surface-uneven` **[H/M · 계수 정정 2026-09-09 · 닫힘 2026-11-12 · #1035–#1041]** 아홉 통합 스위트(python 둘)가 admin 25 연산을 성공 경로 · 레코드 하나의 수명주기로 돈다(전제 최소 php 9/25 · 소유 미실행 40 → 0 · 칸별 판정은 PR 본문). 서사: `git show 9d07ef32:docs/superpowers/plans/remaining-work.md` 의 이 항목
 - [x] `integration-admin-surface-regression-unguarded` **[M/S · 신규 2026-11-12 · 닫힘 2026-11-13 #1057]** 25 연산 하나를 통합에서 지우면 CI 가 운다 — `integration-coverage.json` 의 `surface`(아홉 언어 admin 리소스 파일)에서 소유자 없는 미실행은 exit 4. 프로브 go · node CAUGHT
-- [ ] `coverage-omit-overreach` **[M/M]** omit의 근거("단위테스트 불가한 네트워크 경계")가 실측으로 거짓이다 — Node는 이미 96.93%, Python은 98%인 코드를 게이트 밖에 두고 있다 · `node/vitest.config.ts:14`
-  - **전 언어 실측(2026-09-27).** 단위만으로 java `AuthClient` 97.3%·`AdminClient` 100% 에 닿는다(세 모듈 exec 합산). 통합이 더하는 것은 **브랜치 1** 이다. dotnet `AuthClient` 는 단위와 합산이 같은 93.8% 다.
-  - ⚠️ **「도달」은 「검증」이 아니다.** go 의 `TestHostilePathMatrix`(#636)는 단언 없이 모든 공개 메서드를 부른다. 그래서 단위 커버리지가 77.2% → 93.6% 로 오른다(`-skip TestHostilePathMatrix` 로 대조). omit 을 걷어낼 근거로 이 숫자를 쓰지 말 것.
+- [x] `coverage-omit-overreach` **[M/M · 재판정으로 닫힘 2026-11-14 #1087]** 「게이트 밖」은 아니다 — 통합 하한 아홉(#977–#980)이 그 파일을 잰다 · 거짓 근거 셋(java · node · Sonar)을 고쳤다 · 단위로 옮기지 않는다(도달 ≠ 검증)
 - [ ] `coverage-threshold-parity` **[M/M]** 커버리지 임계값이 9언어에서 갈리고(브랜치 게이트가 아예 없는 곳 셋), 문서↔설정 대조 가드는 3개 언어만 본다 · `scripts/check-docs.mjs:552`
 - [x] `coverage-omit-no-ssot` **[M/M · 닫힘 2026-09-27 #662]** 조인 가드가 섰다. `scripts/coverage-boundary.mjs check` 는 언어별 SSOT 아홉을 제품 소스 파일 집합으로 전개해 모든 사본과 대조한다. 첫 실행은 등록부가 잰 드리프트 셋만 냈고, 이 PR 이 셋을 고쳤다(비-required 잡 `coverage-boundary`). 잔여 SILENT 는 `coverage-boundary-guard-residuals`.
 - [ ] `coverage-boundary-guard-residuals` **[L/S · 신규 2026-09-27]** 조인 가드(#662)가 계약 밖이라 못 보는 자리. 전부 독립 변이 레그와 Grok 레그의 실측이다.
