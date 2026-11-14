@@ -124,8 +124,11 @@ rec() { # <id> <file> <test> <old> <new> <site>
   printf '### %s\nFILE:%s\nTEST:%s\nOLD:%s\nNEW:%s\nSITE:%s\n' "$1" "$2" "$3" "$4" "$5" "$6"
 }
 # 잡히는 레코드 — 음성 대조의 입력을 좋은 값으로 바꾸면 그 단언이 넘어진다.
+# ⚠️ SITE 에 공백 없는 중괄호 · `${…}` 를 일부러 둔다 — Windows 에서 node 가 MSYS sh 를 띄우면 공백 없는 인자에
+# 중괄호 확장이 걸려 `{1,6}NEVER` 가 인자 둘로 갈리고 `${_cpj:+false}` 가 깨져 INVALID 가 났다(실측 2026-11-14,
+# S1 레그). 러너는 값을 환경 변수로 넘겨 인자 해석을 거치지 않는다.
 rec good-neg scripts/test/test-good.sh scripts/test/test-good.sh \
-  'assert_fails node "$DIR/../check-x.mjs" bad' 'assert_fails node "$DIR/../check-x.mjs" good # flipped' '# flipped' > "$SB/scripts/test/mutation-records.txt"
+  'assert_fails node "$DIR/../check-x.mjs" bad' 'assert_fails node "$DIR/../check-x.mjs" good # {a,b}${_x:+y}' '{a,b}${_x:+y}' > "$SB/scripts/test/mutation-records.txt"
 (cd "$SB" && git add -A && git commit -qm rec) >/dev/null 2>&1
 _o="$(cd "$SB" && node scripts/mutation-sweep.mjs 2>&1)" && _c=0 || _c=$?
 assert_eq '0' "$_c" '잡히는 레코드뿐이면 exit 0'
