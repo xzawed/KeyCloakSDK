@@ -23,7 +23,10 @@ import (
 // toSDKError 는 둘 다 *TransportError(상태 없음)로 읽었다. 같은 25 호출에서 rust · .NET · java · kotlin · python 은 둘 다 그
 // 상태의 admin 오류다(실측 2026-11-14 — 부류 재스캔).
 //
-// 수정 전(실측 2026-11-14, origin/main ad16554d · Windows · go1.26.4 · 루프백): UNREAD_BEFORE
+// 수정 전(실측 2026-11-14, origin/main ad16554d · Windows · go1.26.4 · 루프백): (A) 400 칸 중 300 칸 실패 — object · null 대조
+// 100 칸만 통과했고, 나머지 여섯 모양 × 404 · 500 × 25 호출이 상태 없는 *TransportError(`json: cannot unmarshal array into Go
+// value of type gocloak.HTTPErrorResponse` 따위)였다. (B) 125 칸 전부 *TransportError(`back-channel redirect refused`)였고 표적
+// 요청은 0 이었다. 대조 둘(끊긴 404 · 배열 본문의 200)은 수정 전후 모두 *TransportError 다.
 
 // uaTarget 은 리다이렉트 표적의 경로다 — 이 경로에 온 요청은 admin 요청으로 세지 않는다.
 const uaTarget = "/redirected-target"
