@@ -13,11 +13,15 @@ python-keycloak 의 `raise_error_from_response` 는 오류 본문을 `response.j
 
 python-keycloak 의 401 재시도(그랜트를 새로 받고 한 번 더 보낸다)는 그대로여야 한다 — 그래서
 세션이 오류 응답을 가로채지 않고, 파사드 호출이 받은 **마지막** 응답을 적어 둔다
-(`_internal/admin_body.py` 의 `Answer`). 대조 셋: 401 뒤 200 은 성공이다 · 401 뒤 2xx 를
-python-keycloak 이 못 쓰면 앞의 401 이 아니라 그 2xx 로 판정한다(상태 없는 전송 오류) · 객체 ·
-JSON 아닌 본문은 수정 전에도 옳았다.
+(`_internal/admin_body.py` 의 `Answer`). 대조 넷: 401 뒤 200 은 성공이다 · 401 뒤 새 그랜트가
+실패하면 그랜트 실패다 · 401 뒤 2xx 를 python-keycloak 이 못 쓰면 앞의 401 이 아니라 그 2xx 로
+판정한다(상태 없는 전송 오류) · 객체 · JSON 아닌 본문은 수정 전에도 옳았다.
 
-수정 전(실측 2026-11-14, 이 파일을 수정 전 코드에 — MEASURED_BEFORE): MEASURED_DETAIL
+수정 전(실측 2026-11-14, 이 파일을 수정 전 코드에 — Windows · Python 3.13.11 · python-keycloak
+7.1.1 · requests 2.34.2 · httpx 0.28.1): 140 칸 중 128 칸이 실패했다 — 객체가 아닌 본문의 칸
+전부(25 연산에 404 · 500 과 두 레인 100 · 모양 12 · 상태 14 · 401 두 번 2)가
+`KeycloakTransportError("Keycloak admin API returned an unusable response (TypeError)")` 였고
+깊은 중첩만 `(RecursionError)` 였다. 대조 12 칸은 통과했다.
 """
 
 from __future__ import annotations
