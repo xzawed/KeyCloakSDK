@@ -44,8 +44,12 @@ export function pairsOf(tests, exists, exclusions = []) {
       // M1 의 EXIT 트랩은 소싱한 프로세스(시험 자신)를 0 으로 만든다(실측: 두 시험이 픽스처 사본으로 쌍에 잡혔다).
       if (/^lib\/.*\.sh$/.test(judge)) continue
       const base = judge.split('/').pop()
-      // 소싱하는 라이브러리는 같은 프로세스다 — M1 의 EXIT 트랩이 시험 자신을 0 으로 만들어 잴 수 없다.
-      if (code.some((l) => new RegExp(`^\\s*(\\.|source)\\s+\\S*${esc(base)}`).test(l))) continue
+      // 소싱하는 라이브러리는 같은 프로세스다 — M1 의 EXIT 트랩이 시험 자신을 0 으로 만들어 잴 수 없다. 변수를
+      // 거친 소싱(`SH="$DIR/../x.sh"` 뒤 `. "$SH"`)도 같다(실측: 그 모양의 두 시험이 거짓 SILENT 를 냈다). 그 판정기의
+      // 거부는 레코드 파일의 줄 변이(`return 2` → `return 0`)로 잰다.
+      const vars = code.map((l) => l.match(new RegExp(`^\\s*([A-Za-z_][A-Za-z0-9_]*)=\\S*${esc(base)}`))).filter(Boolean).map((m) => m[1])
+      const sourced = new RegExp(`^\\s*(\\.|source)\\s+(\\S*${esc(base)}|["']?\\$\\{?(${vars.join('|') || '(?!)'})\\b)`)
+      if (code.some((l) => sourced.test(l))) continue
       if (code.some((l) => l.includes(base) && EXEC_MARK.test(l))) candidates.push({ test: name, judge })
     }
   }

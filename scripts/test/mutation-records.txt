@@ -34,6 +34,49 @@ TEST:test-check-hp-attest-wiring.sh
 JUDGE:check-hp-attest.mjs
 WHY:픽스처 워크플로 YAML 안의 글자다
 
+### exclude-lane-canaries-list
+TEST:test-lane-canaries.sh
+JUDGE:check-canaries-ran.mjs
+WHY:--list 로 레인 표가 해석되는지 볼 뿐 — 판정(보고서 대조)의 실패 종료는 test-check-canaries-ran.sh 가 단언한다(M1 CAUGHT)
+
+### exclude-trigger-readiness
+TEST:test-release-trigger.sh
+JUDGE:release-readiness.sh
+WHY:release-trigger.sh 가 인쇄하는 readiness 명령 글자를 대조할 뿐 실행하지 않는다
+
+### exclude-hygiene-versions
+TEST:test-selftest-hygiene.sh
+JUDGE:check-versions.mjs
+WHY:install-smoke.yml 의 문장을 check-versions.mjs 의 동작과 대조할 뿐 — 판정은 test-check-versions.sh 가 본다(M1 CAUGHT)
+
+### release-readiness-version-typo
+FILE:scripts/release-readiness.sh
+TEST:scripts/test/test-release-readiness.sh
+OLD:    [ "$_ok" -eq 1 ] || { echo "error: '$RR_VERSION' is not a valid version for any language" >&2; return 2; }
+NEW:    [ "$_ok" -eq 1 ] || { echo "error: '$RR_VERSION' is not a valid version for any language" >&2; return 0; } # PROBE-REC
+SITE:return 0; } # PROBE-REC
+
+### release-request-go-refusal
+FILE:scripts/release-request.sh
+TEST:scripts/test/test-release-request.sh
+OLD:  if [ "$lang" = "go" ]; then
+NEW:  if [ "$lang" = "go-never" ]; then # PROBE-REC
+SITE:go-never
+
+### release-request-unknown-lang
+FILE:scripts/release-request.sh
+TEST:scripts/test/test-release-request.sh
+OLD:  if ! df_known "$lang"; then
+NEW:  if false; then # PROBE-REC unknown-lang
+SITE:PROBE-REC unknown-lang
+
+### release-request-version-shape
+FILE:scripts/release-request.sh
+TEST:scripts/test/test-release-request.sh
+OLD:  if ! printf '%s\n' "$ver" | grep -qE "$(df_version_re "$lang")"; then
+NEW:  if false; then # PROBE-REC version-shape
+SITE:PROBE-REC version-shape
+
 ### dependabot-updates-verdict-exit
 FILE:scripts/check-dependabot-updates.mjs
 TEST:scripts/test/test-dependabot-updates.sh

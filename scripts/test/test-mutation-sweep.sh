@@ -31,12 +31,16 @@ T1='#!/usr/bin/env sh
 _out="$(node "$DIR/../check-a.mjs" bad 2>&1)" || true
 x="$(sh "$DIR/../absent-judge.sh")"
 cp "$DIR/../lib/other.sh" "$FX/lib/"
+SH="$DIR/../check-s.sh"
+set -- --lib
+. "$SH"
 assert_contains "$body" "sh scripts/check-c.sh <X.Y.Z>" "런북이 부른다"'
 _r="$(pairs test-x.sh "$T1")"
 assert_contains "$_r" 'test-x.sh×check-a.mjs' '실행하는 판정기는 쌍이다'
 assert_not_contains "$_r" 'check-b.mjs' '주석에만 나오는 이름은 쌍이 아니다'
 assert_not_contains "$_r" 'facts.sh' '소싱하는 라이브러리는 쌍이 아니다 — M1 트랩이 시험 프로세스 자신을 0 으로 만든다'
 assert_not_contains "$_r" 'other.sh' 'scripts/lib/*.sh 는 사본을 만들어도 쌍이 아니다(실측: 두 시험이 픽스처 사본으로 잡혔다)'
+assert_not_contains "$_r" 'check-s.sh' '변수를 거쳐 소싱해도 쌍이 아니다(실측: release-request · release-readiness 의 거짓 SILENT)'
 assert_not_contains "$_r" 'absent-judge' '트리에 없는 판정기는 쌍이 아니다'
 # 따옴표 안의 `sh scripts/…` 는 실행처럼 보인다 — 휴리스틱은 넓게 잡고 제외 표가 좁힌다(이유를 적은 채로).
 assert_contains "$_r" 'test-x.sh×check-c.sh' '문자열 속 명령도 일단 쌍으로 잡는다(넓게)'
