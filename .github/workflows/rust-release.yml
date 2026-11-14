@@ -1,8 +1,9 @@
 name: rust-release
 
 # crates.io는 GitHub 웹훅 자동게시가 없다 — `cargo publish`로 직접 업로드해야 한다.
-# ⚠️ 거버넌스: 실제 배포는 사람이 `rust-v*` 태그를 push해야만 실행된다(human-gated).
-# `CARGO_REGISTRY_TOKEN` 시크릿 미설정 시 publish 스텝은 인증 실패로 종료한다.
+# ⚠️ 거버넌스: 실제 배포는 `rust-v*` 태그로만 실행된다 — 사람이 밀거나, 사람이 병합한 릴리스 PR 에서
+# dispatch-release.yml 이 민다(human-gated).
+# `CARGO_REGISTRY_TOKEN` 시크릿이 없으면 `cargo publish` 앞 스텝이 `::error::` 로 끝낸다(fail-closed).
 on:
   push:
     tags: ['rust-v*']
