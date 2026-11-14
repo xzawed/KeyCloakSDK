@@ -16,12 +16,25 @@ body="$(cat "$DOC")"
 # (1) **언어 우주는 트리에서 파생해 대조한다**(비순환). `DEPLOY_LANGS` 자신을 세면 그것이 비었을
 # 때 하한도 0 이 되어 같이 무너진다 — 그래서 원천을 `df_tree_langs`(빌드 매니페스트를 가진
 # 최상위 디렉터리)로 둔다. 열 번째 언어가 들어오면 여기서 먼저 빨개진다.
-_dm_miss=''
-for L in $(df_tree_langs "$DIR/../.."); do
-  printf '%s\n' $DEPLOY_LANGS | grep -qx "$L" || _dm_miss="$_dm_miss $L"
-done
+# 판정기 — <트리 언어들> <DEPLOY_LANGS> → 뒤에 없는 앞의 언어(앞 공백 구분). 아래 음성 대조가 같은 함수를 먹인다.
+_dm_missing() {
+  _dm_m=''
+  for _dm_l in $1; do
+    printf '%s\n' $2 | grep -qx "$_dm_l" || _dm_m="$_dm_m $_dm_l"
+  done
+  printf '%s' "$_dm_m"
+}
+_dm_tree="$(df_tree_langs "$DIR/../..")"
+# 공허 하한 — git 이 아닌 트리에서 파생이 비자 루프가 아무것도 안 보고 통과했다(실측 2026-11-14 SILENT).
+_dm_tn=0; for _dm_l in $_dm_tree; do _dm_tn=$((_dm_tn + 1)); done
+assert_eq "ok" "$([ "$_dm_tn" -ge 1 ] && echo ok || echo EMPTY)" \
+  "[배포 문서] df_tree_langs 가 언어를 하나도 못 냈다 — git 이 아닌 트리이거나 파생이 깨졌다(대조가 공허해진다)"
+_dm_miss="$(_dm_missing "$_dm_tree" "$DEPLOY_LANGS")"
 assert_eq "" "$_dm_miss" \
   "[배포 문서] 트리에 있는 언어가 DEPLOY_LANGS 에 없다 —$_dm_miss (그 언어는 이 파일에서 조용히 빠진다)"
+# 음성 대조 — 트리에만 있는 열 번째 언어를 짚는다(판정기가 늘 통과하지 않는다, 실측 2026-11-14 SILENT).
+assert_eq " zig" "$(_dm_missing "python zig" "$DEPLOY_LANGS")" \
+  "[음성대조] 트리에만 있는 언어(zig)를 _dm_missing 이 짚지 못한다 — 판정이 늘 통과한다"
 
 # (2) **기대값이 비면 그 대조는 아무것도 안 한 것이다** — 값을 쓰기 전에 값이 있는지 단언한다.
 #
@@ -59,11 +72,16 @@ assert_eq "ok" "$(ok_if "${_dm_sec_any:-1}" NONE)" \
 # 덧붙인 경우)는 잡지 못한다. 실현된 부류(복사본이 낡아 SSOT 명령을 더는 담지 않음)를 잡는다.
 # 추출·정확일치로 바꾸려면 `- dry-run:` 인라인과 펜스 블록 두 형식을 모두 파싱해야 하는데,
 # 그 파서가 조용히 빗나가면 이 검사 자체가 공허해진다 — 포함 검사 + 사각지대 명시가 낫다.
+_dm_dr_n=0
 for L in $DEPLOY_LANGS; do
   _dr="$(df_dryrun "$L" 2>/dev/null || true)"
   [ -n "$_dr" ] || continue   # dry-run이 없는 언어는 대조 대상이 아니다
+  _dm_dr_n=$((_dm_dr_n + 1))
   assert_contains "$body" "$_dr" "DEPLOY.md의 $L dry-run이 df_dryrun(SSOT)과 다르다"
 done
+# 공허 하한 — 빈 값은 건너뛰므로 df_dryrun 이 전부 비면 하나도 대조하지 않고 통과했다(실측 2026-11-14 SILENT).
+assert_eq "ok" "$([ "$_dm_dr_n" -ge 1 ] && echo ok || echo NONE)" \
+  "[배포 문서] dry-run 을 하나도 대조하지 않았다 — df_dryrun 이 죽었나?"
 
 # 두 도우미 스크립트 참조
 assert_contains "$body" "scripts/release-readiness.sh" "readiness 참조"
@@ -121,9 +139,16 @@ done
 #
 # 그래서 「사람에게 시키는 호출에는 `--version` 이 붙어 있다」를 본다. `--version` 을 설명하는
 # 문법 안내(`[--version <X.Y.Z>]`)는 대상이 아니므로, **언어 인자가 곧바로 붙은 호출**만 센다.
-_bad_calls="$(printf '%s\n' "$body" | grep -oE 'release-readiness\.sh +[a-z]+' || true)"
+# 판정기 — <본문> → 그런 호출(한 줄에 하나). 아래 양성 대조가 같은 함수를 먹인다.
+_dm_bad_calls() { printf '%s\n' "$1" | grep -oE 'release-readiness\.sh +[a-z]+' || true; }
+_bad_calls="$(_dm_bad_calls "$body")"
 assert_eq "" "$_bad_calls" \
   "DEPLOY.md 가 --version 없이 release-readiness.sh 를 치라고 한다 — 그 호출은 이미 게시된 버전을 읽는다"
+# 양성 대조 — 위반 호출을 실제로 짚고, `--version` 을 붙인 호출은 짚지 않는다(실측 2026-11-14 SILENT).
+assert_eq "release-readiness.sh java" "$(_dm_bad_calls 'Run `./release-readiness.sh java` before tagging.')" \
+  "[양성대조] --version 없는 readiness 호출을 _dm_bad_calls 가 짚지 못한다 — 이 부재 검사가 공허하다"
+assert_eq "" "$(_dm_bad_calls 'Run `./release-readiness.sh --version 1.0.1 java` before tagging.')" \
+  "[대조] --version 을 붙인 호출까지 짚는다 — 오탐"
 # 인증모델 그룹 헤딩 존재
 # ⚠️ DEPLOY.md는 사용자 대상 문서라 영문이다(문서 언어 규칙). 예전 이 어서션은 한글 "준비상태
 # 매트릭스"를 찾고 있었는데 문서가 영문으로 번역되면서 계속 실패하고 있었다(이 테스트는 어떤 CI
