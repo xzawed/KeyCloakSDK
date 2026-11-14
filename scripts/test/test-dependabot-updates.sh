@@ -84,21 +84,26 @@ for _j in 'null' '{}' '"x"'; do
   assert_contains "$(verdict "$_j")" 'THROW' "배열이 아닌 응답($_j)은 던진다"
 done
 
-# ── 9. 진입점 — 실제 프로세스를 PATH 스텁 gh 로 태운다(종료 코드가 계약이다) ─────────────
-STUB="$(mktemp -d)"
-trap 'rm -rf "$STUB"' EXIT
-_gh() { # <exit> <stdout 본문> — 본문은 파일로 두고 그대로 낸다(큰따옴표를 벗기지 않게)
-  printf '%s' "$2" > "$STUB/gh.body"
-  printf '#!/bin/sh\ncat "%s"\nexit %s\n' "$STUB/gh.body" "$1" > "$STUB/gh"
-  chmod +x "$STUB/gh"
+# ── 9. gh 결과 → 종료 코드(진입점의 계약) ──────────────────────────────────────
+# ⚠️ 프로세스를 PATH 스텁 `gh` 로 태우지 않는다 — Windows 의 node spawnSync 는 확장자 없는 스텁을 못 찾고 진짜
+# gh 를 불러, 「gh 실패 → 2」 같은 사례가 진짜 gh 의 실패로 **우연히** 통과했다(실측). 판정을 `decide()` 로 빼서 먹인다.
+code() { # <ok:0|1> <stdout 본문> → 종료 코드
+  _c="$(cd "$DIR/.." && printf '%s' "$2" | OKV="$1" NOW="$NOW" node -e '
+    import("./check-dependabot-updates.mjs").then(({ decide }) => {
+      let s = ""
+      process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        process.stdout.write(String(decide({ ok: process.env.OKV === "1", out: s }, Date.parse(process.env.NOW)).code))
+      })
+    })')"
+  [ -n "$_c" ] || { printf 'FATAL: decide() 가 빈 출력을 냈다\n' >&2; exit 1; }
+  printf '%s' "$_c"
 }
-_main() { # → 종료 코드
-  PATH="$STUB:$PATH" GITHUB_REPOSITORY=o/r DEPENDABOT_HEALTH_NOW="$NOW" node "$SH" >/dev/null 2>&1 && echo 0 || echo $?
-}
-_gh 0 "$OK";      assert_eq "0" "$(_main)" '진입점: 건강하면 exit 0'
-_gh 0 "$RED";     assert_eq "1" "$(_main)" '진입점: 마지막 실행이 실패인 대상이 있으면 exit 1'
-_gh 1 'boom';     assert_eq "2" "$(_main)" '진입점: gh 가 실패하면 exit 2(「모른다」는 건강이 아니다)'
-_gh 0 'not json'; assert_eq "2" "$(_main)" '진입점: JSON 이 아니면 exit 2'
-_gh 0 'null';     assert_eq "2" "$(_main)" '진입점: 배열이 아니면 exit 2'
+assert_eq "0" "$(code 1 "$OK")" '진입점: 건강하면 exit 0'
+assert_eq "1" "$(code 1 "$RED")" '진입점: 마지막 실행이 실패인 대상이 있으면 exit 1'
+assert_eq "2" "$(code 0 'boom')" '진입점: gh 가 실패하면 exit 2(「모른다」는 건강이 아니다)'
+assert_eq "2" "$(code 1 'not json')" '진입점: JSON 이 아니면 exit 2'
+assert_eq "2" "$(code 1 'null')" '진입점: 배열이 아니면 exit 2'
+# 소스 대조 — 진입점이 판정을 다시 쓰지 않고 decide() 의 코드로 끝난다.
+assert_contains "$(cat "$SH")" 'process.exit(d.code)' 'main() 은 decide() 의 종료 코드로 끝난다'
 
 assert_report
