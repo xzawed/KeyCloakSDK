@@ -86,6 +86,25 @@ pc_fence_axis() { # $1=이름표 $2=파일 $3=기대 버전
   fi
 }
 
+# 배너 — 첫머리(1–12행)의 첫 굵은 인용줄과 그 판정. 함수로 두는 이유는 아래 대조군이 고정 사본으로 둘을 태우기 때문이다 —
+# 라이브 아홉이 전부 게시라 `not yet` 갈래는 한 번도 돌지 않았고, 추출을 상수로 바꿔도 초록이었다(실측 2026-11-14 SILENT).
+pc_banner() { sed -n '1,12p' "$1" | grep -m1 '^> \*\*' || true; }
+pc_banner_axis() { # $1=언어 $2=배너 $3=published|unpublished
+  if [ "$3" = published ]; then
+    # 게시됨: "아직"이라고 말하면 안 되고, **어디에 있는지**를 말해야 한다. 부정형만 지우고
+    # 아무것도 안 적는 절반짜리 수정을 막으려고 긍정 어서션을 함께 둔다.
+    assert_not_contains "$2" "not yet" \
+      "$1 은 게시됐는데 README 배너가 아직 미게시라고 말한다 — 이 README는 레지스트리 랜딩 페이지다"
+    assert_contains "$2" "is on " \
+      "$1 배너가 어느 레지스트리에 올라가 있는지 말하지 않는다"
+  else
+    assert_contains "$2" "not yet" \
+      "$1 은 미게시인데 README 배너가 그렇게 말하지 않는다"
+    assert_not_contains "$2" "is on " \
+      "$1 은 미게시인데 배너가 레지스트리에 올라가 있다고 말한다"
+  fi
+}
+
 FENCE_SEEN=0
 
 for L in $DEPLOY_LANGS; do
@@ -99,22 +118,14 @@ for L in $DEPLOY_LANGS; do
   # 실패했다(추출 실패는 "낡았다"와 구분되지 않는다). 지금은 첫머리의 **굵은 인용줄**을
   # 배너로 본다 — 아홉 전부 7행에 정확히 하나이고(실측), 게시/미게시 판정은 아래 내용
   # 어서션이 한다. 라벨을 다시 하드코딩하지 말 것.
-  banner="$(sed -n '1,12p' "$f" | grep -m1 '^> \*\*' || true)"
+  banner="$(pc_banner "$f")"
   assert_ok test -n "$banner"
   [ -n "$banner" ] || continue
 
   if df_is_published "$L"; then
-    # 게시됨: "아직"이라고 말하면 안 되고, **어디에 있는지**를 말해야 한다. 부정형만 지우고
-    # 아무것도 안 적는 절반짜리 수정을 막으려고 긍정 어서션을 함께 둔다.
-    assert_not_contains "$banner" "not yet" \
-      "$L 은 게시됐는데 README 배너가 아직 미게시라고 말한다 — 이 README는 레지스트리 랜딩 페이지다"
-    assert_contains "$banner" "is on " \
-      "$L 배너가 어느 레지스트리에 올라가 있는지 말하지 않는다"
+    pc_banner_axis "$L" "$banner" published
   else
-    assert_contains "$banner" "not yet" \
-      "$L 은 미게시인데 README 배너가 그렇게 말하지 않는다"
-    assert_not_contains "$banner" "is on " \
-      "$L 은 미게시인데 배너가 레지스트리에 올라가 있다고 말한다"
+    pc_banner_axis "$L" "$banner" unpublished
   fi
 
   # ---- 설치 스니펫에 **핀된 버전** ----
@@ -244,6 +255,29 @@ pc_run_axis_controls() {
 }
 pc_run_axis_controls
 
+# 배너 대조군 — pc_banner · pc_banner_axis **자신**을 고정 사본에 태운다. 사본은 7행에 미게시 배너, 12행 밖에 게시형 굵은
+# 인용줄을 둔다 — 추출은 첫머리의 미게시 배너를 내야 하고(파일을 읽는다 · 12행 밖은 안 본다), 판정은 상태와 어긋난 배너에서
+# 두 갈래 다 울어야 한다(오늘 라이브로는 못 깨우는 `not yet` 갈래 포함). 양성 하나로 「늘 운다」와 가른다.
+pc_banner_probe() { # $1=배너 $2=published|unpublished → PC_BP: GREW | QUIET
+  _a_save
+  pc_banner_axis 대조 "$1" "$2" >/dev/null 2>&1 || true
+  PC_BP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && PC_BP='GREW'
+  _a_restore
+}
+_bp_tmp="$(mktemp -d)"
+printf '%s\n' '# x' '' 'a' '' 'b' '' '> **Pre-release** — not yet on a registry.' '' 'c' '' 'd' '' 'e' '' \
+  '> **`9.9.9` is on npm** — 12행 밖' > "$_bp_tmp/README.md"
+_bp_got="$(pc_banner "$_bp_tmp/README.md")"
+rm -rf "$_bp_tmp"
+assert_eq '> **Pre-release** — not yet on a registry.' "$_bp_got" \
+  "[대조군·배너] 추출이 사본 첫머리의 배너를 내지 않는다 — 파일을 안 읽거나(상수) 12행 밖을 본다"
+pc_banner_probe "$_bp_got" unpublished
+assert_eq "QUIET" "$PC_BP" "[양성대조·배너] 미게시 갈래가 미게시 배너를 거부했다 — 「늘 운다」와 구분되지 않는다"
+pc_banner_probe "$_bp_got" published
+assert_eq "GREW" "$PC_BP" "[음성대조·배너] 게시 갈래가 「not yet」 배너를 받았다"
+pc_banner_probe '> **`9.9.9` is on npm**' unpublished
+assert_eq "GREW" "$PC_BP" "[음성대조·배너] 미게시 갈래가 게시형 배너(「is on」)를 받았다"
+
 # ---- 루트 문서의 게시 현황 주장 ----
 #
 # `deploy-facts.sh`의 주석이 스스로 열거하듯 rust RC 한 번이 최소 6곳을 동시에 낡게 만들었다.
@@ -323,10 +357,68 @@ done
 #       "(`0.1.0.rc1`, RubyGems). The other four" 줄에 그 키워드가 없어 **0건**이 됐다.
 # 그래서 어디에 무엇이 적혀 있어야 하는지를 그냥 적는다. 문구를 바꾸면 시끄럽게 실패하고,
 # 그때 이 목록을 함께 고치는 것이 맞다 — DEPLOY.md 가드가 쓰는 것과 같은 관용이다.
-claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
-  assert_contains "$(cat "$ROOT/$1")" "$2" "$1 의 $3 가 DF_PUBLISHED 파생 게시/미게시 수($pub_n/$unpub_n)와 다르다"
+#
+# ⚠️ **주장의 경계에서 맞춘다**(`pc_claim_in` → `ok` · `EMPTY` · `MISSING` · `UNBOUNDED`). 파일 전체 포함 검사는 접두를
+# 받았다 — 「a stable」 이 「a stable release candidate」 를, 「아홉」 이 「열아홉」 을(실측 2026-11-14 SILENT 둘 · 아래 대조군이
+# 재현한다). 앞은 줄 머리 · 공백 · 문장부호 · 대시여야 하고, 뒤는 (공백을 건너) 줄 끝이거나 ASCII 낱말 글자(`[A-Za-z0-9_-]`)가
+# 아니어야 한다. 한글 조사는 낱말에 붙으므로(「…언어는」) 뒤의 한글은 잇는 말로 보지 않는다. ASCII 집합만 써서 바이트로 보든
+# (dash · C 로캘) 글자로 보든(bash UTF-8) 같은 판정이 난다. UNBOUNDED 면 기대 문자열을 주장의 끝(문장부호 · 강조 끝)까지 늘린다.
+PC_PUNCT='.,;:!?()[]{}*`"<>|/#'"'"
+PC_WORD='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
+pc_left_bound() { # $1=그 줄에서 주장 앞의 글 — 비었거나 공백 · 문장부호 · 대시로 끝나는가
+  case "$1" in ''|*' '|*'—'|*'–') return 0 ;; esac
+  _plb="${1#"${1%?}"}"
+  case "$PC_PUNCT" in *"$_plb"*) return 0 ;; esac
+  return 1
 }
-Pub_en="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
+pc_right_bound() { # $1=그 줄에서 주장 뒤의 글 — 공백을 건넌 첫 글자가 ASCII 낱말 글자가 아닌가
+  _prb="$1"
+  while :; do case "$_prb" in ' '*) _prb="${_prb# }" ;; *) break ;; esac; done
+  _prb="${_prb%"${_prb#?}"}"
+  [ -n "$_prb" ] || return 0
+  case "$PC_WORD" in *"$_prb"*) return 1 ;; esac
+  return 0
+}
+pc_claim_in() { # $1=본문 $2=기대 문자열
+  [ -n "$2" ] || { printf 'EMPTY'; return 0; }
+  case "$1" in *"$2"*) ;; *) printf 'MISSING'; return 0 ;; esac
+  while IFS= read -r _pci_l; do
+    _pci_pre=''
+    while :; do
+      case "$_pci_l" in *"$2"*) ;; *) break ;; esac
+      _pci_pre="$_pci_pre${_pci_l%%"$2"*}"
+      _pci_l="${_pci_l#*"$2"}"
+      if pc_left_bound "$_pci_pre" && pc_right_bound "$_pci_l"; then printf 'ok'; return 0; fi
+      _pci_pre="$_pci_pre$2"
+    done
+  done <<EOF
+$(printf '%s\n' "$1" | grep -F -- "$2" || true)
+EOF
+  printf 'UNBOUNDED'
+}
+claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
+  assert_eq "ok" "$(pc_claim_in "$(cat "$ROOT/$1")" "$2")" \
+    "$1 의 $3 가 DF_PUBLISHED 파생 게시/미게시 수($pub_n/$unpub_n)와 다르다 — 기대 [$2]"
+}
+# 대조군 — claim_at **자신**을 결함 사본 루트에 태운다(사본 금지). 「a stable」 접두가 「a stable release candidate」 를 받는
+# 부류(아래 2026-08-18 판정이 DEPLOY.md 에서 기록한 것)다 — 실측 2026-11-14 SILENT: 기대 문자열을 빈 값으로 바꿔도 초록.
+pc_claim_probe() { # $1=문서 본문 $2=기대 문자열 → PC_CP: GREW | QUIET
+  _cp_tmp="$(mktemp -d)"
+  printf '%s\n' "$1" > "$_cp_tmp/CLAIM.md"
+  _a_save; _cp_root="$ROOT"; ROOT="$_cp_tmp"
+  claim_at CLAIM.md "$2" "대조" >/dev/null 2>&1 || true
+  ROOT="$_cp_root"
+  PC_CP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && PC_CP='GREW'
+  _a_restore
+  rm -rf "$_cp_tmp"
+}
+pc_claim_probe 'All nine SDKs have shipped a stable release candidate to a public registry — PHP' \
+  'All nine SDKs have shipped a stable release'
+assert_eq "GREW" "$PC_CP" \
+  "[음성대조·게시 주장] 「…a stable release」 뒤가 「candidate」 로 이어지는 문서를 받았다 — 접두 일치다"
+pc_claim_probe 'All nine SDKs have shipped a stable release — PHP' 'All nine SDKs have shipped a stable release'
+assert_eq "QUIET" "$PC_CP" \
+  "[양성대조·게시 주장] 문장부호에서 끝나는 주장을 거부했다 — 「늘 운다」와 구분되지 않는다"
 
 # ---- 2026-08-18: DEPLOY.md 의 게시-수 앵커를 폐기했다 ----
 #
@@ -397,6 +489,40 @@ for _l in $DEPLOY_LANGS; do
   elif [ "$fleet_ver" != "$_v" ]; then fleet_ver=""; break; fi
 done
 
+# 「정식 없음」 · 「전부 pre-1.0」 수사 스캔 — 아홉 전부 정식인 갈래가 부른다. 함수로 두는 이유는 아래 대조군이 문구마다 그것을
+# 담은 사본으로 이 함수를 태우기 때문이다(실측 2026-11-14 SILENT: 본문을 비워도 초록이었다 — 다섯 문구가 한 번도 울어 본 적이
+# 없어, 문구가 문서 표현에서 떠나도 영원히 통과한다).
+pc_stale_scan() { # $1=파일 이름(메시지) $2=본문
+  assert_not_contains "$2" "no stable release yet" \
+    "$1 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+  assert_not_contains "$2" "No language has a stable release" \
+    "$1 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+  assert_not_contains "$2" "정식(stable) 릴리스는 아직" \
+    "$1 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
+  # ⚠️ 맨 토큰 `pre-1.0` 이 아니라 **강조를 포함한 완결 문장**으로 건다. 토큰은 수렴하지 않는다 —
+  # 같은 문단이 "what pre-1.0 means here" 처럼 **언급**으로도 쓰고, 리포 전체로는 pre-1.0 인
+  # 의존성(testcontainers·ruff·josekit)을 서술하는 참인 히트가 7건이다(금칙 문구 린트 기각 사유).
+  # 주장문은 문맥 없이 참/거짓이 갈리므로 그 기각의 되살릴 조건을 만족한다.
+  assert_not_contains "$2" "Everything is **pre-1.0**" \
+    "$1 에 아홉 전부 정식 게시인데 「전부 pre-1.0」 주장이 남아 있다"
+  assert_not_contains "$2" "전부 **pre-1.0** 입니다" \
+    "$1 에 아홉 전부 정식 게시인데 「전부 pre-1.0」 주장이 남아 있다"
+}
+# 대조군 — 문구마다 그것을 담은 사본에서 스캔이 울어야 한다(하나라도 안 울면 그 문구는 지워진 것과 같다). 정식 문장에서는 조용하다.
+pc_stale_probe() { # $1=본문 → PC_SP: GREW | QUIET
+  _a_save
+  pc_stale_scan 대조 "$1" >/dev/null 2>&1 || true
+  PC_SP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && PC_SP='GREW'
+  _a_restore
+}
+for _sp in 'no stable release yet' 'No language has a stable release' '정식(stable) 릴리스는 아직' \
+           'Everything is **pre-1.0**' '전부 **pre-1.0** 입니다'; do
+  pc_stale_probe "앞 문장. $_sp — 뒤 문장."
+  assert_eq "GREW" "$PC_SP" "[음성대조·정식 없음 수사] 「$_sp」 를 담은 사본에서 스캔이 안 울었다 — 그 문구는 지워진 것과 같다"
+done
+pc_stale_probe 'All nine have shipped a stable release to a public registry.'
+assert_eq "QUIET" "$PC_SP" "[양성대조·정식 없음 수사] 정식 문장에서 스캔이 울었다 — 「늘 운다」와 구분되지 않는다"
+
 if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
   # 아홉 전부 **정식** 게시. RC 수사와 "정식 없음"은 존재해선 안 된다.
   #
@@ -420,39 +546,28 @@ if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
     claim_at README.md "All $pub_en languages have shipped a stable release, and the numbers differ" "상단 배너(갈린 함대)"
     claim_at CLAUDE.md "${pub_n}개 언어 전부 정식 릴리스를 냈고, 번호는 갈렸다" "현재 상태(갈린 함대)"
   fi
-  claim_at README.md "All $pub_en have shipped a stable release"                 "하단 서술"
-  claim_at SECURITY.md "All $pub_en SDKs have shipped a stable"                  "게시 열거"
-  claim_at docs/guides/getting-started.md "All $pub_en are on a public registry" "상단 배너"
+  # ⚠️ 기대 문자열은 **주장의 끝까지** 적는다 — 접두(「…a stable」)는 경계 판정에서 UNBOUNDED 다(실측 2026-11-14: 이 넷이 그랬다).
+  claim_at README.md "All $pub_en have shipped a stable release to a public registry" "하단 서술"
+  claim_at SECURITY.md "All $pub_en SDKs have shipped a stable release to a public registry" "게시 열거"
+  claim_at docs/guides/getting-started.md "All $pub_en are on a public registry with a stable release" "상단 배너"
 
   claim_at CLAUDE.md "9개 중 ${pub_n}개가 정식 게시"                                    "문서 언어 규칙 절"
 
   claim_at CHANGELOG.md "지금까지 ${pub_ko} 언어 전부가"             "폴리글랏 안내(게시 수)"
 
   claim_at docs/roadmap/language-support.md "**All $pub_en are now live as stable releases**" "step-0(게시 수)"
-  claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a stable release" "머리말(게시 수)"
+  claim_at docs/roadmap/language-support.md "all $pub_en have since shipped a stable release through the human-gated publish step" "머리말(게시 수)"
 
   # ⚠️ 부정 어서션 — 긍정만 걸면 정식 문장을 **추가**하고 옛 "정식 없음"을 **남겨둔** 자기모순이
-  # 통과한다. 위 published/unpublished 갈래가 「미게시」로 막는 것과 같은 부류다.
+  # 통과한다. 위 published/unpublished 갈래가 「미게시」로 막는 것과 같은 부류다. 판정은 pc_stale_scan(위 · 대조군과 함께).
   for _cf in README.md README.ko.md SECURITY.md DEPLOY.md CLAUDE.md \
              docs/guides/getting-started.md docs/roadmap/language-support.md; do
-    _ct="$(cat "$ROOT/$_cf")"
-    assert_not_contains "$_ct" "no stable release yet" \
-      "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
-    assert_not_contains "$_ct" "No language has a stable release" \
-      "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
-    assert_not_contains "$_ct" "정식(stable) 릴리스는 아직" \
-      "$_cf 에 아홉 전부 정식 게시인데 「정식 없음」 수사가 남아 있다"
-    # ⚠️ 맨 토큰 `pre-1.0` 이 아니라 **강조를 포함한 완결 문장**으로 건다. 토큰은 수렴하지 않는다 —
-    # 같은 문단이 "what pre-1.0 means here" 처럼 **언급**으로도 쓰고, 리포 전체로는 pre-1.0 인
-    # 의존성(testcontainers·ruff·josekit)을 서술하는 참인 히트가 7건이다(금칙 문구 린트 기각 사유).
-    # 주장문은 문맥 없이 참/거짓이 갈리므로 그 기각의 되살릴 조건을 만족한다.
-    assert_not_contains "$_ct" "Everything is **pre-1.0**" \
-      "$_cf 에 아홉 전부 정식 게시인데 「전부 pre-1.0」 주장이 남아 있다"
-    assert_not_contains "$_ct" "전부 **pre-1.0** 입니다" \
-      "$_cf 에 아홉 전부 정식 게시인데 「전부 pre-1.0」 주장이 남아 있다"
+    pc_stale_scan "$_cf" "$(cat "$ROOT/$_cf")"
   done
 elif [ "$unpub_n" -eq 0 ]; then
   # 아홉 전부 게시됐으나 일부(또는 전부)가 프리릴리스. "나머지 N개" 수사는 존재해선 안 된다.
+  # ⚠️ 이 갈래와 아래 미게시 갈래는 잠들어 있다(오늘 상태로 못 깨운다). 경계 판정(`pc_claim_in`)을 같이 타므로 영어 접두 주장
+  # (SECURITY 「…a first」 등)은 깨어나는 PR 에서 UNBOUNDED 로 운다 — 그때 기대 문자열을 주장의 끝까지 늘린다.
   claim_at README.md "First release candidates are live for all $pub_en languages" "상단 배너"
   claim_at README.md "All $pub_en have shipped their first release candidates"     "하단 서술"
   claim_at SECURITY.md "All $pub_en SDKs have shipped a first"                     "게시 열거"
@@ -534,30 +649,61 @@ assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
   "language-support 상태 매트릭스의 게시 행 수(총 행 − human-gated)가 DF_PUBLISHED 파생 게시 수($pub_n)와 다르다"
 
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
-ko_t="$(cat "$ROOT/README.ko.md")"
-if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
-  # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
-  # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
-  # ⚠️ 영문 쪽과 같은 이유로 갈래가 둘이다 — 함대가 갈리면 "전부 정식 `X`"라고 말할 X 가 없다.
-  # 여기에도 `0.1.0` 리터럴이 박혀 있었다(= SSOT 두 번째 정의 자리).
-  if [ -n "$fleet_ver" ]; then
-    assert_contains "$ko_t" "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
+# 판정을 함수로 둔다 — 아래 대조군이 결함 사본 루트에 이 함수를 태운다(실측 2026-11-14 SILENT: 파일 읽기를 상수 문장으로
+# 바꿔도 초록이었다 — 이 판정에 먹인 결함 사본이 없었다). 판정은 claim_at 과 같은 경계 판정(`pc_claim_in`)이다 — 「아홉」 은
+# 「열아홉」 의 부분 문자열이다.
+pc_ko_at() { # $1=기대 문자열 $2=메시지 — pc_ko_mirror 가 읽은 본문(_ko_t)에서
+  assert_eq "ok" "$(pc_claim_in "$_ko_t" "$1")" "$2 — 기대 [$1]"
+}
+pc_ko_mirror() {
+  _ko_t="$(cat "$ROOT/README.ko.md")"
+  if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
+    # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
+    # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
+    # ⚠️ 영문 쪽과 같은 이유로 갈래가 둘이다 — 함대가 갈리면 "전부 정식 `X`"라고 말할 X 가 없다.
+    # 여기에도 `0.1.0` 리터럴이 박혀 있었다(= SSOT 두 번째 정의 자리).
+    if [ -n "$fleet_ver" ]; then
+      pc_ko_at "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
+        "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+    else
+      pc_ko_at "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
+        "README.ko.md 상단 배너가 갈린 함대를 말하지 않는다(한 숫자로 말하면 거짓이다)"
+    fi
+    pc_ko_at "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
+      "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+  elif [ "$unpub_n" -eq 0 ]; then
+    pc_ko_at "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
       "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+    pc_ko_at "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
+      "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
   else
-    assert_contains "$ko_t" "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
-      "README.ko.md 상단 배너가 갈린 함대를 말하지 않는다(한 숫자로 말하면 거짓이다)"
+    pc_ko_at "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
+    pc_ko_at "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
   fi
-  assert_contains "$ko_t" "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
-    "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-elif [ "$unpub_n" -eq 0 ]; then
-  assert_contains "$ko_t" "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
-    "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-  assert_contains "$ko_t" "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
-    "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-else
-  assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
-  assert_contains "$ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
-fi
+}
+pc_ko_mirror
+# 대조군 — pc_ko_mirror **자신**을 결함 사본 루트에 태운다. 수사 「$pub_ko」 는 「열$pub_ko」(더 큰 수)의 부분 문자열이다 —
+# 파일 전체 포함 검사는 그 사본을 받았다(경계 판정은 앞 글자가 한글이라 거부한다). 양성 — 라이브 사본에서는 조용하다(「늘
+# 운다」와 구분). 라이브 사본에서 만들므로 어느 갈래가 깨어 있어도 같은 대조가 선다.
+pc_ko_probe() { # $1=sed 식(빈 값이면 라이브 사본 그대로) → PC_KP: GREW | QUIET | NOT-LANDED
+  _kp_tmp="$(mktemp -d)"
+  sed "$1" "$ROOT/README.ko.md" > "$_kp_tmp/README.ko.md" || true
+  if [ -n "$1" ] && cmp -s "$ROOT/README.ko.md" "$_kp_tmp/README.ko.md"; then
+    PC_KP='NOT-LANDED'
+  else
+    _a_save; _kp_root="$ROOT"; ROOT="$_kp_tmp"
+    pc_ko_mirror >/dev/null 2>&1 || true
+    ROOT="$_kp_root"
+    PC_KP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && PC_KP='GREW'
+    _a_restore
+  fi
+  rm -rf "$_kp_tmp"
+}
+pc_ko_probe ''
+assert_eq "QUIET" "$PC_KP" "[양성대조·한글 미러] 라이브 README.ko.md 사본에서 판정이 울었다 — 「늘 운다」와 구분되지 않는다"
+pc_ko_probe "s/$pub_ko/열$pub_ko/g"
+assert_eq "GREW" "$PC_KP" \
+  "[음성대조·한글 미러] 게시 수사가 「열$pub_ko」 로 바뀐 사본을 받았다 — 「$pub_ko」 를 부분 문자열로 찾는다"
 
 # ⚠️ getting-started는 산문이 아니라 **구조**로 대조한다 — 언어마다 설치 절이 두 형태 중
 # 하나이고, 그 개수가 곧 게시 현황이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않는다.
@@ -749,10 +895,11 @@ for L in $DEPLOY_LANGS; do
   # ⚠️ 라벨만으로 고르면 **다른 표의 동명 행**을 집는다 — 이 문서에는 언어별 각주 표가 따로
   # 있고 거기에도 `| **Go** |` 가 있다(실측: Go·PHP·Rust 등 7 개가 그 행을 집어 빈 값이 나왔다).
   # 그래서 Publish 열 표식(🚀)을 함께 요구해 상태 매트릭스 행으로 좁힌다.
-  _row="$(grep -F "| **$_lbl** |" "$lsup" | grep -m1 '🚀' || true)"
+  # ⚠️ 아래 둘은 `LC_ALL=C`(바이트) — MSYS 의 grep · sed 는 UTF-8 로캘에서 비BMP 이모지(🚀)를 못 맞추고 `.*` 가 그 글자를 못 건넌다(실측 2026-11-15: 행 빈 값 · 추출 쓰레기, Windows 로컬 기준선 10 건 빨강 — 리눅스 CI 는 해당 없음).
+  _row="$(grep -F "| **$_lbl** |" "$lsup" | LC_ALL=C grep -m1 '🚀' || true)"
   [ -n "$_row" ] && ls_seen=$((ls_seen + 1))
   # 마지막 열의 `🚀 <레지스트리> \`<버전>\`` 에서 백틱 안을 뽑는다(행에 백틱이 여럿이므로 끝에서).
-  _got="$(printf '%s' "$_row" | sed -n 's/.*`\([^`]*\)` *|[^|]*$/\1/p')"
+  _got="$(printf '%s' "$_row" | LC_ALL=C sed -n 's/.*`\([^`]*\)` *|[^|]*$/\1/p')"
   _want="$(df_published_version "$L")"
   [ -n "$_want" ] || assert_ok false "$L 의 df_published_version 이 비어 있다 — 매트릭스 기대 버전은 사람이 정해야 한다"
   assert_eq "$_want" "$_got" "language-support 매트릭스의 $_lbl 게시 버전이 SSOT와 다르다"

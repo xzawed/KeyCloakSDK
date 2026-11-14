@@ -300,7 +300,7 @@ sd_code_count_raw() { sd_code_lines "$1" | grep -cF -- "$2" || true; }
 sd_code_count() {
   sd_code_lines "$1" | SD_NEEDLE="$2" awk '
     BEGIN { n = ENVIRON["SD_NEEDLE"]; c = 0 }
-    {
+    n != "" {
       s = $0; off = 0
       while ((i = index(s, n)) > 0) {
         p = (off + i > 1) ? substr($0, off + i - 1, 1) : ""
@@ -310,8 +310,21 @@ sd_code_count() {
     }
     END { print c }'
 }
-sd_hook_ok() { _sn="$(sd_code_count_raw "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
-sd_canary_ok() { _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
+# ⚠️ **빈 바늘은 판정 전에 거부한다**(`EMPTY-NEEDLE`) — 표가 비거나 행이 `파일|` 로 잘리면 바늘이 빈 값이 된다. 훅은
+# `grep -cF ""` 가 모든 줄을 세어 무엇이든 받았고(실측 2026-11-14 SILENT: 백오프 상한 표를 비워도 초록), 카나리아는 gawk 5.0
+# 의 `index(s, "")` 가 0 을 안 내 셈이 끝나지 않았다(행 `파일|` 하나가 스위트를 멈춘다 — 레그 실측). awk 의 `n != ""` 는 이
+# 거부가 깨져도 아래 대조군이 멈추지 않고 실패하게 하는 받침이다.
+sd_hook_ok() { [ -n "$2" ] || { printf 'EMPTY-NEEDLE'; return 0; }; _sn="$(sd_code_count_raw "$1" "$2")"; [ "$_sn" -ge 1 ] && printf ok || printf MISSING; }
+sd_canary_ok() { [ -n "$2" ] || { printf 'EMPTY-NEEDLE'; return 0; }; _sn="$(sd_code_count "$1" "$2")"; [ "$_sn" = 1 ] && printf ok || printf 'COUNT=%s' "$_sn"; }
+# 표 하한 — 표 함수가 낸 행 중 **실제로 단언한 수**가 1 이상인가. 표가 비면 루프는 단언 0 건으로 끝나는데 언어 계수
+# (`_nonce_seen` 류)는 그대로 9 에 닿았다(실측 2026-11-14 SILENT: nonce · 마스킹 표를 `| sed d` 로 비워도 초록). 수는 assert.sh
+# 의 계수기에서 읽는다 — 행마다 셀 변수를 따로 두면 루프를 고칠 때 하한이 따라오지 않는다.
+sd_rows_begin() { SD_ROWS0=$((_A_PASS + _A_FAIL)); }
+sd_rows_floor() { # $1=라벨 — sd_rows_begin 뒤 단언이 0 건이면 운다
+  _rf_n=$((_A_PASS + _A_FAIL - SD_ROWS0))
+  assert_eq "ok" "$(ok_if "$([ "$_rf_n" -ge 1 ] && echo 0 || echo 1)" "ROWS=$_rf_n")" \
+    "$1 의 표가 단언을 하나도 내지 않았다 — 표가 비거나 행을 못 읽으면 그 언어는 시험 없이 본 것으로 세어진다"
+}
 sd_jwks_cap() { # $1=언어 → 상한 리터럴(정규화 전)
   case "$1" in
     go)   sd_code_lines "$ROOT/go/jwt.go" | sed -n 's/.*jwksMaxBytes *= *\([0-9_]*\).*/\1/p' | head -1 ;;
@@ -710,6 +723,14 @@ sd_empty_canary() {
               'python/tests/unit/aio/test_auth.py|async def test_empty_jwks_is_refused_and_keeps_the_cached_set(' ;;
   esac
 }
+# 거부 지점 판정 — 표지가 주석 밖에 **정확히 한 줄**인가(`ok` · `EMPTY-MARKER` · `COUNT=<n>`). 첫 판은 ≥ 1 이었다: 빈 표지는
+# 모든 줄에 맞고(`grep -cF ""`), 둘째 사본(꼬리 주석 · 다른 메시지)은 진짜 거부를 지워도 그 자리를 채운다. 표지 없는 파일을
+# 먹인 대조군도 없었다 — 실측 2026-11-14 SILENT(표지 grep 을 빈 바늘로 바꿔도 초록). 정확히 하나면 지운 순간 0 이 되어 운다.
+sd_reject_ok() { # $1=파일 $2=표지
+  [ -n "$2" ] || { printf 'EMPTY-MARKER'; return 0; }
+  _rk="$(sd_code_count_raw "$1" "$2")"
+  [ "$_rk" = 1 ] && printf ok || printf 'COUNT=%s' "$_rk"
+}
 
 sd_empty_seen=0
 for L in $SD_LANGS; do
@@ -721,9 +742,9 @@ for L in $SD_LANGS; do
     continue
   fi
   _src="${_r%%	*}"; _mark="${_r##*	}"
-  _n="$(sd_code_lines "$ROOT/$_src" | grep -c -F -- "$_mark" || true)"
-  assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
-    "[빈 키셋] $L 이 빈 JWKS 를 거부하지 않는다 — $_src 에 '$_mark' 가 없다(go #380 의 나머지 절반)"
+  _rok="$(sd_reject_ok "$ROOT/$_src" "$_mark")"
+  assert_eq "ok" "$_rok" \
+    "[빈 키셋] $L 의 빈 JWKS 거부 지점이 $_src 에 주석 밖 정확히 한 줄이 아니다('$_mark') — 0 이면 거부가 없다(go #380 의 나머지 절반) · 둘 이상이면 사본이 그 자리를 채운다"
   _ebad=0
   while IFS= read -r _erow; do
     [ -n "$_erow" ] || continue
@@ -738,10 +759,28 @@ for L in $SD_LANGS; do
   done <<EOF
 $_ec
 EOF
-  [ "$_n" -ge 1 ] && [ "$_ebad" = 0 ] && sd_empty_seen=$((sd_empty_seen + 1))
+  [ "$_rok" = ok ] && [ "$_ebad" = 0 ] && sd_empty_seen=$((sd_empty_seen + 1))
 done
 # 대조군 — 루프가 아무것도 안 보면 어서션이 0건 실행되고 조용히 통과한다.
 assert_eq "9" "$sd_empty_seen" "[빈 키셋] 거부+테스트를 함께 가진 언어 수가 9가 아니다 — 추출 표가 낡았나?"
+# 대조군 — 거부 지점 판정 **자신**을 태운다(사본 금지). 표지 없는 파일 · 주석에만 남은 표지 · 둘째 사본 · 빈 표지는 거부하고,
+# 코드 줄에 한 번 있으면 받는다(「늘 운다」와 구분). 실측 2026-11-14 SILENT 를 닫는다.
+_rj="$(mktemp -d)"
+printf 'if len(ks.Keys) == 0 {\n\treturn errors.New("jwks: refused")\n}\n' > "$_rj/none.go"
+printf '// jwks: contains no keys\nreturn nil\n' > "$_rj/comment.go"
+printf 'return errors.New("jwks: contains no keys")\nlog("contains no keys") // 사본\n' > "$_rj/twice.go"
+printf 'return errors.New("jwks: contains no keys")\n' > "$_rj/once.go"
+assert_eq "COUNT=0" "$(sd_reject_ok "$_rj/none.go" 'contains no keys')" \
+  "[빈 키셋 대조군] 표지가 없는 파일을 받았다 — 거부를 지워도 초록이다"
+assert_eq "COUNT=0" "$(sd_reject_ok "$_rj/comment.go" 'contains no keys')" \
+  "[빈 키셋 대조군] 주석에만 남은 표지를 거부 지점으로 셌다"
+assert_eq "COUNT=2" "$(sd_reject_ok "$_rj/twice.go" 'contains no keys')" \
+  "[빈 키셋 대조군] 둘째 사본을 받았다 — 진짜 거부를 지워도 사본이 그 자리를 채운다"
+assert_eq "EMPTY-MARKER" "$(sd_reject_ok "$_rj/once.go" '')" \
+  "[빈 키셋 대조군] 빈 표지를 받았다 — grep -cF \"\" 는 모든 줄에 맞는다"
+assert_eq "ok" "$(sd_reject_ok "$_rj/once.go" 'contains no keys')" \
+  "[빈 키셋 대조군] 코드 줄에 한 번 있는 표지를 못 받는다"
+rm -rf "$_rj"
 
 # ---------------------------------------------------------------------------
 # 1h) JWKS 키 집합의 **수명** — 아홉 언어가 같은 리터럴 하나를 선언한다
@@ -948,13 +987,16 @@ for L in $SD_LANGS; do
     "[nonce] $L 인가 요청에 nonce 생성이 없다(주석 밖) — 기대: $_cp"
   assert_eq "ok" "$(sd_hook_ok "$ROOT/$_nf" "$_vp")" \
     "[nonce] $L exchange nonce 검증이 없다(주석 밖) — 기대: $_vp"
+  # 빈 줄만 건너뛴다 — `파일|` 로 잘린 행은 판정에 넘겨 EMPTY-NEEDLE 로 울린다(건너뛰면 그 행은 시험 없이 사라진다).
+  sd_rows_begin
   while IFS='|' read -r _ntf _ntc; do
-    [ -n "$_ntc" ] || continue
+    [ -n "$_ntf$_ntc" ] || continue
     assert_eq "ok" "$(sd_canary_ok "$ROOT/$_ntf" "$_ntc")" \
       "[nonce] $L 교환 경로의 nonce 거부를 실행으로 단언하는 테스트가 주석 밖에 정확히 하나가 아니다 — 기대: $_ntc ($_ntf)"
   done <<EOF
 $(sd_nonce_canary "$L")
 EOF
+  sd_rows_floor "[nonce] $L 교환 경로 카나리아"
   _nonce_seen=$((_nonce_seen + 1))
 done
 assert_eq "9" "$_nonce_seen" "[nonce] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
@@ -1076,13 +1118,15 @@ for L in $SD_BACKOFF_LANGS; do
     "[backoff] $L 실패 백오프 상한이 없다(주석 밖) — 기대: $_cp"
   assert_eq "ok" "$(sd_hook_ok "$ROOT/$_bf" "$_gp")" \
     "[backoff] $L 백오프 잔여시간 계산이 없다(주석 밖) — 기대: $_gp"
+  sd_rows_begin
   while IFS='|' read -r _btf _btc; do
-    [ -n "$_btc" ] || continue
+    [ -n "$_btf$_btc" ] || continue
     assert_eq "ok" "$(sd_canary_ok "$ROOT/$_btf" "$_btc")" \
       "[backoff] $L 백오프를 실행으로 단언하는 테스트가 주석 밖에 정확히 하나가 아니다 — 기대: $_btc ($_btf)"
   done <<EOF
 $(sd_backoff_canary "$L")
 EOF
+  sd_rows_floor "[backoff] $L 백오프 카나리아"
   _backoff_seen=$((_backoff_seen + 1))
 done
 assert_eq "7" "$_backoff_seen" "[backoff] 훑은 언어 수가 7이 아니다 — 추출 표가 낡았나?"
@@ -1220,7 +1264,24 @@ assert_eq "COUNT=2" "$(sd_canary_ok "$_mc/canary_twice.ts" "it('a'")" \
 assert_eq "COUNT=0" "$(sd_canary_ok "$_mc/canary_comment_only.ts" "it('a'")" \
   "[mask 대조군] 주석 속 카나리아를 테스트로 읽었다"
 assert_eq "ok" "$(sd_canary_ok "$_mc/canary_once.ts" "it('a'")" "[mask 대조군] 한 번 나오는 카나리아를 못 받는다"
+# 빈 바늘 — 표가 비거나 행이 `파일|` 로 잘리면 바늘이 빈 값이 된다. 훅은 `grep -cF ""` 가 모든 줄을 세어 받았고(실측
+# 2026-11-14 SILENT), 카나리아는 gawk 5.0 에서 셈이 끝나지 않았다(레그 실측). 줄 없는 파일 · 줄 있는 파일 둘 다 곧바로 거부해야
+# 한다 — 줄 있는 쪽이 멈추던 자리다(awk 받침 덕에 거부가 깨져도 멈추지 않고 COUNT 로 운다).
+: > "$_mc/no_lines.ts"
+assert_eq "EMPTY-NEEDLE" "$(sd_hook_ok "$_mc/hook_code.ts" '')" \
+  "[mask 대조군] 빈 훅 바늘을 받았다 — grep -cF \"\" 는 모든 줄을 세어 무엇이든 받는다"
+assert_eq "EMPTY-NEEDLE" "$(sd_canary_ok "$_mc/no_lines.ts" '')" \
+  "[mask 대조군] 빈 카나리아 바늘을 거부하지 않는다 — 줄이 있으면 gawk 의 index(s, \"\") 가 끝나지 않는다"
+assert_eq "EMPTY-NEEDLE" "$(sd_canary_ok "$_mc/canary_once.ts" '')" \
+  "[mask 대조군] 줄이 있는 파일에서 빈 카나리아 바늘을 거부하지 않는다(행 \`파일|\` 이 스위트를 멈추던 자리)"
 rm -rf "$_mc"
+# 표 하한 대조군 — 하한 **자신**을 태운다. 단언 0 건이면 울고(빈 표), 1 건이면 조용하다(「늘 운다」와 구분).
+_a_save; sd_rows_begin; sd_rows_floor "[하한 대조]" >/dev/null 2>&1
+_rf_v0=QUIET; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _rf_v0=GREW; _a_restore
+_a_save; sd_rows_begin; assert_eq x x "[하한 대조] 행 하나"; sd_rows_floor "[하한 대조]" >/dev/null 2>&1
+_rf_v1=QUIET; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _rf_v1=GREW; _a_restore
+assert_eq "GREW" "$_rf_v0" "[표 하한 대조군] 단언 0 건인 표에서 하한이 안 울었다 — 빈 표가 그 언어를 본 것으로 센다(실측 2026-11-14 SILENT)"
+assert_eq "QUIET" "$_rf_v1" "[표 하한 대조군] 단언이 있는 표에서 하한이 울었다 — 「늘 운다」와 구분되지 않는다"
 
 _mask_seen=0
 for L in $SD_LANGS; do
@@ -1234,6 +1295,7 @@ for L in $SD_LANGS; do
   _hp="$(sd_mask_hook "$L")"
   assert_eq "ok" "$(sd_hook_ok "$ROOT/$_ms" "$_hp")" \
     "[mask] $L 비밀 보유 타입에 기본 문자열표현 마스킹 훅이 없다(주석 밖) — 기대: $_hp"
+  sd_rows_begin
   while IFS= read -r _cp; do
     [ -n "$_cp" ] || continue
     assert_eq "ok" "$(sd_canary_ok "$ROOT/$_mt" "$_cp")" \
@@ -1241,6 +1303,7 @@ for L in $SD_LANGS; do
   done <<EOF
 $(sd_mask_canary "$L")
 EOF
+  sd_rows_floor "[mask] $L TokenSet 마스킹 카나리아"
   _mask_seen=$((_mask_seen + 1))
 done
 assert_eq "9" "$_mask_seen" "[mask] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
@@ -1351,6 +1414,7 @@ for L in $SD_LANGS; do
   _e=1; [ -f "$ROOT/$_m2t" ] && _e=0
   assert_eq "ok" "$(ok_if "$_e" MISSING)" "[mask2] $L 형제 마스킹 테스트 파일이 없다($_m2t)"
   [ -f "$ROOT/$_m2t" ] || continue
+  sd_rows_begin
   while IFS= read -r _h2; do
     [ -n "$_h2" ] || continue
     assert_eq "ok" "$(sd_hook_ok "$ROOT/$_m2s" "$_h2")" \
@@ -1358,6 +1422,8 @@ for L in $SD_LANGS; do
   done <<EOF
 $(sd_mask2_hook "$L")
 EOF
+  sd_rows_floor "[mask2] $L 인가요청 마스킹 훅"
+  sd_rows_begin
   while IFS= read -r _c2; do
     [ -n "$_c2" ] || continue
     assert_eq "ok" "$(sd_canary_ok "$ROOT/$_m2t" "$_c2")" \
@@ -1365,6 +1431,7 @@ EOF
   done <<EOF
 $(sd_mask2_canary "$L")
 EOF
+  sd_rows_floor "[mask2] $L 인가요청 마스킹 카나리아"
   _mask2_seen=$((_mask2_seen + 1))
 done
 assert_eq "9" "$_mask2_seen" "[mask2] 훑은 언어 수가 9가 아니다 — 추출 표가 낡았나?"
@@ -1541,8 +1608,10 @@ sd_doc_axis "소스 주석" 'jwks[_ ]?min[_ ]?refetch|재조회|refetch' "$sd_ex
 # ⚠️ 1절은 "config 기본값 아홉이 서로 같은가"만 본다. 그런데 이 값이 **한 언어 안에서 두 번**
 # 적히면 그 둘이 갈라지는 것을 1절이 못 본다 — 실제로 그랬다(go 30/60 · php 30/60 · ruby 30.0/10.0).
 # 그래서 2차 자리가 상수를 **참조**하는지(리터럴이 아닌지) 문자로 확인한다.
+# ⚠️ **주석을 뺀 줄에서 찾는다**(`sd_code_lines`) — raw `grep -m1` 은 앵커를 인용한 주석이 진짜 줄보다 앞에 있으면 그 주석을
+# 판정해 통과했다(아래 대조군이 재현한다).
 sd_no_literal() { # $1=라벨 $2=파일 $3=파라미터가 등장하는 줄의 앵커
-  _l="$(grep -m1 -F "$3" "$ROOT/$2" || true)"
+  _l="$(sd_code_lines "$ROOT/$2" | grep -m1 -F -- "$3" || true)"
   _found=1; [ -n "$_l" ] && _found=0
   assert_eq "ok" "$(ok_if "$_found" MISSING)" "[$1] 2차 정의 자리를 찾지 못했다($3) — 표기가 바뀌었나?"
   [ -n "$_l" ] || return 0
@@ -1565,6 +1634,25 @@ sd_no_literal ruby ruby/lib/keycloak_sdk/jwks_store.rb 'def initialize(jwks_url:
 # 있고, 두 자리가 갈리면 그 경로에서만 만료된 토큰이 더 오래 통과한다. 값은 아직 갈리지 않았지만
 # (둘 다 30) JWKS가 10.0/30.0으로 갈린 것과 **똑같은 모양**이라 같은 방식으로 닫았다.
 sd_no_literal ruby-skew ruby/lib/keycloak_sdk/jwt_validator.rb 'algorithms: ["RS256"], clock_skew:'
+# 대조군 — 판정 **자신**을 TMP 사본에 태운다(사본 금지). 값 자리에 숫자 리터럴이 오면 울어야 하고, 앵커를 인용한 주석이 진짜
+# 줄보다 앞에 있어도 진짜 줄을 판정해야 한다. 실측 2026-11-14 SILENT: 값 자리 판정을 깨도(`_rest="x…"`) 초록이었다 — 리터럴이
+# 있는 입력을 먹인 적이 없다.
+sd_no_literal_probe() { # $@=파일의 줄들 → SD_NLP: GREW | QUIET
+  _nlp_tmp="$(mktemp -d)"
+  printf '%s\n' "$@" > "$_nlp_tmp/f.go"
+  _a_save; _nlp_root="$ROOT"; ROOT="$_nlp_tmp"
+  sd_no_literal 대조 f.go 'opts.minRefetch = ' >/dev/null 2>&1 || true
+  ROOT="$_nlp_root"
+  SD_NLP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && SD_NLP='GREW'
+  _a_restore
+  rm -rf "$_nlp_tmp"
+}
+sd_no_literal_probe '    opts.minRefetch = 60 * time.Second'
+assert_eq "GREW" "$SD_NLP" "[음성대조·2차 정의 자리] 값 자리의 숫자 리터럴을 못 봤다 — 값 판정이 no-op 이다"
+sd_no_literal_probe '    // opts.minRefetch = defaultJwksMinRefetch 를 쓴다' '    opts.minRefetch = 60 * time.Second'
+assert_eq "GREW" "$SD_NLP" "[음성대조·2차 정의 자리] 앵커를 인용한 주석 뒤의 진짜 리터럴을 못 봤다 — 주석 줄을 판정한다"
+sd_no_literal_probe '    opts.minRefetch = time.Duration(defaultJwksMinRefetchSecs) * time.Second'
+assert_eq "QUIET" "$SD_NLP" "[양성대조·2차 정의 자리] 상수를 참조하는 자리에서 울었다 — 「늘 운다」와 구분되지 않는다"
 
 # --- 파생 반쪽 — 손 앵커 **밖**의 2차 자리를 트리에서 찾는다 -------------------
 #
