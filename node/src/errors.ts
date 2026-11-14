@@ -72,8 +72,11 @@ export class KeycloakForbiddenError extends KeycloakAdminError {
 /** Network/transport-layer failure. */
 export class KeycloakTransportError extends KeycloakError {}
 
-/** Maps an HTTP status code to an SDK exception that carries it in `status`. */
-export function mapHttpError(status: number, message: string, cause?: unknown): KeycloakAdminError {
+/**
+ * Maps an HTTP status code to an SDK exception — always a {@link KeycloakAdminError} that carries it in `status` (the
+ * declared return type stays the published one).
+ */
+export function mapHttpError(status: number, message: string, cause?: unknown): KeycloakError {
   switch (status) {
     case 404:
       return new KeycloakNotFoundError(message, { cause })

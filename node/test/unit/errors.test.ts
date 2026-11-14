@@ -33,11 +33,14 @@ describe('mapHttpError', () => {
 // `StatusCode` · .NET `StatusCode` · php `getStatusCode()` · rust `Other { status }` · ruby `status` · java ·
 // kotlin `status`). node 만 없어, 404 · 409 · 403 은 클래스로만, 나머지는 메시지 머리 `HTTP <상태>:` 로만 드러났다.
 describe('KeycloakAdminError.status', () => {
+  // mapHttpError 의 선언 반환 형은 게시된 그대로 `KeycloakError` 다(api-extractor 가드) — 형은 instanceof 로 좁힌다.
+  const admin = (e: KeycloakError): KeycloakAdminError => {
+    expect(e).toBeInstanceOf(KeycloakAdminError)
+    return e as KeycloakAdminError
+  }
   it('mapHttpError 는 상태를 필드로 싣는다 — 하위 클래스 셋과 일반 클래스 모두', () => {
     for (const status of [302, 400, 401, 403, 404, 409, 422, 500, 503]) {
-      const e = mapHttpError(status, 'x')
-      expect(e).toBeInstanceOf(KeycloakAdminError)
-      expect(e.status).toBe(status)
+      expect(admin(mapHttpError(status, 'x')).status).toBe(status)
     }
   })
   it('하위 클래스는 제 상태를 스스로 갖는다 — 상태 없이 만들어도', () => {
@@ -50,7 +53,9 @@ describe('KeycloakAdminError.status', () => {
     expect(new KeycloakAdminError('x').status).toBeUndefined()
   })
   it('상태를 실어도 cause 정화는 그대로다', () => {
-    const e = mapHttpError(500, 'boom', new SyntaxError('Unexpected token R in JSON at position 0: RAW'))
+    const e = admin(
+      mapHttpError(500, 'boom', new SyntaxError('Unexpected token R in JSON at position 0: RAW')),
+    )
     expect(e.status).toBe(500)
     expect((e.cause as Error).message).toBe('invalid JSON (input withheld)')
   })
