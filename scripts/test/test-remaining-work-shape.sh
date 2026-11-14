@@ -193,9 +193,12 @@ assert_eq "1" "$_rawkey" \
   "[등록부] doc-budget 앵커에 max-raw-bytes 가 없다 — 원본 래칫은 사람 판정(2026-10-28)이다. 풀려면 이 단언을 고치는 diff 가 그 판정이다"
 
 # 아카이브 안내가 살아 있는가 — 이관한 곳을 가리키는 줄이 지워지면 다음 세션이 서사를 못 찾는다.
-# 판정기 — <파일> <ERE> → 맞은 줄 수. 아래 음성 대조가 같은 함수 · 같은 패턴 변수를 먹인다.
-_rw_ptr() { grep -cE -- "$2" "$1" || true; }
+# 판정기 — <파일> <ERE> → **머리말 안내(H1 ~ 첫 `##`)** 에서 맞은 줄 수. 아래 음성 대조가 같은 함수 · 같은 패턴 변수를
+# 먹인다. 본문 항목 · H1 앞 블록 주석의 같은 꼴 포인터는 안내 줄을 대신하지 못한다.
+_rw_preamble() { awk '/^# /{p=1; next} p && /^## /{exit} p' "$1"; }
+_rw_ptr() { _rw_preamble "$1" | grep -cE -- "$2" || true; }
 RW_ARCHIVE_RE='archive/docs-history-2026-09'
+RW_SHA_RE='git show [0-9a-f]{7,40}:docs/superpowers/plans/remaining-work\.md'
 _ptr="$(_rw_ptr "$F" "$RW_ARCHIVE_RE")"
 assert_eq "ok" "$(ok_if "$([ "$_ptr" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
   "[등록부] 이관 대상 태그(archive/docs-history-2026-09)를 가리키는 줄이 사라졌다"
@@ -210,13 +213,21 @@ printf '%s\n' '# 등록부' '> 이관분은 `git show archive/docs-history-2026-
 assert_eq "0" "$(_rw_ptr "$_fx/outside.md" "$RW_ARCHIVE_RE")" \
   "[음성대조] 머리말 밖에만 있는 이관 태그 포인터를 머리말 안내로 센다 — 안내 줄을 지워도 통과한다"
 assert_eq "1" "$(_rw_ptr "$_fx/inside.md" "$RW_ARCHIVE_RE")" "[대조] 머리말의 이관 태그 포인터를 못 센다 — 오탐"
-rm -rf "$_fx"
 # 2026-10-28 이관분은 태그가 아니라 `main` 커밋을 가리킨다(`docs/README.md` 규칙: main 이력에 있으면 태그를 새로
 # 만들지 않는다). 그 sha 가 해석되는지는 check-docs 검사 10c 가 본다 — 여기는 포인터가 있는지만 본다.
 # ⚠️ **머리말 안내(H1 ~ 첫 `##`) 안에서만 찾는다** — 본문의 항목들이 같은 꼴의 포인터를 이미 셋 갖고 있어
 # 파일 전체를 grep 하면 안내 줄을 지워도 통과했다(실측 2026-10-28: 이 단언의 첫 판이 main 에서 초록이었다).
-_ptr2="$(awk '/^# /{p=1; next} p && /^## /{exit} p' "$F" | grep -cE 'git show [0-9a-f]{7,40}:docs/superpowers/plans/remaining-work\.md' || true)"
+# 그 범위를 _rw_ptr 이 소유하고, 아래 음성 대조가 그것을 잰다(범위를 파일 전체로 넓혀도 초록이었다, 실측 2026-11-14 SILENT).
+_ptr2="$(_rw_ptr "$F" "$RW_SHA_RE")"
 assert_eq "ok" "$(ok_if "$([ "$_ptr2" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
   "[등록부] 머리말 안내에 2026-10-28 이관분을 가리키는 \`git show <sha>:docs/superpowers/plans/remaining-work.md\` 줄이 없다"
+printf '%s\n' '<!-- 인하 기록: `git show 7a4763a:docs/superpowers/plans/remaining-work.md` -->' '# 등록부' '' \
+  '> 안내 — 이관 포인터가 없다.' '' '## A. 절' \
+  '- [x] `a` 닫힘 — 서사는 `git show aaedad01:docs/superpowers/plans/remaining-work.md`' > "$_fx/outside-sha.md"
+printf '%s\n' '# 등록부' '> 이관분은 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 에 있다.' '## A. 절' > "$_fx/inside-sha.md"
+assert_eq "0" "$(_rw_ptr "$_fx/outside-sha.md" "$RW_SHA_RE")" \
+  "[음성대조] 머리말 밖에만 있는 git show <sha> 포인터를 머리말 안내로 센다 — 안내 줄을 지워도 통과한다"
+assert_eq "1" "$(_rw_ptr "$_fx/inside-sha.md" "$RW_SHA_RE")" "[대조] 머리말의 git show <sha> 포인터를 못 센다 — 오탐"
+rm -rf "$_fx"
 
 assert_report
