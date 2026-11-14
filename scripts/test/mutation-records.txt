@@ -646,3 +646,40 @@ TEST:scripts/test/test-publication-claims.sh
 OLD:  _ko_t="$(cat "$ROOT/README.ko.md")"
 NEW:  _ko_t="아홉 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다 / 아홉 전부 정식 릴리스를 공개 레지스트리에 게시했습니다"
 SITE:번호는 갈렸습니다 / 아홉
+
+# ── 소비자 유입 표면(consumer-intake-surface-absent, 2026-11-15) — 판정 다섯이 음성 대조에 잡히는가
+
+### community-lang-missing
+FILE:scripts/test/test-community-intake.sh
+TEST:scripts/test/test-community-intake.sh
+OLD:  [ -z "$_miss$_extra$_dup" ] || printf 'missing:%s extra:%s dup: %s' "$_miss" "$_extra" "$_dup"
+NEW:  [ -z "$_extra$_dup" ] || printf 'missing:%s extra:%s dup: %s' "$_miss" "$_extra" "$_dup"
+SITE:[ -z "$_extra$_dup" ]
+
+### community-options-scope
+FILE:scripts/test/test-community-intake.sh
+TEST:scripts/test/test-community-intake.sh
+OLD:    /^[[:space:]]*- type:/ { in_sdk = 0; in_opts = 0 }
+NEW:    /^[[:space:]]*- type:/ { in_opts = 0 }
+SITE:- type:/ { in_opts = 0 }
+
+### community-private-report-link
+FILE:scripts/test/test-community-intake.sh
+TEST:scripts/test/test-community-intake.sh
+OLD:    || _g="$_g no-private-report-link"
+NEW:    || _g="$_g"
+SITE:|| _g="$_g"
+
+### community-secret-ack-required
+FILE:scripts/test/test-community-intake.sh
+TEST:scripts/test/test-community-intake.sh
+OLD:    box && seen && /required:[[:space:]]*true/ { ok = 1 }
+NEW:    box && seen { ok = 1 }
+SITE:box && seen { ok = 1 }
+
+### community-default-owner
+FILE:scripts/test/test-community-intake.sh
+TEST:scripts/test/test-community-intake.sh
+OLD:ci_default_owner() { grep -qE '^\*[[:space:]]+@[A-Za-z0-9][A-Za-z0-9-]*' "$1" 2>/dev/null && echo ok || echo MISSING; }
+NEW:ci_default_owner() { grep -qE '@' "$1" 2>/dev/null && echo ok || echo MISSING; }
+SITE:grep -qE '@' "$1"

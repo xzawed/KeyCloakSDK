@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in one of the SDKs does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Security vulnerabilities do not belong in a public issue.** Report them privately — see [SECURITY.md](https://github.com/xzawed/KeyCloakSDK/blob/main/SECURITY.md).
+  - type: dropdown
+    id: sdk
+    attributes:
+      label: SDK
+      description: Which language SDK shows the problem?
+      options:
+        - Java
+        - Kotlin
+        - Python
+        - Node.js / TypeScript
+        - Go
+        - C# / .NET
+        - PHP
+        - Rust
+        - Ruby
+    validations:
+      required: true
+  - type: input
+    id: sdk-version
+    attributes:
+      label: SDK version
+      description: The exact version from your lockfile or build file.
+    validations:
+      required: true
+  - type: input
+    id: keycloak-version
+    attributes:
+      label: Keycloak server version
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and OS
+      description: For example the JDK, Python, Node.js, Go, .NET, PHP, Rust or Ruby version, and the operating system.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the exact error or exception type and its message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code and configuration that shows the problem. Placeholders for the realm, client id and URLs are fine.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The SDK masks tokens and secrets in what it prints, but your application or HTTP tooling may not — check before pasting.
+      render: shell
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed access tokens, refresh tokens, client secrets and passwords from everything above.
+          required: true
