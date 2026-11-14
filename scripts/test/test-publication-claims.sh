@@ -326,6 +326,25 @@ done
 claim_at() { # $1=파일 $2=기대 문자열 $3=자리 이름
   assert_contains "$(cat "$ROOT/$1")" "$2" "$1 의 $3 가 DF_PUBLISHED 파생 게시/미게시 수($pub_n/$unpub_n)와 다르다"
 }
+# 대조군 — claim_at **자신**을 결함 사본 루트에 태운다(사본 금지). 「a stable」 접두가 「a stable release candidate」 를 받는
+# 부류(아래 2026-08-18 판정이 DEPLOY.md 에서 기록한 것)다 — 실측 2026-11-14 SILENT: 기대 문자열을 빈 값으로 바꿔도 초록.
+pc_claim_probe() { # $1=문서 본문 $2=기대 문자열 → PC_CP: GREW | QUIET
+  _cp_tmp="$(mktemp -d)"
+  printf '%s\n' "$1" > "$_cp_tmp/CLAIM.md"
+  _a_save; _cp_root="$ROOT"; ROOT="$_cp_tmp"
+  claim_at CLAIM.md "$2" "대조" >/dev/null 2>&1 || true
+  ROOT="$_cp_root"
+  PC_CP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && PC_CP='GREW'
+  _a_restore
+  rm -rf "$_cp_tmp"
+}
+pc_claim_probe 'All nine SDKs have shipped a stable release candidate to a public registry — PHP' \
+  'All nine SDKs have shipped a stable release'
+assert_eq "GREW" "$PC_CP" \
+  "[음성대조·게시 주장] 「…a stable release」 뒤가 「candidate」 로 이어지는 문서를 받았다 — 접두 일치다"
+pc_claim_probe 'All nine SDKs have shipped a stable release — PHP' 'All nine SDKs have shipped a stable release'
+assert_eq "QUIET" "$PC_CP" \
+  "[양성대조·게시 주장] 문장부호에서 끝나는 주장을 거부했다 — 「늘 운다」와 구분되지 않는다"
 Pub_en="$(printf '%s' "$pub_en" | sed 's/^./\U&/')"
 
 # ---- 2026-08-18: DEPLOY.md 의 게시-수 앵커를 폐기했다 ----
@@ -534,30 +553,56 @@ assert_eq "$pub_n" "$((_rows_all - _rows_gated))" \
   "language-support 상태 매트릭스의 게시 행 수(총 행 − human-gated)가 DF_PUBLISHED 파생 게시 수($pub_n)와 다르다"
 
 # 한글 미러 — 영문과 같은 사실을 한글 수사로 말한다(README.md와 동일 구조의 미러라는 규칙).
-ko_t="$(cat "$ROOT/README.ko.md")"
-if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
-  # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
-  # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
-  # ⚠️ 영문 쪽과 같은 이유로 갈래가 둘이다 — 함대가 갈리면 "전부 정식 `X`"라고 말할 X 가 없다.
-  # 여기에도 `0.1.0` 리터럴이 박혀 있었다(= SSOT 두 번째 정의 자리).
-  if [ -n "$fleet_ver" ]; then
-    assert_contains "$ko_t" "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
+# 판정을 함수로 둔다 — 아래 대조군이 결함 사본 루트에 이 함수를 태운다(실측 2026-11-14 SILENT: 파일 읽기를 상수 문장으로
+# 바꿔도 초록이었다 — 이 판정에 먹인 결함 사본이 없었다).
+pc_ko_mirror() {
+  _ko_t="$(cat "$ROOT/README.ko.md")"
+  if [ "$unpub_n" -eq 0 ] && [ "$prerel_n" -eq 0 ]; then
+    # 두 자리를 **서로 다른 문자열**로 겨눈다 — 한쪽만 고치고 다른 쪽을 남기는 절반짜리 수정을
+    # 막기 위해서다(영문 README와 같은 이유로 상단/하단이 나뉘어 있다).
+    # ⚠️ 영문 쪽과 같은 이유로 갈래가 둘이다 — 함대가 갈리면 "전부 정식 `X`"라고 말할 X 가 없다.
+    # 여기에도 `0.1.0` 리터럴이 박혀 있었다(= SSOT 두 번째 정의 자리).
+    if [ -n "$fleet_ver" ]; then
+      assert_contains "$_ko_t" "$pub_ko 언어 전부 정식 \`$fleet_ver\`이 공개 레지스트리에 게시됐습니다" \
+        "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+    else
+      assert_contains "$_ko_t" "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
+        "README.ko.md 상단 배너가 갈린 함대를 말하지 않는다(한 숫자로 말하면 거짓이다)"
+    fi
+    assert_contains "$_ko_t" "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
+      "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+  elif [ "$unpub_n" -eq 0 ]; then
+    assert_contains "$_ko_t" "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
       "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
+    assert_contains "$_ko_t" "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
+      "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
   else
-    assert_contains "$ko_t" "$pub_ko 언어 전부 정식 릴리스를 냈고, 번호는 갈렸습니다" \
-      "README.ko.md 상단 배너가 갈린 함대를 말하지 않는다(한 숫자로 말하면 거짓이다)"
+    assert_contains "$_ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
+    assert_contains "$_ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
   fi
-  assert_contains "$ko_t" "$pub_ko 전부 정식 릴리스를 공개 레지스트리에 게시했습니다" \
-    "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-elif [ "$unpub_n" -eq 0 ]; then
-  assert_contains "$ko_t" "$pub_ko 언어 전부 첫 릴리스 후보(RC)가 공개 레지스트리에 게시됐습니다" \
-    "README.ko.md 상단 배너가 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-  assert_contains "$ko_t" "$pub_ko 전부 첫 릴리스 후보(RC)를 공개 레지스트리에 게시했습니다" \
-    "README.ko.md 하단 서술이 DF_PUBLISHED 파생 게시수($pub_n)를 '전부'로 말하지 않는다"
-else
-  assert_contains "$ko_t" "아홉 중 $pub_ko" "README.ko.md 의 게시 개수가 DF_PUBLISHED 파생값($pub_n)과 다르다"
-  assert_contains "$ko_t" "$_ko_other" "README.ko.md 의 미게시 개수가 DF_PUBLISHED 파생값($unpub_n)과 다르다"
-fi
+}
+pc_ko_mirror
+# 대조군 — pc_ko_mirror **자신**을 결함 사본 루트에 태운다. 수사 「$pub_ko」 는 「열$pub_ko」(더 큰 수)의 부분 문자열이다 —
+# 파일 전체 포함 검사는 그 사본을 받았다. 양성 — 라이브 사본에서는 조용하다(「늘 운다」와 구분).
+pc_ko_probe() { # $1=sed 식(빈 값이면 라이브 사본 그대로) → PC_KP: GREW | QUIET | NOT-LANDED
+  _kp_tmp="$(mktemp -d)"
+  sed "$1" "$ROOT/README.ko.md" > "$_kp_tmp/README.ko.md" || true
+  if [ -n "$1" ] && cmp -s "$ROOT/README.ko.md" "$_kp_tmp/README.ko.md"; then
+    PC_KP='NOT-LANDED'
+  else
+    _a_save; _kp_root="$ROOT"; ROOT="$_kp_tmp"
+    pc_ko_mirror >/dev/null 2>&1 || true
+    ROOT="$_kp_root"
+    PC_KP='QUIET'; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && PC_KP='GREW'
+    _a_restore
+  fi
+  rm -rf "$_kp_tmp"
+}
+pc_ko_probe ''
+assert_eq "QUIET" "$PC_KP" "[양성대조·한글 미러] 라이브 README.ko.md 사본에서 판정이 울었다 — 「늘 운다」와 구분되지 않는다"
+pc_ko_probe "s/$pub_ko/열$pub_ko/g"
+assert_eq "GREW" "$PC_KP" \
+  "[음성대조·한글 미러] 게시 수사가 「열$pub_ko」 로 바뀐 사본을 받았다 — 「$pub_ko」 를 부분 문자열로 찾는다"
 
 # ⚠️ getting-started는 산문이 아니라 **구조**로 대조한다 — 언어마다 설치 절이 두 형태 중
 # 하나이고, 그 개수가 곧 게시 현황이다. 산문 수사와 달리 표현을 바꿔도 흔들리지 않는다.
