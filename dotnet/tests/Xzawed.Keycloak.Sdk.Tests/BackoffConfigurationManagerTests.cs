@@ -124,6 +124,33 @@ public class BackoffConfigurationManagerTests
         Assert.Equal(8, inner.Calls);
     }
 
+    /// <summary>
+    /// The windows themselves — 0.2 s doubling to a 5 s cap, the schedule all seven backoff languages move together
+    /// (<c>.claude/rules/security.md</c>). The test above steps the clock by the cap, so a window that never doubled passed
+    /// it (wall-clock-ordering-in-tests re-measurement). Each window is pinned at its edge: a millisecond before it the
+    /// fetch is still refused without touching the IdP, at it the next fetch goes out.
+    /// </summary>
+    [Fact]
+    public async Task EachWindowDoublesFromTheBaseUpToTheCap()
+    {
+        var inner = new FakeManager();
+        var clock = new FakeClock();
+        var mgr = new BackoffConfigurationManager(inner, clock.Read, () => 1.0);
+        int[] windowsMs = [200, 400, 800, 1600, 3200, 5000, 5000];
+
+        for (var i = 0; i < windowsMs.Length; i++)
+        {
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
+            Assert.Equal(i + 1, inner.Calls);
+            clock.Advance(TimeSpan.FromMilliseconds(windowsMs[i] - 1));
+            await Assert.ThrowsAsync<KeycloakTransportException>(
+                () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
+            Assert.Equal(i + 1, inner.Calls);
+            clock.Advance(TimeSpan.FromMilliseconds(1));
+        }
+    }
+
     [Fact]
     public void RequestRefreshDelegatesToTheInnerManager()
     {
@@ -194,18 +221,31 @@ public class BackoffConfigurationManagerTests
         }
     }
 
-    /// <summary>The default seams (real clock, real jitter) must open a window too.</summary>
+    /// <summary>
+    /// The default jitter, drawn for real, on a frozen clock: every first window lies in [0.5, 1.0) × the base. The old
+    /// version ran on the real clock and only checked that an immediate second call was refused — a window of a few
+    /// microseconds passed it, and a 0.1 s stall between the two calls failed it (wall-clock-ordering-in-tests).
+    /// A hundred managers draw a hundred jitters.
+    /// </summary>
     [Fact]
-    public async Task DefaultSeamsOpenAWindow()
+    public async Task DefaultJitterOpensAFirstWindowInsideTheBand()
     {
-        var inner = new FakeManager();
-        var mgr = new BackoffConfigurationManager(inner);
+        for (var i = 0; i < 100; i++)
+        {
+            var inner = new FakeManager();
+            var clock = new FakeClock();
+            var mgr = new BackoffConfigurationManager(inner, clock.Read);
 
-        await Assert.ThrowsAnyAsync<Exception>(
-            () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
-        var blocked = await Assert.ThrowsAsync<KeycloakTransportException>(
-            () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
-        Assert.Contains("backing off", blocked.Message, StringComparison.Ordinal);
-        Assert.Equal(1, inner.Calls);
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
+            clock.Advance(TimeSpan.FromMilliseconds(99)); // under 0.5 × base — still inside any window in the band
+            var blocked = await Assert.ThrowsAsync<KeycloakTransportException>(
+                () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
+            Assert.Contains("backing off", blocked.Message, StringComparison.Ordinal);
+            clock.Advance(TimeSpan.FromMilliseconds(101)); // at 1.0 × base — past any window in the band
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => mgr.GetBaseConfigurationAsync(CancellationToken.None));
+            Assert.Equal(2, inner.Calls);
+        }
     }
 }

@@ -37,6 +37,17 @@ def _backoff(clock: FakeClock, jitter: float = 1.0) -> JwksFailureBackoff:
     return JwksFailureBackoff(clock=clock, jitter=lambda: jitter)
 
 
+def test_schedule_constants_are_the_cross_language_values():
+    """0.2 s 에서 두 배씩, 5 s 상한 — 백오프를 가진 일곱 언어가 함께 움직인다.
+
+    근거: .claude/rules/security.md. ⚠️ 아래 시험들은 창을 이 상수와만 비교해,
+    상수가 바뀌면 함께 바뀐다(0.039 ~ 1.25 s 어느 값이든 통과했다 —
+    wall-clock-ordering-in-tests 재측정). 값 자체는 여기서 고정한다.
+    """
+    assert BASE_SECONDS == 0.2
+    assert CAP_SECONDS == 5.0
+
+
 def test_fresh_backoff_allows_a_fetch():
     assert _backoff(FakeClock()).remaining() == 0.0
 

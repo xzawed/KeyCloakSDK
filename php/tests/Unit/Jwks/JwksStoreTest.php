@@ -520,6 +520,9 @@ final class JwksStoreTest extends TestCase
     {
         $http = $this->failingHttp();
         $store = new JwksStore('http://kc/certs', $http, new HttpFactory(), minRefetchIntervalSeconds: 30);
+        // ⚠️ 멈춘 시계다 — 실제 시계(hrtime)면 스무 번이 첫 창(최소 100 ms) 안에 끝나야 해 느린 러너에서 거짓 실패한다
+        // (wall-clock-ordering-in-tests). 백오프는 스토어의 시계를 호출 때마다 읽는다(JwksStore 생성자). jitter 는 기본값.
+        (new \ReflectionProperty($store, 'clock'))->setValue($store, static fn (): float => 1000.0);
 
         for ($i = 0; $i < 20; $i++) {
             try {

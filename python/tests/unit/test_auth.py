@@ -1251,6 +1251,11 @@ def test_cold_cache_failing_idp_collapses_to_one_certs_call(jwks):
     openid = MagicMock(spec=KeycloakOpenID)
     jwks.side_effect = KeycloakTransportError("idp down")
     client = _client(openid)
+    # ⚠️ 멈춘 시계다 — 실제 시계면 스무 번이 첫 창(최소 100 ms) 안에
+    # 끝나야 해 느린 러너에서 거짓 실패한다(wall-clock-ordering-in-tests).
+    # jitter 는 기본값이다 — 0 으로 무너지면 창이 0 이라 여기서 잡힌다.
+    # 창이 끝나는 쪽은 아래 시험이 잰다.
+    client._jwks_backoff = JwksFailureBackoff(clock=_FakeClock())
 
     for _ in range(20):
         with pytest.raises((KeycloakTransportError, KeycloakAuthError)):

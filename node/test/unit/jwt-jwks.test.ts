@@ -259,20 +259,25 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
     expect(downHits).toBe(2)
   })
 
-  // 기본 jitter(`Math.random`)를 실제로 태운다 — `now` 만 고정하면 경과가 0 이라 창은 항상
-  // 열려 있고, 그래서 결정적이면서도 기본 경로가 실행된다(주입 jitter 만 쓰면 그 줄이 영영
-  // 미실행으로 남는다).
-  it('기본 jitter 경로도 창을 연다', async () => {
-    const now = 2_000_000
-    const v = JwtValidator.forJwksUriWithSeams(
-      downUri,
-      { ...baseOpts, jwksMinRefetchSeconds: 30 },
-      { now: () => now },
-    )
-    downHits = 0
-    await expect(v.validate(await forgedToken())).rejects.toThrow()
-    await expect(v.validate(await forgedToken())).rejects.toThrow(/backing off/)
-    expect(downHits).toBe(1)
+  // 기본 jitter(나노초 시계 파생 — `process.hrtime`)를 실제로 태운다 — `now` 만 멈추면 결정적이면서도 기본 경로가
+  // 실행된다(주입 jitter 만 쓰면 그 줄이 영영 미실행으로 남는다). ⚠️ 예전 판은 「바로 다음 호출이 막힌다」만 봐 창이
+  // 몇 µs 여도 통과했다 — 대역 [0.5, 1.0) × 기준을 창 끝에서 본다(wall-clock-ordering-in-tests). 검증기 스물이 스무 번 뽑는다.
+  it('기본 jitter 경로도 창을 연다 — 첫 창은 [0.5, 1.0) × 기준 안이다', async () => {
+    for (let i = 0; i < 20; i += 1) {
+      let now = 2_000_000
+      const v = JwtValidator.forJwksUriWithSeams(
+        downUri,
+        { ...baseOpts, jwksMinRefetchSeconds: 30 },
+        { now: () => now },
+      )
+      downHits = 0
+      await expect(v.validate(await forgedToken())).rejects.toThrow()
+      now += 99 // 0.5 × 기준 아래 — 대역 안의 어느 창이든 아직 열려 있다
+      await expect(v.validate(await forgedToken())).rejects.toThrow(/backing off/)
+      now += 101 // 1.0 × 기준 — 대역 안의 어느 창이든 끝났다
+      await expect(v.validate(await forgedToken())).rejects.not.toThrow(/backing off/)
+      expect(downHits).toBe(2)
+    }
   })
 
   // ⚠️ 대조군 둘째 — **웜 캐시의 미해결 kid 홍수는 백오프를 올려서는 안 된다.** 그 경로의
