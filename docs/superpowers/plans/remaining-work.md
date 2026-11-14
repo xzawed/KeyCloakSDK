@@ -467,7 +467,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 문서·규칙 — 15
 
-- [x] `docs-kcsdk-env-ssot` **[M/S · 닫힘 2026-11-14]** 표 하나(가이드)에 다섯 — test-doctor 9절이 문서 · scripts 전체와 대조한다
+- [x] `docs-kcsdk-env-ssot` **[M/S · 닫힘 2026-11-14 #1078]** 표 하나(가이드)에 다섯 — test-doctor 9절이 문서 · scripts 와 대조
 - [x] `keycloak-image-tag-fiction` **[M/M · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — `SECURITY.md:90` 과 `docs/reference/compatibility.md:32` 가 둘 다 「아홉이 같은 태그를 핀한다 · 언어별 분기는 없다」로 정정돼 있고, 후자는 「예전에 그렇게 주장했다」까지 적는다. 트리 실측 2026-09-11: 아홉 언어 **9/9** 가 `keycloak:26.6` 을 핀한다(이탈 0 — `keycloak:25.0.4` 히트는 `python/.venv` 안 라이브러리 문서화 문자열이라 우리 소스가 아니다). ⚠️ **다만 그 사실을 보는 가드는 없다**(두 문장 어디에도 `doc-guard` 앵커가 없다) — 한 언어가 드리프트하면 두 문서가 조용히 거짓이 된다. 그 구멍은 이 항목이 아니라 `keycloak-server-tag-ssot` 가 소유한다.
 - [x] `php-jwt-headers-rationale` **[M/S · 닫힘 2026-11-14 #1077]** 원본대로 — `JwtHeadersOutParamTest` 가 순서를 고정
 - [ ] `deploy-narrative-stale` **[M/M]** DEPLOY.md 본문 다섯 자리가 워크플로·룰셋 개정을 못 따라갔다 · `DEPLOY.md:36`
