@@ -17,15 +17,25 @@ ROOT="${BI_ROOT:-$DIR/../..}"
 # 일부러 낡거나 어긋난 값을 들고 있다. 여기 넣으면 이 가드가 그 의도를 오탐으로 잡는다.
 bi_files() { (cd "$ROOT" && git ls-files | grep -iE 'dockerfile' | grep -v '^scripts/test/fixtures/'); }
 
-# `FROM` 한 줄 → `저장소<TAB>태그`. 멀티스테이지 별칭(`AS x`)과 플랫폼 인자는 떨군다.
+# `FROM` 한 줄 → `저장소<TAB>태그`(태그가 없으면 빈 칸). 플랫폼 인자는 떨군다.
+# ⚠️ **맨 이름을 별칭으로 버리지 않는다** — 앞 단계 별칭(`AS x`)을 파일마다 모아 그것을 가리키는 `FROM` 만 건너뛴다
+# (`scratch` 도 이미지가 아니다). 태그는 마지막 `/` 뒤의 `:` 다음이다 — `localhost:5000/x` 의 포트는 태그가 아니다.
+# 실측 2026-11-14: 옛 파서는 `FROM alpine` 을 별칭처럼 버리고 `mcr.microsoft.com/dotnet/sdk` 에 제 이름을 태그로 줘
+# 「태그 없음」을 한 번도 잡지 못했다(아래 음성 대조가 재현한다).
 bi_pairs() { # $1=루트 · stdin=파일목록
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -hiE '^[[:space:]]*FROM[[:space:]]' "$1/$f" 2>/dev/null \
       | sed 's/\r$//; s/[[:space:]]\{1,\}/ /g; s/^ //' \
-      | sed 's/^[Ff][Rr][Oo][Mm] //; s/--platform=[^ ]* //; s/ [Aa][Ss] .*//' \
-      | grep -vE '^[a-zA-Z0-9_-]+$' \
-      | awk -F: '{ t=$NF; sub(/:[^:]*$/,"",$0); printf "%s\t%s\n", $0, t }'
+      | sed 's/^[Ff][Rr][Oo][Mm] //; s/--platform=[^ ]* //' \
+      | awk '
+          { ref = $1; low = tolower(ref); img = !(low == "scratch" || (low in stage)) }
+          tolower($2) == "as" && $3 != "" { stage[tolower($3)] = 1 }
+          !img { next }
+          { lc = 0; ls = 0
+            for (i = 1; i <= length(ref); i++) { ch = substr(ref, i, 1); if (ch == ":") lc = i; else if (ch == "/") ls = i }
+            if (lc > ls) printf "%s\t%s\n", substr(ref, 1, lc - 1), substr(ref, lc + 1)
+            else printf "%s\t\n", ref }'
   done
 }
 
