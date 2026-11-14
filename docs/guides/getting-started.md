@@ -159,7 +159,7 @@ To work from a clone, do an editable install or build locally:
 ```bash
 pip install -e python
 # Or build the distributable artifact locally to verify:
-cd python && python -m build   # dist/keycloak_sdk-*-py3-none-any.whl + .tar.gz
+cd python && python -m pip install build && python -m build   # dist/*.whl + .tar.gz
 ```
 
 The distribution name is `keycloak-sdk` and the import package name is `keycloak_sdk`.
@@ -222,7 +222,7 @@ To build against your working copy, clone the repository and build under `node/`
 
 ```bash
 cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm link or a file reference.
-# Verify the distributable artifact (without uploading): npm pack --dry-run   # 75 files — dist/ plus README.md and LICENSE
+# Verify the distributable artifact (without uploading): npm pack --dry-run   # dist/, package.json, README.md, LICENSE
 ```
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.
@@ -287,7 +287,7 @@ The idiom is sync + `context.Context` (every network method takes `ctx` as its f
 Clone the monorepo and build under `go/`, or reference it from a consuming project with a `replace` directive:
 
 ```bash
-cd go && go build ./... && go test ./...   # unit tests + coverage gate (logic ≥90)
+cd go && go build ./... && go test ./...   # unit tests
 # Reference locally from a consuming project: add `replace github.com/xzawed/KeyCloakSDK/go => ../KeyCloakSDK/go` to go.mod
 ```
 
@@ -374,7 +374,7 @@ To work from a clone, attach it as a project reference from your consuming proje
 
 ```bash
 dotnet add reference ../KeyCloakSDK/dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj
-# Just verify a local build/test: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # unit tests + coverage gate
+# Just verify a local build/test: cd dotnet && dotnet build && dotnet test --filter "Category!=Integration"   # unit tests
 ```
 
 The package ID is `Xzawed.Keycloak.Sdk`, and the root namespace is `Xzawed.Keycloak` (admin is the `Xzawed.Keycloak.Admin` sub-namespace).
@@ -510,7 +510,7 @@ keycloak-sdk = { path = "../KeyCloakSDK/rust" }
 ```
 
 ```bash
-cd rust && cargo build && cargo test   # Just verify a local build/test: unit tests + coverage gate
+cd rust && cargo build && cargo test   # Just verify a local build/test: unit tests
 ```
 
 The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keycloak_sdk::{KeycloakClient, KeycloakConfig, ...}`).
@@ -521,6 +521,7 @@ The crate name is `keycloak-sdk`, and the root module is `keycloak_sdk` (`keyclo
 
 ```bash
 cargo add keycloak-sdk
+cargo add tokio --features rt-multi-thread,macros   # for #[tokio::main]
 ```
 
 > The bare `cargo add` above resolves `1.1.5`. While `0.1.0-rc.1` was the only version, Cargo fell back to it — but note the asymmetry that made this confusing: a **hand-written** requirement such as `keycloak-sdk = "0.1"` never matches a pre-release, so during the RC the two forms disagreed. They agree now. Releases remain human-gated: a publish runs only when a human pushes a `rust-v*` tag to trigger [`.github/workflows/rust-release.yml`](../../.github/workflows/rust-release.yml). For the procedure, see [DEPLOY.md](../../DEPLOY.md); for the future language expansion roadmap, see the [language support roadmap](../roadmap/language-support.md).
