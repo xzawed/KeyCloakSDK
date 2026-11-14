@@ -47,6 +47,8 @@ _dm_row_label() { case "$1" in
   rust) echo Rust ;; java) echo Java ;; kotlin) echo Kotlin ;; go) echo Go ;; php) echo PHP ;;
   *) echo "" ;;
 esac; }
+# 시크릿 판정기 — <본문> <이름> → ok | MISSING. 아래 음성 대조가 같은 함수를 먹인다.
+_dm_has_secret() { case "$1" in *"$2"*) echo ok ;; *) echo MISSING ;; esac; }
 for L in $DEPLOY_LANGS; do
   _dm_tag="$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')"
   _dm_ok=1; [ -n "$_dm_tag" ] && _dm_ok=0
@@ -59,11 +61,20 @@ for L in $DEPLOY_LANGS; do
   # ⚠️ 시크릿이 **정당하게 0개**인 언어가 있다(OIDC/none) — 그래서 여기는 「비었나」가 아니라
   # 「셋 중 몇이 비었나」를 센다. 전부 비면 SSOT 가 죽은 것이다.
   [ -n "$_dm_sec" ] && _dm_sec_any=0
-  for s in $_dm_sec; do assert_contains "$body" "$s" "시크릿 $s"; done
+  for s in $_dm_sec; do assert_eq "ok" "$(_dm_has_secret "$body" "$s")" "시크릿 $s"; done
 done
 # 시크릿을 하나라도 낸 언어가 있어야 한다(전부 빈 값 = `df_secrets` 가 죽었다).
 assert_eq "ok" "$(ok_if "${_dm_sec_any:-1}" NONE)" \
   "[배포 문서] 아홉 언어 어디에서도 시크릿 이름이 안 나왔다 — df_secrets 가 죽었나?"
+# 음성 대조 — `SIGNING_IN_MEMORY_KEY` 는 `SIGNING_IN_MEMORY_KEY_PASSWORD` 의 부분 문자열이다. 긴 쪽만 적힌 본문에서
+# 짧은 쪽이 빠졌다고 짚어야 한다(실측 2026-11-14 SILENT).
+_dm_sec_fx='Set `SIGNING_IN_MEMORY_KEY_PASSWORD` in the repository secrets.'
+assert_eq "MISSING" "$(_dm_has_secret "$_dm_sec_fx" SIGNING_IN_MEMORY_KEY)" \
+  "[음성대조] _PASSWORD 형만 적힌 본문에서 SIGNING_IN_MEMORY_KEY 가 있다고 본다 — 이름 경계가 없다"
+assert_eq "ok" "$(_dm_has_secret "$_dm_sec_fx" SIGNING_IN_MEMORY_KEY_PASSWORD)" \
+  "[대조] 적힌 이름(SIGNING_IN_MEMORY_KEY_PASSWORD)을 못 찾는다 — 오탐"
+assert_eq "ok" "$(_dm_has_secret 'Set `SIGNING_IN_MEMORY_KEY`.' SIGNING_IN_MEMORY_KEY)" \
+  "[대조] 코드 스팬 속 이름(SIGNING_IN_MEMORY_KEY)을 못 찾는다 — 오탐"
 # dry-run 명령은 `df_dryrun`이 SSOT인데 DEPLOY.md는 그것을 **손으로 베낀 9줄**이고, 여태 둘을
 # 대조하는 것이 없었다. 실제로 갈라진 적이 있다 — kotlin이 `gradle -p kotlin publishToMavenLocal`
 # 로 남아 있었고, 이 기계에는 gradle이 PATH에 없어 문서대로 하면 실행조차 되지 않았다. 래퍼로
@@ -96,24 +107,40 @@ assert_contains "$_dm_php_check" "sh scripts/check-php-mirror.sh <X.Y.Z>" "§9 P
 # 파일을 적는다. 미러 룰셋 둘(#311)을 런북이 오래 몰라 §6 이 룰셋이 막는 철회 경로를 안내했다(deploy-php-mirror-gap ·
 # deploy-narrative-stale). ⚠️ 경계까지 본다 — 이름은 백틱으로(`RELEASE-TAGS-CREATE` 는 `…-GO` 안에도 있다), 파일은
 # 디렉터리까지(미러의 `tags-immutable.json` 은 본 저장소 것과 이름이 같아, 맨 파일 이름이면 음성 대조가 그렇게 통과했다).
+# 판정기 — <정의 파일> <본문> → ok | MISSING:<이름>. 아래 음성 대조가 같은 함수를 먹인다.
+_dm_rs_check() {
+  _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$1" | head -1)"
+  _rs_base="$(basename "$1")"
+  case "$1" in
+    */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
+    *) _rs_forms="\`$_rs_name\`|\`$_rs_base|rulesets/$_rs_base" ;;
+  esac
+  _rs_ok="MISSING:$_rs_name"
+  _ifs="$IFS"; IFS='|'
+  for _form in $_rs_forms; do case "$2" in *"$_form"*) _rs_ok=ok ;; esac; done
+  IFS="$_ifs"
+  printf '%s' "$_rs_ok"
+}
 _dm_rs_n=0
 for _f in "$DIR/../../.github/rulesets"/*.json "$DIR/../../.github/rulesets-mirror"/*.json; do
   [ -f "$_f" ] || continue
   _dm_rs_n=$((_dm_rs_n + 1))
-  _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$_f" | head -1)"
-  _rs_base="$(basename "$_f")"
-  case "$_f" in
-    */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
-    *) _rs_forms="\`$_rs_name\`|\`$_rs_base|rulesets/$_rs_base" ;;
-  esac
-  _rs_ok=MISSING
-  _ifs="$IFS"; IFS='|'
-  for _form in $_rs_forms; do case "$body" in *"$_form"*) _rs_ok=ok ;; esac; done
-  IFS="$_ifs"
-  assert_eq "ok" "$_rs_ok" "[배포 문서] 룰셋 $_rs_base($_rs_name)을 DEPLOY.md 가 모른다"
+  assert_eq "ok" "$(_dm_rs_check "$_f" "$body")" "[배포 문서] 룰셋 $(basename "$_f")을 DEPLOY.md 가 모른다"
 done
 assert_eq "ok" "$([ "$_dm_rs_n" -ge 6 ] && echo ok || echo "ONLY-$_dm_rs_n")" \
   "[배포 문서] 대조한 룰셋 정의가 6 개 미만이다 — glob 이 빗나갔거나 정의가 사라졌다"
+# 음성 대조 — 런북이 모르는 룰셋은 JSON 모양(여러 줄 · 한 줄)과 무관하게 짚는다. 한 줄 JSON 에서 이름 추출이 비면
+# 형태가 빈 백틱 둘(``)이 되어 런북의 코드 펜스에 맞았다(실측 2026-11-14: 모르는 룰셋을 더해도 83 passed 0 failed).
+_dm_fx="$(mktemp -d)"
+mkdir -p "$_dm_fx/rulesets" "$_dm_fx/rulesets-mirror"
+printf '%s\n' '{' '  "name": "NOT-IN-RUNBOOK",' '  "target": "tag",' '  "enforcement": "active"' '}' > "$_dm_fx/rulesets/zz-pretty.json"
+printf '%s\n' '{ "name": "NOT-IN-RUNBOOK", "target": "tag", "enforcement": "active" }' > "$_dm_fx/rulesets/zz-oneline.json"
+printf '%s\n' '{ "name": "NOT-IN-RUNBOOK", "target": "branch", "enforcement": "active" }' > "$_dm_fx/rulesets-mirror/zz-oneline.json"
+for _f in rulesets/zz-pretty.json rulesets/zz-oneline.json rulesets-mirror/zz-oneline.json; do
+  assert_eq "MISSING:NOT-IN-RUNBOOK" "$(_dm_rs_check "$_dm_fx/$_f" "$body")" \
+    "[음성대조] 런북이 모르는 룰셋($_f)을 _dm_rs_check 가 짚지 못한다"
+done
+rm -rf "$_dm_fx"
 
 # PHP 게이트 — `php-release.yml` 의 `split` 이 기다리는 잡을 런북의 두 문장(§1 「PHP's gate」 · §2-D)이 전부 적는다.
 # 두 문장은 오래 `verify`(+ `integration`)만 적었고, 그 사이 `version` · `install-smoke` 가 들어왔다.
