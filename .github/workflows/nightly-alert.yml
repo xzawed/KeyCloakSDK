@@ -26,6 +26,7 @@ on:
     workflows:
       - CI
       - Dispatch Release
+      - dependabot-health
       - dotnet-ci
       - Go CI
       - harness
