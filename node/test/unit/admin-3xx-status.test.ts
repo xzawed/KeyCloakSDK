@@ -20,10 +20,10 @@
  *  (A) 객체가 아닌 JSON 오류 본문 — 등록부 `python-admin-list-error-array-body` 의 부류 재스캔(python 은 목록 다섯이 배열
  *      본문의 4xx · 5xx 에 상태 없는 전송 오류다). 404 · 500 × 본문 일곱(대조군 `{"error":"x"}` 과 `[]` · `"boom"` · `42` ·
  *      `true` · `null` · 깊이 100000 의 배열 200,000 바이트): 404 는 `KeycloakNotFoundError` 그 자체(머리말 없음), 500 은
- *      `KeycloakAdminError` 그 자체에 `HTTP 500:` 이고 admin 요청은 정확히 하나다 — 본문이 바꾸는 것은 메시지뿐이다.
+ *      `KeycloakAdminError` 그 자체에 `HTTP 500:` 이고 — 둘 다 필드 `status` 가 그 상태다 — admin 요청은 정확히 하나다.
  *  (B) 따를 수 있는 리다이렉트 — 등록부 `admin-followable-redirect-class-divergent`(go 는 `*TransportError` 로 갈린다).
  *      302 가 `Location: <서버>/redirected-target` 을 달고 그곳은 그 호출의 성공 본문을 200 으로 준다 — 따라가면 성공으로
- *      읽힌다. `KeycloakAdminError` 그 자체에 `HTTP 302:` · admin 요청 하나 · 대상 요청 0 이어야 한다(`redirect: 'manual'`).
+ *      읽힌다. `KeycloakAdminError` 그 자체에 `status` 302 · `HTTP 302:` · admin 요청 하나 · 대상 요청 0 이어야 한다(`redirect: 'manual'`).
  * 두 칸 모두 틀린 칸을 모아 끝에 한 번 단언한다. `TC_PRINT=1` 이면 `[body]` · `[redirect]` 줄도 찍는다.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -107,15 +107,20 @@ function outcome(r: { readonly v: unknown } | { readonly e: unknown }): string {
 }
 
 /**
- * 이 상태에 node 가 주는 admin 오류인가 — 404 는 `KeycloakNotFoundError` 그 자체(머리말이 없다 — `mapHttpError`), 그 밖은
- * `KeycloakAdminError` 그 자체에 머리말 `HTTP <상태>:`. 다른 하위 클래스 · 전송 오류 · 값은 아니다.
+ * 이 상태에 node 가 주는 admin 오류인가 — 둘 다 필드 `status` 가 그 상태다. 404 는 `KeycloakNotFoundError` 그 자체(머리말이
+ * 없다 — `mapHttpError`), 그 밖은 `KeycloakAdminError` 그 자체에 머리말 `HTTP <상태>:`. 다른 하위 클래스 · 전송 오류 · 값은 아니다.
  */
 function isAdminErrorFor(e: unknown, status: number): boolean {
   if (status === 404)
-    return e instanceof KeycloakNotFoundError && e.constructor === KeycloakNotFoundError
+    return (
+      e instanceof KeycloakNotFoundError &&
+      e.constructor === KeycloakNotFoundError &&
+      e.status === 404
+    )
   return (
     e instanceof KeycloakAdminError &&
     e.constructor === KeycloakAdminError &&
+    e.status === status &&
     statusOf(e) === status
   )
 }
