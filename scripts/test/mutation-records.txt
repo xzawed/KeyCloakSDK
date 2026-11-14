@@ -95,3 +95,10 @@ TEST:scripts/test/test-dependabot-alerts.sh
 OLD:  process.exit(1)
 NEW:  process.exit(0) // PROBE-REC
 SITE:process.exit(0) // PROBE-REC
+
+### sonar-index-verdict-exit
+FILE:scripts/check-sonar-index.mjs
+TEST:scripts/test/test-check-sonar-index.sh
+OLD:  process.exit(d.code)
+NEW:  process.exit(0) // PROBE-REC
+SITE:process.exit(0) // PROBE-REC

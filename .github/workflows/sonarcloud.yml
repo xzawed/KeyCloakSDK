@@ -276,3 +276,26 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
+
+  index-count:
+    # ⚠️ **게이트 PASSED 는 「볼 것을 봤다」가 아니다** — `sonar.tests` 만 넣은 #304 는 색인 487 → 159 로 소스 집합이
+    # 무너지고도 PASSED 였다(docs/governance/rejected.md 「SonarCloud `sonar.tests` 설정」). 이 잡이 scan 잡 로그의
+    # 「N files indexed」 를 main 직전 성공 스캔과 견주고 두 수를 요약에 남긴다(문턱 · 판정: scripts/check-sonar-index.mjs).
+    # 시크릿이 없다 — 로그 읽기는 GITHUB_TOKEN(actions: read)뿐이라 규칙 12 의 대상이 아니다.
+    name: SonarCloud index count
+    needs: scan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+      - name: 색인 수 기록 · main 직전 성공 스캔과 대조
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-sonar-index.mjs --run "$GITHUB_RUN_ID"
