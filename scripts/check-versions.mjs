@@ -13,6 +13,7 @@
 // ⚠️ go·php는 태그가 버전 SSOT라 매니페스트에 버전이 없다 — 검사 대상이 아니다(scripts/lib/deploy-facts.sh).
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // 루트는 인자로 받는다(check-docs.mjs와 같은 관용) — 그래야 자가테스트가 픽스처 트리에 대해
 // 이 가드를 실제로 돌려볼 수 있다. 인자가 없으면 저장소 루트.
@@ -20,11 +21,11 @@ import { join } from 'node:path'
 // 무명시 실행에서 언어별 검증 버전을 파생할 때 소비한다 — 추출 테이블을 bash에 복제하면
 // 여기와 어긋나므로(드리프트) 이 파일이 유일한 추출 SSOT로 남는다. 추출 실패는 이 모드에서도
 // exit 1이다(가드가 조용히 무력화되면 안 된다).
+// ⚠️ 기본 루트는 `fileURLToPath` 로 푼다 — URL 의 `.pathname` 은 `%20` 을 풀지 않아 공백이 든 경로에서
+// `…%20…\java\pom.xml` 을 열다 ENOENT 로 죽었다(등록부 default-root-percent-encoding).
 const cliArgs = process.argv.slice(2)
 const listMode = cliArgs.includes('--list')
-const root =
-  cliArgs.find((a) => !a.startsWith('--')) ??
-  new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+const root = cliArgs.find((a) => !a.startsWith('--')) ?? fileURLToPath(new URL('..', import.meta.url))
 const errors = []
 // ⚠️ **하네스 샘플 앱 핀 오류는 별도 계급이다** — plain 모드에서는 `errors`와 똑같이 치명적이지만
 // `--list`에서는 치명적이지 않다.
