@@ -950,6 +950,9 @@ async def test_cold_cache_failing_idp_collapses_to_one_certs_call(ajwks):
     openid = MagicMock()
     ajwks.side_effect = KeycloakTransportError("idp down")
     client = _client(openid)
+    # ⚠️ 멈춘 시계다 — sync 판과 같은 까닭(wall-clock-ordering-in-tests).
+    # jitter 는 기본값 그대로다.
+    client._jwks_backoff = JwksFailureBackoff(clock=_FakeClock())
 
     for _ in range(20):
         with pytest.raises((KeycloakTransportError, KeycloakAuthError)):
