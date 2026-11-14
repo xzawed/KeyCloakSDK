@@ -14,9 +14,13 @@
 //   - 대상마다 **마지막으로 끝난 실행**만 본다. failure · startup_failure · timed_out 이면 빨강.
 //   - 창은 14 일 — 그보다 오래된 대상(디렉터리를 옮겨 은퇴한 표기 등)은 보지 않는다.
 //   - 8 일 동안 실행이 하나도 없으면 빨강 — Dependabot 이 꺼진 것은 「실패 없음」이 아니다(주간 + 여유).
+//   - `.github/dependabot.yml` 의 `directory:` 마다 8 일 안에 실행이 있어야 한다 — 전역 침묵만 보면 다른 대상이 도는
+//     한 **한 대상만 조용히 멈춘 것**이 초록이다(Grok 레그). 제목의 생태계 이름(`npm_and_yarn`)이 설정(`npm`)과
+//     달라 디렉터리로만 맞춘다(손 목록 없음). 제목의 `/.` 는 설정의 `/` 다(실측).
 //   - 조회 실패 · 배열이 아닌 응답은 exit 2 — 「모른다」를 「건강하다」로 반올림하지 않는다.
 import { spawnSync } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const WORKFLOW = 'Dependabot Updates'
 const WINDOW_DAYS = 14
@@ -31,8 +35,21 @@ export function targetOf(title) {
     .trim()
 }
 
-// 순수 함수 — 자가테스트가 네트워크 없이 먹인다.
-export function updatesVerdict(runs, now = Date.now()) {
+const normDir = (d) => (d === '/.' ? '/' : d.replace(/\/+$/, '') || '/')
+
+// 제목의 디렉터리 — 「<생태계> in <디렉터리>」 의 디렉터리(여러 개면 첫째). 못 읽으면 null.
+export function dirOf(title) {
+  const m = / in (\S+?)(?:,| for | - Update #|\s*$)/.exec(String(title ?? ''))
+  return m ? normDir(m[1]) : null
+}
+
+// dependabot.yml 의 `directory:` 값들(주석 · 따옴표를 벗긴다).
+export function configuredDirs(yamlText) {
+  return [...String(yamlText).matchAll(/^\s*directory:\s*['"]?([^'"#\s]+)/gm)].map((m) => normDir(m[1]))
+}
+
+// 순수 함수 — 자가테스트가 네트워크 없이 먹인다. `dirs` 를 주면 설정된 대상마다 침묵도 본다.
+export function updatesVerdict(runs, now = Date.now(), dirs = null) {
   // ⚠️ 배열이 아니면 던진다. `null` · 객체 · 문자열을 빈 목록처럼 넘기면 「읽었는데 실패가 없었다」와
   // 「읽은 것이 실행 목록이 아니었다」가 같은 초록이 된다(check-dependabot-alerts.mjs 와 같은 함정).
   if (!Array.isArray(runs)) {
@@ -60,6 +77,19 @@ export function updatesVerdict(runs, now = Date.now()) {
       failing.push(`${key} — 마지막 실행이 ${run.conclusion} (${run.createdAt} · run ${run.databaseId})`)
     }
   }
+  if (Array.isArray(dirs)) {
+    for (const dir of [...new Set(dirs)].sort()) {
+      let seen = -Infinity
+      for (const r of runs) {
+        const t = Date.parse(r?.createdAt)
+        if (Number.isFinite(t) && dirOf(r?.displayTitle) === dir) seen = Math.max(seen, t)
+      }
+      if (!(seen >= now - SILENT_DAYS * DAY)) {
+        const last = Number.isFinite(seen) ? new Date(seen).toISOString() : '없음'
+        failing.push(`${dir} — dependabot.yml 에 있는 대상인데 ${SILENT_DAYS} 일 동안 돌지 않았다(마지막: ${last})`)
+      }
+    }
+  }
   return { failing, targets: latest.size }
 }
 
@@ -85,13 +115,13 @@ function repoSlug(argv) {
 
 // gh 조회 결과 → 종료 코드와 출력 줄. 순수 함수라 자가테스트가 프로세스 없이 먹인다 — Windows 에서는 PATH 의
 // 스텁 `gh` 를 node 의 spawnSync 가 찾지 못하고 진짜 gh 를 불러, 진입점을 프로세스로 재면 엉뚱한 것을 잰다(실측).
-export function decide(res, now = Date.now()) {
+export function decide(res, now = Date.now(), dirs = null) {
   if (!res?.ok) {
     return { code: 2, lines: [`::error::Dependabot 실행 목록을 읽지 못했다 — 확인하지 못했다(건강하다는 뜻이 아니다)`, String(res?.out ?? '')] }
   }
   let v
   try {
-    v = updatesVerdict(JSON.parse(res.out), now)
+    v = updatesVerdict(JSON.parse(res.out), now, dirs)
   } catch (e) {
     return { code: 2, lines: [`::error::Dependabot 실행 목록을 판정하지 못했다 — ${e.message}`] }
   }
@@ -109,9 +139,21 @@ export function decide(res, now = Date.now()) {
 
 function main() {
   const repo = repoSlug(process.argv.slice(2))
+  // 설정된 대상은 이 스크립트 옆 저장소의 dependabot.yml 에서 읽는다. 0 개면 침묵 대조가 공허하다 — 「모른다」로 끝낸다.
+  let dirs
+  try {
+    dirs = configuredDirs(readFileSync(fileURLToPath(new URL('../.github/dependabot.yml', import.meta.url)), 'utf8'))
+  } catch (e) {
+    console.log(`::error::.github/dependabot.yml 을 읽지 못했다 — ${e.message}`)
+    process.exit(2)
+  }
+  if (dirs.length === 0) {
+    console.log('::error::.github/dependabot.yml 에서 directory 를 하나도 못 읽었다 — 대상별 침묵을 대조할 수 없다')
+    process.exit(2)
+  }
   const res = gh(['run', 'list', '-R', repo, '--workflow', WORKFLOW, '--limit', '200',
     '--json', 'databaseId,status,conclusion,createdAt,displayTitle'])
-  const d = decide(res)
+  const d = decide(res, Date.now(), dirs)
   for (const line of d.lines) console.log(line)
   process.exit(d.code)
 }
