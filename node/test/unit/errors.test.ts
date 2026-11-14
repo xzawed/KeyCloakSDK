@@ -29,6 +29,33 @@ describe('mapHttpError', () => {
   })
 })
 
+// 등록부 node-admin-error-no-status — 여덟 언어의 admin 오류는 상태를 필드로 싣는다(python `status_code` · go
+// `StatusCode` · .NET `StatusCode` · php `getStatusCode()` · rust `Other { status }` · ruby `status` · java ·
+// kotlin `status`). node 만 없어, 404 · 409 · 403 은 클래스로만, 나머지는 메시지 머리 `HTTP <상태>:` 로만 드러났다.
+describe('KeycloakAdminError.status', () => {
+  it('mapHttpError 는 상태를 필드로 싣는다 — 하위 클래스 셋과 일반 클래스 모두', () => {
+    for (const status of [302, 400, 401, 403, 404, 409, 422, 500, 503]) {
+      const e = mapHttpError(status, 'x')
+      expect(e).toBeInstanceOf(KeycloakAdminError)
+      expect(e.status).toBe(status)
+    }
+  })
+  it('하위 클래스는 제 상태를 스스로 갖는다 — 상태 없이 만들어도', () => {
+    expect(new KeycloakNotFoundError('x').status).toBe(404)
+    expect(new KeycloakConflictError('x').status).toBe(409)
+    expect(new KeycloakForbiddenError('x').status).toBe(403)
+  })
+  it('일반 클래스는 받은 상태를 싣고, 상태 없이 만들면 undefined 다(소비자의 기존 생성자 호출 호환)', () => {
+    expect(new KeycloakAdminError('x', { status: 418 }).status).toBe(418)
+    expect(new KeycloakAdminError('x').status).toBeUndefined()
+  })
+  it('상태를 실어도 cause 정화는 그대로다', () => {
+    const e = mapHttpError(500, 'boom', new SyntaxError('Unexpected token R in JSON at position 0: RAW'))
+    expect(e.status).toBe(500)
+    expect((e.cause as Error).message).toBe('invalid JSON (input withheld)')
+  })
+})
+
 // ⚠️ 하위 오류의 cause 사슬은 **이름·메시지·code 만** 남긴다. oauth4webapi 는 형식이 틀린 토큰 응답의 본문
 // 전체(살아 있는 access/refresh 토큰)나 원문 id_token 을 `cause` 에 싣고, `console.log(err)` 와 로거의 깊은
 // 직렬화가 그 사슬을 따라가 찍었다(실측 2026-09-26). 정화는 생성자 한 곳이라 모든 감싸기 자리를 덮는다.

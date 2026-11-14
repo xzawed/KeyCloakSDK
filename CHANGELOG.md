@@ -10,6 +10,7 @@
 
 ### Added
 - **(.NET)** 패키지가 `net8.0` 과 함께 **`net10.0`** 빌드도 싣습니다 — .NET 10 이상 앱은 그것을 저절로 고릅니다. 하한은 그대로 .NET 8 입니다(.NET 8 · 9 는 2026-11-10 에 지원이 끝났지만 쓰는 곳을 위해 남깁니다). 두 대상의 의존성과 공개 API 는 같습니다 — admin 의존성 `Keycloak.AuthServices.Sdk` 2.7.0 이 net8.0 전용이라 그보다 낮은 대상은 둘 수 없습니다.
+- **(Node)** `KeycloakAdminError` 가 실패한 admin 응답의 HTTP 상태를 **`status`** 필드로 싣습니다 — `KeycloakNotFoundError` · `KeycloakConflictError` · `KeycloakForbiddenError` 는 늘 404 · 409 · 403 입니다. 지금까지는 아홉 언어 중 node 만 상태 필드가 없어, 그 셋은 클래스로만, 나머지 상태는 메시지 머리 `HTTP <상태>:` 로만 드러났습니다. 클래스 · 메시지 · `cause` 는 그대로이고, 상태 없이 만든 `new KeycloakAdminError(message)` 는 `status` 가 `undefined` 입니다. `mapHttpError` 의 반환 형은 `KeycloakAdminError` 입니다.
 
 ### Changed
 - **(Rust)** ⚠️ 토큰·인트로스펙션 응답이 **끝까지 왔지만 쓸 수 없으면** `KeycloakError::Transport` 가 아니라 `KeycloakError::Auth` 입니다 — JSON 아님(503 HTML 포함) · 필드 타입이 틀린 JSON · `access_token`·`active` 없음 · 빈 본문 · JSON 아닌 Content-Type · 값 뒤 꼬리, 그리고 주입한 `reqwest::Client` 가 따라가다 실패한 리다이렉트. `AuthClient` 의 토큰 호출과 `introspect`, `ClientCredentialsTokenProvider` 가 그렇습니다(provider 는 `access_token` 없는 JSON 이 원래 `Auth`). 그 응답을 transport 로 잡아 재시도하던 코드는 auth 쪽을 보십시오. 안쪽 문구는 그대로이고 `Display` 접두가 `transport error:` 에서 `authentication error:` 로 바뀝니다. 다 오지 않은 응답(네트워크 · 타임아웃 · 1,048,576 바이트 상한 초과)과 보내지 못한 요청은 그대로 `Transport` 입니다.

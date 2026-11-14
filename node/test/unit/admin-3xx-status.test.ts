@@ -6,8 +6,8 @@
  *
  * 계약: 파사드 호출 스물다섯(users · clients · realms · roles · groups × 생성 · 단건 · 목록/검색 · 갱신 · 삭제 — 통합 admin
  * 표면 스위트가 도는 그 스물다섯) 각각이 300 · 302(Location 없음) · 399 에 **그 호출의 성공 본문 모양인 JSON**(목록 · 검색은
- * 배열, 나머지는 객체)을 받으면 `KeycloakAdminError` 그 자체로 실패하고 메시지가 `HTTP <그 상태>:` 로 시작한다 — node 의
- * `KeycloakAdminError` 는 상태를 필드가 아니라 이 머리말에만 싣는다(`mapHttpError`). 값 · null · 빈 목록 · id 를 돌려주면 그
+ * 배열, 나머지는 객체)을 받으면 `KeycloakAdminError` 그 자체로 실패하고 그 상태를 필드 `status` 에 싣고 메시지가
+ * `HTTP <그 상태>:` 로 시작한다(`mapHttpError` — 필드는 등록부 node-admin-error-no-status 가 더했다). 값 · null · 빈 목록 · id 를 돌려주면 그
  * 칸은 실패다. 다른 클래스(전송 · 인증 · 404 의 `KeycloakNotFoundError` …)도 실패다 — 본문 모양이 어긋나 난 해석 오류를
  * 「오류」로 받으면 상태를 안 보고도 초록이 된다.
  *
@@ -73,9 +73,10 @@ function outcome(r: { readonly v: unknown } | { readonly e: unknown }): string {
   if ('v' in r) return `returned ${r.v === undefined ? 'undefined' : JSON.stringify(r.v)}`
   if (!(r.e instanceof Error)) return `threw non-Error ${String(r.e)}`
   const status = statusOf(r.e)
+  const field = r.e instanceof KeycloakAdminError ? ` status=${String(r.e.status)}` : ''
   return status === undefined
-    ? `${r.e.constructor.name}: ${r.e.message}`
-    : `${r.e.constructor.name}(${status})`
+    ? `${r.e.constructor.name}: ${r.e.message}${field}`
+    : `${r.e.constructor.name}(${status})${field}`
 }
 
 let idp: FakeIdp
@@ -124,6 +125,7 @@ describe('Location 없는 3xx — 등록부 go-admin-3xx-read-as-success 부류 
           'e' in r &&
           r.e instanceof KeycloakAdminError &&
           r.e.constructor === KeycloakAdminError &&
+          r.e.status === status &&
           statusOf(r.e) === status &&
           sent === 1
         note(`[3xx] ${status} ${name}: ${outcome(r)} · admin requests ${sent}`)

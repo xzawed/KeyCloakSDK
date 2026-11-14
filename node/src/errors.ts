@@ -39,19 +39,41 @@ export class KeycloakConfigError extends KeycloakError {}
 export class KeycloakAuthError extends KeycloakError {}
 /** JWT signature/expiry/issuer/audience validation failure. */
 export class KeycloakTokenValidationError extends KeycloakError {}
-/** Admin operation failure (general). */
-export class KeycloakAdminError extends KeycloakError {}
-/** Resource not found (HTTP 404). */
-export class KeycloakNotFoundError extends KeycloakAdminError {}
-/** Conflict (HTTP 409). */
-export class KeycloakConflictError extends KeycloakAdminError {}
-/** No permission (HTTP 403). */
-export class KeycloakForbiddenError extends KeycloakAdminError {}
+/**
+ * Admin operation failure (general). `status` is the HTTP status of the admin response that failed — every admin error
+ * the SDK raises carries it, as the other eight languages' admin errors do.
+ */
+export class KeycloakAdminError extends KeycloakError {
+  /** HTTP status of the failed admin response — `undefined` only when constructed without one. */
+  readonly status: number | undefined
+  constructor(message: string, options?: { cause?: unknown; status?: number }) {
+    super(message, options)
+    this.status = options?.status
+  }
+}
+/** Resource not found (HTTP 404) — `status` is always 404. */
+export class KeycloakNotFoundError extends KeycloakAdminError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, { cause: options?.cause, status: 404 })
+  }
+}
+/** Conflict (HTTP 409) — `status` is always 409. */
+export class KeycloakConflictError extends KeycloakAdminError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, { cause: options?.cause, status: 409 })
+  }
+}
+/** No permission (HTTP 403) — `status` is always 403. */
+export class KeycloakForbiddenError extends KeycloakAdminError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, { cause: options?.cause, status: 403 })
+  }
+}
 /** Network/transport-layer failure. */
 export class KeycloakTransportError extends KeycloakError {}
 
-/** Maps an HTTP status code to an SDK exception. */
-export function mapHttpError(status: number, message: string, cause?: unknown): KeycloakError {
+/** Maps an HTTP status code to an SDK exception that carries it in `status`. */
+export function mapHttpError(status: number, message: string, cause?: unknown): KeycloakAdminError {
   switch (status) {
     case 404:
       return new KeycloakNotFoundError(message, { cause })
@@ -60,6 +82,6 @@ export function mapHttpError(status: number, message: string, cause?: unknown): 
     case 403:
       return new KeycloakForbiddenError(message, { cause })
     default:
-      return new KeycloakAdminError(`HTTP ${status}: ${message}`, { cause })
+      return new KeycloakAdminError(`HTTP ${status}: ${message}`, { cause, status })
   }
 }
