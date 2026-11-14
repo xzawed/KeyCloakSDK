@@ -74,6 +74,42 @@ assert_contains "$body" "scripts/release-trigger.sh" "trigger 참조"
 _dm_php_check="$(awk '/^### 9\. PHP/{f=1;next} f&&/^### /{f=0} f&&/^- Deployment check:/' "$DOC")"
 assert_contains "$_dm_php_check" "sh scripts/check-php-mirror.sh <X.Y.Z>" "§9 PHP 게시 확인이 check-php-mirror.sh <버전> 을 부른다"
 
+# 런북이 룰셋을 안다 — `.github/rulesets/*.json` · `.github/rulesets-mirror/*.json` 의 정의마다 DEPLOY.md 가 그 이름이나
+# 파일을 적는다. 미러 룰셋 둘(#311)을 런북이 오래 몰라 §6 이 룰셋이 막는 철회 경로를 안내했다(deploy-php-mirror-gap ·
+# deploy-narrative-stale). ⚠️ 경계까지 본다 — 이름은 백틱으로(`RELEASE-TAGS-CREATE` 는 `…-GO` 안에도 있다), 파일은
+# 디렉터리까지(미러의 `tags-immutable.json` 은 본 저장소 것과 이름이 같아, 맨 파일 이름이면 음성 대조가 그렇게 통과했다).
+_dm_rs_n=0
+for _f in "$DIR/../../.github/rulesets"/*.json "$DIR/../../.github/rulesets-mirror"/*.json; do
+  [ -f "$_f" ] || continue
+  _dm_rs_n=$((_dm_rs_n + 1))
+  _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$_f" | head -1)"
+  _rs_base="$(basename "$_f")"
+  case "$_f" in
+    */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
+    *) _rs_forms="\`$_rs_name\`|\`$_rs_base|rulesets/$_rs_base" ;;
+  esac
+  _rs_ok=MISSING
+  _ifs="$IFS"; IFS='|'
+  for _form in $_rs_forms; do case "$body" in *"$_form"*) _rs_ok=ok ;; esac; done
+  IFS="$_ifs"
+  assert_eq "ok" "$_rs_ok" "[배포 문서] 룰셋 $_rs_base($_rs_name)을 DEPLOY.md 가 모른다"
+done
+assert_eq "ok" "$([ "$_dm_rs_n" -ge 6 ] && echo ok || echo "ONLY-$_dm_rs_n")" \
+  "[배포 문서] 대조한 룰셋 정의가 6 개 미만이다 — glob 이 빗나갔거나 정의가 사라졌다"
+
+# PHP 게이트 — `php-release.yml` 의 `split` 이 기다리는 잡을 런북의 두 문장(§1 「PHP's gate」 · §2-D)이 전부 적는다.
+# 두 문장은 오래 `verify`(+ `integration`)만 적었고, 그 사이 `version` · `install-smoke` 가 들어왔다.
+_dm_needs="$(awk '/^  split:/{f=1} f&&/^    needs:/{print; exit}' "$DIR/../../.github/workflows/php-release.yml" \
+  | sed 's/#.*//; s/.*needs: *\[//; s/\].*//; s/,/ /g')"
+assert_eq "ok" "$(set -- $_dm_needs; [ "$#" -ge 2 ] && echo ok || echo "ONLY-$#")" \
+  "[배포 문서] php-release.yml split 의 needs 를 2 개 이상 읽지 못했다 — 대조가 공허해진다"
+_dm_gate1="$(grep -m1 "PHP's gate" "$DOC" || true)"
+_dm_gate2="$(grep -m1 'What `php-release.yml` does instead' "$DOC" || true)"
+for _j in $_dm_needs; do
+  assert_contains "$_dm_gate1" "\`$_j\`" "[배포 문서] §1 「PHP's gate」 가 split 의 needs \`$_j\` 를 적지 않는다"
+  assert_contains "$_dm_gate2" "\`$_j\`" "[배포 문서] §2-D 가 split 의 needs \`$_j\` 를 적지 않는다"
+done
+
 # ⚠️ **참조가 있다는 것과 그 명령이 맞는 답을 준다는 것은 다르다.** 위 `assert_contains` 는
 # 스크립트 **이름의 등장**만 보므로, `--version` 이 빠져 엉뚱한 답을 주는 호출에도 참이다 —
 # 그래서 이 결함이 살아남았다(실측 2026-09-09).
