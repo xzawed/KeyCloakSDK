@@ -94,23 +94,27 @@ rm -rf "$_fx"
 # 때마다 사람이 헤더를 같이 고쳐야 하는 수이고, 그런 수는 반드시 썩는다.
 # ⚠️ 기대 상수를 두지 않는다 — 단언하는 것은 **헤더가 자기 절을 정확히 센다**는 규칙이다.
 # 항목이 하나 닫히면 양변이 함께 움직이므로 이 단언은 다시 보정되지 않는다.
-_hdr="$(awk '
-  function flush(){ if (cur != "") { if (sn != n || so != o) bad = bad sprintf("%s: 적힘 %d건(열림 %d) vs 실제 %d건(열림 %d)\n", cur, sn, so, n, o); secs++ } }
-  /^## / {
-    flush()
-    if ($0 ~ /^## [A-D]\./) {
-      cur = substr($0, 4, 2); n = 0; o = 0; sn = 0; so = 0
-      if (match($0, /— *[0-9]+ *건/))   { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); sn = t + 0 }
-      if (match($0, /열림 *[0-9]+/))     { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); so = t + 0 }
-    } else cur = ""
-    next
-  }
-  cur != "" && /^- \[ \] / { n++; o++ }
-  cur != "" && /^- \[x\] / { n++ }
-  END { flush(); printf "%d\n%s", secs, bad }
-' "$F")"
-_secs="$(printf '%s' "$_hdr" | head -1)"
-_bad="$(printf '%s' "$_hdr" | tail -n +2)"
+# 판정기 — <파일> → _secs(찾은 `## A–D` 절 수) · _bad(틀린 절, 한 줄에 하나)를 설정한다. 아래 고정 사례가 같은 함수를 먹인다.
+_hdr_check() {
+  _hdr="$(awk '
+    function flush(){ if (cur != "") { if (sn != n || so != o) bad = bad sprintf("%s: 적힘 %d건(열림 %d) vs 실제 %d건(열림 %d)\n", cur, sn, so, n, o); secs++ } }
+    /^## / {
+      flush()
+      if ($0 ~ /^## [A-D]\./) {
+        cur = substr($0, 4, 2); n = 0; o = 0; sn = 0; so = 0
+        if (match($0, /— *[0-9]+ *건/))   { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); sn = t + 0 }
+        if (match($0, /열림 *[0-9]+/))     { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); so = t + 0 }
+      } else cur = ""
+      next
+    }
+    cur != "" && /^- \[ \] / { n++; o++ }
+    cur != "" && /^- \[x\] / { n++ }
+    END { flush(); printf "%d\n%s", secs, bad }
+  ' "$1")"
+  _secs="$(printf '%s' "$_hdr" | head -1)"
+  _bad="$(printf '%s' "$_hdr" | tail -n +2)"
+}
+_hdr_check "$F"
 
 # 공허 방지 — 절 이름 규칙이 바뀌어 0 개를 세면 아래 단언은 언제나 통과한다.
 assert_eq "4" "$_secs" \
@@ -118,6 +122,24 @@ assert_eq "4" "$_secs" \
 
 assert_eq "" "$_bad" \
   "[등록부] 절 헤더의 수가 그 절의 실제 체크박스와 다르다 — 헤더를 고치거나, 헤더에서 수를 빼라"
+
+# 절 헤더 규칙 자신의 고정 사례 — 「찾은 절 수:틀린 절 수」. 위 단언은 실제 등록부만 보므로 틀린 헤더를 짚는지는
+# 여기서 잰다(실측 2026-11-14 SILENT: 틀린 절 목록을 늘 비게 만들어도 초록이었다). `## 닫는 조건` 은 A–D 밖이다.
+_fx="$(mktemp -d)"
+printf '%s\n' '## A. 가 — 2건 (열림 1)' '- [ ] `a`' '- [x] `b`' '## B. 나 — 1건 (열림 0)' '- [x] `c`' \
+  '## C. 다 — 0건 (열림 0)' '## D. 라 — 1건 (열림 1)' '- [ ] `d`' '## 닫는 조건' '- [ ] `e`' > "$_fx/ok.md"
+printf '%s\n' '## A. 가 — 3건 (열림 1)' '- [ ] `a`' '- [x] `b`' '## B. 나 — 1건 (열림 0)' '- [x] `c`' \
+  '## C. 다 — 0건 (열림 0)' '## D. 라 — 1건 (열림 1)' '- [ ] `d`' > "$_fx/wrong-total.md"
+printf '%s\n' '## A. 가 — 2건 (열림 1)' '- [ ] `a`' '- [x] `b`' '## B. 나 — 1건 (열림 0)' '- [x] `c`' \
+  '## C. 다 — 0건 (열림 0)' '## D. 라 — 1건 (열림 0)' '- [ ] `d`' > "$_fx/wrong-open.md"
+for _case in ok:4:0 wrong-total:4:1 wrong-open:4:1; do
+  _name="${_case%%:*}"; _rest="${_case#*:}"
+  _hdr_check "$_fx/$_name.md"
+  assert_eq "$_rest" "$_secs:$(printf '%s' "$_bad" | grep -c . || true)" "[절 헤더 규칙] 사례 $_name: 찾은 절:틀린 절"
+done
+_hdr_check "$_fx/wrong-total.md"
+assert_contains "$_bad" "A.: 적힘 3건(열림 1) vs 실제 2건(열림 1)" "[절 헤더 규칙] 틀린 절의 진단이 적힌 수와 실제 수를 말하지 않는다"
+rm -rf "$_fx"
 
 # ── 소절(`###`) 헤더도 같은 규칙이다 ─────────────────────────────────────────
 # ⚠️ 실측 2026-10-28: 끝에 수를 적은 소절 열다섯 중 셋이 틀렸다(15 → 실제 38 · 10 → 14 · 6 → 25) — 위 단언이
