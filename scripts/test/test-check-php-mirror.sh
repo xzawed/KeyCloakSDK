@@ -73,6 +73,9 @@ _mkbody 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v0.1.9","source":{"ur
 assert_contains "$(_run)" "1|" 'Packagist 에 그 버전이 없으면 exit 1'
 assert_contains "$(_run)" "::error::Packagist 에 v0.2.0 버전이 없다" '그 이유를 말한다'
 assert_not_contains "$(_run)" "::error::Packagist 가 이 미러를" '소스는 맞다 — 소스 오류로 지어내지 않는다'
+# 경계 — 접두가 같은 다른 버전(`v0.2.01` · `v0.2.0-rc.1`)은 v0.2.0 이 아니다. 닫는 따옴표까지가 패턴이다.
+_mkbody 0 '{"packages":{"xzawed/keycloak-sdk":[{"version":"v0.2.01","source":{"url":"https://github.com/xzawed/keycloak-sdk-php.git"}},{"version":"v0.2.0-rc.1"}]}}'
+assert_contains "$(_run)" "::error::Packagist 에 v0.2.0 버전이 없다" '접두만 같은 버전을 그 버전으로 읽지 않는다'
 
 # (6) **CI 의 실제 호출 형태 — 인자 없이**(repo-hygiene `php-mirror` 잡). 위 다섯은 전부 버전을
 # 명시해 이 경로를 한 번도 타지 않았다. 그 사이 무인자 기본값이 `df_published_version` 이었고,
