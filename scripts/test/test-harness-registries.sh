@@ -140,61 +140,13 @@ hr_positive_control
 # `installed.ok`를 쓰지 않는다**. 이 가드는 그 두 가지가 스크립트에 실재하는지 본다 —
 # 격리 설정과 달리 이 단언은 "설정이 이렇다"가 아니라 "실제로 어디서 받았나"를 겨눈다.
 CONSUME="$ROOT/harness/install/consume"
-prov_langs=0
-for L in $DEPLOY_LANGS; do
-  f="$CONSUME/$L-run.sh"
-  assert_ok test -f "$f"
-  [ -f "$f" ] || continue
-  prov_langs=$((prov_langs + 1))
-  body="$(cat "$f")"
-  assert_contains "$body" 'provenance.txt' \
-    "$L-run.sh 가 SDK 출처를 기록하지 않는다 — 초록/빨강만으로는 로컬을 검증했는지 알 수 없다(#167)"
-  # ⚠️ 기록만으로는 부족하다. 기록은 사람이 읽어야 동작하고, 야간 실행의 로그를 매일 읽는
-  # 사람은 없다. 판정(`installed.ok`)이 출처에 **의존**해야 한다.
-  assert_contains "$body" 'PROVENANCE_OK' \
-    "$L-run.sh 가 출처를 단언하지 않는다 — 공개 레지스트리에서 받아도 installed.ok가 써진다(#167)"
 
-  # ⚠️ **문자열 존재만 보는 것으로는 공허하다 — 실측으로 확인했다.** 단언을 `if true; then`으로
-  # 바꿔도 위 두 어서션은 통과했다(29 passed). 그래서 두 가지를 더 못박는다:
-  #   (a) `PROVENANCE_OK=1`은 **provenance.txt를 읽는 조건** 안에서만 설정돼야 한다
-  #   (b) `installed.ok` 쓰기는 `[ "$PROVENANCE_OK" = 1 ]` **뒤에** 와야 한다(판정 의존성)
-  #
-  # ⚠️ **1라운드(줄-윈도우 휴리스틱)는 PoC 세 개는 막았지만 그 PoC가 대표하는 *부류*는 못 막았다
-  # — 외부 검토가 2라운드에서 REAL한 우회 넷을 실측 재현했다(#167 후속4, task-A5-report.md):**
-  #   1. **주석이 "then"을 흉내낸다** — else 분기 안에 `# 주석; then`처럼 세미콜론+then으로 끝나는
-  #      주석 줄이 있으면, 주석을 벗기지 않은 채 줄 끝만 보는 판정이 그 줄을 진짜 then으로 오인해
-  #      진짜 else보다 먼저 멈춘다. `mark_check`도 같은 정규식을 재사용해 같은 방식으로 속는다.
-  #   2. **elif를 아예 모른다** — `elif ...; then`도 문자열로는 "; then"으로 끝나 이전 판정이 그걸
-  #      주 if의 then으로 착각한다(else만 보고 elif는 안 봤다).
-  #   3. **같은 줄 여러 절** — `else PROVENANCE_OK=1; fi`처럼 else와 대입이 한 줄에 있으면, 뒤로
-  #      걷는 스캔이 대입 **자기 줄**은 보지 않고 그 앞줄부터 봐서 같은 줄의 else를 놓친다.
-  #   4. **빈 홑/겹따옴표만 막았다** — `grep -q '.'`나 `grep -q "[a-z]"`처럼 *비어있지 않지만
-  #      의미상 아무거나 매치하는* 패턴은 안 걸린다. "패턴이 있다"가 아니라 "패턴이 실제로 근거
-  #      변수를 가리키는가"를 봐야 한다.
-  #
-  # **2라운드 구조적 재작성** — 8언어 스크립트 전체를 실측해서 얻은 결론: 휴리스틱을 더 추가하는
-  # 대신 셸 코드가 실제로 취하는 모양에 맞춰 파싱한다.
-  #   (A) 각 줄에서 따옴표 밖 `#`부터는 주석으로 잘라내고(반례1), `;`로 나눈 **절(clause)** 단위로
-  #       분석하며(반례3 — `else X; fi`가 절 2개로 갈린다), `if`/`elif`/`else`/`then`/`fi`가 절
-  #       **맨 앞 단어**로 붙어 있으면(`then PROVENANCE_OK=1`처럼) 그 키워드만 따로 떼어 별도
-  #       절로 만든다. 이 절의 흐름을 뒤로 걸으며 `if`/`fi` 중첩은 depth로 건너뛰고, 같은 깊이에서
-  #       `else`나 `elif`를 먼저 만나면(반례2 — elif도 else와 동일 취급) 무조건 거부, `then`을
-  #       만나면 그 then을 연 것이 `if`인지 `elif`인지 계속 뒤로 걸어 확인한다.
-  #   (B) 근거 grep을 "패턴이 비어있지 않다"가 아니라 "패턴이 이 스크립트가 실제로 유도한
-  #       로컬-소스 변수를 가리킨다"로 판정한다(반례4). 8언어를 다시 읽고 실제 조건절에 쓰인
-  #       변수만 모았다 — 새 변수를 지어내지 않았다:
-  #         `$REG`        — python/php/ruby/node: `REG="${REGISTRY_URL:-...}"`(각 REGISTRY_URL 파생)
-  #         `$_kreg`      — kotlin: build.gradle.kts `uri(...)`에서 뽑은 로컬 maven 저장소 URL
-  #         `$LOCAL_REG`  — rust: cargo-local-registry 마운트 경로 상수
-  #         `${_id}`/`$_id` — java: for 루프 변수(저장소 id 후보, `>${_id}=` 형태로 grep 패턴에 등장)
-  #         `$_local_url` — java: 같은 grounding 로직이 유도하는 로컬 URL(방어적으로 포함 — 리뷰 라운드1 지시)
-  #       go는 grep을 안 쓰므로 특례로 `GOPROXY=.*go mod download`를 그대로 유지한다.
-  #   `gated`가 1·2·3·4를, `mark_check`가 1의 mark_check쪽 절반(주석에 속는 것)과 마커 재배치를
-  #   같은 절 엔진으로 닫는다(재현·비공허성 실측: task-A5-report.md 「Fix round 1」).
-  ok_line="$(grep -n '^  if \[ "\$PROVENANCE_OK" = 1 \]; then$' "$f" | head -1 | cut -d: -f1)"
-  assert_ok test -n "$ok_line"
-
-  combined="$(awk -v ok_line="${ok_line:-0}" -v marker=': > "$STATUS/installed.ok"' '
+# 게이트 판정 — 아래 루프와 그 뒤 음성 대조가 **같은 함수**를 부른다. 설계와 반례(#167 후속4)는 루프 안 주석이
+# 소유한다. $1=consume 스크립트 → `if [ "$PROVENANCE_OK" = 1 ]; then` 줄 번호
+hr_ok_line() { grep -n '^  if \[ "\$PROVENANCE_OK" = 1 \]; then$' "$1" | head -1 | cut -d: -f1; }
+# $1=consume 스크립트 $2=ok_line → 「GATED<탭>yes|no(…)」 · 「MARK<탭>yes|no(…)」 두 줄
+hr_gate() {
+  awk -v ok_line="${2:-0}" -v marker=': > "$STATUS/installed.ok"' '
     function ltrim(s) { gsub(/^[ \t]+/, "", s); return s }
     function rtrim(s) { gsub(/[ \t\r]+$/, "", s); return s }
     function trim(s) { return rtrim(ltrim(s)) }
@@ -350,7 +302,64 @@ for L in $DEPLOY_LANGS; do
       }
       print "MARK\t" ((cnt == 1 && bad == 0) ? "yes" : ("no(cnt=" cnt " bad=" bad ")"))
     }
-  ' "$f")"
+  ' "$1"
+}
+
+prov_langs=0
+for L in $DEPLOY_LANGS; do
+  f="$CONSUME/$L-run.sh"
+  assert_ok test -f "$f"
+  [ -f "$f" ] || continue
+  prov_langs=$((prov_langs + 1))
+  body="$(cat "$f")"
+  assert_contains "$body" 'provenance.txt' \
+    "$L-run.sh 가 SDK 출처를 기록하지 않는다 — 초록/빨강만으로는 로컬을 검증했는지 알 수 없다(#167)"
+  # ⚠️ 기록만으로는 부족하다. 기록은 사람이 읽어야 동작하고, 야간 실행의 로그를 매일 읽는
+  # 사람은 없다. 판정(`installed.ok`)이 출처에 **의존**해야 한다.
+  assert_contains "$body" 'PROVENANCE_OK' \
+    "$L-run.sh 가 출처를 단언하지 않는다 — 공개 레지스트리에서 받아도 installed.ok가 써진다(#167)"
+
+  # ⚠️ **문자열 존재만 보는 것으로는 공허하다 — 실측으로 확인했다.** 단언을 `if true; then`으로
+  # 바꿔도 위 두 어서션은 통과했다(29 passed). 그래서 두 가지를 더 못박는다:
+  #   (a) `PROVENANCE_OK=1`은 **provenance.txt를 읽는 조건** 안에서만 설정돼야 한다
+  #   (b) `installed.ok` 쓰기는 `[ "$PROVENANCE_OK" = 1 ]` **뒤에** 와야 한다(판정 의존성)
+  #
+  # ⚠️ **1라운드(줄-윈도우 휴리스틱)는 PoC 세 개는 막았지만 그 PoC가 대표하는 *부류*는 못 막았다
+  # — 외부 검토가 2라운드에서 REAL한 우회 넷을 실측 재현했다(#167 후속4, task-A5-report.md):**
+  #   1. **주석이 "then"을 흉내낸다** — else 분기 안에 `# 주석; then`처럼 세미콜론+then으로 끝나는
+  #      주석 줄이 있으면, 주석을 벗기지 않은 채 줄 끝만 보는 판정이 그 줄을 진짜 then으로 오인해
+  #      진짜 else보다 먼저 멈춘다. `mark_check`도 같은 정규식을 재사용해 같은 방식으로 속는다.
+  #   2. **elif를 아예 모른다** — `elif ...; then`도 문자열로는 "; then"으로 끝나 이전 판정이 그걸
+  #      주 if의 then으로 착각한다(else만 보고 elif는 안 봤다).
+  #   3. **같은 줄 여러 절** — `else PROVENANCE_OK=1; fi`처럼 else와 대입이 한 줄에 있으면, 뒤로
+  #      걷는 스캔이 대입 **자기 줄**은 보지 않고 그 앞줄부터 봐서 같은 줄의 else를 놓친다.
+  #   4. **빈 홑/겹따옴표만 막았다** — `grep -q '.'`나 `grep -q "[a-z]"`처럼 *비어있지 않지만
+  #      의미상 아무거나 매치하는* 패턴은 안 걸린다. "패턴이 있다"가 아니라 "패턴이 실제로 근거
+  #      변수를 가리키는가"를 봐야 한다.
+  #
+  # **2라운드 구조적 재작성** — 8언어 스크립트 전체를 실측해서 얻은 결론: 휴리스틱을 더 추가하는
+  # 대신 셸 코드가 실제로 취하는 모양에 맞춰 파싱한다.
+  #   (A) 각 줄에서 따옴표 밖 `#`부터는 주석으로 잘라내고(반례1), `;`로 나눈 **절(clause)** 단위로
+  #       분석하며(반례3 — `else X; fi`가 절 2개로 갈린다), `if`/`elif`/`else`/`then`/`fi`가 절
+  #       **맨 앞 단어**로 붙어 있으면(`then PROVENANCE_OK=1`처럼) 그 키워드만 따로 떼어 별도
+  #       절로 만든다. 이 절의 흐름을 뒤로 걸으며 `if`/`fi` 중첩은 depth로 건너뛰고, 같은 깊이에서
+  #       `else`나 `elif`를 먼저 만나면(반례2 — elif도 else와 동일 취급) 무조건 거부, `then`을
+  #       만나면 그 then을 연 것이 `if`인지 `elif`인지 계속 뒤로 걸어 확인한다.
+  #   (B) 근거 grep을 "패턴이 비어있지 않다"가 아니라 "패턴이 이 스크립트가 실제로 유도한
+  #       로컬-소스 변수를 가리킨다"로 판정한다(반례4). 8언어를 다시 읽고 실제 조건절에 쓰인
+  #       변수만 모았다 — 새 변수를 지어내지 않았다:
+  #         `$REG`        — python/php/ruby/node: `REG="${REGISTRY_URL:-...}"`(각 REGISTRY_URL 파생)
+  #         `$_kreg`      — kotlin: build.gradle.kts `uri(...)`에서 뽑은 로컬 maven 저장소 URL
+  #         `$LOCAL_REG`  — rust: cargo-local-registry 마운트 경로 상수
+  #         `${_id}`/`$_id` — java: for 루프 변수(저장소 id 후보, `>${_id}=` 형태로 grep 패턴에 등장)
+  #         `$_local_url` — java: 같은 grounding 로직이 유도하는 로컬 URL(방어적으로 포함 — 리뷰 라운드1 지시)
+  #       go는 grep을 안 쓰므로 특례로 `GOPROXY=.*go mod download`를 그대로 유지한다.
+  #   `gated`가 1·2·3·4를, `mark_check`가 1의 mark_check쪽 절반(주석에 속는 것)과 마커 재배치를
+  #   같은 절 엔진으로 닫는다(재현·비공허성 실측: task-A5-report.md 「Fix round 1」).
+  ok_line="$(hr_ok_line "$f")"
+  assert_ok test -n "$ok_line"
+
+  combined="$(hr_gate "$f" "${ok_line:-0}")"
   gated="$(printf '%s\n' "$combined" | sed -n 's/^GATED\t//p')"
   mark_check="$(printf '%s\n' "$combined" | sed -n 's/^MARK\t//p')"
 
@@ -361,5 +370,20 @@ for L in $DEPLOY_LANGS; do
 done
 # ⚠️ 대조군 — 파일명 규칙이 바뀌면 위 루프가 한 번도 돌지 않고 조용히 통과한다.
 assert_eq "9" "$prov_langs" "출처를 단언하는 9개 언어의 consume 스크립트를 다 찾지 못했다 — 파일명 규칙이 바뀌었나"
+
+# ⚠️ **음성 대조 — 게이트 판정 그대로를 변조한 사본에 태운다.** 라이브 아홉은 늘 GATED=yes · MARK=yes 라, 판정이
+# 「늘 yes」로 깨져도 초록이었다(실측 2026-11-14 SILENT 둘). 첫 언어의 실제 스크립트 끝에 한 줄씩 붙인다 —
+# 게이트 밖의 무조건 `PROVENANCE_OK=1` · 게이트 밖의 두 번째 마커.
+_hr_src="$CONSUME/$(printf '%s\n' $DEPLOY_LANGS | head -1)-run.sh"
+_hr_tmp="$(mktemp -d)"
+trap 'rm -rf "$_hr_tmp"' EXIT
+{ cat "$_hr_src"; printf '\n%s\n' 'PROVENANCE_OK=1'; } > "$_hr_tmp/ungated.sh"
+{ cat "$_hr_src"; printf '\n%s\n' ': > "$STATUS/installed.ok"'; } > "$_hr_tmp/twomarks.sh"
+_hr_g="$(hr_gate "$_hr_tmp/ungated.sh" "$(hr_ok_line "$_hr_tmp/ungated.sh")" | sed -n 's/^GATED\t//p')"
+assert_eq "no" "${_hr_g%%(*}" \
+  "[음성대조·출처 게이트] 게이트 밖 PROVENANCE_OK=1 을 붙인 사본에서도 GATED 가 no 가 아니다($_hr_g) — 판정이 늘 yes 다"
+_hr_m="$(hr_gate "$_hr_tmp/twomarks.sh" "$(hr_ok_line "$_hr_tmp/twomarks.sh")" | sed -n 's/^MARK\t//p')"
+assert_eq "no(cnt=2 bad=1)" "$_hr_m" \
+  "[음성대조·출처 게이트] 게이트 밖에 두 번째 installed.ok 를 쓴 사본을 못 잡는다 — 판정이 늘 yes 다"
 
 assert_report

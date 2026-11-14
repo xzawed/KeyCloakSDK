@@ -28,6 +28,18 @@ _enough_files=1; [ "$_nf" -ge "$HFE_SCRIPTS" ] && _enough_files=0
 assert_eq "ok" "$(ok_if "$_enough_files" "$_nf")" \
   "[하네스 증거] 앱을 띄우는 하네스 스크립트를 ${HFE_SCRIPTS}개 미만 찾았다($_nf) — 검색이 깨졌나?"
 
+# (7)의 판정 둘 — 루프와 그 뒤 음성 대조가 **같은 함수**를 부른다.
+# $1=스크립트 → 그것이 적는 증거 파일(`report/signals/probe.<확장자>`) 목록
+hfe_targets() { grep -oE 'report/signals/\$[A-Za-z0-9_]+\.[A-Za-z0-9.-]+' "$1" | sed -E 's/\$[A-Za-z0-9_]+/probe/' | sort -u; }
+# $1=증거 파일 목록 → 그중 gitignore 밖인 것
+hfe_notig() {
+  for _t in $1; do
+    git -C "$ROOT" check-ignore -q "harness/$_t" 2>/dev/null || printf ' %s' "$_t"
+  done
+}
+# 증거 파일 공허 하한 — ⚠️ **세어서 박는다**: run.sh 2 · verify.sh 3(2026-11-14). 하한은 작은 쪽이다.
+HFE_TARGETS=2
+
 for _rel in $HFE_FILES; do
 V="$ROOT/$_rel"
 
@@ -78,11 +90,13 @@ assert_eq "ok" "$(ok_if "$([ "$_psdump" -ge 1 ] && echo 0 || echo 1)" "$_psdump"
 # (7) 남기는 증거 파일은 **gitignore 안**이어야 한다. 아니면 런마다 워킹트리가 더러워지고,
 #     언젠가 실수로 커밋된다. ⚠️ 이 단언은 실제 구멍을 잡았다 — 증거 캡처를 넣은 그 커밋이
 #     `*.app.log`·`*.compose-ps.txt` 를 무시 목록에 안 넣어 둘 다 추적 대상으로 떴다(2026-09-16).
-_targets="$(grep -oE 'report/signals/\$[A-Za-z0-9_]+\.[A-Za-z0-9.-]+' "$V" | sed -E 's/\$[A-Za-z0-9_]+/probe/' | sort -u)"
-_notig=''
-for _t in $_targets; do
-  git -C "$ROOT" check-ignore -q "harness/$_t" 2>/dev/null || _notig="$_notig $_t"
-done
+#     ⚠️ (8)의 하한은 다른 정규식(`report/signals/` 언급)을 세므로 이 추출을 못 지킨다 — 추출이 비면 아래 루프가
+#     0 번 돌고 초록이었다(실측 2026-11-14 SILENT). 그래서 뽑은 목록에 따로 하한을 둔다.
+_targets="$(hfe_targets "$V")"
+_nt="$(printf '%s\n' "$_targets" | grep -c . || true)"
+assert_eq "ok" "$(ok_if "$([ "$_nt" -ge "$HFE_TARGETS" ] && echo 0 || echo 1)" "$_nt")" \
+  "[하네스 증거] $_rel 의 생성 증거 파일을 ${HFE_TARGETS}개 미만 뽑았다($_nt) — 추출이 깨졌나?"
+_notig="$(hfe_notig "$_targets")"
 assert_eq "" "$_notig" \
   "[하네스 증거] $_rel 의 생성 증거 파일이 gitignore 밖이다 —$_notig (런마다 워킹트리가 더러워진다)"
 
@@ -97,6 +111,16 @@ assert_eq "ok" "$(ok_if "$_enough" "$_writes")" \
   "[하네스 증거] $_rel 의 signals 기록 자리를 ${HFE_MIN}개 미만 찾았다 — 검색이 깨졌나?"
 
 done
+
+# (7)의 음성 대조 — gitignore 밖 증거 파일을 적는 스크립트를 위 두 함수에 태운다. 라이브 증거 파일은 전부 무시
+# 목록 안이라 판정이 「늘 안이다」로 깨져도 초록이었다. ⚠️ 카나리아 확장자가 무시 목록에 들면 이 대조가 빨개진다.
+_hfe_fx="$(mktemp)"
+printf '%s\n' 'docker compose logs "app-$lang" > "report/signals/$lang.hfe-canary" 2>&1' > "$_hfe_fx"
+_hfe_ft="$(hfe_targets "$_hfe_fx")"
+rm -f "$_hfe_fx"
+assert_eq "report/signals/probe.hfe-canary" "$_hfe_ft" "[하네스 증거·음성대조] 증거 파일 추출이 카나리아 한 줄을 못 뽑는다"
+assert_eq " report/signals/probe.hfe-canary" "$(hfe_notig "$_hfe_ft")" \
+  "[하네스 증거·음성대조] gitignore 밖 증거 파일을 밖이라고 못 한다 — (7)이 공허하다"
 
 # ── (9) 단위 스위트도 원인을 남긴다 ─────────────────────────────────────────────────────────────
 # ⚠️ **실측이 이 절을 만들었다**(2026-11-06). 야간 score-all 이 「dotnet 통과 621/622」로 빨갰는데 어느 테스트인지

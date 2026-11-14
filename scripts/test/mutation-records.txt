@@ -363,3 +363,173 @@ TEST:scripts/test/test-readme-contract.sh
 OLD:_ko_line="$(grep -m1 '파사드 뒤' "$KO" || true)"
 NEW:_ko_line="$(grep -m1 '파사드 뒤' "$KO" || true)$_en_line"
 SITE:|| true)$_en_line"
+
+# ── 인라인 판정의 음성 대조 — 인프라 · 하네스 자가테스트(#1091)
+
+### BI1
+FILE:scripts/test/test-base-images.sh
+TEST:scripts/test/test-base-images.sh
+OLD:    case "$_tags" in *' '*) ;; *) continue ;; esac
+NEW:    case "$_tags" in *' '*) continue ;; *) continue ;; esac
+SITE:*' '*) continue
+
+### BI2
+FILE:scripts/test/test-base-images.sh
+TEST:scripts/test/test-base-images.sh
+OLD:bi_float() { printf '%s\n' "$1" | awk -F'\t' '$2=="latest" || $2=="" {print $1}' | tr '\n' ' ' | sed 's/ *$//'; }
+NEW:bi_float() { printf '%s\n' "$1" | awk -F'\t' '$2=="NO-SUCH-TAG" {print $1}' | tr '\n' ' ' | sed 's/ *$//'; }
+SITE:NO-SUCH-TAG
+
+### BI2-parse
+FILE:scripts/test/test-base-images.sh
+TEST:scripts/test/test-base-images.sh
+OLD:            else printf "%s\t\n", ref }'
+NEW:            else printf "%s\t%s\n", ref, ref }'
+SITE:"%s\t%s\n", ref, ref
+
+### BI3
+FILE:scripts/test/test-base-images.sh
+TEST:scripts/test/test-base-images.sh
+OLD:    [ "$_t" -ge 2 ] || _bst="$_bst $e"
+NEW:    [ "$_t" -ge 0 ] || _bst="$_bst $e"
+SITE:"$_t" -ge 0
+
+### BI4
+FILE:scripts/test/test-base-images.sh
+TEST:scripts/test/test-base-images.sh
+OLD:bi_noreason() { printf '%s\n' "$1" | awk -F'\t' 'NF<2 || $2=="" {print $1}' | tr '\n' ' ' | sed 's/ *$//'; }
+NEW:bi_noreason() { printf '%s\n' "$1" | awk -F'\t' 'NF<0 {print $1}' | tr '\n' ' ' | sed 's/ *$//'; }
+SITE:NF<0
+
+### CM1
+FILE:scripts/test/test-config-masking.sh
+TEST:scripts/test/test-config-masking.sh
+OLD:  _cmh=1; grep -qF -- "$_cma" "$1/$(cm_src "$2")" && _cmh=0
+NEW:  _cmh=0; grep -qF -- "$_cma" "$1/$(cm_src "$2")" && _cmh=0
+SITE:_cmh=0; grep
+
+### CM2
+FILE:scripts/test/test-config-masking.sh
+TEST:scripts/test/test-config-masking.sh
+OLD:cm_java_record() { grep -qE 'record[[:space:]]+KeycloakConfig' "$1"; }
+NEW:cm_java_record() { grep -qE 'record[[:space:]]+KeycloakConfigNEVER' "$1"; }
+SITE:KeycloakConfigNEVER
+
+### CA4
+FILE:scripts/test/test-conformance-authz-url.sh
+TEST:scripts/test/test-conformance-authz-url.sh
+OLD:ca_old_regex() { grep -q 'code_challenge_method=S256' "$1"; }
+NEW:ca_old_regex() { grep -q 'code_challenge_method=S256NEVER' "$1"; }
+SITE:S256NEVER
+
+### CA5
+FILE:scripts/test/test-conformance-authz-url.sh
+TEST:scripts/test/test-conformance-authz-url.sh
+OLD:    *x/cb*) return 0 ;;
+NEW:    *x/cbNEVER*) return 0 ;;
+SITE:cbNEVER
+
+### DI1
+FILE:scripts/test/test-dockerignore-derived.sh
+TEST:scripts/test/test-dockerignore-derived.sh
+OLD:  grep -qxF -- "**/$_c_name" "$2" && return 0
+NEW:  grep -qF -- "" "$2" && return 0
+SITE:grep -qF -- "" "$2"
+
+### DI2
+FILE:scripts/test/test-dockerignore-derived.sh
+TEST:scripts/test/test-dockerignore-derived.sh
+OLD:    printf '%s\n' "$1" | grep -qxF -- "$e" || printf '%s\n' "$e"
+NEW:    printf '%s\n' "$1" "$e" | grep -qxF -- "$e" || printf '%s\n' "$e"
+SITE:"$1" "$e" |
+
+### DI3
+FILE:scripts/test/test-dockerignore-derived.sh
+TEST:scripts/test/test-dockerignore-derived.sh
+OLD:di_noreason() { printf '%s\n' "$1" | awk -F'\t' 'NF<2 || $2=="" {print $1}' | tr '\n' ' ' | sed 's/[[:space:]]*$//'; }
+NEW:di_noreason() { printf '%s\n' "$1" | awk -F'\t' 'NF<0 {print $1}' | tr '\n' ' ' | sed 's/[[:space:]]*$//'; }
+SITE:NF<0
+
+### HF7
+FILE:scripts/test/test-harness-failure-evidence.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:hfe_targets() { grep -oE 'report/signals/\$[A-Za-z0-9_]+\.[A-Za-z0-9.-]+' "$1" | sed -E 's/\$[A-Za-z0-9_]+/probe/' | sort -u; }
+NEW:hfe_targets() { grep -oE 'report/signals/NEVER\$[A-Za-z0-9_]+\.[A-Za-z0-9.-]+' "$1" | sed -E 's/\$[A-Za-z0-9_]+/probe/' | sort -u; }
+SITE:signals/NEVER
+
+### HF7-notig
+FILE:scripts/test/test-harness-failure-evidence.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:    git -C "$ROOT" check-ignore -q "harness/$_t" 2>/dev/null || printf ' %s' "$_t"
+NEW:    git -C "$ROOT" check-ignore -q "harness/$_t" 2>/dev/null || true || printf ' %s' "$_t"
+SITE:|| true || printf
+
+### HP2
+FILE:scripts/test/test-harness-host-ports.sh
+TEST:scripts/test/test-harness-host-ports.sh
+OLD:hp_dup_defaults() { printf '%s\n' "$(hp_defaults "$1")" | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//'; }
+NEW:hp_dup_defaults() { printf '%s\n' "$(hp_defaults "$1")" | sort -u | uniq -d | tr '\n' ' ' | sed 's/ *$//'; }
+SITE:hp_defaults "$1")" | sort -u
+
+### HP2-extract
+FILE:scripts/test/test-harness-host-ports.sh
+TEST:scripts/test/test-harness-host-ports.sh
+OLD:hp_defaults() { printf '%s\n' "$1" | sed -nE 's/.*\$\{[A-Za-z_][A-Za-z0-9_]*:-([0-9]+)\}:[0-9]+.*/\1/p'; }
+NEW:hp_defaults() { printf '%s\n' "$1" | sed -nE 's/.*\$\{[A-Za-z_][A-Za-z0-9_]*:-(NEVER[0-9]+)\}:[0-9]+.*/\1/p'; }
+SITE:(NEVER[0-9]+)
+
+### HP3
+FILE:scripts/test/test-harness-host-ports.sh
+TEST:scripts/test/test-harness-host-ports.sh
+OLD:hp_dup_names() { printf '%s\n' "$(hp_names "$1")" | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//'; }
+NEW:hp_dup_names() { printf '%s\n' "$(hp_names "$1")" | sort -u | uniq -d | tr '\n' ' ' | sed 's/ *$//'; }
+SITE:hp_names "$1")" | sort -u
+
+### HN1
+FILE:scripts/test/test-harness-network.sh
+TEST:scripts/test/test-harness-network.sh
+OLD:    grep -qE '^[[:space:]]*NET="?\$\(docker compose ps' "$1/$f" || _hh="$_hh $f"
+NEW:    grep -qE '' "$1/$f" || _hh="$_hh $f"
+SITE:grep -qE '' "$1/$f" || _hh
+
+### HN2
+FILE:scripts/test/test-harness-network.sh
+TEST:scripts/test/test-harness-network.sh
+OLD:    grep -qE 'NET=harness_default' "$1/$f" || _hn="$_hn $f"
+NEW:    grep -qE '' "$1/$f" || _hn="$_hn $f"
+SITE:grep -qE '' "$1/$f" || _hn
+
+### HR5
+FILE:scripts/test/test-harness-registries.sh
+TEST:scripts/test/test-harness-registries.sh
+OLD:        if (analyze(m) == "accept") good++
+NEW:        if (analyze(m) != "never") good++
+SITE:!= "never"
+
+### HR6
+FILE:scripts/test/test-harness-registries.sh
+TEST:scripts/test/test-harness-registries.sh
+OLD:      print "MARK\t" ((cnt == 1 && bad == 0) ? "yes" : ("no(cnt=" cnt " bad=" bad ")"))
+NEW:      print "MARK\t" ((cnt >= 0) ? "yes" : ("no(cnt=" cnt " bad=" bad ")"))
+SITE:(cnt >= 0)
+
+### OS1
+FILE:scripts/test/test-osv-audit-gate.sh
+TEST:scripts/test/test-osv-audit-gate.sh
+OLD:  [ "$_op" = "$_og" ] || printf '%s/%s' "$_op" "$_og"
+NEW:  [ "$_op" = "$_op" ] || printf '%s/%s' "$_op" "$_og"
+SITE:"$_op" = "$_op"
+
+### OS1-structural
+FILE:scripts/test/test-osv-audit-gate.sh
+TEST:scripts/test/test-osv-audit-gate.sh
+OLD:    t == pat {
+NEW:    index(t, pat) {
+SITE:index(t, pat)
+
+### OS2
+FILE:scripts/test/test-osv-audit-gate.sh
+TEST:scripts/test/test-osv-audit-gate.sh
+OLD:    d && /^[[:space:]]*exit 1$/ { found = 1 }
+NEW:    d { found = 1 }
+SITE:d { found = 1 }
