@@ -1,0 +1,27 @@
+name: dependabot-health
+# Dependabot 업데이트 실행의 실패를 저장소 안의 신호로 만든다.
+#
+# 왜: Dependabot 업데이트는 GitHub 의 동적 워크플로(`Dependabot Updates`, 이벤트 `dynamic`)라 그 실패가 어떤 CI 에도
+# 닿지 않았다 — `nightly-alert.yml` 은 예약 실행과 main push 만 본다. 실측 2026-11-14: ruby bundler 업데이트가
+# 09-17 부터 매주 실패했는데 아무 신호도 없었다(등록부 dependabot-updater-failure-blind). 이 워크플로가 매일 대상별
+# 마지막 실행을 보고 빨개지면, nightly-alert 가 이 예약 실행의 실패를 이슈로 연다(그 목록에 이 이름이 있다).
+#
+# ⚠️ `workflow_run` 으로 `Dependabot Updates` 를 직접 받지 않는다 — 동적 워크플로에 그 이벤트가 오는지 실측되지
+# 않았고, 안 오면 이 장치는 조용히 공허해진다. 폴링은 지금 실데이터로 잴 수 있다(판정 규칙은 스크립트 머리 주석).
+on:
+  schedule:
+    - cron: '45 6 * * *' # 매일 06:45 UTC — harness 03:00 · security-audit 월 04:00 · published-floor 화 05:30 과 겹치지 않게
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read # `gh run list` — Dependabot 업데이트 실행 목록을 읽는다
+jobs:
+  updates:
+    name: Dependabot 업데이트 — 대상별 마지막 실행
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: 대상별 마지막 실행이 성공했는가(조회 실패는 「건강」이 아니라 exit 2)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-dependabot-updates.mjs
