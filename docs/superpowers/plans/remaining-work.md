@@ -49,7 +49,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `303`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `304`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -79,7 +79,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. (비었다 — 사용자 승인 순서 넷 닫힘: #1060 · #1061 · 3xx 부류 #1062–#1066. 후속 후보 셋을 등록했다 — 다음은 사람과 고른다.)
+1. (비었다 — 승인 후보 셋 닫힘 #1068–#1071. 후속 후보 하나 — 다음은 사람과 고른다.)
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -306,11 +306,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 147건 (열림 59)
+## C. 품질 부채 — 148건 (열림 58)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 83
+### 9언어 소스 — 84
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -353,8 +353,9 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `python-aio-admin-build-blocks-loop` **[M/S · 닫힘 2026-10-28]** README 를 「요청은 await · 생성(`create`·첫 `kc.admin`)은 동기」로 고쳤다 — TLS 컨텍스트 공유는 기각(requests 가 SSLContext 를 못 받고 첫 생성의 막힘이 남는다)
 - [x] `admin-response-body-unbounded` **[M/M · 신규 2026-10-25 · 닫힘 2026-10-27 #846]** admin 이 오류 본문을 다 읽는다
 - [x] `go-admin-3xx-read-as-success` **[M/S · 신규 2026-10-25 · 닫힘 2026-11-13 #1062–#1066]** 아홉을 25 호출 × 3xx 셋으로 다 쟀다 — go · php · java · kotlin · python 을 그 상태의 admin 오류로, 옳던 넷은 가드
-- [ ] `python-admin-list-error-array-body` **[M/S · 신규 2026-11-13]** 목록 다섯이 배열 본문의 4xx · 5xx 에 상태 없는 `KeycloakTransportError` 다 — 상류 `raise_error_from_response` 가 `["message"]` 에서 깨진다(실측 20/20) · `python/src/keycloak_sdk/admin/_translate.py`
-- [ ] `admin-followable-redirect-class-divergent` **[L/S · 신규 2026-11-13]** `Location` 이 있는 리다이렉트의 오류 클래스가 갈린다 — go `*TransportError` · node · php admin 오류(302) · 나머지 미측정 · `go/admin.go`
+- [x] `python-admin-list-error-array-body` **[M/S · 닫힘 2026-11-14 #1068 #1069 #1071]** 아홉을 다 쟀다 — python · go 고침, 옳던 일곱은 가드
+- [x] `admin-followable-redirect-class-divergent` **[L/S · 닫힘 2026-11-14 #1069 #1071]** go 만 갈렸다 — 고침, 옳던 여덟은 가드
+- [ ] `python-auth-error-body-shape-status` **[L/S · 신규 2026-11-14]** auth 레인은 객체 아닌 JSON 오류 본문에 메시지에서 HTTP 상태가 빠진다(클래스는 옳다 · #1068) · `python/src/keycloak_sdk/_internal/lower.py`
 - [x] `jwks-unsupported-key-rejects-set` **[M/M · 닫힘 2026-11-09 #998–#1001]** 못 읽는 원소 하나가 JWKS 전체를 버렸다 · 표는 #1000 본문
 - [x] `jwks-oct-key-usable-with-hs` **[M/S · 닫힘 2026-11-10 #1013]** 여덟이 oct 를 버린다(.NET 은 전역 플래그와 무관하게) · php 는 HS 서명을 거부(alg 없는 EC · OKP) · 표는 #1013 본문
 - [x] `rust-mixed-family-algorithms-reject-all` **[M/S · 닫힘 2026-11-11 #1016]** 핀을 키 계열로 거른 부분집합만 넘긴다 — jsonwebtoken 은 목록 전부가 헤더 alg 의 계열이기를 요구해 섞은 핀은 모든 토큰을 거부했다
