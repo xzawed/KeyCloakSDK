@@ -650,4 +650,16 @@ assert_ok node "$GUARD" "$DIR/../.."
 # 실측 하한과 함께 돌려도 통과해야 한다(CI 가 넘기는 값과 같은 모양).
 assert_ok node "$GUARD" "$DIR/../.." --min-escalations=6 --min-pr-secret-jobs=1
 
+# ── 무인자 실행 — 기본 루트는 가드 자리(`scripts/` 의 부모)이고, 그 경로에 공백이 있어도 된다 ──
+# 등록부 default-root-percent-encoding: `new URL('..', import.meta.url).pathname` 은 `%20` 을 풀지 않아
+# 공백 경로에서 `…%20…\.github\workflows` 를 못 읽고 「검사 대상 없음」 4건으로 실패했다(실측 2026-11-14).
+# 픽스처와 가드를 공백이 든 자리에 함께 두고 인자 없이 돌린다 — 위반을 하나 심으면 울어야 한다(그 자리를
+# 실제로 읽는다는 증거).
+rm -rf "$TMP"; mkdir -p "$TMP"
+SP="$TMP/with space"
+mkdir -p "$SP/scripts"; cp -r "$FIX/." "$SP/"; cp "$GUARD" "$SP/scripts/check-ci-permissions.mjs"
+assert_ok node "$SP/scripts/check-ci-permissions.mjs"
+sed -i '/^          persist-credentials: false$/d' "$SP/.github/workflows/demo-release.yml"
+assert_fails node "$SP/scripts/check-ci-permissions.mjs"
+
 assert_report
