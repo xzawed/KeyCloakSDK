@@ -168,14 +168,18 @@ function probes(cmd, args, explicit = []) {
   return out
 }
 
-// `KCSDK_PY`의 문서화된 기본값은 `python/` 기준 상대경로다(`.venv/Scripts/python.exe`).
-function pyCandidates() {
+// `KCSDK_PY`의 값은 `python/` 기준 상대경로다(기본값 `.venv/Scripts/python.exe`) — 명령이 `cd python && "${KCSDK_PY:-…}"` 로 푼다.
+// ⚠️ 설정돼 있으면 **그것 하나만** 본다. 명령에는 폴백이 없는데 doctor 는 없거나 낡은 값을 건너뛰고 PATH 의 python 으로
+// ok 를 냈다(실측 2026-11-14: 루트 기준 `python/.venv/…` 도, 존재하지 않는 값도 ok — 같은 값으로 명령은 127).
+// 경로면 python/ 에서 풀고, 구분자 없는 명령 이름이면 PATH 에 맡긴다(integration-coverage.mjs 와 같은 규칙).
+function pyProbes() {
   const v = process.env.KCSDK_PY
-  if (v) return [resolve(ROOT, 'python', winPath(v))]
-  return [join(ROOT, 'python', '.venv', 'Scripts', 'python.exe'), join(ROOT, 'python', '.venv', 'bin', 'python')]
+  if (v) return [[/[\\/]/.test(v) ? resolve(ROOT, 'python', winPath(v)) : v, ['--version']]]
+  const venv = [join(ROOT, 'python', '.venv', 'Scripts', 'python.exe'), join(ROOT, 'python', '.venv', 'bin', 'python')]
+  return [...probes('python', ['--version'], venv), ['python3', ['--version']]]
 }
 
-// `KCSDK_PHP`는 **디렉터리**를 가리킨다(php.md: `${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php-8.3}`).
+// `KCSDK_PHP`는 **디렉터리**를 가리킨다(php.md: `${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php}`).
 const phpDirCandidates = (cmd) => (process.env.KCSDK_PHP ? [join(winPath(process.env.KCSDK_PHP), cmd)] : [])
 
 // Maven·Gradle은 PATH의 `java`가 아니라 **JAVA_HOME이 가리키는 JDK**로 빌드한다.
@@ -246,8 +250,8 @@ function langs() {
       checks: [
         check(
           'python',
-          // 규약(venv 또는 KCSDK_PY) → KCSDK_TOOLS → PATH의 python/python3 순.
-          [...probes('python', ['--version'], pyCandidates()), ['python3', ['--version']]],
+          // KCSDK_PY 가 있으면 그것만, 없으면 venv → KCSDK_TOOLS → PATH의 python/python3 순.
+          pyProbes(),
           req('python/pyproject.toml', /requires-python\s*=\s*"[^"\d]*([\d.]+)"/, 'requires-python'),
         ),
       ],

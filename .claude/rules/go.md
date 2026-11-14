@@ -28,7 +28,7 @@ paths:
 
 ## Toolchain
 
-System install — ask `node scripts/doctor.mjs go` where it is rather than assuming a path (⚠️ this line said `${KCSDK_TOOLS:-$HOME/tools}/go`, which does not exist on the development machine). Run it as `go -C go` (that leaves the cwd alone, so it never collides with git).
+Ask `node scripts/doctor.mjs go` which Go is on `PATH` rather than assuming a path — a system install and a portable one under `KCSDK_TOOLS` both work. Run it as `go -C go` (that leaves the cwd alone, so it never collides with git).
 
 ```bash
 export GOTOOLCHAIN=local   # go 는 PATH 에 있다. 없으면 `node scripts/doctor.mjs go` 가 어디 있는지 말해준다
