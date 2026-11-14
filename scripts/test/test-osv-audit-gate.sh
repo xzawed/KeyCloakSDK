@@ -24,6 +24,13 @@ osv_producers() { grep -c '> dep-tree\.txt' "$1" 2>/dev/null || true; }
 # (`+--- <group>:<artifact>:<version> FAILED`), Maven 좌표에는 공백이 못 들어가므로 정상 좌표가
 # 이 패턴을 만들 수 없다(실측: 실패 트리 9/9 동일 · 정상 트리 352줄에서 둘 다 0).
 osv_gates() { grep -cF "if grep -qE ' FAILED\$' dep-tree.txt; then" "$1" 2>/dev/null || true; }
+# 워크플로 하나의 판정 — 생산자 수와 게이트 수가 같으면 빈 출력, 다르면 「생산자/게이트」. 라이브 루프와 아래 음성
+# 대조가 **같은 함수**를 부른다(실측 2026-11-14 SILENT: 이 비교를 「늘 같다」로 깨도 초록이었다).
+osv_gap() {
+  _op="$(osv_producers "$1")"; _op=${_op:-0}
+  _og="$(osv_gates "$1")"; _og=${_og:-0}
+  [ "$_op" = "$_og" ] || printf '%s/%s' "$_op" "$_og"
+}
 
 _total_p=0
 _files=0
@@ -32,9 +39,9 @@ for WF in $(git ls-files '.github/workflows/*.yml'); do
   [ "$_p" -gt 0 ] || continue
   _files=$((_files + 1))
   _total_p=$((_total_p + _p))
-  _g="$(osv_gates "$WF")"; _g=${_g:-0}
-  assert_eq "$_p" "$_g" \
-    "[osv] $(basename "$WF") 의 dep-tree 생산자 $_p 개 중 fail-closed 게이트가 $_g 개다 — 게이트 없는 자리는 해석 실패 좌표를 가짜 버전으로 OSV 에 물어 '취약점 없음'으로 초록이 된다"
+  _gap="$(osv_gap "$WF")"
+  assert_eq "" "$_gap" \
+    "[osv] $(basename "$WF") 의 dep-tree 생산자/fail-closed 게이트 수가 갈린다($_gap) — 게이트 없는 자리는 해석 실패 좌표를 가짜 버전으로 OSV 에 물어 '취약점 없음'으로 초록이 된다"
 done
 
 # ⚠️ **공허 하한.** 위 루프는 생산자가 하나도 없으면 어서션을 0건 실행하고 조용히 통과한다.
@@ -70,5 +77,18 @@ for WF in $(git ls-files '.github/workflows/*.yml'); do
   assert_eq "$_g" "$_e" \
     "[osv] $(basename "$WF") 의 fail-closed 게이트 $_g 개 중 $_e 개만 exit 1 로 끝난다 — 메시지만 가르고 판정은 가르지 않아야 한다"
 done
+
+# ── 음성 대조 — 위 판정 그대로를 결함 있는 워크플로 픽스처에 태운다. ─────────────────────────────
+_osv_fx="$(mktemp -d)"
+trap 'rm -rf "$_osv_fx"' EXIT
+# 게이트 대신 **언급**만 있는 생산자 — 주석 · 문자열. 언급이 게이트로 세이면 진짜 게이트가 빠져도 수가 맞는다.
+printf '%s\n' '      - run: |' '          ./gradlew -q dependencies > dep-tree.txt' \
+  "          # 게이트는 if grep -qE ' FAILED\$' dep-tree.txt; then … 꼴이다" > "$_osv_fx/comment.yml"
+printf '%s\n' '      - run: |' '          ./gradlew -q dependencies > dep-tree.txt' \
+  "          echo \"if grep -qE ' FAILED\$' dep-tree.txt; then\"" > "$_osv_fx/echo.yml"
+assert_eq "1/0" "$(osv_gap "$_osv_fx/comment.yml")" \
+  "[osv·음성대조] 주석 속 게이트 언급을 게이트로 센다 — 진짜 게이트가 빠져도 생산자 수와 맞는다"
+assert_eq "1/0" "$(osv_gap "$_osv_fx/echo.yml")" \
+  "[osv·음성대조] 문자열 속 게이트 언급을 게이트로 센다 — 진짜 게이트가 빠져도 생산자 수와 맞는다"
 
 assert_report
