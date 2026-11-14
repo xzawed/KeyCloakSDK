@@ -25,6 +25,17 @@ body:
         - Ruby
     validations:
       required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the SDK?
+      options:
+        - Authentication flow (authorization code, client credentials, refresh, logout, …)
+        - Token validation (JWT, JWKS)
+        - Admin API (users, clients, realms, roles, groups)
+        - Configuration or setup
+        - Other
   - type: input
     id: sdk-version
     attributes:
