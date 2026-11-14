@@ -22,34 +22,55 @@ WFDIR="$ROOT/.github/workflows"
 
 assert_eq "yes" "$([ -d "$WFDIR" ] && echo yes || echo no)" "[릴리스동시성] 워크플로 디렉터리가 없다: $WFDIR"
 
-# `tags:` 트리거를 가진 워크플로 = 이 검사의 대상.
-_tagged=''
-for f in "$WFDIR"/*.yml; do
-  [ -f "$f" ] || continue
-  grep -qE '^[[:space:]]+tags:' "$f" || continue
-  _tagged="$_tagged $(basename "$f")"
-done
+# 판정기 — <워크플로 디렉터리> → _tagged(`tags:` 트리거를 가진 워크플로 = 이 검사의 대상) · _missing(최상위
+# `concurrency:` 가 없다) · _cancels(cancel-in-progress 가 false 가 아니다)를 설정한다(앞 공백 없이 공백 구분).
+# 살아 있는 검사와 끝의 음성 대조가 같은 함수를 부른다.
+rc_scan() {
+  _tagged=''; _missing=''; _cancels=''
+  for f in "$1"/*.yml; do
+    [ -f "$f" ] || continue
+    grep -qE '^[[:space:]]+tags:' "$f" || continue
+    b="$(basename "$f")"
+    _tagged="$_tagged $b"
+    if grep -qE '^concurrency:' "$f"; then
+      grep -qE '^[[:space:]]+cancel-in-progress:[[:space:]]*false' "$f" || _cancels="$_cancels $b"
+    else
+      _missing="$_missing $b"
+    fi
+  done
+  _tagged="${_tagged# }"; _missing="${_missing# }"; _cancels="${_cancels# }"
+}
+
+rc_scan "$WFDIR"
 _n="$(printf '%s\n' $_tagged | grep -c . || true)"
 
 # 공허 방지 — 트리거 표기가 바뀌어 0 개를 고르면 아래 단언은 언제나 통과한다. 실측 9(2026-09-22).
 assert_eq "ok" "$(ok_if "$([ "$_n" -ge 1 ] && printf 0 || printf 1)" "$_n")" \
   "[릴리스동시성] \`tags:\` 트리거를 가진 워크플로를 ${_n}개 찾았다 — 트리거 표기가 바뀌었나? (0 개를 훑고 통과시키지 않는다)"
 
-_missing=''
-_cancels=''
-for b in $_tagged; do
-  f="$WFDIR/$b"
-  if grep -qE '^concurrency:' "$f"; then
-    grep -qE '^[[:space:]]+cancel-in-progress:[[:space:]]*false' "$f" || _cancels="$_cancels $b"
-  else
-    _missing="$_missing $b"
-  fi
-done
-
-assert_eq "" "$(printf '%s' "$_missing" | sed 's/^ //')" \
+assert_eq "" "$_missing" \
   "[릴리스동시성] 태그 트리거인데 최상위 concurrency 가 없다 — 같은 접두 태그 둘이 동시에 게시된다"
 
-assert_eq "" "$(printf '%s' "$_cancels" | sed 's/^ //')" \
+assert_eq "" "$_cancels" \
   "[릴리스동시성] cancel-in-progress 가 false 가 아니다 — 게시 도중 취소는 되돌릴 수 없다"
+
+# 음성 대조 — 판정기가 두 위반을 실제로 짚는가(실측 2026-11-14 SILENT: 둘 다 「빈 목록」만 단언했다).
+#   a.yml 태그 트리거 · 최상위 concurrency 없음(잡 수준만 있다)                    → _missing
+#   b.yml 최상위 cancel-in-progress: true — 주석과 잡 수준 concurrency 가 false 를 말한다 → _cancels
+#   c.yml 정상 · d.yml 태그 트리거가 아니다(대상 밖)
+_rc_fx="$(mktemp -d)"
+printf '%s\n' 'on:' '  push:' '    tags: ["a-v*"]' 'jobs:' '  publish:' '    concurrency:' '      group: a' \
+  '      cancel-in-progress: false' '    runs-on: ubuntu-latest' > "$_rc_fx/a.yml"
+printf '%s\n' 'on:' '  push:' '    tags: ["b-v*"]' '# `cancel-in-progress: false` 는 의도다 — 게시 도중 취소는 되돌릴 수 없다' \
+  'concurrency:' '  group: b' '  cancel-in-progress: true' 'jobs:' '  publish:' '    concurrency:' '      group: b-job' \
+  '      cancel-in-progress: false' '    runs-on: ubuntu-latest' > "$_rc_fx/b.yml"
+printf '%s\n' 'on:' '  push:' '    tags: ["c-v*"]' 'concurrency:' '  group: c' '  cancel-in-progress: false' 'jobs: {}' > "$_rc_fx/c.yml"
+printf '%s\n' 'on:' '  push:' '    branches: [main]' 'jobs: {}' > "$_rc_fx/d.yml"
+rc_scan "$_rc_fx"
+rm -rf "$_rc_fx"
+assert_eq "a.yml b.yml c.yml" "$_tagged" "[음성대조] 태그 트리거 워크플로만 골라야 한다"
+assert_eq "a.yml" "$_missing" "[음성대조] 최상위 concurrency 가 없는 태그 워크플로를 짚어야 한다(잡 수준은 대신하지 못한다)"
+assert_eq "b.yml" "$_cancels" \
+  "[음성대조] 최상위 cancel-in-progress: true 를 짚어야 한다 — 주석 · 잡 수준의 false 가 그것을 가리면 안 된다"
 
 assert_report
