@@ -581,6 +581,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/test/test-dependabot-alerts.sh
+      - name: Dependabot 업데이트 판정기 자가테스트(마지막 실패 · 침묵 · 목록 아님을 초록으로 넘기지 않는지)
+        # 네트워크 없이 판정 함수만 먹인다 — 토큰이 필요 없다. 실제 조회는 `dependabot-health.yml`(예약)이 돈다.
+        run: sh scripts/test/test-dependabot-updates.sh
 
   php-mirror:
     # ⚠️ **비-required다, 그리고 그렇게 두는 것이 의도다.** 이 잡은 GitHub·Packagist 라는
