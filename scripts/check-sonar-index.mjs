@@ -46,24 +46,32 @@ export function indexVerdict(current, baseline) {
 // res = { current, baseline, currentRun, baselineRun } — 수는 null 이면 「못 읽었다」.
 export function decide(res) {
   const { current, baseline, currentRun, baselineRun } = res
-  if (current == null) return { code: 2, lines: [`::error::이 실행(${currentRun})의 ${JOB} 잡 로그에서 「N files indexed」 를 하나로 읽지 못했다`] }
-  if (baseline == null) return { code: 2, lines: [`::error::main 의 직전 성공 스캔에서 색인 수를 읽지 못했다 — 견줄 기준이 없다`] }
+  const why = (r) => (r ? ` — ${r}` : '')
+  if (current == null) return { code: 2, lines: [`::error::이 실행(${currentRun})의 ${JOB} 잡 로그에서 「N files indexed」 를 하나로 읽지 못했다${why(res.currentReason)}`] }
+  if (baseline == null) return { code: 2, lines: [`::error::main 의 직전 성공 스캔에서 색인 수를 읽지 못했다 — 견줄 기준이 없다${why(res.baselineReason)}`] }
   const v = indexVerdict(current, baseline)
   const rec = `색인 ${baseline} (main 실행 ${baselineRun}) → ${current} (이 실행 ${currentRun}) · ${v.pct}`
   if (!v.ok) return { code: 1, lines: [`::error::${v.reason} · ${rec} · 문턱 -${MAX_DROP * 100}% / +${MAX_RISE * 100}%`] }
   return { code: 0, lines: [`${rec} — 문턱 안`] }
 }
 
+// 실패하면 그 이유를 남긴다 — 못 읽은 계측기가 왜 못 읽었는지 말하지 않으면 고칠 수 없다(실측: 첫 CI 실행이
+// 「못 읽었다」만 남겼다).
+let lastError = ''
 function gh(args) {
   const r = spawnSync('gh', args, { encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 * 1024 })
-  return r.status === 0 ? r.stdout : null
+  if (r.status === 0) return r.stdout
+  lastError = `gh ${args.slice(0, 2).join(' ')} → ${r.error?.message ?? `exit ${r.status}: ${(r.stderr || r.stdout || '').trim().split('\n').slice(-3).join(' | ')}`}`
+  return null
 }
 
 function jobLogCount(repo, runId) {
   const jobs = gh(['api', `repos/${repo}/actions/runs/${runId}/jobs`, '--jq', `.jobs[] | select(.name == "${JOB}") | .id`])
   const id = jobs?.trim().split('\n')[0]
-  if (!id) return null
-  return indexedCount(gh(['api', `repos/${repo}/actions/jobs/${id}/logs`]))
+  if (!id) { if (jobs != null) lastError = `실행 ${runId} 에 ${JOB} 잡이 없다`; return null }
+  const log = gh(['api', `repos/${repo}/actions/jobs/${id}/logs`])
+  if (log != null && indexedCount(log) == null) lastError = `잡 ${id} 로그(${log.length}B)에 「N files indexed」 가 하나로 없다`
+  return indexedCount(log)
 }
 
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
@@ -80,6 +88,8 @@ function main() {
   let baseline = null
   let currentRun = runId
   let baselineRun = null
+  let currentReason = ''
+  let baselineReason = ''
   if (opt('--log') !== undefined || opt('--base-log') !== undefined) {
     // 저장한 로그로 같은 판정 — 되살릴 실험의 두 실행을 다시 재는 길이자, 진입점을 조회 없이 시험하는 길이다.
     const read = (p) => { try { return readFileSync(p, 'utf8') } catch { return null } }
@@ -92,19 +102,22 @@ function main() {
     baselineRun = opt('--base-log')
   } else {
     if (!/^\d+$/.test(runId ?? '') || !/^[\w.-]+\/[\w.-]+$/.test(repo ?? '')) { console.error(USAGE); process.exit(2) }
-    // 잡이 끝난 직후엔 로그가 아직 안 붙어 있을 수 있다 — 몇 번 다시 본다.
+    // 잡이 끝난 직후엔 로그가 아직 안 붙어 있을 수 있다 — 몇 번 다시 본다. 실패마다 이유를 찍는다.
     for (let i = 0; i < 6 && current == null; i++) {
       if (i) pause(10_000)
       current = jobLogCount(repo, runId)
+      if (current == null) console.error(`시도 ${i + 1}/6: ${lastError}`)
     }
+    currentReason = current == null ? lastError : ''
     const runs = gh(['api', `repos/${repo}/actions/workflows/${WORKFLOW}/runs?branch=main&event=push&status=success&per_page=20`,
       '--jq', '.workflow_runs[].id'])
     for (const id of (runs ?? '').split('\n').map((s) => s.trim()).filter((s) => s && s !== runId).slice(0, BASE_TRIES)) {
       baseline = jobLogCount(repo, id)
       if (baseline != null) { baselineRun = id; break }
     }
+    baselineReason = baseline == null ? lastError : ''
   }
-  const d = decide({ current, baseline, currentRun, baselineRun })
+  const d = decide({ current, baseline, currentRun, baselineRun, currentReason, baselineReason })
   for (const l of d.lines) console.log(l)
   if (process.env.GITHUB_STEP_SUMMARY) {
     const row = (n, r) => (n == null ? '못 읽음' : `${n} (실행 ${r})`)
