@@ -79,6 +79,37 @@ assert_contains "$(verdict "$RUNNING")" 'bundler in /ruby — 마지막 실행�
 CANCEL="[$(run 'bundler in /ruby - Update #11' success 2026-11-05T00:00:00Z),$(run 'bundler in /ruby - Update #12' cancelled 2026-11-12T00:00:00Z)]"
 assert_contains "$(verdict "$CANCEL")" '(초록)' 'cancelled 는 실패가 아니다'
 
+# ── 7b. 설정된 대상이 하나만 조용히 멈춘 것도 빨강이다(Grok 레그 Q2) ─────────────────────
+# 전역 침묵만 보면 다른 대상이 도는 한 초록이다. 대상 목록은 손으로 적지 않고 dependabot.yml 의 `directory:` 에서
+# 파생한다 — 제목의 생태계 이름(`npm_and_yarn`)이 설정(`npm`)과 달라 디렉터리로만 맞춘다. 제목의 `/.` 는 `/` 다(실측).
+dirs_verdict() { # <runs-json> <dirs-json> → 실패 줄 또는 "(초록)"
+  _o="$(cd "$DIR/.." && printf '%s' "$1" | DIRS="$2" NOW="$NOW" node -e '
+    import("./check-dependabot-updates.mjs").then(({ updatesVerdict }) => {
+      let s = ""
+      process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        const v = updatesVerdict(JSON.parse(s), Date.parse(process.env.NOW), JSON.parse(process.env.DIRS))
+        process.stdout.write(v.failing.join("\n") || "(초록)")
+      })
+    })')"
+  [ -n "$_o" ] || { printf 'FATAL: dirs_verdict 가 빈 출력을 냈다\n' >&2; exit 1; }
+  printf '%s' "$_o"
+}
+TWO="[$(run 'npm_and_yarn in /node - Update #1' success 2026-11-13T01:00:00Z),$(run 'bundler in /ruby - Update #2' success 2026-11-02T00:00:00Z)]"
+assert_contains "$(dirs_verdict "$TWO" '["/node","/ruby"]')" '/ruby' '한 대상(/ruby)만 8 일 넘게 멈추면 그 대상을 말한다'
+assert_not_contains "$(dirs_verdict "$TWO" '["/node","/ruby"]')" '/node' '도는 대상은 말하지 않는다'
+assert_contains "$(dirs_verdict "$TWO" '["/node"]')" '(초록)' '설정에 없는 대상의 침묵은 보지 않는다'
+DOT="[$(run 'github_actions in /. - Update #3' success 2026-11-13T00:00:00Z),$(run 'nuget in /dotnet/src/A, /dotnet/tests/B - Update #4' success 2026-11-13T00:00:00Z),$(run 'nuget in /dotnet - Update #5' success 2026-11-12T00:00:00Z)]"
+assert_contains "$(dirs_verdict "$DOT" '["/","/dotnet"]')" '(초록)' '제목의 `/.` 는 설정의 `/` 이고, 여러 디렉터리 제목이 섞여도 /dotnet 을 찾는다'
+# 실물 설정을 파생해 본다 — 0 개면 이 대조가 공허해진다(파서가 빗나갔다).
+_cfg_n="$(cd "$DIR/.." && node -e '
+  import("./check-dependabot-updates.mjs").then(({ configuredDirs }) => {
+    const fs = require("node:fs")
+    process.stdout.write(String(configuredDirs(fs.readFileSync("../.github/dependabot.yml", "utf8")).length))
+  })')"
+_cfg_want="$(grep -cE '^[[:space:]]*directory:' "$DIR/../../.github/dependabot.yml")"
+assert_eq "$_cfg_want" "$_cfg_n" '실물 dependabot.yml 의 directory 를 전부 읽는다'
+assert_eq "ok" "$([ "${_cfg_n:-0}" -ge 10 ] && echo ok || echo "ONLY-$_cfg_n")" '설정된 대상이 10 개 미만으로 읽히면 파서가 빗나갔다'
+
 # ── 8. 목록이 아닌 응답은 「실패 없음」이 아니라 던진다(main 이 exit 2 로 받는다) ──────────
 for _j in 'null' '{}' '"x"'; do
   assert_contains "$(verdict "$_j")" 'THROW' "배열이 아닌 응답($_j)은 던진다"
