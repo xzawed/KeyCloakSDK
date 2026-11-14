@@ -15,6 +15,10 @@
 //       정적 검사는 자가테스트가 PR 마다 돌린다.
 // SILENT · INVALID · 시간 초과면 exit 1. --list 는 계획만 찍는다(변이 없음).
 //
+// ⚠️ 못 보는 것 둘(Grok 레그): (a) 판정기 **소스**를 줄 수 · 해시로 대조하는 시험은 M1 이 넣은 한 줄에 넘어져
+// 거부를 단언하지 않아도 CAUGHT 이 난다 — CAUGHT 의 근거는 probe.sh 가 찍는 실패 단언 목록이다. (b) 판정기 경로를
+// 문자열로 조립하면(`"$DIR/../check-$L.mjs"`) 쌍이 파생되지 않는다 — 그 시험은 이 스윕 밖이다.
+//
 // 사용: node scripts/mutation-sweep.mjs [--list] [--only <부분 문자열>] [--timeout <초>]
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
