@@ -596,5 +596,14 @@ assert_fails node "$GUARD" "$TMP"
 OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
 assert_contains "$OUT" "공허" "자리가 줄면 조용히 통과하지 않고 하한이 말해야 한다"
 
+# ── 무인자 실행 — 기본 루트는 가드 자리(`scripts/` 의 부모)이고, 그 경로에 공백이 있어도 된다 ──
+# 등록부 default-root-percent-encoding: `new URL('..', import.meta.url).pathname` 은 `%20` 을 풀지 않아
+# 공백 경로에서 `…%20…\java\pom.xml` 을 열다 ENOENT 로 죽었다(실측 2026-11-14). 픽스처와 가드를 공백이
+# 든 자리에 함께 두고 인자 없이 돌린다 — 변이 1 을 심으면 울어야 한다(그 자리를 실제로 읽는다는 증거).
+SP="$TMP/with space"
+mkdir -p "$SP/scripts"; cp -r "$FIX/." "$SP/"; cp "$GUARD" "$SP/scripts/check-versions.mjs"
+assert_ok node "$SP/scripts/check-versions.mjs"
+sed -i 's|<parent><version>0.1.0-SNAPSHOT</version></parent>|<parent><version>0.2.0-SNAPSHOT</version></parent>|' "$SP/java/mod-a/pom.xml"
+assert_fails node "$SP/scripts/check-versions.mjs"
 
 assert_report

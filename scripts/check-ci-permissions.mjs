@@ -17,10 +17,12 @@
 // 넓힌 뒤 예외 목록으로 되돌리는 순간 그 목록이 썩기 시작한다.
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // 루트는 인자로 받는다(check-versions.mjs·check-docs.mjs와 같은 관용) — 그래야 자가테스트가
 // 픽스처 트리에 대해 이 가드를 실제로 돌려볼 수 있다. 플래그는 등장 위치와 무관하게 인식한다.
-const DEFAULT_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+// ⚠️ 기본 루트는 `fileURLToPath` 로 푼다 — `.pathname` 은 `%20` 을 풀지 않는다(check-versions.mjs 와 같다).
+const DEFAULT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 let rootArg = null
 // --min-release: 릴리스 워크플로가 이만큼은 있어야 한다. glob으로 범위를 좁히는 가드는
 // **대상이 0건이어도 통과한다** — 누가 릴리스 워크플로를 `*-publish.yml`로 개명하면 이 가드는
