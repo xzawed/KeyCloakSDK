@@ -29,16 +29,20 @@ _sched_names() { # $1 = 워크플로 디렉터리
 }
 
 # main 에 대한 push 로 도는가(종료 0). `on:` 블록의 `push` 가 받는 브랜치를 본다 — 흐름형
-# `push: {branches: [main], …}` · 블록형 `branches: [main]` · 목록 `- main` 모두. 브랜치도 태그도 없는
-# push 와 한 줄짜리 `on: push` · `on: [push, …]` 는 모든 브랜치(main 포함)다. 태그만 받는 push(릴리스)는
-# 아니다. ⚠️ 주석은 먼저 벗긴다 — 주석 속 `branches: [main]` 은 트리거가 아니다. ⚠️ 브랜치 값만 본다 —
-# `paths: ['src/main/**']` 의 main 은 브랜치가 아니다.
+# `push: {branches: [main], …}` · 블록형 `branches: [main]` · 목록 `- main` 모두. `branches-ignore` 는
+# main 을 빼지 않을 때만 main 이다. 브랜치 쪽도 태그 쪽도 없는 push 와 한 줄짜리 `on: push` ·
+# `on: [push, …]` 는 모든 브랜치(main 포함)다. 태그 쪽(`tags` · `tags-ignore`)만 있는 push 는 브랜치에
+# 돌지 않는다(GitHub: 한쪽만 정의하면 다른 쪽 ref 에는 돌지 않는다 — 릴리스가 그렇다). ⚠️ 주석은 먼저
+# 벗긴다 — 주석 속 `branches: [main]` 은 트리거가 아니다. ⚠️ 브랜치 값만 본다 — `paths: ['src/main/**']`
+# 의 main 은 브랜치가 아니다.
 _pushes_main() { # $1 = 워크플로 파일
   awk '
     function brhas(s) { return s ~ /(^|[^A-Za-z0-9_.\/*-])main([^A-Za-z0-9_.\/*-]|$)/ }
     function done_push() {
       if (!inpush) return
-      if (brs) { if (brmain) hit = 1 } else if (!tags) hit = 1
+      if (brs) { if (brmain) hit = 1 }
+      else if (ign) { if (!ignmain) hit = 1 }
+      else if (!tags) hit = 1
       inpush = 0
     }
     /^[[:space:]]*#/ { next }
@@ -50,12 +54,15 @@ _pushes_main() { # $1 = 워크플로 파일
     on && /^  [A-Za-z_]+:/ {
       done_push()
       if ($0 !~ /^  push:/) next
-      inpush = 1; brs = 0; brmain = 0; tags = 0; inbr = 0
+      inpush = 1; brs = 0; brmain = 0; ign = 0; ignmain = 0; tags = 0; inbr = 0
     }
     on && inpush {
       s = $0
       if (inbr) {
-        if (s ~ /^[[:space:]]*-/) { if (brhas(s)) brmain = 1; next }
+        if (s ~ /^[[:space:]]*-/) {
+          if (brhas(s)) { if (inbr == 2) ignmain = 1; else brmain = 1 }
+          next
+        }
         inbr = 0
       }
       if (s ~ /branches:/) {
@@ -63,7 +70,12 @@ _pushes_main() { # $1 = 워크플로 파일
         if (b ~ /^[[:space:]]*$/) inbr = 1
         else { sub(/\].*/, "", b); if (brhas(b)) brmain = 1 }
       }
-      if (s ~ /tags:/) tags = 1
+      if (s ~ /branches-ignore:/) {
+        ign = 1; b = s; sub(/.*branches-ignore:/, "", b)
+        if (b ~ /^[[:space:]]*$/) inbr = 2
+        else { sub(/\].*/, "", b); if (brhas(b)) ignmain = 1 }
+      }
+      if (s ~ /tags(-ignore)?:/) tags = 1
     }
     END { done_push(); exit hit ? 0 : 1 }
   ' "$1"
@@ -184,5 +196,12 @@ _expect_push no '주석 속 branches: [main] 은 트리거가 아니다' \
   "$(_fixture h 'name: h' 'on:' '  push:' '    # branches: [main]' "    tags: ['v*']")"
 _expect_push no 'push 없음(schedule · pull_request)' \
   "$(_fixture i 'name: i' 'on:' '  pull_request:' '    branches: [main]' '  schedule:' "    - cron: '0 0 * * *'")"
+# 독립 레그(Grok)가 짚은 형태 — branches-ignore 만 있으면 「브랜치 쪽 없음」이 아니다.
+_expect_push no 'branches-ignore: [main]' \
+  "$(_fixture j 'name: j' 'on:' '  push:' '    branches-ignore: [main]')"
+_expect_push yes 'branches-ignore: [release](main 은 받는다)' \
+  "$(_fixture k 'name: k' 'on:' '  push:' '    branches-ignore:' '      - release')"
+_expect_push no '태그 쪽만(tags-ignore)' \
+  "$(_fixture l 'name: l' 'on:' '  push:' "    tags-ignore: ['v*']")"
 
 assert_report

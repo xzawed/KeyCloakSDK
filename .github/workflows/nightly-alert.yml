@@ -11,7 +11,8 @@ name: nightly-alert
 # **main 에 대한 push 실행은 본다** — 병합 뒤의 실행이라 그 빨강은 아무도 안 봤다(등록부
 # `push-lane-failures-still-silent`: `sonarcloud` 가 09-16~09-21 닷새 빨간 채였고, 2026-11-09~14 의 main
 # push 400 회 중 실패 6 — CI · dotnet-ci · rust-ci 1 씩, sonarcloud 3). 태그 push(릴리스)는 head_branch 가
-# 태그라 빠진다. 예약 실행과 이슈를 따로 두어 각자의 다음 성공이 제 이슈만 닫는다.
+# 태그라 빠진다. 예약 실행과 이슈를 따로 두어 각자의 다음 성공이 제 이슈만 닫는다 — `paths:` 로 거르는
+# 레인의 main 이슈는 그 경로를 건드리는 다음 push 실행(이나 사람)이 닫는다.
 #
 # ⚠️ **자기 실패는 못 잡는다.** 이 워크플로가 죽으면 알릴 주체가 없다 — `workflow_run` 은 자기를
 # 감시할 수 없다. 남는 구멍이고, 숨기지 않고 여기 적어 둔다.
