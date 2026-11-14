@@ -14,6 +14,8 @@
 //     소스로 색인되는 부류(sonar-project.properties 머리의 `coverage.xml` · `gradle-wrapper.jar`).
 //   - 두 수와 두 실행을 $GITHUB_STEP_SUMMARY 에 남긴다 — 되살릴 실험의 계측값이다.
 //   - 조회 실패는 exit 2 — 「모른다」를 「같다」로 반올림하지 않는다.
+//   ⚠️ 문턱 안의 단계로 나눠 줄면 못 본다 — 성공한 실행이 다음 기준이 된다(Grok 레그). 겨누는 것은 설정 한 줄에
+//   한 번에 무너지는 것(#304)이고, 실패한 실행은 기준이 되지 않으므로 그 빨강은 고칠 때까지 남는다.
 import { spawnSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
