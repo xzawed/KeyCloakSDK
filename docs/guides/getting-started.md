@@ -222,7 +222,7 @@ To build against your working copy, clone the repository and build under `node/`
 
 ```bash
 cd node && npm ci && npm run build   # generates dist/ (tsc). Consume via npm link or a file reference.
-# Verify the distributable artifact (without uploading): npm pack --dry-run   # dist/ plus README.md and LICENSE
+# Verify the distributable artifact (without uploading): npm pack --dry-run   # dist/, package.json, README.md, LICENSE
 ```
 
 The distribution name is `@xzawed/keycloak-sdk`, and the import path is the same.
