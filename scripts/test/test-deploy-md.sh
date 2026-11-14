@@ -48,7 +48,10 @@ _dm_row_label() { case "$1" in
   *) echo "" ;;
 esac; }
 # 시크릿 판정기 — <본문> <이름> → ok | MISSING. 아래 음성 대조가 같은 함수를 먹인다.
-_dm_has_secret() { case "$1" in *"$2"*) echo ok ;; *) echo MISSING ;; esac; }
+# ⚠️ 이름 경계까지 본다 — `SIGNING_IN_MEMORY_KEY` 는 `…_PASSWORD` 의 부분 문자열이라 맨 포함 검사는 짧은 쪽이 빠져도 통과한다.
+_dm_has_secret() {
+  printf '%s\n' "$1" | grep -qE "(^|[^A-Za-z0-9_])$2([^A-Za-z0-9_]|\$)" && echo ok || echo MISSING
+}
 for L in $DEPLOY_LANGS; do
   _dm_tag="$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')"
   _dm_ok=1; [ -n "$_dm_tag" ] && _dm_ok=0
@@ -107,9 +110,12 @@ assert_contains "$_dm_php_check" "sh scripts/check-php-mirror.sh <X.Y.Z>" "§9 P
 # 파일을 적는다. 미러 룰셋 둘(#311)을 런북이 오래 몰라 §6 이 룰셋이 막는 철회 경로를 안내했다(deploy-php-mirror-gap ·
 # deploy-narrative-stale). ⚠️ 경계까지 본다 — 이름은 백틱으로(`RELEASE-TAGS-CREATE` 는 `…-GO` 안에도 있다), 파일은
 # 디렉터리까지(미러의 `tags-immutable.json` 은 본 저장소 것과 이름이 같아, 맨 파일 이름이면 음성 대조가 그렇게 통과했다).
-# 판정기 — <정의 파일> <본문> → ok | MISSING:<이름>. 아래 음성 대조가 같은 함수를 먹인다.
+# 판정기 — <정의 파일> <본문> → ok | MISSING:<이름> | NONAME. 아래 음성 대조가 같은 함수를 먹인다.
+# ⚠️ 이름은 JSON 으로 읽는다 — 줄 단위 `sed` 는 한 줄 JSON 에서 빈 값을 냈다. 이름을 못 읽으면 형태를 만들지 않고
+# NONAME 으로 실패한다(빈 이름의 형태 ``는 코드 펜스에 맞는다). 경로는 인자로 넘긴다(스크립트 문자열에 넣지 않는다).
 _dm_rs_check() {
-  _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$1" | head -1)"
+  _rs_name="$(node -e 'const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof j.name === "string" ? j.name : "")' "$1" 2>/dev/null || true)"
+  [ -n "$_rs_name" ] || { printf 'NONAME'; return 0; }
   _rs_base="$(basename "$1")"
   case "$1" in
     */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
@@ -140,6 +146,9 @@ for _f in rulesets/zz-pretty.json rulesets/zz-oneline.json rulesets-mirror/zz-on
   assert_eq "MISSING:NOT-IN-RUNBOOK" "$(_dm_rs_check "$_dm_fx/$_f" "$body")" \
     "[음성대조] 런북이 모르는 룰셋($_f)을 _dm_rs_check 가 짚지 못한다"
 done
+printf '%s\n' '{ "target": "tag", "enforcement": "active" }' > "$_dm_fx/rulesets/zz-noname.json"
+assert_eq "NONAME" "$(_dm_rs_check "$_dm_fx/rulesets/zz-noname.json" "$body")" \
+  "[음성대조] 이름을 못 읽은 룰셋을 통과시킨다 — 빈 이름의 형태가 코드 펜스에 맞는다"
 rm -rf "$_dm_fx"
 
 # PHP 게이트 — `php-release.yml` 의 `split` 이 기다리는 잡을 런북의 두 문장(§1 「PHP's gate」 · §2-D)이 전부 적는다.
