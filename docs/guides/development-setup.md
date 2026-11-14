@@ -1,4 +1,8 @@
-<!-- doc-budget: max-bytes=9920 -->
+<!-- doc-budget: max-bytes=10142 -->
+<!-- 9920 → 10142 (2026-11-14): 래칫 조건 (1) — 기계 검증을 사 온다. 표에 KCSDK_PHP · KCSDK_OPENSSL_CNF 행을 더했고
+     `scripts/test/test-doctor.sh` 9절이 「규칙 · 문서 · doctor 가 부르는 KCSDK_* 는 전부 이 표에 행이 있다」를 대조한다
+     (등록부 docs-kcsdk-env-ssot). 같은 변경이 거짓 문장 둘을 지웠다 — go.md 「`$KCSDK_TOOLS/go` 는 이 기계에 없다」(실측:
+     있다) · doctor.mjs 의 `…/php-8.3` 인용(php.md 는 `…/php`). -->
 <!-- 9859 → 9920 (2026-11-13): 래칫 조건 (1) — 교환이다. .NET 행의 `TargetFramework`(단수)는 net8.0;net10.0 다중 대상 뒤
      거짓이 됐다. 참인 선언(`TargetFrameworks`, SDK 는 가장 높은 대상을 빌드해야 한다)과 새 요구(.NET 8 런타임)를 그것을
      다시 재는 명령(`dotnet --list-runtimes`)과 함께 적었다. 압축으로 먼저 지불했다(초안 +72B → +61B). -->
@@ -79,6 +83,8 @@ the tool is already on `PATH` — the commands after the prefix are identical in
 | `KCSDK_TOOLS` | `$HOME/tools` | parent directory of the portable Go / PHP / Ruby / Maven installs |
 | `KCSDK_JDK21` | **none — required** | the JDK that `JAVA_HOME` is set to for Java and Kotlin builds. The JVM build snippets fail fast when it is unset rather than falling back to a hard-coded path that rots; `node scripts/doctor.mjs java` prints the JDK 21 it found on this machine |
 | `KCSDK_PY` | `python/.venv/Scripts/python.exe` | the virtualenv interpreter (see §4 for the POSIX path) |
+| `KCSDK_PHP` | `$KCSDK_TOOLS/php` | the portable PHP directory the PHP commands put on `PATH` |
+| `KCSDK_OPENSSL_CNF` | `$KCSDK_PHP/extras/ssl/openssl.cnf` | the `OPENSSL_CONF` that PHP's RSA key generation needs (§4) |
 
 Set whichever ones differ on your machine — for example in `~/.bashrc`:
 

@@ -175,7 +175,7 @@ function pyCandidates() {
   return [join(ROOT, 'python', '.venv', 'Scripts', 'python.exe'), join(ROOT, 'python', '.venv', 'bin', 'python')]
 }
 
-// `KCSDK_PHP`는 **디렉터리**를 가리킨다(php.md: `${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php-8.3}`).
+// `KCSDK_PHP`는 **디렉터리**를 가리킨다(php.md: `${KCSDK_PHP:-${KCSDK_TOOLS:-$HOME/tools}/php}`).
 const phpDirCandidates = (cmd) => (process.env.KCSDK_PHP ? [join(winPath(process.env.KCSDK_PHP), cmd)] : [])
 
 // Maven·Gradle은 PATH의 `java`가 아니라 **JAVA_HOME이 가리키는 JDK**로 빌드한다.

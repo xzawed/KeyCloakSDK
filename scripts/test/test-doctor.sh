@@ -171,4 +171,31 @@ assert_fails node "$T8/scripts/doctor.mjs" dotnet
 OUT8="$(node "$T8/scripts/doctor.mjs" dotnet 2>&1 || true)"
 assert_contains "$OUT8" "찾지 못함" 'dotnet 대상 선언이 없으면 추출 실패로 보고한다'
 
+# ── 9. 규약 변수의 SSOT — 규칙 · 문서 · 진단기가 부르는 KCSDK_* 는 전부 가이드의 표에 행이 있다 ──────
+# 등록부 docs-kcsdk-env-ssot: CLAUDE.md 는 「설치 · 환경변수 규약은 development-setup.md」라 가리키는데 그 표에는
+# 셋(KCSDK_TOOLS · KCSDK_JDK21 · KCSDK_PY)만 있었고, php.md 가 쓰는 KCSDK_PHP · KCSDK_OPENSSL_CNF 는 규칙 파일에만
+# 있었다(실측 2026-11-14). 스크립트 내부 변수(KCSDK_ITCOV_*)는 규약이 아니라 뺀다.
+GUIDE9="$ROOT/docs/guides/development-setup.md"
+_used9() { # $1 = 가이드 — 규칙 · CLAUDE.md · 가이드 · doctor.mjs 가 부르는 이름
+  cat "$ROOT"/.claude/rules/*.md "$ROOT/CLAUDE.md" "$1" "$DOC" \
+    | grep -oE 'KCSDK_[A-Z0-9_]+' | grep -v '^KCSDK_ITCOV_' | sort -u
+}
+_rows9() { # $1 = 가이드 — 표의 행 머리(`| `KCSDK_X` |`)
+  grep -oE '^\| `KCSDK_[A-Z0-9_]+`' "$1" | grep -oE 'KCSDK_[A-Z0-9_]+' | sort -u
+}
+_missing9() { # $1 = 가이드 — 표에 행이 없는 이름(공백으로 이음)
+  _rows="$(_rows9 "$1")"
+  _used9 "$1" | while IFS= read -r v; do
+    printf '%s\n' "$_rows" | grep -qxF -- "$v" || printf '%s ' "$v"
+  done
+}
+# 공허 하한 — 추출이 깨지면 두 집합이 다 비어 조용히 통과한다. ⚠️ 세어서 박는다: 실측 5(2026-11-14).
+_n9="$(_used9 "$GUIDE9" | grep -c . || true)"
+_short=1; [ "$_n9" -ge 5 ] && _short=0
+assert_eq "ok" "$(ok_if "$_short" "$_n9")" "[KCSDK] 부르는 규약 변수를 5개 미만 찾았다($_n9) — 추출이 깨졌나?"
+assert_eq "" "$(_missing9 "$GUIDE9")" "[KCSDK] development-setup.md 의 표에 행이 없는 규약 변수 — 표에 더하라"
+# 음성 대조 — 표에서 한 행을 빼면 울어야 한다(대조가 공허하지 않다는 증거).
+grep -v '^| `KCSDK_PY`' "$GUIDE9" > "$T5/guide9.md"
+assert_eq "KCSDK_PY " "$(_missing9 "$T5/guide9.md")" "[KCSDK·음성대조] 표에서 KCSDK_PY 행을 빼도 검출기가 침묵했다"
+
 assert_report
