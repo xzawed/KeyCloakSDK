@@ -213,4 +213,15 @@ assert_eq "1" "$(sed -n '/^rr_packagist_source()/,/^}/p' "$SH" | grep -cE 'curl 
   'rr_packagist_source 의 curl 이 시간 상한을 쓴다'
 assert_contains "$(grep -E '^RR_PHP_MIRROR=' "$SH")" 'keycloak-sdk-php' 'RR_PHP_MIRROR 이 미러 저장소다'
 
+# ── 오타 버전은 행렬을 찍기 전에 거부한다(return 2) ─────────────────────────────────────────
+# `0.2.O`(영문 O)는 어떤 태그와도 안 맞아 tag=none → 「저장소측 OK」 가 된다 — 비가역 행위 직전에 보는 도구라 최악의
+# 오답이다. 실측(2026-11-14, `scripts/probe.sh` 줄 변이): 이 거부를 `return 0` 으로 바꿔도 이 파일이 초록이었다.
+# 조회 전에 끝나는 길이라 네트워크를 타지 않는다(행렬 줄이 하나도 안 나와야 한다).
+_rr_rc=0; _rr_out="$(rr_main --version 0.2.O java 2>&1)" || _rr_rc=$?
+assert_eq "2" "$_rr_rc" "오타 버전(0.2.O)은 rr_main 이 2 로 거부한다"
+assert_contains "$_rr_out" "'0.2.O' is not a valid version for any language" "거부 이유를 말한다"
+assert_not_contains "$_rr_out" "tag=" "거부하면 행렬을 찍지 않는다"
+_rr_rc=0; rr_main --version >/dev/null 2>&1 || _rr_rc=$?
+assert_eq "2" "$_rr_rc" "--version 에 값이 없으면 2"
+
 assert_report
