@@ -308,7 +308,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 148건 (열림 58)
+## C. 품질 부채 — 148건 (열림 57)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -357,7 +357,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `go-admin-3xx-read-as-success` **[M/S · 신규 2026-10-25 · 닫힘 2026-11-13 #1062–#1066]** 아홉을 25 호출 × 3xx 셋으로 다 쟀다 — go · php · java · kotlin · python 을 그 상태의 admin 오류로, 옳던 넷은 가드
 - [x] `python-admin-list-error-array-body` **[M/S · 닫힘 2026-11-14 #1068 #1069 #1071]** 아홉을 다 쟀다 — python · go 고침, 옳던 일곱은 가드
 - [x] `admin-followable-redirect-class-divergent` **[L/S · 닫힘 2026-11-14 #1069 #1071]** go 만 갈렸다 — 고침, 옳던 여덟은 가드
-- [ ] `python-auth-error-body-shape-status` **[L/S · 신규 2026-11-14]** auth 레인은 객체 아닌 JSON 오류 본문에 메시지에서 HTTP 상태가 빠진다(클래스는 옳다 · #1068) · `python/src/keycloak_sdk/_internal/lower.py`
+- [x] `python-auth-error-body-shape-status` **[L/S · 신규 2026-11-14 · 닫힘 2026-11-14 #1073]** auth 레인 다섯 · admin 자기 그랜트가 마지막 응답의 상태로 — 토큰 응답 계급 행렬에 칸을 더했다
 - [x] `jwks-unsupported-key-rejects-set` **[M/M · 닫힘 2026-11-09 #998–#1001]** 못 읽는 원소 하나가 JWKS 전체를 버렸다 · 표는 #1000 본문
 - [x] `jwks-oct-key-usable-with-hs` **[M/S · 닫힘 2026-11-10 #1013]** 여덟이 oct 를 버린다(.NET 은 전역 플래그와 무관하게) · php 는 HS 서명을 거부(alg 없는 EC · OKP) · 표는 #1013 본문
 - [x] `rust-mixed-family-algorithms-reject-all` **[M/S · 닫힘 2026-11-11 #1016]** 핀을 키 계열로 거른 부분집합만 넘긴다 — jsonwebtoken 은 목록 전부가 헤더 alg 의 계열이기를 요구해 섞은 핀은 모든 토큰을 거부했다

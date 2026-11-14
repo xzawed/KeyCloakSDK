@@ -62,7 +62,8 @@ from keycloak.exceptions import KeycloakError
 from ..exceptions import KeycloakAuthError
 from ..tokens import _usable_access_token
 from .bearer import GRANTED, sendable
-from .lower import is_lower_failure, unusable_response
+from .lower import is_lower_failure, unusable_answer
+from .token_cap import Answered, answering
 
 #: 중첩 `KeycloakOpenID` 의 그랜트 메서드 — 연결이 토큰을 받는 자리 전부다.
 _SYNC_GRANTS = ("token", "refresh_token")
@@ -114,24 +115,26 @@ def _usable_expiry(response: Mapping[str, Any]) -> None:
         raise KeycloakAuthError("token response has an invalid expires_in")
 
 
-def _unusable(exc: Exception) -> KeycloakAuthError | None:
+def _unusable(exc: Exception, answered: Answered) -> KeycloakAuthError | None:
     """그랜트에서 빠져나온 python-keycloak 의 비-`KeycloakError` 실패 — 전송 실패는
     python-keycloak 이 전부 `KeycloakConnectionError` 로 감싸므로 이것은 끝까지 온 응답을 못
-    쓴 것이고, auth 레인과 같은 판정이다(`unusable_response`). python-keycloak 밖의 예외(우리
-    코드)는 `None` — 그대로 다시 던진다."""
-    return unusable_response(exc) if is_lower_failure(exc) else None
+    쓴 것이고, auth 레인과 같은 판정이다(`unusable_answer` — 2xx 가 아닌 응답이었으면 그 상태).
+    python-keycloak 밖의 예외(우리 코드)는 `None` — 그대로 다시 던진다."""
+    return unusable_answer(exc, answered) if is_lower_failure(exc) else None
 
 
 def _checked(grant: _Grant) -> _Grant:
     def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
         refused: KeycloakAuthError | None = None
+        answered = Answered()
         try:
-            response = grant(*args, **kwargs)
+            with answering(answered):
+                response = grant(*args, **kwargs)
         except KeycloakError as exc:
             _FAILED_GRANTS.add(exc)
             raise
         except Exception as exc:
-            refused = _unusable(exc)
+            refused = _unusable(exc, answered)
             if refused is None:
                 raise
         # ⚠️ 거부는 `except` **밖**에서 던진다 — 안에서 던지면 본문을 인용한 `TypeError` 가
@@ -146,13 +149,15 @@ def _checked(grant: _Grant) -> _Grant:
 def _achecked(grant: _AsyncGrant) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
     async def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
         refused: KeycloakAuthError | None = None
+        answered = Answered()
         try:
-            response = await grant(*args, **kwargs)
+            with answering(answered):
+                response = await grant(*args, **kwargs)
         except KeycloakError as exc:
             _FAILED_GRANTS.add(exc)
             raise
         except Exception as exc:
-            refused = _unusable(exc)
+            refused = _unusable(exc, answered)
             if refused is None:
                 raise
         if refused is not None:

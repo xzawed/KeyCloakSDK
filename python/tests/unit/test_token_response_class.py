@@ -43,6 +43,7 @@ LANES = ("sync", "aio")
 _OC = "/realms/r/protocol/openid-connect"
 _TOKEN = f"{_OC}/token"
 _INTROSPECT = f"{_OC}/token/introspect"
+_LOGOUT = f"{_OC}/logout"
 _JSON = "application/json"
 _HTML_TYPE = "text/html"
 _HTML = b"<html><body><h1>503 Service Unavailable</h1></body></html>"
@@ -151,6 +152,16 @@ TOKEN_CELLS: dict[str, _Answer] = {
     "403 access_denied": (403, _JSON, b'{"error":"access_denied"}'),
     "404 realm missing": (404, _JSON, b'{"error":"Realm does not exist"}'),
     "409 conflict": (409, _JSON, b'{"error":"conflict"}'),
+    # 객체가 아닌 JSON 오류 본문(등록부 python-auth-error-body-shape-status) — python-keycloak
+    # 은 `response.json()["message"]` 에서 `TypeError`(깊은 중첩은 `RecursionError`)로 깨진다.
+    # 302 는 이 레인이 따라가지 않는 3xx 다. 401 의 문자열은 코드 모양이어도 코드가 아니다.
+    "r18a 400 JSON array": (400, _JSON, b"[]"),
+    "r18s 401 JSON string": (401, _JSON, b'"invalid_client"'),
+    "r18i 403 JSON number": (403, _JSON, b"42"),
+    "r18b 404 JSON boolean": (404, _JSON, b"true"),
+    "r18n 500 JSON null": (500, _JSON, b"null"),
+    "r18d 400 deeply nested JSON": (400, _JSON, b"[" * 100_000 + b"]" * 100_000),
+    "r18r 302 JSON array": (302, _JSON, b"[]"),
 }
 
 _HTTP = "Keycloak request failed: HTTP"
@@ -206,6 +217,13 @@ S1: dict[str, _Verdict] = {
     # Keycloak's prose is no code — `error` is `[a-z_]{1,64}` only (test_oauth_error_code_echo).
     "404 realm missing": _auth(f"{_HTTP} 404"),
     "409 conflict": _auth(f"{_HTTP} 409 (conflict)", "conflict"),
+    "r18a 400 JSON array": _auth(f"{_HTTP} 400"),
+    "r18s 401 JSON string": _auth(f"{_HTTP} 401"),
+    "r18i 403 JSON number": _auth(f"{_HTTP} 403"),
+    "r18b 404 JSON boolean": _auth(f"{_HTTP} 404"),
+    "r18n 500 JSON null": _auth(f"{_HTTP} 500"),
+    "r18d 400 deeply nested JSON": _auth(f"{_HTTP} 400"),
+    "r18r 302 JSON array": _auth(f"{_HTTP} 302"),
 }
 
 #: introspection 엔드포인트의 칸 — 토큰 엔드포인트는 정상이다.
@@ -241,6 +259,9 @@ INTROSPECTION_CELLS: dict[str, _Answer] = {
         _JSON,
         _with(_GOOD_INTRO, b'"sub":"a' + _U + b"d83d" + _U + b'de00b"'),
     ),
+    "r18a 400 JSON array": (400, _JSON, b"[]"),
+    "r18n 500 JSON null": (500, _JSON, b"null"),
+    "r18d 400 deeply nested JSON": (400, _JSON, b"[" * 100_000 + b"]" * 100_000),
 }
 
 INTRO: dict[str, _Verdict] = {
@@ -261,6 +282,9 @@ INTRO: dict[str, _Verdict] = {
     "r16 200 corrupt gzip": _auth("introspection response could not be decoded"),
     "r16t 200 truncated gzip": ("KeycloakTransportError", "introspection response was cut short"),
     "r17 200 valid surrogate pair": OK,
+    "r18a 400 JSON array": _auth(f"{_HTTP} 400"),
+    "r18n 500 JSON null": _auth(f"{_HTTP} 500"),
+    "r18d 400 deeply nested JSON": _auth(f"{_HTTP} 400"),
 }
 
 
@@ -271,6 +295,7 @@ INTRO: dict[str, _Verdict] = {
 class _Idp:
     token: _Answer
     introspection: _Answer = INTROSPECTION_CELLS["ok"]
+    logout: _Answer = (204, _JSON, b"")
     url: str = ""
     admin: list[str] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -280,6 +305,8 @@ class _Idp:
             return self.token
         if path == _INTROSPECT:
             return self.introspection
+        if path == _LOGOUT:
+            return self.logout
         if path.startswith("/admin/"):
             with self.lock:
                 self.admin.append(f"{method} {path}")
@@ -486,6 +513,30 @@ async def test_introspection_verdict(cell: str, lane: str) -> None:
     if err is None:
         assert result.active is True
         assert result.username == "svc"
+
+
+# refresh 와 logout 도 같은 경계(`_wrap`)다 — 객체가 아닌 JSON 오류 본문에 client_credentials
+# 와 같은 판정(그 상태)이다. refresh 는 토큰 엔드포인트, logout 은 제 엔드포인트가 그 칸으로
+# 답한다.
+_NON_OBJECT = ["r18a 400 JSON array", "r18n 500 JSON null", "r18d 400 deeply nested JSON"]
+
+
+@pytest.mark.parametrize("call", ["refresh", "logout"])
+@pytest.mark.parametrize("cell", _NON_OBJECT)
+@pytest.mark.parametrize("lane", LANES)
+async def test_refresh_and_logout_keep_the_status_of_a_non_object_error_body(
+    lane: str, cell: str, call: str
+) -> None:
+    with _fake_idp(TOKEN_CELLS[cell]) as idp:
+        idp.logout = TOKEN_CELLS[cell]
+        async with _client(lane, idp) as client:
+            _, err = await _attempt(
+                lane,
+                client,
+                lambda c: c.auth.refresh("rt-1") if call == "refresh" else c.auth.logout("rt-1"),
+            )
+
+    assert _verdict(err) == S1[cell]
 
 
 # --- 짝 없는 서로게이트 판독기 ------------------------------------------------------------------

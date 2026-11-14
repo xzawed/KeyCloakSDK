@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from keycloak.exceptions import KeycloakError
 
 from ..exceptions import KeycloakAuthError, KeycloakTransportError
-from .token_cap import ResponseRefused
+from .token_cap import Answered, ResponseRefused
 
 #: 등록된 OAuth 오류 코드의 모양(`invalid_grant` 등 — RFC 6749 §5.2 · IANA 레지스트리 · Keycloak 의
 #: 코드가 전부 이렇다). `carried_code` 가 쓴다.
@@ -128,13 +128,18 @@ def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportErr
 
 
 def auth_failure(
-    exc: BaseException, *, carry_code: bool = True, sent: Iterable[str | None] = ()
+    exc: BaseException,
+    *,
+    carry_code: bool = True,
+    sent: Iterable[str | None] = (),
+    answered: Answered | None = None,
 ) -> KeycloakAuthError | KeycloakTransportError:
     """auth 경계의 분류 — HTTP 응답을 받았으면 `KeycloakAuthError`, 못 받았으면 전송 오류.
 
     응답을 받았지만 python-keycloak 이 쓸 수 없다고 던진 실패(`TypeError` 등)도 응답을 받은
     쪽이다 — `TokenSet.from_response` 가 쓸 수 없는 토큰 JSON 을 `KeycloakAuthError` 로 내는 것과
-    같은 자리다. 응답 본문이 상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`).
+    같은 자리다(`unusable_answer` — 그 응답이 2xx 가 아니었으면 그 상태로 판정한다). 응답 본문이
+    상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`).
     OAuth 코드는 `carried_code` 가 허락한 것만 메시지와 `error` 에 함께 싣는다 — `sent` 는 그
     요청이 보낸 비밀 값이다. `carry_code` 가 거짓이면 싣지 않는다(`grant_failure`)."""
     refused = refused_body(exc)
@@ -148,6 +153,21 @@ def auth_failure(
         code = carried_code(oauth_error(exc), sent) if carry_code else None
         shown = f" ({code})" if code is not None else ""
         return KeycloakAuthError(f"Keycloak request failed: HTTP {status}{shown}", error=code)
+    return unusable_answer(exc, answered)
+
+
+def unusable_answer(exc: BaseException, answered: Answered | None) -> KeycloakAuthError:
+    """python-keycloak 이 끝까지 온 응답을 쓸 수 없다고 던진 실패(비-`KeycloakError`)의 판정.
+
+    그 호출이 마지막으로 받은 응답(`answered`, `token_cap.py`)이 2xx 가 아니면 그 상태다 —
+    `Keycloak request failed: HTTP <상태>`, 코드는 싣지 않는다(본문이 객체가 아니다).
+    python-keycloak 이 2xx 가 아닌 응답에서 깨지는 자리는 오류 본문의 `["message"]` 하나다 —
+    JSON 이 객체가 아니면 `TypeError`, 깊은 중첩이면 `RecursionError`(등록부
+    python-auth-error-body-shape-status — 예전에는 상태 없는 `unusable_response` 였다).
+    2xx 를 못 쓴 것은 `unusable_response` 그대로다."""
+    status = None if answered is None else answered.status
+    if status is not None and status >= 300:
+        return KeycloakAuthError(f"Keycloak request failed: HTTP {status}")
     return unusable_response(exc)
 
 

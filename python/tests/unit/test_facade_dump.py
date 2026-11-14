@@ -107,6 +107,13 @@ EXEMPT: dict[str, str] = {
     "keycloak_sdk._internal.admin_body.RedirectionStatus": (
         "세션 안의 신호 — 경계가 `KeycloakAdminError` 로 새로 만들고 신호는 버린다"
     ),
+    # auth 백채널 호출이 받은 마지막 응답의 상태(`_internal/token_cap.py`). `_wrap` · `_awrap` 과
+    # admin 자기 그랜트(`admin_grant._checked`)의 지역으로만 산다 — 공개 메서드가 실패의 traceback
+    # 프레임을 떼고(`_internal/frames.py`) 그랜트의 거부는 except 밖에서 새로 만들어진다. 담는 것은
+    # 상태 코드 하나다(admin 의 `Answer` 와 달리 본문을 담지 않는다).
+    "keycloak_sdk._internal.token_cap.Answered": (
+        "호출 동안만 사는 기록칸 — 상태 코드 하나, 실패의 traceback 프레임은 떼어진다"
+    ),
 }
 
 #: 알려진 누출 — `"뿌리|카나리아"` → 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**
