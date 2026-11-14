@@ -525,7 +525,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 ### 미완 마커 — 3
 
 - [ ] `harness-suites-untested-here-marker` **[M/M]** 하네스 스위트 4종(python·rust·ruby·kotlin)이 「미실행 검증(untested-here)」 마커를 단 채 스코어카드를 만든다 · `harness/suites/python.sh:6`
-- [x] `release-yml-unpaid-measurement` **[M/S · 닫힘 2026-11-14]** v1.1.0 · v1.2.4 로그에 사후 마커 — 빚은 갚았고, 블록은 「마지막으로 잰 핀과 다르면 다음 태그에서 잰다」로
+- [x] `release-yml-unpaid-measurement` **[M/S · 닫힘 2026-11-14 #1072]** v1.1.0 · v1.2.4 로그에 사후 마커 — 빚은 갚았고, 블록은 「마지막으로 잰 핀과 다르면 다음 태그에서 잰다」로
 - [ ] `install-verify-not-implemented-wording` **[L/S]** install-verify.sh의 유일한 TODO — not_implemented가 원인을 「언어 태스크 대기 중」으로 오귀속한다 · `harness/install/install-verify.sh:100`
 
 ### 로드맵·기능 갭 — 16
