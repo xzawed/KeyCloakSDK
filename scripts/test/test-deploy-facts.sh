@@ -125,17 +125,40 @@ assert_eq "$((n_all - n_pub))" "$n_unp" "df_unpublished 개수 = 전체 − 게�
 # 다르고(PEP 440·RubyGems 점·Maven 대문자 RC·SemVer) 틀리면 태그↔매니페스트 가드가 막는다.
 # ⚠️ `assert_ok`는 인자를 **명령으로 실행**한다 — 메시지를 덧붙이면 그게 `test`의 피연산자가 되어
 # 어서션이 문법오류로 실패한다(여기서 실제로 겪었다). 메시지를 남기려면 `assert_eq`를 쓴다.
-for L in $DEPLOY_LANGS; do
-  _v="$(df_published_version "$L")"
-  if df_is_published "$L"; then
-    assert_eq "nonempty" "$([ -n "$_v" ] && echo nonempty || echo empty)" \
-      "$L 은 게시됐는데 df_published_version 이 비어 있다"
-    assert_eq "match" "$(printf '%s' "$_v" | grep -qE "$(df_version_re "$L")" && echo match || echo nomatch)" \
-      "$L 의 게시 버전 [$_v] 이 그 언어의 표기 규칙에 맞지 않는다"
+# 판정기 — <언어> <버전>. 게시 여부는 DF_PUBLISHED(df_is_published)가 정한다. 아래 음성 대조가 같은 함수를 태운다.
+_pv_check() {
+  if df_is_published "$1"; then
+    assert_eq "nonempty" "$([ -n "$2" ] && echo nonempty || echo empty)" \
+      "$1 은 게시됐는데 df_published_version 이 비어 있다"
+    assert_eq "match" "$(printf '%s' "$2" | grep -qE "$(df_version_re "$1")" && echo match || echo nomatch)" \
+      "$1 의 게시 버전 [$2] 이 그 언어의 표기 규칙에 맞지 않는다"
   else
-    assert_eq "" "$_v" "$L 은 미게시인데 df_published_version 이 값을 갖는다"
+    assert_eq "" "$2" "$1 은 미게시인데 df_published_version 이 값을 갖는다"
   fi
+}
+for L in $DEPLOY_LANGS; do
+  _pv_check "$L" "$(df_published_version "$L")"
 done
+# 음성 대조 — 판정기가 세 갈래에서 실제로 운다. 아홉 전부 게시라 미게시 갈래는 살아 있는 검사에서 한 번도 안 돈다
+# (실측 2026-11-14 SILENT) — 위 합성 SSOT(`_synth_pub`)로 그 갈래를 태운다. 실패 단언은 되감고 「늘었는가」만 남긴다.
+_pv_cries() { # <설명> <언어> <버전> [가상 DF_PUBLISHED] — _pv_check 가 실패를 하나 이상 내야 한다
+  _pv_saved="$DF_PUBLISHED"; [ "$#" -ge 4 ] && DF_PUBLISHED="$4"
+  _a_save
+  _pv_check "$2" "$3" 2>/dev/null
+  _pv_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _pv_grew=0
+  _a_restore
+  DF_PUBLISHED="$_pv_saved"
+  assert_eq "ok" "$(ok_if "$_pv_grew" DID-NOT-FAIL)" "[음성대조] _pv_check 가 $1 을 통과시켰다"
+}
+_pv_cries "게시 언어의 빈 버전" "$_synth_lang" "" "$DEPLOY_LANGS"
+_pv_cries "표기 규칙 위반(PEP 440 에 하이픈 RC)" python "1.0.0-rc.1" "$DEPLOY_LANGS"
+_pv_cries "미게시 언어의 버전 값" "$_synth_lang" "1.0.7" "$_synth_pub"
+# 대조 — 미게시 갈래가 빈 값은 통과시킨다(늘 우는 판정기가 아니다).
+_a_save; _pv_saved="$DF_PUBLISHED"; DF_PUBLISHED="$_synth_pub"
+_pv_check "$_synth_lang" "" 2>/dev/null
+_pv_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _pv_quiet=0
+DF_PUBLISHED="$_pv_saved"; _a_restore
+assert_eq "ok" "$(ok_if "$_pv_quiet" CRIED)" "[대조] 미게시 언어의 빈 버전을 _pv_check 가 실패로 본다 — 오탐"
 
 # ⚠️ 호출자의 루프 변수를 밟지 않아야 한다(POSIX sh에 이식 가능한 `local`이 없다).
 # 이 대조군이 없으면 함수가 `_l` 같은 흔한 이름을 쓰다가 호출자 이터레이터를 덮어써도 모른다.
