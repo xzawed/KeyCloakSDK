@@ -166,7 +166,8 @@
           <excludes>
             <exclude>**/*IT.class</exclude>
             <exclude>**/KeycloakContainerSupport.class</exclude>
-            <!-- 라이브 네트워크 경계: 단위테스트 불가, Phase 6 통합테스트로 검증 (거버넌스 G3 주석) -->
+            <!-- 라이브 네트워크 경계: 단위 게이트 밖 — 통합 커버리지 하한(scripts/integration-coverage.json)이 잰다(거버넌스 G3).
+                 단위로 못 재서 빼는 것이 아니다(실측 2026-09-27: 단위만으로 AuthClient 97.3 % · AdminClient 100 %). -->
             <exclude>**/AuthClient.class</exclude>
             <exclude>**/AdminClient.class</exclude>
             <!-- 같은 파일의 익명 클래스(엔진 훅 ClientHttpEngineBuilder43 의 createEngine)도 — 파일이 통째로 빠져야 Sonar 의

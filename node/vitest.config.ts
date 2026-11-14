@@ -8,7 +8,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      // 네트워크 경계(생성/실호출)는 통합테스트로만 검증 → 커버리지에서 omit.
+      // 네트워크 경계(생성/실호출)는 단위 게이트 밖 — 통합 커버리지 하한(scripts/integration-coverage.json)이 잰다.
+      // 「통합으로만 검증」은 아니다: 단위 테스트도 친다(진짜 openid-client 를 가짜 IdP 에 붙이는 auth-id-token-signature 등).
       // ⚠️ **`src/transport.ts` 는 2026-09-10 에 제외에서 뺐다 — 다시 넣지 말 것.** 그 파일은
       // 네트워크를 타지 않는 **순수 분류기**다(`isTransportError`). 「실동작은 경계 테스트가
       // 검증한다」던 주석은 거짓이었다: 경계 테스트가 치는 팔이 `AbortError`·`ECONNREFUSED`
