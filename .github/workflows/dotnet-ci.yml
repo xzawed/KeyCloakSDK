@@ -71,8 +71,8 @@ jobs:
       # 같아 구분이 불가능하다. run 30676360497이 이 문구로 실패했는데 같은 커밋 재실행은 96.68%로
       # 통과했다(로컬 45회는 무재현 — CI 러너 종료 타이밍에만 걸리는 경로였다).
       # 컬렉터는 테스트 호스트 안에서 VSTest의 SessionEnd 콜백에 flush하므로 이 경로가 아예 없다.
-      # 제외 필터는 dotnet/coverlet.runsettings로 옮겼다(문법 동일, 측정 수치 무변경을 실측 확인:
-      # 두 방식 모두 lines 175/181 · branches 45/50).
+      # 제외 필터는 dotnet/coverlet.runsettings로 옮겼다(문법 동일 — 옮길 때 두 방식의 측정 수치가 같음을 확인했고, 그
+      # 수치는 그 커밋 4f00df98 이 소유한다: 주석에 박힌 실측치는 다음 측정부터 낡는다).
       - name: Unit tests + coverage
         # attest — 적대 경로 행렬은 마지막 Assert 뒤에만 $HP_ATTEST_DIR/dotnet.json 을 쓴다(근거: ci.yml 의 같은 단계).
         env:
