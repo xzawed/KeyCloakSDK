@@ -74,6 +74,18 @@ fi
 # ── conformance.mjs가 실제로 이 모듈을 쓰는가. ──────────────────────────────
 # 모듈만 고치고 호출부가 옛 인라인 정규식을 그대로 두면 이 테스트 전부가 공허하다.
 CONF="$DIR/../../harness/conformance/conformance.mjs"
+# ⚠️ **부재 판정 둘은 함수다** — 라이브와 아래 양성 대조가 같은 코드를 부른다. 부재 검사는 패턴이 깨져도 라이브에서
+# 늘 초록이라, 금지한 것을 넣은 사본에서 우는 것을 보지 않으면 「없다」와 「못 본다」가 같다(실측 2026-11-14 SILENT 둘).
+# $1=파일 → 0 = 옛 인라인 정규식이 있다.
+ca_old_regex() { grep -q 'code_challenge_method=S256' "$1"; }
+# $1=파일 → 0 = 주석이 아닌 코드에 앱 폴백(`x/cb`)이 있다.
+ca_fallback() {
+  _cc=$(grep -v '^[[:space:]]*//' "$1")
+  case "$_cc" in
+    *x/cb*) return 0 ;;
+  esac
+  return 1
+}
 # ⚠️ **import 는 호출이 아니다.** `judgeAuthzUrl` 이라는 토큰만 찾으면 import 줄이 그것을
 # 만족시키고, 호출을 `const v = { ok: r.status === 200 };` 로 갈아치워도 초록이다(독립 레그
 # 지목). 그래서 **호출 형태**를 찾는다.
@@ -99,7 +111,7 @@ case "$rec_line" in
     _A_FAIL=$((_A_FAIL+1))
     ;;
 esac
-if grep -q 'code_challenge_method=S256' "$CONF"; then
+if ca_old_regex "$CONF"; then
   printf 'FAIL conformance.mjs에 옛 인라인 정규식이 남아 있다\n' >&2
   _A_FAIL=$((_A_FAIL+1))
 else
@@ -114,14 +126,21 @@ fi
 # ⚠️ **주석을 걷어내고 센다.** 이 검사를 처음 쓸 때 바로 이 파일의 *설명 주석* 에 걸려
 # 빨개졌다 — 등록부가 이름 붙인 부류(`guard-probes-count-mentions-not-declarations`)를
 # 가드 자신이 저지른 것이다. 산문 언급은 선언이 아니다.
-conf_code=$(grep -v '^[[:space:]]*//' "$CONF")
-case "$conf_code" in
-  *x/cb*)
-    printf 'FAIL conformance.mjs가 앱 폴백(http://x/cb)을 그대로 보낸다 — 무시와 준수가 구분되지 않는다\n' >&2
-    _A_FAIL=$((_A_FAIL+1))
-    ;;
-  *) _A_PASS=$((_A_PASS+1)) ;;
-esac
+if ca_fallback "$CONF"; then
+  printf 'FAIL conformance.mjs가 앱 폴백(http://x/cb)을 그대로 보낸다 — 무시와 준수가 구분되지 않는다\n' >&2
+  _A_FAIL=$((_A_FAIL+1))
+else
+  _A_PASS=$((_A_PASS+1))
+fi
+# 양성 대조 — 위 두 부재 판정이 금지한 것을 넣은 사본에서 **운다**(라이브 파일 끝에 한 줄을 붙인다).
+_ca_tmp="$(mktemp -d)"
+trap 'rm -rf "$_ca_tmp"' EXIT
+{ cat "$CONF"; printf '\n%s\n' 'const legacy = /code_challenge_method=S256/;'; } > "$_ca_tmp/old-regex.mjs"
+{ cat "$CONF"; printf '\n%s\n' 'const probeRedirect = "http://x/cb";'; } > "$_ca_tmp/fallback.mjs"
+_v=0; ca_old_regex "$_ca_tmp/old-regex.mjs" && _v=1
+assert_eq "1" "$_v" "[authz-url·양성대조] 옛 인라인 정규식을 넣은 사본을 판정이 못 본다 — 부재 검사가 늘 「없다」를 말한다"
+_v=0; ca_fallback "$_ca_tmp/fallback.mjs" && _v=1
+assert_eq "1" "$_v" "[authz-url·양성대조] 앱 폴백을 보내는 사본을 판정이 못 본다 — 부재 검사가 늘 「없다」를 말한다"
 # 실행마다 달라야 한다 — 리터럴 하나로 고정하면 앱이 그 값을 하드코딩하는 순간 다시 공허하다.
 if grep -q 'probeRedirect = .*rnd()' "$CONF"; then
   _A_PASS=$((_A_PASS+1))
