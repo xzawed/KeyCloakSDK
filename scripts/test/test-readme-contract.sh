@@ -67,16 +67,29 @@ assert_contains "$_nt" "nonce 를 넘기지 않으면 nonce 를 실은 id_token 
 assert_contains "$_nt" 'unexpected ID Token "nonce" claim value' "[README 계약] 근거 시험이 openid-client 의 거부 문구를 단언하지 않는다"
 
 # ── 음성 대조 — 이 검사가 실제로 무는가 ──────────────────────────────────
+# ⚠️ README 마다 따로 흐리고 **그 README 의 실패 문구**를 단언한다. 영문만 흐리고 「아무 실패나」를 받던 동안 한글
+# 대조(_ko_line)는 깨져도 초록이었다(실측 2026-11-14 SILENT: _ko_line 에 _en_line 을 덧붙여도 통과).
 if [ -z "${RC_NEGATIVE:-}" ]; then
   _fx="$(mktemp -d)"
   trap 'rm -rf "$_fx"' EXIT
   mkdir -p "$_fx/rust/src" "$_fx/node/test/unit"
   cp "$LIB" "$_fx/rust/src/lib.rs"
   cp "$NODE_T" "$_fx/node/test/unit/"
-  cp "$KO" "$_fx/README.ko.md"
-  sed 's/`Jwk`/`JwkSet`/g; s/Jwk /JwkSet /g' "$EN" > "$_fx/README.md"   # README.md 에서만 이름 하나를 흐린다
-  if RC_NEGATIVE=1 RC_ROOT="$_fx" sh "$0" >/dev/null 2>&1; then _neg=PASSED; else _neg=FAILED; fi
+  _rc_blur() { sed 's/`Jwk`/`JwkSet`/g; s/Jwk /JwkSet /g' "$1"; }   # 이름 하나(`Jwk`)를 흐린다
+  _rc_msg_en="FAIL [README 계약] README.md 의 은닉 예외 문장이 Rust 재노출 \`Jwk\` 을 적지 않는다"
+  _rc_msg_ko="FAIL [README 계약] README.ko.md 의 은닉 예외 문장이 Rust 재노출 \`Jwk\` 을 적지 않는다"
+  # (a) README.md 만 흐린다 — 영문 실패만 나야 한다.
+  _rc_blur "$EN" > "$_fx/README.md"; cp "$KO" "$_fx/README.ko.md"
+  _out="$(RC_NEGATIVE=1 RC_ROOT="$_fx" sh "$0" 2>&1)" && _neg=PASSED || _neg=FAILED
   assert_eq "FAILED" "$_neg" "[README 계약] 음성 대조: README.md 에서 Jwk 를 흐린 사본이 통과했다 — 이 검사가 공허하다"
+  assert_contains "$_out" "$_rc_msg_en" "[README 계약] 음성 대조: README.md 를 흐렸는데 영문 은닉 예외 실패가 아니다"
+  assert_not_contains "$_out" "$_rc_msg_ko" "[README 계약] 음성 대조: README.md 만 흐렸는데 한글 쪽이 실패한다"
+  # (b) README.ko.md 만 흐린다 — 한글 실패만 나야 한다.
+  cp "$EN" "$_fx/README.md"; _rc_blur "$KO" > "$_fx/README.ko.md"
+  _out="$(RC_NEGATIVE=1 RC_ROOT="$_fx" sh "$0" 2>&1)" && _neg=PASSED || _neg=FAILED
+  assert_eq "FAILED" "$_neg" "[README 계약] 음성 대조: README.ko.md 에서 Jwk 를 흐린 사본이 통과했다 — 한글 대조가 공허하다"
+  assert_contains "$_out" "$_rc_msg_ko" "[README 계약] 음성 대조: README.ko.md 를 흐렸는데 한글 은닉 예외 실패가 아니다"
+  assert_not_contains "$_out" "$_rc_msg_en" "[README 계약] 음성 대조: README.ko.md 만 흐렸는데 영문 쪽이 실패한다"
 fi
 
 assert_report

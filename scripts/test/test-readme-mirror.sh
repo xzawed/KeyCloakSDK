@@ -32,8 +32,9 @@ rm_headings() { grep -oE '^#{1,6} ' "$1" | tr -d ' ' | tr '\n' '-'; }
 _en_h="$(rm_headings "$EN")"
 _ko_h="$(rm_headings "$KO")"
 # 공허 하한 — 추출이 깨지면 둘 다 빈 문자열이 되어 조용히 통과한다. 실측 11(2026-09-22).
+# ⚠️ 하한은 rm_headings 출력 자신을 센다 — 따로 grep 하면 rm_headings 가 깨져도 하한은 통과한다(실측 2026-11-14 SILENT).
 RM_MIN_HEADINGS=10
-_hn="$(grep -cE "^#{1,6} " "$EN" || true)"
+_hn="$(printf '%s' "$_en_h" | tr '-' '\n' | grep -c . || true)"
 _enough=1; [ "$_hn" -ge "$RM_MIN_HEADINGS" ] && _enough=0
 assert_eq "ok" "$(ok_if "$_enough" "$_hn")" \
   "[미러] README.md 에서 헤딩을 ${RM_MIN_HEADINGS}개 미만 찾았다($_hn) — 추출이 깨졌나?"
@@ -42,9 +43,18 @@ assert_eq "$_en_h" "$_ko_h" \
 
 # ── 2. 표 행 수 · 코드펜스 수 ──────────────────────────────────────────────
 # 표의 **내용**은 번역되지만 행 수는 같아야 한다 — 언어 행 하나가 빠지는 것이 가장 흔한 어긋남이다.
-assert_eq "$(grep -c '^|' "$EN" || true)" "$(grep -c '^|' "$KO" || true)" \
+rm_rows()   { grep -c '^|' "$1" || true; }
+rm_fences() { grep -c '^```' "$1" || true; }
+_en_rows="$(rm_rows "$EN")"
+_en_fences="$(rm_fences "$EN")"
+# 공허 하한 — 패턴이 영영 안 맞으면 양쪽 다 0 이라 `0 = 0` 으로 통과한다(실측 2026-11-14 SILENT 둘).
+assert_eq "ok" "$(ok_if "$([ "$_en_rows" -ge 1 ] && printf 0 || printf 1)" "$_en_rows")" \
+  "[미러] README.md 에서 표 행을 하나도 못 찾았다 — 추출이 깨졌나? (0 = 0 으로 통과시키지 않는다)"
+assert_eq "ok" "$(ok_if "$([ "$_en_fences" -ge 1 ] && printf 0 || printf 1)" "$_en_fences")" \
+  "[미러] README.md 에서 코드펜스를 하나도 못 찾았다 — 추출이 깨졌나? (0 = 0 으로 통과시키지 않는다)"
+assert_eq "$_en_rows" "$(rm_rows "$KO")" \
   "[미러] 표 행 수가 다르다 — 한쪽 표에서 행이 빠졌거나 늘었다"
-assert_eq "$(grep -c '^```' "$EN" || true)" "$(grep -c '^```' "$KO" || true)" \
+assert_eq "$_en_fences" "$(rm_fences "$KO")" \
   "[미러] 코드펜스 수가 다르다 — 한쪽에만 예제를 넣거나 뺐다"
 
 # ── 3. 바깥을 가리키는 링크 타깃 집합 ──────────────────────────────────────

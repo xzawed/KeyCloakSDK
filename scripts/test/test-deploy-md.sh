@@ -16,12 +16,25 @@ body="$(cat "$DOC")"
 # (1) **언어 우주는 트리에서 파생해 대조한다**(비순환). `DEPLOY_LANGS` 자신을 세면 그것이 비었을
 # 때 하한도 0 이 되어 같이 무너진다 — 그래서 원천을 `df_tree_langs`(빌드 매니페스트를 가진
 # 최상위 디렉터리)로 둔다. 열 번째 언어가 들어오면 여기서 먼저 빨개진다.
-_dm_miss=''
-for L in $(df_tree_langs "$DIR/../.."); do
-  printf '%s\n' $DEPLOY_LANGS | grep -qx "$L" || _dm_miss="$_dm_miss $L"
-done
+# 판정기 — <트리 언어들> <DEPLOY_LANGS> → 뒤에 없는 앞의 언어(앞 공백 구분). 아래 음성 대조가 같은 함수를 먹인다.
+_dm_missing() {
+  _dm_m=''
+  for _dm_l in $1; do
+    printf '%s\n' $2 | grep -qx "$_dm_l" || _dm_m="$_dm_m $_dm_l"
+  done
+  printf '%s' "$_dm_m"
+}
+_dm_tree="$(df_tree_langs "$DIR/../..")"
+# 공허 하한 — git 이 아닌 트리에서 파생이 비자 루프가 아무것도 안 보고 통과했다(실측 2026-11-14 SILENT).
+_dm_tn=0; for _dm_l in $_dm_tree; do _dm_tn=$((_dm_tn + 1)); done
+assert_eq "ok" "$([ "$_dm_tn" -ge 1 ] && echo ok || echo EMPTY)" \
+  "[배포 문서] df_tree_langs 가 언어를 하나도 못 냈다 — git 이 아닌 트리이거나 파생이 깨졌다(대조가 공허해진다)"
+_dm_miss="$(_dm_missing "$_dm_tree" "$DEPLOY_LANGS")"
 assert_eq "" "$_dm_miss" \
   "[배포 문서] 트리에 있는 언어가 DEPLOY_LANGS 에 없다 —$_dm_miss (그 언어는 이 파일에서 조용히 빠진다)"
+# 음성 대조 — 트리에만 있는 열 번째 언어를 짚는다(판정기가 늘 통과하지 않는다, 실측 2026-11-14 SILENT).
+assert_eq " zig" "$(_dm_missing "python zig" "$DEPLOY_LANGS")" \
+  "[음성대조] 트리에만 있는 언어(zig)를 _dm_missing 이 짚지 못한다 — 판정이 늘 통과한다"
 
 # (2) **기대값이 비면 그 대조는 아무것도 안 한 것이다** — 값을 쓰기 전에 값이 있는지 단언한다.
 #
@@ -34,6 +47,11 @@ _dm_row_label() { case "$1" in
   rust) echo Rust ;; java) echo Java ;; kotlin) echo Kotlin ;; go) echo Go ;; php) echo PHP ;;
   *) echo "" ;;
 esac; }
+# 시크릿 판정기 — <본문> <이름> → ok | MISSING. 아래 음성 대조가 같은 함수를 먹인다.
+# ⚠️ 이름 경계까지 본다 — `SIGNING_IN_MEMORY_KEY` 는 `…_PASSWORD` 의 부분 문자열이라 맨 포함 검사는 짧은 쪽이 빠져도 통과한다.
+_dm_has_secret() {
+  printf '%s\n' "$1" | grep -qE "(^|[^A-Za-z0-9_])$2([^A-Za-z0-9_]|\$)" && echo ok || echo MISSING
+}
 for L in $DEPLOY_LANGS; do
   _dm_tag="$(printf "$(df_tag "$L")" X.Y.Z | sed 's/X.Y.Z/*/')"
   _dm_ok=1; [ -n "$_dm_tag" ] && _dm_ok=0
@@ -46,11 +64,20 @@ for L in $DEPLOY_LANGS; do
   # ⚠️ 시크릿이 **정당하게 0개**인 언어가 있다(OIDC/none) — 그래서 여기는 「비었나」가 아니라
   # 「셋 중 몇이 비었나」를 센다. 전부 비면 SSOT 가 죽은 것이다.
   [ -n "$_dm_sec" ] && _dm_sec_any=0
-  for s in $_dm_sec; do assert_contains "$body" "$s" "시크릿 $s"; done
+  for s in $_dm_sec; do assert_eq "ok" "$(_dm_has_secret "$body" "$s")" "시크릿 $s"; done
 done
 # 시크릿을 하나라도 낸 언어가 있어야 한다(전부 빈 값 = `df_secrets` 가 죽었다).
 assert_eq "ok" "$(ok_if "${_dm_sec_any:-1}" NONE)" \
   "[배포 문서] 아홉 언어 어디에서도 시크릿 이름이 안 나왔다 — df_secrets 가 죽었나?"
+# 음성 대조 — `SIGNING_IN_MEMORY_KEY` 는 `SIGNING_IN_MEMORY_KEY_PASSWORD` 의 부분 문자열이다. 긴 쪽만 적힌 본문에서
+# 짧은 쪽이 빠졌다고 짚어야 한다(실측 2026-11-14 SILENT).
+_dm_sec_fx='Set `SIGNING_IN_MEMORY_KEY_PASSWORD` in the repository secrets.'
+assert_eq "MISSING" "$(_dm_has_secret "$_dm_sec_fx" SIGNING_IN_MEMORY_KEY)" \
+  "[음성대조] _PASSWORD 형만 적힌 본문에서 SIGNING_IN_MEMORY_KEY 가 있다고 본다 — 이름 경계가 없다"
+assert_eq "ok" "$(_dm_has_secret "$_dm_sec_fx" SIGNING_IN_MEMORY_KEY_PASSWORD)" \
+  "[대조] 적힌 이름(SIGNING_IN_MEMORY_KEY_PASSWORD)을 못 찾는다 — 오탐"
+assert_eq "ok" "$(_dm_has_secret 'Set `SIGNING_IN_MEMORY_KEY`.' SIGNING_IN_MEMORY_KEY)" \
+  "[대조] 코드 스팬 속 이름(SIGNING_IN_MEMORY_KEY)을 못 찾는다 — 오탐"
 # dry-run 명령은 `df_dryrun`이 SSOT인데 DEPLOY.md는 그것을 **손으로 베낀 9줄**이고, 여태 둘을
 # 대조하는 것이 없었다. 실제로 갈라진 적이 있다 — kotlin이 `gradle -p kotlin publishToMavenLocal`
 # 로 남아 있었고, 이 기계에는 gradle이 PATH에 없어 문서대로 하면 실행조차 되지 않았다. 래퍼로
@@ -59,11 +86,16 @@ assert_eq "ok" "$(ok_if "${_dm_sec_any:-1}" NONE)" \
 # 덧붙인 경우)는 잡지 못한다. 실현된 부류(복사본이 낡아 SSOT 명령을 더는 담지 않음)를 잡는다.
 # 추출·정확일치로 바꾸려면 `- dry-run:` 인라인과 펜스 블록 두 형식을 모두 파싱해야 하는데,
 # 그 파서가 조용히 빗나가면 이 검사 자체가 공허해진다 — 포함 검사 + 사각지대 명시가 낫다.
+_dm_dr_n=0
 for L in $DEPLOY_LANGS; do
   _dr="$(df_dryrun "$L" 2>/dev/null || true)"
   [ -n "$_dr" ] || continue   # dry-run이 없는 언어는 대조 대상이 아니다
+  _dm_dr_n=$((_dm_dr_n + 1))
   assert_contains "$body" "$_dr" "DEPLOY.md의 $L dry-run이 df_dryrun(SSOT)과 다르다"
 done
+# 공허 하한 — 빈 값은 건너뛰므로 df_dryrun 이 전부 비면 하나도 대조하지 않고 통과했다(실측 2026-11-14 SILENT).
+assert_eq "ok" "$([ "$_dm_dr_n" -ge 1 ] && echo ok || echo NONE)" \
+  "[배포 문서] dry-run 을 하나도 대조하지 않았다 — df_dryrun 이 죽었나?"
 
 # 두 도우미 스크립트 참조
 assert_contains "$body" "scripts/release-readiness.sh" "readiness 참조"
@@ -78,24 +110,46 @@ assert_contains "$_dm_php_check" "sh scripts/check-php-mirror.sh <X.Y.Z>" "§9 P
 # 파일을 적는다. 미러 룰셋 둘(#311)을 런북이 오래 몰라 §6 이 룰셋이 막는 철회 경로를 안내했다(deploy-php-mirror-gap ·
 # deploy-narrative-stale). ⚠️ 경계까지 본다 — 이름은 백틱으로(`RELEASE-TAGS-CREATE` 는 `…-GO` 안에도 있다), 파일은
 # 디렉터리까지(미러의 `tags-immutable.json` 은 본 저장소 것과 이름이 같아, 맨 파일 이름이면 음성 대조가 그렇게 통과했다).
+# 판정기 — <정의 파일> <본문> → ok | MISSING:<이름> | NONAME. 아래 음성 대조가 같은 함수를 먹인다.
+# ⚠️ 이름은 JSON 으로 읽는다 — 줄 단위 `sed` 는 한 줄 JSON 에서 빈 값을 냈다. 이름을 못 읽으면 형태를 만들지 않고
+# NONAME 으로 실패한다(빈 이름의 형태 ``는 코드 펜스에 맞는다). 경로는 인자로 넘긴다(스크립트 문자열에 넣지 않는다).
+_dm_rs_check() {
+  _rs_name="$(node -e 'const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof j.name === "string" ? j.name : "")' "$1" 2>/dev/null || true)"
+  [ -n "$_rs_name" ] || { printf 'NONAME'; return 0; }
+  _rs_base="$(basename "$1")"
+  case "$1" in
+    */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
+    *) _rs_forms="\`$_rs_name\`|\`$_rs_base|rulesets/$_rs_base" ;;
+  esac
+  _rs_ok="MISSING:$_rs_name"
+  _ifs="$IFS"; IFS='|'
+  for _form in $_rs_forms; do case "$2" in *"$_form"*) _rs_ok=ok ;; esac; done
+  IFS="$_ifs"
+  printf '%s' "$_rs_ok"
+}
 _dm_rs_n=0
 for _f in "$DIR/../../.github/rulesets"/*.json "$DIR/../../.github/rulesets-mirror"/*.json; do
   [ -f "$_f" ] || continue
   _dm_rs_n=$((_dm_rs_n + 1))
-  _rs_name="$(sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' "$_f" | head -1)"
-  _rs_base="$(basename "$_f")"
-  case "$_f" in
-    */rulesets-mirror/*) _rs_forms="\`$_rs_name\`|rulesets-mirror/$_rs_base" ;;
-    *) _rs_forms="\`$_rs_name\`|\`$_rs_base|rulesets/$_rs_base" ;;
-  esac
-  _rs_ok=MISSING
-  _ifs="$IFS"; IFS='|'
-  for _form in $_rs_forms; do case "$body" in *"$_form"*) _rs_ok=ok ;; esac; done
-  IFS="$_ifs"
-  assert_eq "ok" "$_rs_ok" "[배포 문서] 룰셋 $_rs_base($_rs_name)을 DEPLOY.md 가 모른다"
+  assert_eq "ok" "$(_dm_rs_check "$_f" "$body")" "[배포 문서] 룰셋 $(basename "$_f")을 DEPLOY.md 가 모른다"
 done
 assert_eq "ok" "$([ "$_dm_rs_n" -ge 6 ] && echo ok || echo "ONLY-$_dm_rs_n")" \
   "[배포 문서] 대조한 룰셋 정의가 6 개 미만이다 — glob 이 빗나갔거나 정의가 사라졌다"
+# 음성 대조 — 런북이 모르는 룰셋은 JSON 모양(여러 줄 · 한 줄)과 무관하게 짚는다. 한 줄 JSON 에서 이름 추출이 비면
+# 형태가 빈 백틱 둘(``)이 되어 런북의 코드 펜스에 맞았다(실측 2026-11-14: 모르는 룰셋을 더해도 83 passed 0 failed).
+_dm_fx="$(mktemp -d)"
+mkdir -p "$_dm_fx/rulesets" "$_dm_fx/rulesets-mirror"
+printf '%s\n' '{' '  "name": "NOT-IN-RUNBOOK",' '  "target": "tag",' '  "enforcement": "active"' '}' > "$_dm_fx/rulesets/zz-pretty.json"
+printf '%s\n' '{ "name": "NOT-IN-RUNBOOK", "target": "tag", "enforcement": "active" }' > "$_dm_fx/rulesets/zz-oneline.json"
+printf '%s\n' '{ "name": "NOT-IN-RUNBOOK", "target": "branch", "enforcement": "active" }' > "$_dm_fx/rulesets-mirror/zz-oneline.json"
+for _f in rulesets/zz-pretty.json rulesets/zz-oneline.json rulesets-mirror/zz-oneline.json; do
+  assert_eq "MISSING:NOT-IN-RUNBOOK" "$(_dm_rs_check "$_dm_fx/$_f" "$body")" \
+    "[음성대조] 런북이 모르는 룰셋($_f)을 _dm_rs_check 가 짚지 못한다"
+done
+printf '%s\n' '{ "target": "tag", "enforcement": "active" }' > "$_dm_fx/rulesets/zz-noname.json"
+assert_eq "NONAME" "$(_dm_rs_check "$_dm_fx/rulesets/zz-noname.json" "$body")" \
+  "[음성대조] 이름을 못 읽은 룰셋을 통과시킨다 — 빈 이름의 형태가 코드 펜스에 맞는다"
+rm -rf "$_dm_fx"
 
 # PHP 게이트 — `php-release.yml` 의 `split` 이 기다리는 잡을 런북의 두 문장(§1 「PHP's gate」 · §2-D)이 전부 적는다.
 # 두 문장은 오래 `verify`(+ `integration`)만 적었고, 그 사이 `version` · `install-smoke` 가 들어왔다.
@@ -121,9 +175,16 @@ done
 #
 # 그래서 「사람에게 시키는 호출에는 `--version` 이 붙어 있다」를 본다. `--version` 을 설명하는
 # 문법 안내(`[--version <X.Y.Z>]`)는 대상이 아니므로, **언어 인자가 곧바로 붙은 호출**만 센다.
-_bad_calls="$(printf '%s\n' "$body" | grep -oE 'release-readiness\.sh +[a-z]+' || true)"
+# 판정기 — <본문> → 그런 호출(한 줄에 하나). 아래 양성 대조가 같은 함수를 먹인다.
+_dm_bad_calls() { printf '%s\n' "$1" | grep -oE 'release-readiness\.sh +[a-z]+' || true; }
+_bad_calls="$(_dm_bad_calls "$body")"
 assert_eq "" "$_bad_calls" \
   "DEPLOY.md 가 --version 없이 release-readiness.sh 를 치라고 한다 — 그 호출은 이미 게시된 버전을 읽는다"
+# 양성 대조 — 위반 호출을 실제로 짚고, `--version` 을 붙인 호출은 짚지 않는다(실측 2026-11-14 SILENT).
+assert_eq "release-readiness.sh java" "$(_dm_bad_calls 'Run `./release-readiness.sh java` before tagging.')" \
+  "[양성대조] --version 없는 readiness 호출을 _dm_bad_calls 가 짚지 못한다 — 이 부재 검사가 공허하다"
+assert_eq "" "$(_dm_bad_calls 'Run `./release-readiness.sh --version 1.0.1 java` before tagging.')" \
+  "[대조] --version 을 붙인 호출까지 짚는다 — 오탐"
 # 인증모델 그룹 헤딩 존재
 # ⚠️ DEPLOY.md는 사용자 대상 문서라 영문이다(문서 언어 규칙). 예전 이 어서션은 한글 "준비상태
 # 매트릭스"를 찾고 있었는데 문서가 영문으로 번역되면서 계속 실패하고 있었다(이 테스트는 어떤 CI

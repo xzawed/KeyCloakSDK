@@ -94,23 +94,27 @@ rm -rf "$_fx"
 # 때마다 사람이 헤더를 같이 고쳐야 하는 수이고, 그런 수는 반드시 썩는다.
 # ⚠️ 기대 상수를 두지 않는다 — 단언하는 것은 **헤더가 자기 절을 정확히 센다**는 규칙이다.
 # 항목이 하나 닫히면 양변이 함께 움직이므로 이 단언은 다시 보정되지 않는다.
-_hdr="$(awk '
-  function flush(){ if (cur != "") { if (sn != n || so != o) bad = bad sprintf("%s: 적힘 %d건(열림 %d) vs 실제 %d건(열림 %d)\n", cur, sn, so, n, o); secs++ } }
-  /^## / {
-    flush()
-    if ($0 ~ /^## [A-D]\./) {
-      cur = substr($0, 4, 2); n = 0; o = 0; sn = 0; so = 0
-      if (match($0, /— *[0-9]+ *건/))   { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); sn = t + 0 }
-      if (match($0, /열림 *[0-9]+/))     { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); so = t + 0 }
-    } else cur = ""
-    next
-  }
-  cur != "" && /^- \[ \] / { n++; o++ }
-  cur != "" && /^- \[x\] / { n++ }
-  END { flush(); printf "%d\n%s", secs, bad }
-' "$F")"
-_secs="$(printf '%s' "$_hdr" | head -1)"
-_bad="$(printf '%s' "$_hdr" | tail -n +2)"
+# 판정기 — <파일> → _secs(찾은 `## A–D` 절 수) · _bad(틀린 절, 한 줄에 하나)를 설정한다. 아래 고정 사례가 같은 함수를 먹인다.
+_hdr_check() {
+  _hdr="$(awk '
+    function flush(){ if (cur != "") { if (sn != n || so != o) bad = bad sprintf("%s: 적힘 %d건(열림 %d) vs 실제 %d건(열림 %d)\n", cur, sn, so, n, o); secs++ } }
+    /^## / {
+      flush()
+      if ($0 ~ /^## [A-D]\./) {
+        cur = substr($0, 4, 2); n = 0; o = 0; sn = 0; so = 0
+        if (match($0, /— *[0-9]+ *건/))   { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); sn = t + 0 }
+        if (match($0, /열림 *[0-9]+/))     { t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); so = t + 0 }
+      } else cur = ""
+      next
+    }
+    cur != "" && /^- \[ \] / { n++; o++ }
+    cur != "" && /^- \[x\] / { n++ }
+    END { flush(); printf "%d\n%s", secs, bad }
+  ' "$1")"
+  _secs="$(printf '%s' "$_hdr" | head -1)"
+  _bad="$(printf '%s' "$_hdr" | tail -n +2)"
+}
+_hdr_check "$F"
 
 # 공허 방지 — 절 이름 규칙이 바뀌어 0 개를 세면 아래 단언은 언제나 통과한다.
 assert_eq "4" "$_secs" \
@@ -118,6 +122,24 @@ assert_eq "4" "$_secs" \
 
 assert_eq "" "$_bad" \
   "[등록부] 절 헤더의 수가 그 절의 실제 체크박스와 다르다 — 헤더를 고치거나, 헤더에서 수를 빼라"
+
+# 절 헤더 규칙 자신의 고정 사례 — 「찾은 절 수:틀린 절 수」. 위 단언은 실제 등록부만 보므로 틀린 헤더를 짚는지는
+# 여기서 잰다(실측 2026-11-14 SILENT: 틀린 절 목록을 늘 비게 만들어도 초록이었다). `## 닫는 조건` 은 A–D 밖이다.
+_fx="$(mktemp -d)"
+printf '%s\n' '## A. 가 — 2건 (열림 1)' '- [ ] `a`' '- [x] `b`' '## B. 나 — 1건 (열림 0)' '- [x] `c`' \
+  '## C. 다 — 0건 (열림 0)' '## D. 라 — 1건 (열림 1)' '- [ ] `d`' '## 닫는 조건' '- [ ] `e`' > "$_fx/ok.md"
+printf '%s\n' '## A. 가 — 3건 (열림 1)' '- [ ] `a`' '- [x] `b`' '## B. 나 — 1건 (열림 0)' '- [x] `c`' \
+  '## C. 다 — 0건 (열림 0)' '## D. 라 — 1건 (열림 1)' '- [ ] `d`' > "$_fx/wrong-total.md"
+printf '%s\n' '## A. 가 — 2건 (열림 1)' '- [ ] `a`' '- [x] `b`' '## B. 나 — 1건 (열림 0)' '- [x] `c`' \
+  '## C. 다 — 0건 (열림 0)' '## D. 라 — 1건 (열림 0)' '- [ ] `d`' > "$_fx/wrong-open.md"
+for _case in ok:4:0 wrong-total:4:1 wrong-open:4:1; do
+  _name="${_case%%:*}"; _rest="${_case#*:}"
+  _hdr_check "$_fx/$_name.md"
+  assert_eq "$_rest" "$_secs:$(printf '%s' "$_bad" | grep -c . || true)" "[절 헤더 규칙] 사례 $_name: 찾은 절:틀린 절"
+done
+_hdr_check "$_fx/wrong-total.md"
+assert_contains "$_bad" "A.: 적힘 3건(열림 1) vs 실제 2건(열림 1)" "[절 헤더 규칙] 틀린 절의 진단이 적힌 수와 실제 수를 말하지 않는다"
+rm -rf "$_fx"
 
 # ── 소절(`###`) 헤더도 같은 규칙이다 ─────────────────────────────────────────
 # ⚠️ 실측 2026-10-28: 끝에 수를 적은 소절 열다섯 중 셋이 틀렸다(15 → 실제 38 · 10 → 14 · 6 → 25) — 위 단언이
@@ -171,15 +193,41 @@ assert_eq "1" "$_rawkey" \
   "[등록부] doc-budget 앵커에 max-raw-bytes 가 없다 — 원본 래칫은 사람 판정(2026-10-28)이다. 풀려면 이 단언을 고치는 diff 가 그 판정이다"
 
 # 아카이브 안내가 살아 있는가 — 이관한 곳을 가리키는 줄이 지워지면 다음 세션이 서사를 못 찾는다.
-_ptr="$(grep -c 'archive/docs-history-2026-09' "$F" || true)"
+# 판정기 — <파일> <ERE> → **머리말 안내(H1 ~ 첫 `##`)** 에서 맞은 줄 수. 아래 음성 대조가 같은 함수 · 같은 패턴 변수를
+# 먹인다. 본문 항목 · H1 앞 블록 주석의 같은 꼴 포인터는 안내 줄을 대신하지 못한다.
+_rw_preamble() { awk '/^# /{p=1; next} p && /^## /{exit} p' "$1"; }
+_rw_ptr() { _rw_preamble "$1" | grep -cE -- "$2" || true; }
+RW_ARCHIVE_RE='archive/docs-history-2026-09'
+RW_SHA_RE='git show [0-9a-f]{7,40}:docs/superpowers/plans/remaining-work\.md'
+_ptr="$(_rw_ptr "$F" "$RW_ARCHIVE_RE")"
 assert_eq "ok" "$(ok_if "$([ "$_ptr" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
   "[등록부] 이관 대상 태그(archive/docs-history-2026-09)를 가리키는 줄이 사라졌다"
+# 음성 대조 — 포인터가 머리말 밖(H1 앞 블록 주석 · 본문 항목)에만 있으면 짚는다. 파일 전체를 세면 안내 줄을
+# 지워도 통과한다 — 아래 _ptr2 의 주석이 같은 모양을 실측으로 적었다(이 단언도 실측 2026-11-14 SILENT).
+_fx="$(mktemp -d)"
+printf '%s\n' '<!-- 이관: `git show archive/docs-history-2026-09:docs/superpowers/plans/remaining-work.md` -->' '# 등록부' '' \
+  '> 안내 — 이관 포인터가 없다.' '' '## A. 절' \
+  '- [x] `a` 닫힘 — 서사는 `git show archive/docs-history-2026-09:docs/superpowers/plans/remaining-work.md`' > "$_fx/outside.md"
+printf '%s\n' '# 등록부' '> 이관분은 `git show archive/docs-history-2026-09:docs/superpowers/plans/remaining-work.md` 에 있다.' \
+  '## A. 절' > "$_fx/inside.md"
+assert_eq "0" "$(_rw_ptr "$_fx/outside.md" "$RW_ARCHIVE_RE")" \
+  "[음성대조] 머리말 밖에만 있는 이관 태그 포인터를 머리말 안내로 센다 — 안내 줄을 지워도 통과한다"
+assert_eq "1" "$(_rw_ptr "$_fx/inside.md" "$RW_ARCHIVE_RE")" "[대조] 머리말의 이관 태그 포인터를 못 센다 — 오탐"
 # 2026-10-28 이관분은 태그가 아니라 `main` 커밋을 가리킨다(`docs/README.md` 규칙: main 이력에 있으면 태그를 새로
 # 만들지 않는다). 그 sha 가 해석되는지는 check-docs 검사 10c 가 본다 — 여기는 포인터가 있는지만 본다.
 # ⚠️ **머리말 안내(H1 ~ 첫 `##`) 안에서만 찾는다** — 본문의 항목들이 같은 꼴의 포인터를 이미 셋 갖고 있어
 # 파일 전체를 grep 하면 안내 줄을 지워도 통과했다(실측 2026-10-28: 이 단언의 첫 판이 main 에서 초록이었다).
-_ptr2="$(awk '/^# /{p=1; next} p && /^## /{exit} p' "$F" | grep -cE 'git show [0-9a-f]{7,40}:docs/superpowers/plans/remaining-work\.md' || true)"
+# 그 범위를 _rw_ptr 이 소유하고, 아래 음성 대조가 그것을 잰다(범위를 파일 전체로 넓혀도 초록이었다, 실측 2026-11-14 SILENT).
+_ptr2="$(_rw_ptr "$F" "$RW_SHA_RE")"
 assert_eq "ok" "$(ok_if "$([ "$_ptr2" -ge 1 ] && printf 0 || printf 1)" MISSING)" \
   "[등록부] 머리말 안내에 2026-10-28 이관분을 가리키는 \`git show <sha>:docs/superpowers/plans/remaining-work.md\` 줄이 없다"
+printf '%s\n' '<!-- 인하 기록: `git show 7a4763a:docs/superpowers/plans/remaining-work.md` -->' '# 등록부' '' \
+  '> 안내 — 이관 포인터가 없다.' '' '## A. 절' \
+  '- [x] `a` 닫힘 — 서사는 `git show aaedad01:docs/superpowers/plans/remaining-work.md`' > "$_fx/outside-sha.md"
+printf '%s\n' '# 등록부' '> 이관분은 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 에 있다.' '## A. 절' > "$_fx/inside-sha.md"
+assert_eq "0" "$(_rw_ptr "$_fx/outside-sha.md" "$RW_SHA_RE")" \
+  "[음성대조] 머리말 밖에만 있는 git show <sha> 포인터를 머리말 안내로 센다 — 안내 줄을 지워도 통과한다"
+assert_eq "1" "$(_rw_ptr "$_fx/inside-sha.md" "$RW_SHA_RE")" "[대조] 머리말의 git show <sha> 포인터를 못 센다 — 오탐"
+rm -rf "$_fx"
 
 assert_report

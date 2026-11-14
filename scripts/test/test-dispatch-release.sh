@@ -143,11 +143,15 @@ assert_contains "$wf_text" 'enforcement === "active"' "룰셋 확인이 enforcem
 # 익명 API는 IP당 60/시간이고 러너 IP는 공유된다 — 403은 드물지 않다. 조회 실패를 경고로
 # 흘려보내면 강제 장치가 사라진 상태에서도 태그가 밀린다. 이 저장소가 스스로 세운 원칙이다:
 # "배포 시크릿 미설정은 '스킵'이 아니라 실패여야 한다."
-assert_eq "0" "$(grep -c '::warning::' "$WF" || true)" "확인 불가를 경고로 흘려보내지 않는다(fail-closed)"
+# 부재 판정 셋 — <워크플로> → 건수. 끝의 양성 대조가 같은 함수를 변조 사본에 먹인다.
+dr_warnings()  { grep -c '::warning::' "$1" || true; }
+dr_echo_out()  { grep -cE '^[^#]*echo "\$OUT"' "$1" || true; }
+dr_publishes() { grep -cE '(npm|cargo|gem|twine|dotnet nuget) publish|gh release create' "$1" || true; }
+assert_eq "0" "$(dr_warnings "$WF")" "확인 불가를 경고로 흘려보내지 않는다(fail-closed)"
 
 # ── (6) 출력 파싱 — dash의 echo가 백슬래시를 확장하는 경로를 쓰지 않는다 ───────
 # `^[^#]*`로 주석 줄을 제외한다 — 왜 쓰면 안 되는지 설명하는 주석이 그 idiom을 인용하고 있다.
-assert_eq "0" "$(grep -cE '^[^#]*echo "\$OUT"' "$WF" || true)" "출력 파싱에 echo를 쓰지 않는다"
+assert_eq "0" "$(dr_echo_out "$WF")" "출력 파싱에 echo를 쓰지 않는다"
 assert_contains "$wf_text" '"$#" -ne 3' "출력의 공백 3필드 계약을 어서션한다"
 # git ls-remote의 2(없음)와 128(전송/인증 실패)을 구분한다 — 구분하지 않으면 원격에 닿지도
 # 못한 실행이 "태그 없음"으로 읽혀 그대로 태그 생성으로 넘어간다.
@@ -155,6 +159,20 @@ assert_contains "$wf_text" 'LS_RC' "ls-remote 종료코드를 받아 구분한�
 
 # ── (7) 이 워크플로는 게시하지 않는다 ─────────────────────────────────────────
 # 디스패처가 직접 레지스트리를 건드리기 시작하면 "태그만 만든다"는 설계 경계가 무너진다.
-assert_eq "0" "$(grep -cE '(npm|cargo|gem|twine|dotnet nuget) publish|gh release create' "$WF" || true)" "디스패처는 게시하지 않는다"
+assert_eq "0" "$(dr_publishes "$WF")" "디스패처는 게시하지 않는다"
+
+# ── (8) 양성 대조 — 부재 판정 셋이 실제로 짚는가 ─────────────────────────────────
+# 셋 다 「0 건」만 단언해 왔다 — 패턴이 영영 안 맞아도 초록이다(실측 2026-11-14 SILENT). 워크플로 사본에 위반을
+# 하나씩 심어 같은 함수가 세는지 본다. 주석 줄의 `echo "$OUT"` 는 세지 않아야 한다(주석이 그 관용을 인용한다).
+cp "$WF" "$TMP/tampered.yml"
+printf '%s\n' \
+  '          echo "::warning::룰셋을 확인하지 못했다 — 계속 진행"' \
+  '          # set -- $(echo "$OUT") 는 쓰지 않는다(주석은 세지 않는다)' \
+  '          set -- $(echo "$OUT")' \
+  '          npm publish --access public' \
+  '          gh release create "$TAG"' >> "$TMP/tampered.yml"
+assert_eq "1" "$(dr_warnings "$TMP/tampered.yml")" "[양성대조] 심은 ::warning:: 을 dr_warnings 가 세지 못한다"
+assert_eq "1" "$(dr_echo_out "$TMP/tampered.yml")" "[양성대조] 심은 echo \"\$OUT\" 를 dr_echo_out 이 세지 못하거나 주석 줄까지 센다"
+assert_eq "2" "$(dr_publishes "$TMP/tampered.yml")" "[양성대조] 심은 게시 명령 둘(npm publish · gh release create)을 dr_publishes 가 세지 못한다"
 
 assert_report

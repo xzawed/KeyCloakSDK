@@ -125,17 +125,40 @@ assert_eq "$((n_all - n_pub))" "$n_unp" "df_unpublished 개수 = 전체 − 게�
 # 다르고(PEP 440·RubyGems 점·Maven 대문자 RC·SemVer) 틀리면 태그↔매니페스트 가드가 막는다.
 # ⚠️ `assert_ok`는 인자를 **명령으로 실행**한다 — 메시지를 덧붙이면 그게 `test`의 피연산자가 되어
 # 어서션이 문법오류로 실패한다(여기서 실제로 겪었다). 메시지를 남기려면 `assert_eq`를 쓴다.
-for L in $DEPLOY_LANGS; do
-  _v="$(df_published_version "$L")"
-  if df_is_published "$L"; then
-    assert_eq "nonempty" "$([ -n "$_v" ] && echo nonempty || echo empty)" \
-      "$L 은 게시됐는데 df_published_version 이 비어 있다"
-    assert_eq "match" "$(printf '%s' "$_v" | grep -qE "$(df_version_re "$L")" && echo match || echo nomatch)" \
-      "$L 의 게시 버전 [$_v] 이 그 언어의 표기 규칙에 맞지 않는다"
+# 판정기 — <언어> <버전>. 게시 여부는 DF_PUBLISHED(df_is_published)가 정한다. 아래 음성 대조가 같은 함수를 태운다.
+_pv_check() {
+  if df_is_published "$1"; then
+    assert_eq "nonempty" "$([ -n "$2" ] && echo nonempty || echo empty)" \
+      "$1 은 게시됐는데 df_published_version 이 비어 있다"
+    assert_eq "match" "$(printf '%s' "$2" | grep -qE "$(df_version_re "$1")" && echo match || echo nomatch)" \
+      "$1 의 게시 버전 [$2] 이 그 언어의 표기 규칙에 맞지 않는다"
   else
-    assert_eq "" "$_v" "$L 은 미게시인데 df_published_version 이 값을 갖는다"
+    assert_eq "" "$2" "$1 은 미게시인데 df_published_version 이 값을 갖는다"
   fi
+}
+for L in $DEPLOY_LANGS; do
+  _pv_check "$L" "$(df_published_version "$L")"
 done
+# 음성 대조 — 판정기가 세 갈래에서 실제로 운다. 아홉 전부 게시라 미게시 갈래는 살아 있는 검사에서 한 번도 안 돈다
+# (실측 2026-11-14 SILENT) — 위 합성 SSOT(`_synth_pub`)로 그 갈래를 태운다. 실패 단언은 되감고 「늘었는가」만 남긴다.
+_pv_cries() { # <설명> <언어> <버전> [가상 DF_PUBLISHED] — _pv_check 가 실패를 하나 이상 내야 한다
+  _pv_saved="$DF_PUBLISHED"; [ "$#" -ge 4 ] && DF_PUBLISHED="$4"
+  _a_save
+  _pv_check "$2" "$3" 2>/dev/null
+  _pv_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _pv_grew=0
+  _a_restore
+  DF_PUBLISHED="$_pv_saved"
+  assert_eq "ok" "$(ok_if "$_pv_grew" DID-NOT-FAIL)" "[음성대조] _pv_check 가 $1 을 통과시켰다"
+}
+_pv_cries "게시 언어의 빈 버전" "$_synth_lang" "" "$DEPLOY_LANGS"
+_pv_cries "표기 규칙 위반(PEP 440 에 하이픈 RC)" python "1.0.0-rc.1" "$DEPLOY_LANGS"
+_pv_cries "미게시 언어의 버전 값" "$_synth_lang" "1.0.7" "$_synth_pub"
+# 대조 — 미게시 갈래가 빈 값은 통과시킨다(늘 우는 판정기가 아니다).
+_a_save; _pv_saved="$DF_PUBLISHED"; DF_PUBLISHED="$_synth_pub"
+_pv_check "$_synth_lang" "" 2>/dev/null
+_pv_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _pv_quiet=0
+DF_PUBLISHED="$_pv_saved"; _a_restore
+assert_eq "ok" "$(ok_if "$_pv_quiet" CRIED)" "[대조] 미게시 언어의 빈 버전을 _pv_check 가 실패로 본다 — 오탐"
 
 # ⚠️ 호출자의 루프 변수를 밟지 않아야 한다(POSIX sh에 이식 가능한 `local`이 없다).
 # 이 대조군이 없으면 함수가 `_l` 같은 흔한 이름을 쓰다가 호출자 이터레이터를 덮어써도 모른다.
@@ -186,12 +209,32 @@ assert_eq "7" "$_ab_seen" "df_api_baseline 이 선언한 자리가 정확히 일
 #
 # 기대값을 리터럴 `false` 로 박는 것이 맞다 — 이것은 버전처럼 움직이는 값이 아니라 **정책**이고,
 # 바꾸려면 사람이 이 어서션을 함께 지워야 한다(그게 목적이다).
-_cp_java="$(grep -oE '<autoPublish>[^<]*' "$_ab_root/java/pom.xml" | sed 's/.*>//' | head -1)"
-_cp_kt="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$_ab_root/kotlin/build.gradle.kts" | sed 's/.*= *//' | head -1)"
-assert_eq "false" "${_cp_java:-없음}" \
+# 판정기 둘 — <파일> → ok | 읽은 값(없으면 없음). 아래 음성 대조가 같은 함수를 먹인다.
+# ⚠️ **모든 자리를 읽는다**(서로 다른 값을 정렬해 한 줄로) — 첫 자리만 읽으면 뒤에 붙은 true 가 숨는다.
+_cp_java_check() {
+  _cpj="$(grep -oE '<autoPublish>[^<]*' "$1" | sed 's/.*>//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  [ "${_cpj:-없음}" = "false" ] && echo ok || echo "${_cpj:-없음}"
+}
+_cp_kt_check() {
+  _cpk="$(grep -oE 'publishToMavenCentral\(automaticRelease *= *[A-Za-z]+' "$1" | sed 's/.*= *//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  [ "${_cpk:-없음}" = "false" ] && echo ok || echo "${_cpk:-없음}"
+}
+assert_eq "ok" "$(_cp_java_check "$_ab_root/java/pom.xml")" \
   "java/pom.xml 의 <autoPublish> 가 false 가 아니다 — Central 은 게시 후 철회가 없고 사람의 Publish 클릭이 유일한 회복 지점이다"
-assert_eq "false" "${_cp_kt:-없음}" \
+assert_eq "ok" "$(_cp_kt_check "$_ab_root/kotlin/build.gradle.kts")" \
   "kotlin/build.gradle.kts 의 automaticRelease 가 false 가 아니다 — 위와 같은 이유(자매 레인이라 함께 무너진다)"
+# 음성 대조 — 두 번째 자리의 true 를 짚는다. 첫 자리만 읽으면 프로파일 · 조건 분기에 붙은 true 가 숨는다
+# (실측 2026-11-14 SILENT). 같은 값이 둘이면 통과한다(오탐 대조).
+_cp_fx="$(mktemp -d)"
+printf '%s\n' '<autoPublish>false</autoPublish>' '<profile>' '  <autoPublish>true</autoPublish>' '</profile>' > "$_cp_fx/pom.xml"
+printf '%s\n' 'publishToMavenCentral(automaticRelease = false)' 'if (ci) { publishToMavenCentral(automaticRelease = true) }' > "$_cp_fx/build.gradle.kts"
+printf '%s\n' '<autoPublish>false</autoPublish>' '<autoPublish>false</autoPublish>' > "$_cp_fx/pom-twice.xml"
+assert_eq "false true" "$(_cp_java_check "$_cp_fx/pom.xml")" \
+  "[음성대조] 두 번째 <autoPublish>true 를 _cp_java_check 가 놓친다 — 첫 자리만 읽는다"
+assert_eq "false true" "$(_cp_kt_check "$_cp_fx/build.gradle.kts")" \
+  "[음성대조] 두 번째 automaticRelease = true 를 _cp_kt_check 가 놓친다 — 첫 자리만 읽는다"
+assert_eq "ok" "$(_cp_java_check "$_cp_fx/pom-twice.xml")" "[대조] false 가 두 자리면 통과해야 한다 — 오탐"
+rm -rf "$_cp_fx"
 
 # ---- examples 모듈을 Central 번들에서 빼는 유일한 자리 ----
 #
@@ -241,18 +284,19 @@ assert_eq "keycloak-sdk-examples" "${_last_mod:-없음}" \
 # ⚠️ 사본을 지울 수 있는 곳은 이 커밋에서 지웠다(CI 인자 2곳은 기본값과 바이트 동일이라
 # 무위험, `test-harness-registries.sh` 의 루프는 순서 무관이라 SSOT 파생). 남은 넷은
 # **실행 순서를 갖거나 그것을 설명하는 산문**이라 지울 수 없어서 대조한다.
-_LANG_RE='^(go|dotnet|node|python|java|php|rust|ruby|kotlin)$'
 _ssot_set="$(printf '%s\n' $DEPLOY_LANGS | sort | tr '\n' ' ')"
 
-# 파일에서 패턴에 맞는 **첫 줄**을 골라 언어 토큰만 뽑아 정렬된 집합으로 돌려준다.
-langset_of() {
-  grep -E -- "$2" "$DIR/../../$1" 2>/dev/null | head -1 \
-    | tr -c 'a-z' '\n' | grep -Ex "$_LANG_RE" | sort -u | tr '\n' ' '
+# 파일에서 패턴에 맞는 **첫 줄**을 골라, 그 줄의 언어 목록 — 공백으로 이은 소문자 낱말 둘 이상의 연속 — 의 낱말을
+# **전부** 정렬된 집합으로 돌려준다. ⚠️ 아는 아홉만 남기는 거름망(옛 `_LANG_RE`)을 두지 않는다 — 모르는 토큰을
+# 버리면 `… kotlin zig` 사본이 집합 대조를 통과한다(아래 음성 대조). 목록 밖 낱말이 그 연속에 붙으면 시끄럽게 운다.
+langset_of() { # $1=파일(루트 상대) $2=패턴 [$3=루트 — 아래 음성 대조가 픽스처 루트를 준다]
+  grep -E -- "$2" "${3:-$DIR/../..}/$1" 2>/dev/null | head -1 \
+    | LC_ALL=C grep -oE '[a-z]+( +[a-z]+)+' | tr -s ' ' '\n' | sort -u | tr '\n' ' '
 }
 
 _copy_sites=0
-check_langset() { # $1=파일 $2=패턴 $3=설명
-  _got="$(langset_of "$1" "$2")"
+check_langset() { # $1=파일 $2=패턴 $3=설명 [$4=루트]
+  _got="$(langset_of "$1" "$2" "${4:-}")"
   # 공허 방지 — 패턴이 낡아 0건이 되면 "불일치 0"이 통과로 보인다.
   assert_ok test -n "$_got"
   [ -n "$_got" ] || return 0
@@ -268,6 +312,26 @@ check_langset harness/install/install-verify.sh '^# Usage:' 'Usage 주석'
 
 # 공허 방지 — 대조한 자리가 줄면 이 검사는 아무것도 안 보면서 초록이 된다.
 assert_eq "4" "$_copy_sites" "언어 목록 사본을 4곳 대조해야 한다 — 자리가 줄었으면 패턴이 낡았거나 사본이 옮겨갔다"
+
+# ⚠️ 음성 대조 — 사본에 아홉 밖의 토큰이 붙으면 check_langset 자신이 운다. 모르는 토큰을 조용히 버리면
+# `… kotlin zig` 사본이 집합 대조를 통과한다(실측 2026-11-14 SILENT). 실패 단언은 되감고 「늘었는가」만 남긴다.
+_ls_fx="$(mktemp -d)"
+printf '%s\n' 'LANGS=("${@:-go dotnet node python java php rust ruby kotlin zig}")' > "$_ls_fx/verify.sh"
+printf '%s\n' 'LANGS=("${@:-go dotnet node python java php rust ruby kotlin}")' > "$_ls_fx/same.sh"
+_ls_sites="$_copy_sites"
+_a_save
+check_langset verify.sh '^LANGS=' '음성 대조 사본' "$_ls_fx" 2>/dev/null
+_ls_grew=1; [ "$_A_FAIL" -gt "$_A_SAVE_F" ] && _ls_grew=0
+_a_restore
+_a_save
+check_langset same.sh '^LANGS=' '오탐 대조 사본' "$_ls_fx" 2>/dev/null
+_ls_quiet=1; [ "$_A_FAIL" -eq "$_A_SAVE_F" ] && _ls_quiet=0
+_a_restore
+_copy_sites="$_ls_sites"
+rm -rf "$_ls_fx"
+assert_eq "ok" "$(ok_if "$_ls_grew" DID-NOT-FAIL)" \
+  "[음성대조] 아홉 밖의 토큰(zig)이 붙은 언어 목록 사본을 check_langset 이 통과시켰다 — 사본의 토큰을 버리지 말 것"
+assert_eq "ok" "$(ok_if "$_ls_quiet" CRIED)" "[대조] 아홉 그대로인 사본을 check_langset 이 실패로 본다 — 오탐"
 
 # ⚠️ **뿌리를 트리에 못 박는다.** 위 `check_langset` 넷은 사본을 `DEPLOY_LANGS` 와 대조할 뿐이라,
 # 열 번째 언어가 들어와도 **다섯이 서로 정합한 채 조용하다**(실측 2026-09-12: 추적된 `zig/` 를
