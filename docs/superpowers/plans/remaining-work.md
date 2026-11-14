@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=142839 max-raw-bytes=157739 -->
+<!-- doc-budget: max-bytes=141742 max-raw-bytes=156896 -->
+<!-- max-bytes 142839 → 141742 · max-raw-bytes 157739 → 156896: docs-commands-that-do-not-work 마감(#1080) — 열린 항목의 하위
+     불릿이 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 143454 → 142839 · max-raw-bytes 157980 → 157739: push-lane-failures-still-silent 마감 — 열린 항목의 긴 착수
      서사가 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
@@ -297,7 +299,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `jwks-response-size-unbounded-python` **[M/M · 닫힘 2026-09-12 · 부류 완결]** ⚠️ **9언어 JWKS 크기상한 부류의 마지막 이음매**였다(축 6 → **7**). 구현 `_internal/jwks_fetch.py`(sync·aio 공용) — 상류를 우회해 JWKS **요청 하나만** 스트리밍 GET 한다.
 - [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `IDocumentRetriever` 를 직접 구현해(`BoundedDocumentRetriever`) discovery·JWKS 만 51200B 로 묶었다. ⚠️ **`MaxResponseContentBufferSize` 를 쓰지 않은 이유**: 그 `HttpClient` 은 `AuthClient` 와 **공유**라(`KeycloakClient.cs:10`) 토큰·introspect 응답까지 함께 묶인다 — 역할이 많은 액세스 토큰은 정당하게 크다. 라이브러리 내부 상한 여부는 **여전히 미측정**이나(컴파일된 패키지) 우리가 거는 상한은 그것과 무관하다. 대체한 `HttpDocumentRetriever` 에서 이 SDK 가 쓰던 유일한 옵션 `RequireHttps` 는 테스트로 고정했다. 변이 4/4 `CAUGHT`(상한 상향 · 상태검사를 상한보다 앞으로 · RequireHttps 제거 · 교차언어 축).
 - [x] `kotlin-osv-audit-fail-open` **[H/S · 닫힘 2026-09-07 #438]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 됐다 · `.github/workflows/kotlin-ci.yml:72-83` · `security-audit.yml:80-89`
-- [x] `docs-commands-that-do-not-work` **[M/S · 닫힘 2026-11-14]** 가이드 · README 열하나의 셸 명령 75 를 전수로 — 실패 1 · 틀림 5 · tokio 누락 고침(KCSDK_PY 값은 #1078), 레지스트리 34 확인 · 일반형은 `rules-command-reference-existence-guard`
+- [x] `docs-commands-that-do-not-work` **[M/S · 닫힘 2026-11-14 #1080]** 가이드 · README 열하나의 셸 명령 75 를 전수로 — 실패 1 · 틀림 5 · tokio 누락 고침(KCSDK_PY 값은 #1078), 레지스트리 34 확인 · 일반형은 `rules-command-reference-existence-guard`
 - [x] `deploy-md-omits-release-request` **[M/S · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — #416(`aab1d67`)이 닫았는데 체크박스만 남아 있었다. §4 는 `DEPLOY.md:415–451` 이고 그 안 `:433`·`:440` 이 `.github/release-request.json` 을 트리거로 명시하며 「머지가 트리거가 아니다」까지 경고한다. 재현: `git log -S'Merging is not the trigger' -- DEPLOY.md`.
 - [x] `stale-prose-contradicts-source` **[M/S · 닫힘 2026-11-14 #1079 · 합침]** 부류는 남는다(산문 ↔ 원본에 오라클 없음) — `stale-comments-nobody-collates` 가 넓혀 소유한다 · 인용 셋은 #398
 - [ ] `compat-table-library-cells-drift` **[M/M]** compatibility.md Node 행의 라이브러리 셀 세 개가 태그 시점 락파일과 다르다 · `docs/reference/compatibility.md:22`
