@@ -44,6 +44,15 @@ assert_eq 'null' "$(count "$NOISE")" '「files indexed」 줄이 없으면 null'
 assert_eq 'null' "$(count "$LINE
 INFO  159 files indexed")" '서로 다른 값이 둘이면 null — 어느 쪽이 이 스캔인지 모른다'
 assert_eq 'null' "$(count 'INFO  1,810 files indexed')" '모르는 모양(천 단위 쉼표)은 810 으로 잘라 읽지 않는다'
+# 실제 잡 로그엔 색 코드(ESC[…m)가 섞인다 — 그 줄에서도 수를 읽는다.
+ESCLINE="$(printf '2026-11-14T14:27:07Z \033[36mINFO\033[0m  810 files indexed (done) | time=272ms')"
+assert_eq '810' "$(count "$ESCLINE")" '색 코드가 섞인 줄에서도 810 을 읽는다'
+# 로그 조회 인자 — 새 gh 는 이스케이프가 든 응답을 플래그 없이 거부하고(첫 CI 실행 둘이 못 읽은 원인), 옛 gh 는 그 플래그를
+# 모른다(「unknown flag」). 플래그로 먼저 묻고, 모를 때만 뺀다.
+assert_eq 'api repos/o/r/actions/jobs/1/logs --allow-escape-sequences' \
+  "$(call "m.logArgs('repos/o/r/actions/jobs/1/logs', false).join(' ')")" '로그는 --allow-escape-sequences 로 먼저 묻는다'
+assert_eq 'api repos/o/r/actions/jobs/1/logs' \
+  "$(call "m.logArgs('repos/o/r/actions/jobs/1/logs', true).join(' ')")" '플래그를 모르는 gh 에는 빼고 묻는다'
 
 # ── 2. #304 모양은 빨갛다 — 이 계측기가 있는 이유 ───────────────────────────────────
 _r="$(decide 159 487)"
