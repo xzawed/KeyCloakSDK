@@ -146,6 +146,10 @@ RSpec.describe KeycloakSdk::JwksStore do
 
     it "bounds retries while the IdP is failing — 20회 시도가 요청 1건이 된다" do
       stub = stub_request(:get, jwks_url).to_return(status: 500, body: "err")
+      # ⚠️ 멈춘 시계다 — 실제 시계면 스무 번이 첫 창(최소 100 ms) 안에 끝나야 해 느린 러너에서 거짓 실패한다
+      # (실측: 0.25 s 주입 → 3/3 실패, wall-clock-ordering-in-tests). jitter 는 기본값이다. 아래 대조군과 같은 스텁.
+      allow(Process).to receive(:clock_gettime).and_call_original
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(1000.0)
       20.times do
         store.key_set
       rescue KeycloakSdk::TransportError
