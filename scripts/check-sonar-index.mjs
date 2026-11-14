@@ -58,18 +58,30 @@ export function decide(res) {
 // 실패하면 그 이유를 남긴다 — 못 읽은 계측기가 왜 못 읽었는지 말하지 않으면 고칠 수 없다(실측: 첫 CI 실행이
 // 「못 읽었다」만 남겼다).
 let lastError = ''
+let lastStderr = ''
 function gh(args) {
   const r = spawnSync('gh', args, { encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 * 1024 })
   if (r.status === 0) return r.stdout
-  lastError = `gh ${args.slice(0, 2).join(' ')} → ${r.error?.message ?? `exit ${r.status}: ${(r.stderr || r.stdout || '').trim().split('\n').slice(-3).join(' | ')}`}`
+  lastStderr = `${r.stderr || ''}${r.stdout || ''}`
+  lastError = `gh ${args.slice(0, 2).join(' ')} → ${r.error?.message ?? `exit ${r.status}: ${lastStderr.trim().split('\n').slice(0, 2).join(' | ')}`}`
   return null
+}
+
+// 스캐너 로그에는 색 코드(터미널 이스케이프)가 있다. 새 gh 는 그런 응답을 플래그 없이 출력하지 않고(실측: 러너 gh —
+// 「the response contains terminal escape sequences; pass --allow-escape-sequences」, 첫 CI 실행 둘이 이것으로 못
+// 읽었다), 옛 gh 는 그 플래그를 모른다(로컬 2.88.1 — 「unknown flag」). 플래그로 먼저 묻고, 모르면 빼고 다시 묻는다.
+export const ESCAPE_FLAG = '--allow-escape-sequences'
+export function logArgs(path, flagUnknown) {
+  return flagUnknown ? ['api', path] : ['api', path, ESCAPE_FLAG]
 }
 
 function jobLogCount(repo, runId) {
   const jobs = gh(['api', `repos/${repo}/actions/runs/${runId}/jobs`, '--jq', `.jobs[] | select(.name == "${JOB}") | .id`])
   const id = jobs?.trim().split('\n')[0]
   if (!id) { if (jobs != null) lastError = `실행 ${runId} 에 ${JOB} 잡이 없다`; return null }
-  const log = gh(['api', `repos/${repo}/actions/jobs/${id}/logs`])
+  const path = `repos/${repo}/actions/jobs/${id}/logs`
+  let log = gh(logArgs(path, false))
+  if (log == null && lastStderr.includes(`unknown flag: ${ESCAPE_FLAG}`)) log = gh(logArgs(path, true))
   if (log != null && indexedCount(log) == null) lastError = `잡 ${id} 로그(${log.length}B)에 「N files indexed」 가 하나로 없다`
   return indexedCount(log)
 }
