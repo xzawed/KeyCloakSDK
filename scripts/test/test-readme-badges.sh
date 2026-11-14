@@ -28,9 +28,11 @@ badges() { grep -oE '!\[[^]]*\]\([^)]*\)' "$1" || true; }
 # shields.io의 레지스트리 엔드포인트는 `/<registry>/v/<pkg>` 꼴이다. 아홉 레지스트리를 전부 적는다 —
 # ⚠️ `badge/` (정적)와 구분해야 한다. 정적 배지는 허용이고 레지스트리 조회만 금지다.
 REGISTRY_RE='img\.shields\.io/(npm|pypi|crates|nuget|gem|packagist|maven-central|maven-metadata|hexpm|golang)/'
+# 판정기 — <파일> → 라이브 레지스트리 배지 수. 끝의 대조군이 같은 함수를 표본 파일에 먹인다.
+registry_count() { badges "$1" | grep -cE "$REGISTRY_RE" || true; }
 for f in "$EN" "$KO"; do
   b="$(basename "$f")"
-  assert_eq "0" "$(badges "$f" | grep -cE "$REGISTRY_RE" || true)" \
+  assert_eq "0" "$(registry_count "$f")" \
     "$b: 라이브 레지스트리 배지 없음(버전 SSOT는 deploy-facts.sh다)"
 done
 
@@ -71,22 +73,32 @@ done
 # 배지가 말하는 것은 **바닥**이다("아홉이 전부 이 선 위에 있다"). 그래서 기대값은 게시된
 # 버전들의 **최소 major.minor** 이고, 한 언어가 1.1 로 앞서가도 배지는 1.0 으로 남는 것이 옳다.
 # 값을 여기 박지 않는다 — `df_published_version` 이 소유한다.
+# 판정기 셋 — 끝의 대조군이 같은 함수를 먹인다.
+#   is_stable <버전>  → 0 이면 정식(0.x 가 아니다)
+#   min_mm <버전…>    → 최소 major.minor. ⚠️ 문자열 비교가 아니라 수치 비교다 — 사전식이면 `1.10` 이 `1.9` 보다 작다.
+#   status_of <파일>  → status 배지의 major.minor(없으면 빈 값)
+is_stable() { case "$1" in 0.*) return 1 ;; *) return 0 ;; esac; }
+min_mm() {
+  _min=''
+  for _v in "$@"; do
+    _mm="$(printf '%s' "$_v" | cut -d. -f1,2)"
+    if [ -z "$_min" ]; then _min="$_mm"; continue; fi
+    _c1="${_min%%.*}"; _c2="${_min#*.}"
+    _n1="${_mm%%.*}";  _n2="${_mm#*.}"
+    if [ "$_n1" -lt "$_c1" ] || { [ "$_n1" -eq "$_c1" ] && [ "$_n2" -lt "$_c2" ]; }; then _min="$_mm"; fi
+  done
+  printf '%s' "$_min"
+}
+status_of() { badges "$1" | grep -oE 'badge/status-[0-9]+\.[0-9]+-' | sed 's|.*badge/status-||;s|-$||' | head -1; }
 STABLE=0
-MIN_MM=""
+_pub_vs=''
 for L in $DEPLOY_LANGS; do
   v="$(df_published_version "$L" 2>/dev/null || true)"
   [ -n "$v" ] || continue
-  case "$v" in 0.*) : ;; *) STABLE=$((STABLE + 1)) ;; esac
-  _mm="$(printf '%s' "$v" | cut -d. -f1,2)"
-  if [ -z "$MIN_MM" ]; then
-    MIN_MM="$_mm"
-  else
-    # ⚠️ 문자열 비교가 아니라 수치 비교다 — 사전식이면 `1.10` 이 `1.9` 보다 작다고 나온다.
-    _c1="${MIN_MM%%.*}"; _c2="${MIN_MM#*.}"
-    _n1="${_mm%%.*}";    _n2="${_mm#*.}"
-    if [ "$_n1" -lt "$_c1" ] || { [ "$_n1" -eq "$_c1" ] && [ "$_n2" -lt "$_c2" ]; }; then MIN_MM="$_mm"; fi
-  fi
+  if is_stable "$v"; then STABLE=$((STABLE + 1)); fi
+  _pub_vs="$_pub_vs $v"
 done
+MIN_MM="$(min_mm $_pub_vs)"
 for f in "$EN" "$KO"; do
   b="$(basename "$f")"
   has_pre="$(badges "$f" | grep -c 'badge/status-pre--1\.0' || true)"
@@ -96,7 +108,7 @@ for f in "$EN" "$KO"; do
     assert_eq "0" "$has_pre" "$b: 1.0 이상이 $STABLE 개 있으므로 pre-1.0 배지는 거짓이다"
     # ⚠️ 공허성 — 추출이 0건이면 `없음` 으로 떨어져 실패한다. 배지를 **지우는** 변이가
     # 이 한 줄로 잡힌다(값 변조는 기대값 불일치로 잡힌다).
-    got="$(badges "$f" | grep -oE 'badge/status-[0-9]+\.[0-9]+-' | sed 's|.*badge/status-||;s|-$||' | head -1)"
+    got="$(status_of "$f")"
     assert_eq "$MIN_MM" "${got:-없음}" \
       "$b: status 배지가 게시 SSOT 의 최소 major.minor 와 다르다 — 배지는 아홉의 바닥을 말한다"
   fi
@@ -125,14 +137,32 @@ done
 
 # ---- 대조군: 이 가드가 실제로 잡는가 ----
 # ⚠️ 없으면 "전부 통과"가 검사가 도는 증거인지 정규식이 항상 거짓인지 구분할 수 없다.
-# 위 정규식들에 실제 위반 문자열을 직접 먹여 반응을 본다.
-assert_ok   sh -c 'printf "%s" "![npm](https://img.shields.io/npm/v/@xzawed/keycloak-sdk)" | grep -qE "img\.shields\.io/(npm|pypi|crates|nuget|gem|packagist|maven-central|maven-metadata|hexpm|golang)/"'
-assert_fails sh -c 'printf "%s" "![License](https://img.shields.io/badge/license-Apache--2.0-blue)" | grep -qE "img\.shields\.io/(npm|pypi|crates|nuget|gem|packagist|maven-central|maven-metadata|hexpm|golang)/"'
+# ⚠️ 대조군은 **위 판정기 그대로**(REGISTRY_RE · registry_count · is_stable · min_mm · status_of)를 부른다 — 정규식이나
+# 파이프라인을 여기 베껴 적으면 본체가 깨져도 사본이 초록이다(실측 2026-11-14 SILENT: 셋이 그랬다).
+_rb_fx="$(mktemp -d)"
+trap 'rm -rf "$_rb_fx"' EXIT
+# 레지스트리 열 곳의 라이브 배지 + 정적 배지 하나 — 열만 센다.
+for _r in npm/v/x pypi/v/x crates/v/x nuget/v/x gem/v/x packagist/v/x/y maven-central/v/g/a maven-metadata/v/x hexpm/v/x golang/x; do
+  printf '![r](https://img.shields.io/%s)\n' "$_r"
+done > "$_rb_fx/live.md"
+printf '%s\n' '![License](https://img.shields.io/badge/license-Apache--2.0-blue)' >> "$_rb_fx/live.md"
+assert_eq "10" "$(registry_count "$_rb_fx/live.md")" "[대조군] 라이브 레지스트리 배지 열을 registry_count 가 세지 못한다"
+printf '%s\n' '![License](https://img.shields.io/badge/license-Apache--2.0-blue)' '![npm](https://img.shields.io/badge/npm-1.0-blue)' > "$_rb_fx/static.md"
+assert_eq "0" "$(registry_count "$_rb_fx/static.md")" "[대조군] 정적 배지(badge/…)를 라이브 레지스트리 배지로 센다 — 오탐"
 # languages 추출이 숫자를 실제로 집는가(정규식이 비면 위 어서션이 "없음"으로 늘 실패하는 대신
 # 조용히 통과하는 판을 막는다).
 assert_eq "9" "$(printf '%s' '![Languages](https://img.shields.io/badge/languages-9-brightgreen)' | grep -oE 'badge/languages-[0-9]+' | grep -oE '[0-9]+$')"
-# pre-1.0 판정이 버전 문자열에 실제로 반응하는가.
-assert_eq "1" "$(printf '%s\n' '1.0.0' | grep -cvE '^0\.')"
-assert_eq "0" "$(printf '%s\n' '0.2.0' | grep -cvE '^0\.')"
+# pre-1.0 판정이 버전 문자열에 실제로 반응하는가 — 위 루프가 쓰는 is_stable 그대로.
+assert_ok    is_stable 1.0.0
+assert_ok    is_stable 10.2.0
+assert_fails is_stable 0.2.0
+# 최소 major.minor — 최소가 **맨 앞이 아닌** 순서를 먹인다. 살아 있는 SSOT 는 맨 앞(python)이 최소라 갱신 가지가
+# 한 번도 안 돌았다(실측 2026-11-14 SILENT). 사전식 함정(1.10 > 1.9)과 major 비교도 본다.
+assert_eq "1.0" "$(min_mm 1.4.1 1.0.7 1.2.4)" "[대조군] 맨 앞이 최소가 아닌 순서에서 min_mm 이 최소를 못 고른다"
+assert_eq "1.9" "$(min_mm 1.10.0 1.9.3)" "[대조군] min_mm 이 사전식으로 비교한다(1.10 < 1.9)"
+assert_eq "0.9" "$(min_mm 2.0.0 1.5.0 0.9.1)" "[대조군] min_mm 이 major 를 먼저 비교하지 않는다"
+# status 배지 추출이 배지의 값을 읽는가(기대값을 돌려주는 추출은 늘 맞는다).
+printf '%s\n' '![Status](https://img.shields.io/badge/status-1.2-brightgreen)' > "$_rb_fx/status.md"
+assert_eq "1.2" "$(status_of "$_rb_fx/status.md")" "[대조군] status_of 가 배지의 major.minor 를 읽지 못한다"
 
 assert_report
