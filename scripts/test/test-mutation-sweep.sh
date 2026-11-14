@@ -58,7 +58,12 @@ assert_contains "$_o" 'M1  test-check-coverage.sh × check-coverage.mjs' '알려
 assert_contains "$_o" 'M1  test-dependabot-updates.sh × check-dependabot-updates.mjs' '2026-11-14 SILENT 였던 쌍이 계획에 있다'
 _n="$(printf '%s\n' "$_o" | grep -c '^M1  ' || true)"
 assert_ok test "$_n" -ge 30
-assert_not_contains "$_o" 'deploy-facts.sh' '소싱 라이브러리는 실제 트리에서도 쌍이 아니다'
+# ⚠️ M1 줄의 판정기 칸만 본다 — 시험 이름 `test-deploy-facts.sh` 도 그 글자를 담아, 그 시험의 줄 레코드(`REC
+# test-deploy-facts.sh :: …`)가 생기자 출력 전체의 부분 문자열 검사가 거짓으로 울었다(2026-11-14). 대조가 칸 판정을 잰다.
+_lib_pairs() { printf '%s\n' "$1" | grep -cE '^M1 .* × (lib/)?deploy-facts\.sh$' || true; }
+assert_eq '0' "$(_lib_pairs "$_o")" '소싱 라이브러리는 실제 트리에서도 쌍이 아니다'
+assert_eq '1' "$(_lib_pairs 'M1  test-x.sh × lib/deploy-facts.sh')" '[대조] 판정기 칸의 lib/deploy-facts.sh 를 짚는다'
+assert_eq '0' "$(_lib_pairs 'REC test-deploy-facts.sh :: DF7')" '[대조] 시험 이름 속 deploy-facts.sh 는 쌍이 아니다'
 
 # ── 3. M1 주입기 — 출력은 두고 실패 종료만 0 으로 ─────────────────────────────────────────────
 FX="$(mktemp -d)"
