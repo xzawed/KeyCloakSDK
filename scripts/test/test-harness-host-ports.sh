@@ -43,18 +43,38 @@ done
 assert_eq "" "$_hard" \
   "[하네스 포트] 호스트 포트를 박은 줄이 있다 —$_hard (\${VAR:-기본값}:컨테이너포트 로 쓸 것)"
 
+# (3)(4)의 판정 — 라이브와 아래 음성 대조가 **같은 함수**를 부른다. $1=퍼블리시 줄들.
+hp_defaults() { printf '%s\n' "$1" | sed -nE 's/.*\$\{[A-Za-z_][A-Za-z0-9_]*:-([0-9]+)\}:[0-9]+.*/\1/p'; }
+hp_names() { printf '%s\n' "$1" | sed -nE 's/.*\$\{([A-Za-z_][A-Za-z0-9_]*):-[0-9]+\}:[0-9]+.*/\1/p'; }
+hp_dup_defaults() { printf '%s\n' "$(hp_defaults "$1")" | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//'; }
+hp_dup_names() { printf '%s\n' "$(hp_names "$1")" | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//'; }
+
+# (1b) 추출한 목록의 하한 — (1)은 **줄** 수를 세므로 추출이 깨져 빈 목록이 돼도 (3)(4)가 「겹침 없음」으로
+#      초록이었다(실측 2026-11-14 SILENT). 퍼블리시 줄마다 기본값 하나 · 이름 하나가 뽑혀야 한다.
+assert_eq "$_n" "$(hp_defaults "$_maps" | grep -c . || true)" \
+  "[하네스 포트] 기본 호스트 포트를 퍼블리시 줄 수($_n)만큼 못 뽑았다 — 추출이 깨졌나?"
+assert_eq "$_n" "$(hp_names "$_maps" | grep -c . || true)" \
+  "[하네스 포트] 호스트 포트 변수 이름을 퍼블리시 줄 수($_n)만큼 못 뽑았다 — 추출이 깨졌나?"
+
 # (3) 기본값은 서로 달라야 한다. 복붙으로 같은 기본값이 둘이면 두 서비스가 함께 뜨지 못하는데,
 #     그 실패는 「내 PC 에서만 안 된다」로 보여 원인을 못 찾는다.
-_defaults="$(printf '%s\n' "$_maps" | sed -nE 's/.*\$\{[A-Za-z_][A-Za-z0-9_]*:-([0-9]+)\}:[0-9]+.*/\1/p')"
-_dupes="$(printf '%s\n' "$_defaults" | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//')"
+_dupes="$(hp_dup_defaults "$_maps")"
 assert_eq "" "$_dupes" \
   "[하네스 포트] 기본 호스트 포트가 겹친다 — [$_dupes] (서비스마다 달라야 함께 뜬다)"
 
 # (4) 변수 이름도 서로 달라야 한다 — 이름이 겹치면 한 값이 두 서비스를 동시에 움직여
 #     (3)의 고유성 검사를 통과한 채로 충돌한다.
-_names="$(printf '%s\n' "$_maps" | sed -nE 's/.*\$\{([A-Za-z_][A-Za-z0-9_]*):-[0-9]+\}:[0-9]+.*/\1/p')"
-_ndupes="$(printf '%s\n' "$_names" | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//')"
+_ndupes="$(hp_dup_names "$_maps")"
 assert_eq "" "$_ndupes" \
   "[하네스 포트] 호스트 포트 변수 이름이 겹친다 — [$_ndupes]"
+
+# 음성 대조 — 겹치는 기본값 · 겹치는 이름을 담은 퍼블리시 줄을 같은 판정에 태운다(라이브는 늘 「겹침 없음」이라
+# 판정이 깨져도 초록이었다 — 실측 2026-11-14 SILENT 둘). 서로 다른 축이 서로를 대신하지 않는지도 본다.
+_hp_fx1="$(printf '%s\n' '      - "${HP_A_PORT:-8080}:8080"' '      - "${HP_B_PORT:-8080}:8090"')"
+_hp_fx2="$(printf '%s\n' '      - "${HP_A_PORT:-8080}:8080"' '      - "${HP_A_PORT:-8081}:8090"')"
+assert_eq "8080" "$(hp_dup_defaults "$_hp_fx1")" "[하네스 포트·음성대조] 겹치는 기본 호스트 포트를 못 잡는다"
+assert_eq "" "$(hp_dup_names "$_hp_fx1")" "[하네스 포트·음성대조] 이름이 다른데 겹친다고 한다"
+assert_eq "HP_A_PORT" "$(hp_dup_names "$_hp_fx2")" "[하네스 포트·음성대조] 겹치는 호스트 포트 변수 이름을 못 잡는다"
+assert_eq "" "$(hp_dup_defaults "$_hp_fx2")" "[하네스 포트·음성대조] 기본값이 다른데 겹친다고 한다"
 
 assert_report
