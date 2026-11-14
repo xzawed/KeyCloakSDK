@@ -18,10 +18,10 @@ ROOT="${BI_ROOT:-$DIR/../..}"
 bi_files() { (cd "$ROOT" && git ls-files | grep -iE 'dockerfile' | grep -v '^scripts/test/fixtures/'); }
 
 # `FROM` 한 줄 → `저장소<TAB>태그`. 멀티스테이지 별칭(`AS x`)과 플랫폼 인자는 떨군다.
-bi_pairs() { # stdin=파일목록
+bi_pairs() { # $1=루트 · stdin=파일목록
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    grep -hiE '^[[:space:]]*FROM[[:space:]]' "$ROOT/$f" 2>/dev/null \
+    grep -hiE '^[[:space:]]*FROM[[:space:]]' "$1/$f" 2>/dev/null \
       | sed 's/\r$//; s/[[:space:]]\{1,\}/ /g; s/^ //' \
       | sed 's/^[Ff][Rr][Oo][Mm] //; s/--platform=[^ ]* //; s/ [Aa][Ss] .*//' \
       | grep -vE '^[a-zA-Z0-9_-]+$' \
@@ -29,7 +29,34 @@ bi_pairs() { # stdin=파일목록
   done
 }
 
-PAIRS="$(bi_files | bi_pairs | sort -u)"
+# ── 판정 넷 — 라이브 단언과 아래 음성 대조가 **같은 함수**를 부른다. ─────────────────────────
+# 같은 저장소가 태그 둘 이상이면 운다(면제 제외). $1=쌍 $2=면제표 → 「 저장소(태그…)」 목록
+bi_split() {
+  _bs=''
+  for repo in $(printf '%s\n' "$1" | cut -f1 | sort -u); do
+    _tags="$(printf '%s\n' "$1" | awk -F'\t' -v r="$repo" '$1==r{print $2}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+    case "$_tags" in *' '*) ;; *) continue ;; esac
+    printf '%s\n' "$2" | cut -f1 | grep -qxF -- "$repo" && continue
+    _bs="$_bs $repo($_tags)"
+  done
+  printf '%s' "$_bs"
+}
+# 떠다니는 태그 — `latest` 나 태그 없음은 어제와 오늘이 다른 빌드를 만든다. $1=쌍 → 저장소 목록
+bi_float() { printf '%s\n' "$1" | awk -F'\t' '$2=="latest" || $2=="" {print $1}' | tr '\n' ' ' | sed 's/ *$//'; }
+# 면제표가 썩지 않게 — 면제한 저장소가 실제로 갈려 있지 않으면 표가 낡은 것이다. $1=쌍 $2=면제표
+bi_stale() {
+  _bst=''
+  for e in $(printf '%s\n' "$2" | cut -f1); do
+    [ -n "$e" ] || continue
+    _t="$(printf '%s\n' "$1" | awk -F'\t' -v r="$e" '$1==r{print $2}' | sort -u | grep -c . || true)"
+    [ "$_t" -ge 2 ] || _bst="$_bst $e"
+  done
+  printf '%s' "$_bst"
+}
+# 이유 없는 면제. $1=면제표
+bi_noreason() { printf '%s\n' "$1" | awk -F'\t' 'NF<2 || $2=="" {print $1}' | tr '\n' ' ' | sed 's/ *$//'; }
+
+PAIRS="$(bi_files | bi_pairs "$ROOT" | sort -u)"
 _nf="$(printf '%s\n' "$PAIRS" | grep -c . || true)"
 # 공허 하한 — 파싱이 깨지면 「갈린 것이 없어서」 초록이 된다. ⚠️ **세어서 박는다**: 실측 12 종
 # (저장소·태그 조합, 2026-09-15). 처음에 15 로 지어냈다가 이 가드가 자기 자신을 빨갛게 했다 —
@@ -49,31 +76,34 @@ mcr.microsoft.com/dotnet/sdk	앱 빌드는 10.0(SDK 프로젝트가 net10.0 도 
 EOF
 )"
 
-# 같은 저장소가 태그 둘 이상이면 운다(면제 제외).
-_split=''
-for repo in $(printf '%s\n' "$PAIRS" | cut -f1 | sort -u); do
-  _tags="$(printf '%s\n' "$PAIRS" | awk -F'\t' -v r="$repo" '$1==r{print $2}' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
-  case "$_tags" in *' '*) ;; *) continue ;; esac
-  printf '%s\n' "$BI_MULTI" | cut -f1 | grep -qxF -- "$repo" && continue
-  _split="$_split $repo($_tags)"
-done
+_split="$(bi_split "$PAIRS" "$BI_MULTI")"
 assert_eq "" "$_split" \
   "[베이스 이미지] 같은 저장소가 태그 둘 이상으로 갈렸다 —$_split (통일하거나 면제표에 이유를 적어라)"
 
-# 떠다니는 태그 금지 — `latest` 나 태그 없음은 어제와 오늘이 다른 빌드를 만든다.
-_float="$(printf '%s\n' "$PAIRS" | awk -F'\t' '$2=="latest" || $2=="" {print $1}' | tr '\n' ' ' | sed 's/ *$//')"
+_float="$(bi_float "$PAIRS")"
 assert_eq "" "$_float" "[베이스 이미지] 떠다니는 태그가 있다 —$_float"
 
 # ⚠️ **면제표가 썩지 않게** — 면제한 저장소가 실제로 갈려 있지 않으면 표가 낡은 것이다.
-_stale=''
-for e in $(printf '%s\n' "$BI_MULTI" | cut -f1); do
-  [ -n "$e" ] || continue
-  _t="$(printf '%s\n' "$PAIRS" | awk -F'\t' -v r="$e" '$1==r{print $2}' | sort -u | grep -c . || true)"
-  [ "$_t" -ge 2 ] || _stale="$_stale $e"
-done
+_stale="$(bi_stale "$PAIRS" "$BI_MULTI")"
 assert_eq "" "$_stale" "[베이스 이미지] 면제표에 **갈려 있지 않은** 저장소가 있다 — 표가 낡았다:$_stale"
 
-_noreason="$(printf '%s\n' "$BI_MULTI" | awk -F'\t' 'NF<2 || $2=="" {print $1}' | tr '\n' ' ' | sed 's/ *$//')"
+_noreason="$(bi_noreason "$BI_MULTI")"
 assert_eq "" "$_noreason" "[베이스 이미지] 이유 없는 면제가 있다:$_noreason"
+
+# ── 음성 대조 — 위 판정 그대로를 결함 있는 픽스처 Dockerfile 에 태운다. ─────────────────────────
+# 라이브는 늘 「없다」라 판정이 깨져도 초록이었다(실측 2026-11-14 SILENT 넷). 파서부터 같은 길로 간다.
+_bi_fx="$(mktemp -d)"
+trap 'rm -rf "$_bi_fx"' EXIT
+printf '%s\n' 'FROM alpine:3.20' > "$_bi_fx/a.Dockerfile"
+printf '%s\n' 'FROM alpine:3.21 AS build' 'FROM ruby:3.4-alpine' > "$_bi_fx/b.Dockerfile"
+_bi_fp="$(printf '%s\n' a.Dockerfile b.Dockerfile | bi_pairs "$_bi_fx" | sort -u)"
+assert_eq " alpine(3.20 3.21)" "$(bi_split "$_bi_fp" '')" \
+  "[베이스 이미지·음성대조] 태그가 둘로 갈린 저장소를 못 잡는다"
+assert_eq "" "$(bi_split "$_bi_fp" "$(printf 'alpine\t이유')")" \
+  "[베이스 이미지·양성대조] 면제한 저장소까지 갈렸다고 한다 — 면제표를 안 읽는다"
+assert_eq " ruby" "$(bi_stale "$_bi_fp" "$(printf 'alpine\t이유\nruby\t이유')")" \
+  "[베이스 이미지·음성대조] 갈리지 않은 저장소의 면제를 낡았다고 못 한다"
+assert_eq "alpine node" "$(bi_noreason "$(printf 'alpine\nnode\t\nruby\t이유')")" \
+  "[베이스 이미지·음성대조] 이유 없는 면제(탭 없음 · 빈 이유)를 못 잡는다"
 
 assert_report
