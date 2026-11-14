@@ -1,0 +1,38 @@
+name: mutation-sweep
+# 자가테스트가 판정기의 **거부**를 실제로 단언하는지 주간으로 잰다 — 판정기의 실패 종료를 0 으로 바꾸는 M1 쌍(트리에서
+# 파생)과 커밋된 줄 레코드(scripts/test/mutation-records.txt)를 scripts/probe.sh 로 돌린다. SILENT · INVALID 면 빨강이고
+# nightly-alert 가 이슈로 연다(판정 · 형식: scripts/mutation-sweep.mjs 머리 · 등록부 selftests-with-no-negative-case).
+#
+# PR 마다 돌리지 않는 이유: 쌍 하나가 그 자가테스트를 두 번(기준선 · 변이) 돌려 전부 합치면 repo-hygiene 의 몇 배다.
+# 레코드의 정적 유효성(OLD 줄 · SITE)은 PR 마다 repo-hygiene 의 test-mutation-sweep.sh 가 본다. 스윕 장치 자신을 고친
+# PR 에서는 실제 데이터로 한 번 돈다(아래 paths — 이 체크는 required 가 아니다).
+on:
+  schedule:
+    - cron: '30 5 * * 3' # 매주 수요일 05:30 UTC — harness 매일 03:00 · security-audit 월 04:00 · 레인 월 05:07~07:47 · published-floor 화 05:30 · dependabot-health 매일 06:45 과 겹치지 않게
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: ['scripts/mutation-sweep.mjs', 'scripts/lib/m1-exit-neutral.mjs', 'scripts/probe.sh', 'scripts/test/mutation-records.txt', '.github/workflows/mutation-sweep.yml']
+permissions:
+  contents: read
+jobs:
+  sweep:
+    name: 변이 스윕
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      # 자가테스트 몇이 gh 로 「조회 불가는 exit 2」 를 잰다 — 토큰이 없으면 미인증 경로로 통과해 기준선이 다른 것을 잰다
+      # (repo-hygiene 의 repo-config 잡과 같은 이유).
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # 기준선은 repo-hygiene 의 doc-facts 잡과 같은 체크아웃이어야 한다 — 이력 · 태그를 읽는 자가테스트가 있다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+      - name: 변이 스윕(SILENT · INVALID 면 빨강)
+        run: node scripts/mutation-sweep.mjs
