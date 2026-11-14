@@ -28,19 +28,54 @@ assert_not_contains "$out" "measurement" "하락을 측정 실패로 오분류�
 out=$(node "$GUARD" "$FIX/zero-hits.xml" --min-line 90 --min-branch 85 2>&1 || true)
 assert_contains "$out" "coverage-measurement-failed" "0 히트는 측정 실패로 보고"
 assert_not_contains "$out" "coverage-regression" "0 히트를 하락으로 보고하지 않는다"
+assert_contains "$out" "히트가 0이다" "분자 0 은 「히트가 0이다」로 말한다"
 
 # 아무것도 계측되지 않음(lines-valid=0) → 역시 측정 실패. 0으로 접으면 안 된다.
 out=$(node "$GUARD" "$FIX/nothing-instrumented.xml" --min-line 90 --min-branch 85 2>&1 || true)
 assert_contains "$out" "coverage-measurement-failed" "미계측은 측정 실패로 보고"
+# 두 측정 실패(분모 0 · 분자 0)는 같은 코드를 내므로 코드만 보면 한쪽 분기를 지워도 다른 분기가 받아 초록이다 —
+# 진단 문구로 가른다.
+assert_contains "$out" "계측된 라인이 0개다" "분모 0 은 「계측된 라인이 0개다」로 말한다"
+assert_not_contains "$out" "히트가 0이다" "분모 0 을 「히트 0」으로 말하지 않는다"
 
 # 리포트 파일 자체가 없음 → 조용히 통과하면 게이트가 무력화된다. fail-closed.
 out=$(node "$GUARD" "$FIX/does-not-exist.xml" --min-line 90 --min-branch 85 2>&1 || true)
 assert_contains "$out" "coverage-measurement-failed" "리포트 부재는 측정 실패로 보고"
+# 「리포트 0 개」 검사를 지우면 빈 합계가 「계측된 라인 0」으로 떨어져 같은 코드가 난다 — 이유로 가른다(Grok 레그 P2).
+assert_contains "$out" "cobertura 리포트를 찾지 못했다" "리포트 부재는 「리포트를 찾지 못했다」로 말한다"
 assert_fails node "$GUARD" "$FIX/does-not-exist.xml" --min-line 90 --min-branch 85
 
 # 디렉터리를 주면 하위에서 cobertura 리포트를 찾는다 — collector는 msbuild 통합과 달리 고정 경로가
 # 아니라 `TestResults/<랜덤 guid>/coverage.cobertura.xml`에 쓰므로 경로를 못박을 수 없다.
 assert_ok node "$GUARD" "$FIX/nested" --min-line 90 --min-branch 85
+
+# ── 한 번도 태우지 않던 경로 넷(guard-paths-never-exercised — 변이 프로브로 잰 SILENT, 2026-11-14) ──────────
+# ⚠️ 위 픽스처는 전부 리포트 **하나**라, 합산(`sum.lc +=`)을 덮어쓰기(`=`)로 바꿔도 초록이었다(probe SILENT).
+# .NET 은 net8.0 · net10.0 두 대상이라 리포트가 여럿일 수 있다. 두 리포트의 **분모를 다르게** 둔다 — 같으면 비율
+# 평균이 합산과 같은 판정을 내 구분되지 않는다(Grok 레그 Q3): 라인 90/100 + 10/20 → 합산 100/120 = 83.33% ·
+# 평균 70% · 브랜치 9/10 + 3/30 → 합산 12/40 = 30% · 평균 50%. 같은 디렉터리의 `coverage.opencover.xml` 은 미끼다 —
+# 파일 필터를 `.xml` 로 넓히면 그것을 읽고 lines-valid 가 없어 실패한다(Grok 레그 P1).
+out=$(node "$GUARD" "$FIX/multi" --min-line 80 --min-branch 30 2>&1 || true)
+assert_contains "$out" "(100/120)" "리포트 둘의 라인을 분자/분모로 합산한다"
+assert_contains "$out" "(12/40)" "리포트 둘의 브랜치를 분자/분모로 합산한다"
+assert_ok node "$GUARD" "$FIX/multi" --min-line 80 --min-branch 30      # 합산이면 통과 — 라인 평균(70%)이면 실패
+assert_fails node "$GUARD" "$FIX/multi" --min-line 84 --min-branch 30   # 합산 라인 83.33% < 84
+assert_fails node "$GUARD" "$FIX/multi" --min-line 80 --min-branch 31   # 합산 브랜치 30% < 31 — 평균(50%)이면 통과한다
+# 브랜치 30% 가 임계 30 과 정확히 같다 — 「미만」이 「이하」로 바뀌면 위 통과가 실패로 뒤집힌다(node 실측 12/40*100 = 30).
+
+# 분기가 없는 코드(branches-valid=0)는 0% 로 벌점하지 않는다 — 그렇게 접어도 초록이었다(probe SILENT). 접으면
+# 분기 없는 모듈이 영구 빨강이 된다.
+out=$(node "$GUARD" "$FIX/no-branches.xml" --min-line 90 --min-branch 85 2>&1 || true)
+assert_contains "$out" "브랜치 없음" "branches-valid=0 은 「브랜치 없음」이다"
+assert_ok node "$GUARD" "$FIX/no-branches.xml" --min-line 90 --min-branch 85
+# 라인 50/50 = 100% 가 임계 100 과 정확히 같다 — 라인 비교가 「이하」로 바뀌면 이 통과가 실패로 뒤집힌다.
+assert_ok node "$GUARD" "$FIX/no-branches.xml" --min-line 100 --min-branch 85
+
+# 루트에 lines-valid 가 없으면 형식이 바뀐 것이다 — 그 검사를 꺼도 초록이었다(probe SILENT: 0 으로 접혀 「미계측」
+# 이라는 엉뚱한 이유로 실패했다). 이유까지 단언한다.
+out=$(node "$GUARD" "$FIX/no-lines-valid.xml" --min-line 90 --min-branch 85 2>&1 || true)
+assert_contains "$out" "lines-valid를 읽지 못했다" "lines-valid 부재는 형식 변경으로 보고한다"
+assert_fails node "$GUARD" "$FIX/no-lines-valid.xml" --min-line 90 --min-branch 85
 
 # ── 임계값 인자 파싱 ─────────────────────────────────────────────────────────
 # ⚠️ 이 가드의 최악은 미달 오판이 아니라 **임계값이 조용히 사라지는 것**이다. `numArg`가
