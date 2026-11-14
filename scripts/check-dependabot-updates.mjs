@@ -138,7 +138,16 @@ export function decide(res, now = Date.now(), dirs = null) {
 }
 
 function main() {
-  const repo = repoSlug(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  // `--runs <파일>`: 저장한 `gh run list --json databaseId,status,conclusion,createdAt,displayTitle` 출력으로 같은
+  // 판정 — 지난 실패를 다시 재는 길이자, 진입점을 조회 없이 끝까지 시험하는 길이다.
+  const ri = argv.indexOf('--runs')
+  const runsFile = ri >= 0 ? argv[ri + 1] : undefined
+  if (ri >= 0 && !runsFile) {
+    console.error('::error::--runs 뒤에 저장한 실행 목록 파일이 없다')
+    process.exit(2)
+  }
+  const repo = runsFile ? null : repoSlug(argv)
   // 설정된 대상은 이 스크립트 옆 저장소의 dependabot.yml 에서 읽는다. 0 개면 침묵 대조가 공허하다 — 「모른다」로 끝낸다.
   let dirs
   try {
@@ -151,8 +160,17 @@ function main() {
     console.log('::error::.github/dependabot.yml 에서 directory 를 하나도 못 읽었다 — 대상별 침묵을 대조할 수 없다')
     process.exit(2)
   }
-  const res = gh(['run', 'list', '-R', repo, '--workflow', WORKFLOW, '--limit', '200',
-    '--json', 'databaseId,status,conclusion,createdAt,displayTitle'])
+  let res
+  if (runsFile) {
+    try {
+      res = { ok: true, out: readFileSync(runsFile, 'utf8') }
+    } catch (e) {
+      res = { ok: false, out: `저장한 실행 목록을 읽지 못했다 — ${e.message}` }
+    }
+  } else {
+    res = gh(['run', 'list', '-R', repo, '--workflow', WORKFLOW, '--limit', '200',
+      '--json', 'databaseId,status,conclusion,createdAt,displayTitle'])
+  }
   const d = decide(res, Date.now(), dirs)
   for (const line of d.lines) console.log(line)
   process.exit(d.code)

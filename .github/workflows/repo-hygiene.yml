@@ -584,8 +584,11 @@ jobs:
       - name: Dependabot 업데이트 판정기 자가테스트(마지막 실패 · 침묵 · 목록 아님을 초록으로 넘기지 않는지)
         # 네트워크 없이 판정 함수만 먹인다 — 토큰이 필요 없다. 실제 조회는 `dependabot-health.yml`(예약)이 돈다.
         run: sh scripts/test/test-dependabot-updates.sh
+      - name: 변이 스윕 자가테스트(약한 시험을 SILENT 로 · 낡은 제외 · 깨진 레코드를 계획부터 거부하는지)
+        # 레코드의 정적 유효성(OLD 줄 · SITE)이 여기서 PR 마다 돈다. 실제 변이는 주간 mutation-sweep.yml 이 돌린다.
+        run: sh scripts/test/test-mutation-sweep.sh
       - name: SonarCloud 색인 수 계측기 자가테스트(무너진 스캔 · 못 읽음을 초록으로 넘기지 않는지)
-        # 네트워크 없이 판정 함수만 먹인다. 실제 대조는 `sonarcloud.yml` 의 index-count 잡이 돈다.
+        # 네트워크 없이 판정 함수와 진입점(저장한 로그 --log)을 먹인다. 실제 대조는 `sonarcloud.yml` 의 index-count 잡이 돈다.
         run: sh scripts/test/test-check-sonar-index.sh
 
   php-mirror:

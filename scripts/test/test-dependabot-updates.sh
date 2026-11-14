@@ -137,4 +137,22 @@ assert_eq "2" "$(code 1 'null')" '진입점: 배열이 아니면 exit 2'
 # 소스 대조 — 진입점이 판정을 다시 쓰지 않고 decide() 의 코드로 끝난다.
 assert_contains "$(cat "$SH")" 'process.exit(d.code)' 'main() 은 decide() 의 종료 코드로 끝난다'
 
+# ── 10. 진입점 끝까지 — 저장한 실행 목록(--runs)으로 판정이 **프로세스 종료 코드**까지 가는지 ───────
+# 위 9 의 소스 대조는 글자만 본다 — 실측(2026-11-14, `scripts/probe.sh`): 모든 실패 종료를 0 으로 바꾸는 변이에
+# 이 파일이 SILENT 였다(글자 `process.exit(d.code)` 는 그대로 남는다 · 등록부 selftests-with-no-negative-case).
+FX="$(mktemp -d)"
+trap 'rm -rf "$FX"' EXIT
+NOWZ="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '[%s]' "$(run 'bundler in /ruby - Update #9' failure "$NOWZ")" > "$FX/red.json"
+printf 'not json' > "$FX/bad.json"
+_o="$(node "$SH" --runs "$FX/red.json" 2>&1)" && _rc=0 || _rc=$?
+assert_eq '1' "$_rc" '⚠️ 마지막 실행이 실패면 진입점도 exit 1 — 판정이 종료 코드까지 간다'
+assert_contains "$_o" '::error::bundler in /ruby — 마지막 실행이 failure' '진입점이 실패한 대상을 이름으로 말한다'
+_rc=0; node "$SH" --runs "$FX/bad.json" >/dev/null 2>&1 || _rc=$?
+assert_eq '2' "$_rc" 'JSON 이 아닌 저장 목록이면 진입점도 exit 2'
+_rc=0; node "$SH" --runs "$FX/absent.json" >/dev/null 2>&1 || _rc=$?
+assert_eq '2' "$_rc" '읽을 수 없는 파일이면 exit 2'
+_rc=0; node "$SH" --runs >/dev/null 2>&1 || _rc=$?
+assert_eq '2' "$_rc" '--runs 뒤에 파일이 없으면 exit 2'
+
 assert_report

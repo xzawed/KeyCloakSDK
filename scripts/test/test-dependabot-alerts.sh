@@ -154,6 +154,38 @@ rc=$?
 set -e
 assert_eq 2 "$rc" '조회 불가는 exit 2(열린 경보 1과 구분한다)'
 
+# ── 7b. 진입점 끝까지 — 저장한 응답(--alerts)으로 판정이 **종료 코드**까지 가는지 ────────────
+# 위 7 의 exit 2 는 조회 실패 길이라 판정 길을 안 지난다 — alertsVerdict 만 먹이면 열린 경보에서
+# `process.exit(1)` 을 0 으로 바꿔도 초록이다. 실측(2026-11-14, `scripts/probe.sh`): 모든 실패 종료를 0 으로
+# 바꾸는 변이를 이 파일은 7 의 단언 하나로만 잡았다(등록부 selftests-with-no-negative-case).
+FX="$(mktemp -d)"
+trap 'rm -rf "$FX"' EXIT
+printf '%s' "$OPEN" > "$FX/open.json"
+printf '[]' > "$FX/none.json"
+printf 'not json' > "$FX/bad.json"
+set +e
+_o="$(node "$CFG" --alerts "$FX/open.json" 2>&1)"; rc=$?
+set -e
+assert_eq 1 "$rc" '⚠️ 열린 경보가 든 응답이면 진입점도 exit 1 — 판정이 종료 코드까지 간다'
+assert_contains "$_o" '열린 Dependabot 경보 1건' '진입점이 건수를 말한다'
+assert_contains "$_o" 'harness/apps/ruby/Gemfile' '진입점이 매니페스트를 말한다'
+set +e
+_o="$(node "$CFG" --alerts "$FX/none.json" 2>&1)"; rc=$?
+set -e
+assert_eq 0 "$rc" '빈 목록이면 진입점은 exit 0(대조군)'
+set +e
+node "$CFG" --alerts "$FX/bad.json" >/dev/null 2>&1; rc=$?
+set -e
+assert_eq 2 "$rc" '목록이 아닌 응답이면 진입점도 exit 2'
+set +e
+node "$CFG" --alerts "$FX/absent.json" >/dev/null 2>&1; rc=$?
+set -e
+assert_eq 2 "$rc" '읽을 수 없는 파일이면 exit 2'
+set +e
+node "$CFG" --alerts >/dev/null 2>&1; rc=$?
+set -e
+assert_eq 2 "$rc" '--alerts 뒤에 파일이 없으면 exit 2'
+
 # ── 8. 워크플로가 그 권한을 실제로 선언하고 있는가 ───────────────────────────
 # 실측(run 33079374320): 같은 요청을 보낸 두 잡 중 `vulnerability-alerts: read` 를 선언한
 # 쪽은 200, 선언하지 않은 대조군은 403 "Resource not accessible by integration" 이었다.
