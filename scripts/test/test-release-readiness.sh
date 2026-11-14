@@ -167,19 +167,40 @@ assert_eq "unknown" "$(rr_registry_state go)" "check_url이 비면 미게시가 
 # 엔드포인트다(실측 2026-08-23: 미러 v0.2.0 존재 · Packagist source.url 이 그 미러).
 # ⚠️ **첫 판은 판정 if/elif 를 이 파일에 베껴 검사했고, 그건 스크립트가 아니라 사본을 본 것이라
 # 실제 분기를 지워도 통과했다**(변이검증에서 발현). 지금은 프로브만 스텁하고 `rr_row` 를 부른다.
-_php_verdict() { # <mirror_rc> <packagist_rc> → rr_row php 의 판정 부분
-  eval "rr_mirror_tag() { return $1; }"
-  eval "rr_packagist_source() { return $2; }"
+#
+# ⚠️ **미러 스텁은 버전마다 따로 답한다.** 예전 스텁은 어느 버전을 물어도 같은 답이라, 판정이
+# 미러에서 **새 버전**을 찾는 뒤집힘을 통과시켰다 — 태그 전이라 정상 상태가 늘 「split 실패」였고
+# 미러에 이미 있는 번 버전(태그 push 가 일부러 실패한다)이 ✅ 였다(실측 2026-11-14:
+# `--version 1.5.3 php` → ⚠️ split 실패). 직전 게시본은 기준선(`df_api_baseline`)이고 SSOT
+# (`df_published_version`)가 아니다 — SSOT 는 태그 **전** 커밋에서 움직인다(DEPLOY.md §4 1단계).
+# 그래서 둘을 다른 값으로 두고, 판정이 SSOT 쪽을 물으면 스텁이 「확인 불가」로 답해 드러나게 한다.
+df_api_baseline() { case "$1" in php) echo "php-v7.7.7" ;; *) echo "" ;; esac; }
+df_published_version() { echo "8.8.8"; }
+assert_eq "7.7.7" "$(rr_php_last_published)" 'php 직전 게시본 = 기준선에서 php-v 를 뗀 값(SSOT 8.8.8 이 아니다)'
+_php_verdict() { # <직전 게시본 rc> <새 버전 9.9.9 rc> <packagist rc> → RR_VERSION=9.9.9 의 rr_row php
+  eval "rr_mirror_tag() { case \"\$1\" in 7.7.7) return $1 ;; 9.9.9) return $2 ;; *) return 2 ;; esac; }"
+  eval "rr_packagist_source() { return $3; }"
   RR_VERSION=9.9.9 rr_row php
 }
-assert_contains "$(_php_verdict 0 0)" "✅ 미러 v9.9.9" 'php: 미러 태그·Packagist 소스 둘 다 확인되면 초록'
-assert_contains "$(_php_verdict 1 0)" "미러에 v9.9.9 태그가 없다" 'php: 미러에 태그가 없으면 split 실패를 말한다'
-assert_contains "$(_php_verdict 0 1)" "Packagist" 'php: Packagist 가 다른 소스면 그렇게 말한다'
-# ⚠️ 이 둘이 이 묶음의 요지다 — **확인 불가를 「없음」으로 반올림하지 않는다.**
-assert_contains "$(_php_verdict 2 0)" "수동 확인" 'php: 미러 조회 실패는 「없음」이 아니라 「확인불가」다'
-assert_contains "$(_php_verdict 0 2)" "수동 확인" 'php: Packagist 조회 실패도 확인불가다'
-assert_not_contains "$(_php_verdict 2 0)" "태그가 없다" 'php: 조회 실패를 「태그 없음」으로 지어내지 않는다'
+# 태그 전의 정상 상태 — 직전 게시본이 미러에 있고, 새 버전은 아직 비어 있다.
+assert_contains "$(_php_verdict 0 1 0)" "✅ 미러 v7.7.7" 'php 태그 전 정상: 직전 게시본 + Packagist 소스 → 초록'
+assert_contains "$(_php_verdict 0 1 0)" "v9.9.9" 'php 태그 전 정상: 새 버전이 아직 비어 있음을 말한다'
+# 번 버전 — 미러에 이미 있으면 split 의 태그 push 가 일부러 실패한다(main 은 이미 force-push 된 뒤다).
+assert_contains "$(_php_verdict 0 0 0)" "⚠️ 미러에 v9.9.9 태그가 이미 있다" 'php: 새 버전이 미러에 이미 있으면 경고(예전엔 ✅)'
+assert_contains "$(_php_verdict 2 0 2)" "이미 있다" 'php: 확인된 위험은 다른 프로브의 확인 불가에 묻히지 않는다'
+assert_contains "$(_php_verdict 1 1 0)" "⚠️ 미러에 직전 게시본 v7.7.7" 'php: 직전 게시본이 미러에 없으면 경고'
+assert_contains "$(_php_verdict 0 1 1)" "Packagist" 'php: Packagist 가 다른 소스면 그렇게 말한다'
+# ⚠️ 이 넷이 이 묶음의 요지다 — **확인 불가를 「없음」으로 반올림하지 않는다.**
+assert_contains "$(_php_verdict 2 1 0)" "수동 확인" 'php: 직전 게시본 조회 실패는 「없음」이 아니라 「확인불가」다'
+assert_contains "$(_php_verdict 0 2 0)" "수동 확인" 'php: 새 버전 조회 실패도 확인불가다'
+assert_contains "$(_php_verdict 0 1 2)" "수동 확인" 'php: Packagist 조회 실패도 확인불가다'
+assert_not_contains "$(_php_verdict 2 1 0)" "없다" 'php: 조회 실패를 「태그 없음」으로 지어내지 않는다'
+# 버전 없이(글롭 모드 · 태그 없는 클론) — 새 버전 질문은 없고 직전 게시본만 본다.
+eval "rr_mirror_tag() { case \"\$1\" in 7.7.7) return 0 ;; *) return 2 ;; esac; }"
+eval "rr_packagist_source() { return 0; }"
+assert_contains "$(rr_row php)" "✅ 미러 v7.7.7" 'php 버전 미지정: 직전 게시본만 묻는다'
 unset -f rr_mirror_tag rr_packagist_source 2>/dev/null || true
+. "$DIR/../lib/deploy-facts.sh"   # 위에서 덮은 df_api_baseline · df_published_version 을 되돌린다
 
 # 소스 대조 — 두 프로브가 상한을 거치는가(git·curl 둘 다 타임아웃 플래그 사정이 다르다).
 # ⚠️ `(^|\|)…git` 로 쓰면 `$(git …)` 를 놓친다(실측: 변이가 통과했다). 앞 문자가 식별자

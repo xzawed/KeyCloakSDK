@@ -92,6 +92,20 @@ rr_packagist_source() { # → 0 Packagist 가 그 미러를 소스로 서빙 · 
 rr_tag_exists() { # <glob 또는 정확한 태그명> → 0 if any matching tag
   [ -n "$(git tag -l "$1" 2>/dev/null | head -1)" ]
 }
+# (위 둘의 줄 번호를 docs/governance/rejected.md 가 인용한다 — 새 PHP 미러 함수는 여기 아래에 둔다.)
+rr_packagist_version() { # <version> → 0 Packagist 가 v<version> 을 서빙 · 1 확인됨·없음 · 2 확인불가
+  command -v curl >/dev/null 2>&1 || return 2
+  # shellcheck disable=SC2086
+  _pj="$(curl $RR_TIMEOUT -sf -A "$RR_UA" "$RR_PACKAGIST_P2" 2>/dev/null)" || return 2
+  [ -n "$_pj" ] || return 2
+  # p2 본문은 버전마다 `"version":"v1.5.2"` 꼴이다(실측 2026-11-14). 모양이 바뀌면 「없음」으로 빨개져 드러난다.
+  printf '%s' "$_pj" | grep -qF "\"version\":\"v$1\""
+}
+# 미러 확인의 기준 — **게시가 확인된 직전 버전**(`df_api_baseline php` 에서 `php-v` 를 뗀 값).
+# ⚠️ `df_published_version` 이 아니다: 그 값은 **태그 전** 커밋에서 움직인다(DEPLOY.md §4 1단계). 그걸
+# 기준으로 미러를 보면 php 릴리스 PR 마다 「미러에 v<새 버전> 이 없다」가 울린다(실측: #937 · #938 의
+# php-mirror 잡). 기준선은 게시 확인 **뒤**(9단계)에만 움직이므로 미러에 반드시 있어야 하는 값이다.
+rr_php_last_published() { _b="$(df_api_baseline php)"; printf '%s' "${_b#php-v}"; }
 
 # 순수 판정(단위테스트 대상): secrets∈{set,unset,na} registry∈{published,exists(미게시),unknown} tag∈{none,present}
 # <secrets> <registry> <tag> [version]
@@ -167,21 +181,34 @@ rr_row() { # <lang>
         # split-token(php): PHP_SPLIT_TOKEN이 있어도 실제 게시 주체는 이 저장소가 아니라 미러
         # xzawed/keycloak-sdk-php다(DEPLOY.md §2-D). 그 미러와 Packagist는 **공개 엔드포인트라
         # 확인된다** — 위 rr_mirror_tag·rr_packagist_source 참조. 확인 불가일 때만 사람에게 넘긴다.
+        # ⚠️ **태그 전 점검이라 질문이 둘이다.** 예전에는 미러에서 v<새 버전> 을 찾았다 — 태그 전이라
+        # 정상 상태가 늘 「split 실패」였고, 미러에 이미 있는 번 버전(split 의 태그 push 가 일부러
+        # 실패한다 — main 은 그 전에 force-push 된다)이 ✅ 였다(실측 2026-11-14 `--version 1.5.3 php`).
+        #   (a) 경로가 살아 있는가 — 직전 게시본(rr_php_last_published)이 미러에 있고 Packagist 가 미러를 서빙
+        #   (b) 이 버전이 비어 있는가 — v<RR_VERSION> 이 미러에 **없다**
+        # 게시 **뒤** 확인(새 태그가 갔는가 · Packagist 가 집어 갔는가)은 `check-php-mirror.sh <버전>` 의 몫이다.
+        # 판정 순서는 확인된 위험 → 확인 불가 → 초록이다. 확인된 위험을 다른 프로브의 조회 실패로 덮지 않는다.
         split-token)
-          _mv="${RR_VERSION:-$(df_published_version "$L")}"
+          _bv="$(rr_php_last_published)"
           # ⚠️ `set -e` 아래서 함수를 맨 문장으로 부르면 비영 반환이 스크립트를 죽인다
           # (실측: 미태그 버전으로 돌렸더니 행이 아예 안 찍혔다). 조건 문맥에서 부른다 —
           # rr_registry_state 가 rr_url_exists 에 쓰는 것과 같은 관용구다.
-          if rr_mirror_tag "$_mv"; then _mrc=0; else _mrc=$?; fi
+          if [ -z "$_bv" ]; then _brc=2; elif rr_mirror_tag "$_bv"; then _brc=0; else _brc=$?; fi
+          _nrc=1
+          if [ -n "${RR_VERSION:-}" ]; then
+            if rr_mirror_tag "$RR_VERSION"; then _nrc=0; else _nrc=$?; fi
+          fi
           if rr_packagist_source; then _prc=0; else _prc=$?; fi
-          if [ "$_mrc" -eq 2 ] || [ "$_prc" -eq 2 ]; then
-            verdict="ℹ️ 수동 확인: 미러·Packagist 조회 실패(네트워크) — 눈으로 확인할 것"
-          elif [ "$_mrc" -eq 1 ]; then
-            verdict="⚠️ 미러에 v$_mv 태그가 없다 — split이 안 갔거나 실패했다"
+          if [ "$_nrc" -eq 0 ]; then
+            verdict="⚠️ 미러에 v$RR_VERSION 태그가 이미 있다 — split의 태그 push가 실패한다(번 버전)"
+          elif [ "$_brc" -eq 1 ]; then
+            verdict="⚠️ 미러에 직전 게시본 v$_bv 태그가 없다 — 미러가 우리가 아는 상태가 아니다"
           elif [ "$_prc" -eq 1 ]; then
             verdict="⚠️ Packagist가 이 미러를 소스로 서빙하지 않는다 — 등록 확인"
+          elif [ "$_brc" -ne 0 ] || [ "$_nrc" -ne 1 ] || [ "$_prc" -ne 0 ]; then
+            verdict="ℹ️ 수동 확인: 미러·Packagist 조회 실패(네트워크) — 눈으로 확인할 것"
           else
-            verdict="✅ 미러 v$_mv + Packagist 소스 확인됨"
+            verdict="✅ 미러 v$_bv + Packagist 소스 확인됨${RR_VERSION:+ · v$RR_VERSION 태그는 아직 없다}"
           fi ;;
       # api-token(rust/dotnet): 시크릿 **이름**이 있다는 것만 확인했다. 토큰이 유효한지, 스코프가
       # 맞는지, 그 토큰이 속한 계정이 게시 가능한 상태인지는 값 없이 볼 수 없다.

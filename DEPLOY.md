@@ -1,5 +1,8 @@
 # Deployment Guide (DEPLOY)
-<!-- doc-budget: max-bytes=73940 -->
+<!-- doc-budget: max-bytes=74002 -->
+<!-- 73940 → 74002 (2026-11-14): 래칫 조건 (1) — §9 PHP 게시 확인의 눈 확인 둘(미러 태그 · Packagist 페이지)을
+     `check-php-mirror.sh <X.Y.Z>` 로 바꾸고 그 출력을 읽는 법(`ℹ️` 는 exit 0 이다)을 적었다. 같은 변경이 거짓 넷을
+     지웠다 — §5 「green = 레지스트리 URL 2xx 아님」 · 「Go 만 ℹ️ 가 아니다」 두 자리 · §2-D 의 없는 「§0 Step 0 rehearsal」. -->
 <!-- 76133 → 73940 (2026-10-28, 둘째 회차): §1 · §4 · §5 의 이력 산문과 사본을 덜었다 — 「used to be · now」 경위,
      증명 실행 괄호, PR 번호 목록, 날짜 붙은 측정 문장, §4 step 4 와 §7 이 같이 하던 설명. 거짓 셋을 고쳤다: §4 step 1 의
      「npm lockfile 드리프트는 아무것도 안 잡는다」(지금은 `scripts/check-versions.mjs` 가 잡는다) · §5 가 가리키던 §0 의
@@ -181,16 +184,15 @@ What `php-release.yml` does instead: once `verify` passes, the `split` job runs 
 ⚠️ **The Packagist registration cannot come before the first release.** Packagist reads a `composer.json` from the default branch of the repository you submit; the mirror starts out empty, with no default branch and no files, so a submission at that point has nothing to read. The workable order is therefore **create → token → first release (this populates the mirror) → register**, not create → register → token.
 
 1. ✅ **Create the mirror repository `xzawed/keycloak-sdk-php`** — public and empty (no README, no license, no initial commit; the split force-pushes over `main`). It is a generated artifact: never commit to it directly. *(Done — public, empty.)*
-2. ✅ **Create the `PHP_SPLIT_TOKEN` secret in *this* repository** (Settings → Secrets and variables → Actions) — a token with write access to the mirror (a fine-grained PAT scoped to `xzawed/keycloak-sdk-php` with Contents: read and write suffices; `Workflows` is **not** needed, because the split carries no workflow files — `php/vendor/` is untracked). If it is unset, the `split` job emits `::error::` and exits 1; nothing is pushed and no GitHub Release is created. *(Done — verify with `./scripts/release-readiness.sh --version <X.Y.Z> php`, which reports `secrets=set`.)* ⚠️ **Always pass `--version`.** Without it the script reports the state of the version that is *already published* (`tag=present`), not the one you are about to cut.
+2. ✅ **Create the `PHP_SPLIT_TOKEN` secret in *this* repository** (Settings → Secrets and variables → Actions) — a token with write access to the mirror (a fine-grained PAT scoped to `xzawed/keycloak-sdk-php` with Contents: read and write suffices; `Workflows` is **not** needed, because the split carries no workflow files — `php/vendor/` is untracked). If it is unset, the `split` job emits `::error::` and exits 1; nothing is pushed and no GitHub Release is created. *(Done — verify with `./scripts/release-readiness.sh --version <X.Y.Z> php`, which reports `secrets=set`.)*
 3. ✅ **Register the mirror on Packagist**, *after* the first `php-v*` release has populated it — https://packagist.org → Submit → `https://github.com/xzawed/keycloak-sdk-php`. Register the **mirror**, not this monorepo. *(Done — the `php-v0.1.0-rc.1` release populated the mirror, the registration went through, and Packagist serves `xzawed/keycloak-sdk` v0.1.0-rc.1.)*
-
-> One consequence worth knowing: until step 3 was done, a push to the mirror published nothing consumable — no registry was watching it, and the mirror's `main` is force-pushed on every release anyway. That made the first PHP release the one language whose "publish" step was genuinely reversible, which is why it was chosen for the §0 Step 0 rehearsal. With the registration in place this is no longer true: mirror pushes are now consumed by Packagist, and withdrawal means deleting the mirror tag and triggering a Packagist update (§6).
 
 **Notes:**
 
 - The package name on Packagist is still `xzawed/keycloak-sdk` — it comes from `php/composer.json`, which the split carries along. Only the *source repository* Packagist reads is different.
 - The mirror's `main` is force-pushed on every release; the version tag is **not** forced. If `vX.Y.Z` already exists on the mirror the tag push fails on purpose, so a burned version cannot be silently overwritten — the same principle as removing `--skip-duplicate` from the .NET push.
 - GitHub Release creation lives in the `split` job, after the mirror push. That ordering is deliberate: the notes cannot claim a publication that did not happen.
+- **What watches the mirror**: the non-required CI job `php-mirror` runs `scripts/check-php-mirror.sh` on every PR and `main` push against the last *confirmed* publication (`df_api_baseline php` — not `df_published_version`, which moves before the tag). Only a confirmed mismatch fails it.
 
 ### E. No Setup (Go)
 
@@ -355,7 +357,7 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   ```bash
   git tag php-v0.1.0-rc.1 && git push origin php-v0.1.0-rc.1
   ```
-- Deployment check: confirm the `split` job of GitHub Actions `php-release.yml` succeeded (it prints the pushed mirror commit) → confirm the mirror https://github.com/xzawed/keycloak-sdk-php carries the `v0.1.0` tag → confirm the new version appears on the Packagist page for `xzawed/keycloak-sdk`. The GitHub Release here is created *after* the mirror push, so its existence is evidence the push happened.
+- Deployment check: confirm the `split` job of GitHub Actions `php-release.yml` succeeded (it prints the pushed mirror commit) → `sh scripts/check-php-mirror.sh <X.Y.Z>`, every line `✅` (`ℹ️` = could not look; it exits 0 on that): the mirror carries `vX.Y.Z`, Packagist serves the mirror and lists `vX.Y.Z` (a miss right after the split is usually lag — re-run in a few minutes; a persistent one means Packagist no longer follows the mirror). The GitHub Release here is created *after* the mirror push, so its existence is evidence the push happened.
 - Install: `composer require xzawed/keycloak-sdk`
 
 ---
@@ -410,9 +412,9 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
 - **⚠️ What "the release workflows work" does and does not mean.** This document and `scripts/release-readiness.sh`/`scripts/release-trigger.sh` only guide the nine `.github/workflows/*-release.yml`; they do not modify them. **Which channel and which version are live is not stated here** (see the lede: `deploy-facts.sh` owns it), and what counts as proof that a publish path works is §0 "Before a tag". ⚠️ **Two Maven Central timing traps.** Portal staging is not publication — a green workflow means "uploaded", not "released". After the Publish click, propagation is not instant: measured, `repo1` answered **404 on the first check and 200 about three minutes later**, while `search.maven.org` still returned `numFound: 0` well after the artifacts were downloadable. Judge by the Portal's deployment state, then poll `repo1`; never conclude "the publish failed" from one 404. Treat the first tag of any *newly added* language as a first execution, not a regression check — that is why §7 recommends spending a release candidate on it.
 - **⚠️ Name-collision caution**: even if `release-readiness.sh` reports `registry=published` (already published), it does not rule out the possibility that this is **a same-named package registered by someone else first** (a registry existence check only looks at whether the response is HTTP 200, not who owns it). **Before the first deployment** of each language, a human must directly confirm on the relevant registry (PyPI `keycloak-sdk`, npm `@xzawed/keycloak-sdk`, crates.io `keycloak-sdk`, RubyGems `keycloak-sdk`, NuGet `Xzawed.Keycloak.Sdk`, Packagist `xzawed/keycloak-sdk`, etc.) that the deployment name is **unclaimed or owned by you (`xzawed`)** — scoped packages (`@xzawed/keycloak-sdk`) and Maven Central where the groupId belongs to a GitHub account (`io.github.xzawed`) have low collision risk, but PyPI/crates.io/RubyGems, which use short generic names (`keycloak-sdk`), have a relatively higher chance of having been claimed by someone else.
 - **Never query/record secret values**: `release-readiness.sh` uses `gh secret list` to confirm only names and existence and never prints values. This document also records no actual token/key values.
-- **⚠️ What `release-readiness.sh` cannot see: the registry account behind the credential.** The script is a **repository-side** preflight. A green line means the expected secret *names* appear in `gh secret list` (values are never read), the public registry URL did not return 2xx for our coordinate, and no matching local tag exists. It cannot reach the account state on the other side of the token, and **that layer fails at the publish step — after the tag is already spent and after `version` / real-Keycloak `integration` / `install-smoke` have all passed.**
+- **⚠️ What `release-readiness.sh` cannot see: the registry account behind the credential.** The script is a **repository-side** preflight. A green line means the expected secret *names* appear in `gh secret list` (values are never read) and the local clone has no tag for that `--version` — the registry column is shown, not judged (without `--version`, green also needs the coordinate unpublished). It cannot reach the account state on the other side of the token, and **that layer fails at the publish step — after the tag is already spent and after `version` / real-Keycloak `integration` / `install-smoke` have all passed.**
 
-  Measured once: rust passed readiness and all three gates, then `cargo publish` returned `400 Bad Request: A verified email address is required to publish crates to crates.io` — nothing was published (the coordinate survived; the failure is fail-closed), but the tag was spent for nothing. That is why the verdict reads `✅ 저장소측 OK` ("repo-side OK") and every auth model except Go shows `ℹ️ 수동 확인`: the line is not permission to publish.
+  Measured once: rust passed readiness and all three gates, then `cargo publish` returned `400 Bad Request: A verified email address is required to publish crates to crates.io` — nothing was published (the coordinate survived; the failure is fail-closed), but the tag was spent for nothing. That is why the verdict reads `✅ 저장소측 OK` ("repo-side OK") and every auth model except Go and PHP shows `ℹ️ 수동 확인`: the line is not permission to publish. PHP's line is measured instead: green = the last confirmed publication is on the mirror, Packagist serves it, `vX.Y.Z` is not there yet (`⚠️` if it is — the split's tag push would fail).
 
   Before the **first** tag of any language, open the registry account UI and confirm the row below. A dry-run, a green install-harness and a green readiness line do **not** substitute for it.
 
@@ -424,8 +426,8 @@ For each language: one-time setup (see §2) → version-bump location → dry-ru
   | **RubyGems** (ruby) | Pending trusted publisher registered **and not expired** (~12h) · its `environment` value matching `release` · account MFA policy vs. the gemspec's `rubygems_mfa_required` |
   | **PyPI** (python) | Trusted publisher still bound to `python-release.yml` |
   | **Maven Central** (java · kotlin) | Namespace `io.github.xzawed` verified · GPG **public key actually distributed to a keyserver** (not just generated) · Portal token valid · and after a green workflow, the **human Publish click** — the workflow only stages |
-  | **Packagist** (php) | `PHP_SPLIT_TOKEN` still has write access to the mirror · Packagist still watching it |
-  | **Go proxy** (go) | No account exists — for Go the repo-side check genuinely is the whole story, which is why it is the only language left un-downgraded |
+  | **Packagist** (php) | `PHP_SPLIT_TOKEN` still has write access to the mirror · Packagist still auto-updating from it (seen only after the split, by `check-php-mirror.sh <X.Y.Z>`) |
+  | **Go proxy** (go) | No account exists — for Go the repo-side check genuinely is the whole story, which is why its line stays `✅ 저장소측 OK` |
 
 ---
 
