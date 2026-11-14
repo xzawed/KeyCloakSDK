@@ -895,10 +895,11 @@ for L in $DEPLOY_LANGS; do
   # ⚠️ 라벨만으로 고르면 **다른 표의 동명 행**을 집는다 — 이 문서에는 언어별 각주 표가 따로
   # 있고 거기에도 `| **Go** |` 가 있다(실측: Go·PHP·Rust 등 7 개가 그 행을 집어 빈 값이 나왔다).
   # 그래서 Publish 열 표식(🚀)을 함께 요구해 상태 매트릭스 행으로 좁힌다.
-  _row="$(grep -F "| **$_lbl** |" "$lsup" | grep -m1 '🚀' || true)"
+  # ⚠️ 아래 둘은 `LC_ALL=C`(바이트) — MSYS 의 grep · sed 는 UTF-8 로캘에서 비BMP 이모지(🚀)를 못 맞추고 `.*` 가 그 글자를 못 건넌다(실측 2026-11-15: 행 빈 값 · 추출 쓰레기, Windows 로컬 기준선 10 건 빨강 — 리눅스 CI 는 해당 없음).
+  _row="$(grep -F "| **$_lbl** |" "$lsup" | LC_ALL=C grep -m1 '🚀' || true)"
   [ -n "$_row" ] && ls_seen=$((ls_seen + 1))
   # 마지막 열의 `🚀 <레지스트리> \`<버전>\`` 에서 백틱 안을 뽑는다(행에 백틱이 여럿이므로 끝에서).
-  _got="$(printf '%s' "$_row" | sed -n 's/.*`\([^`]*\)` *|[^|]*$/\1/p')"
+  _got="$(printf '%s' "$_row" | LC_ALL=C sed -n 's/.*`\([^`]*\)` *|[^|]*$/\1/p')"
   _want="$(df_published_version "$L")"
   [ -n "$_want" ] || assert_ok false "$L 의 df_published_version 이 비어 있다 — 매트릭스 기대 버전은 사람이 정해야 한다"
   assert_eq "$_want" "$_got" "language-support 매트릭스의 $_lbl 게시 버전이 SSOT와 다르다"
