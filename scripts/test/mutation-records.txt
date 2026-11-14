@@ -1,0 +1,49 @@
+# 변이 스윕 레코드 — scripts/mutation-sweep.mjs 가 읽는다(형식 · 판정은 그 머리).
+# 블록 = `### <id>` + FIELD:값 줄. 값은 콜론 바로 뒤부터다(앞 공백도 값이다).
+#   제외:   TEST · JUDGE · WHY        — 파생된 M1 쌍 중 실행이 아닌 언급을 이유와 함께 뺀다.
+#   줄 변이: FILE · TEST · OLD · NEW · SITE — 「FILE 의 OLD 줄을 NEW 로 바꾸면 TEST 가 잡아야 한다」.
+# OLD 줄을 고치면 그 레코드도 고친다 — 안 그러면 test-mutation-sweep.sh 가 PR 에서 빨갛다.
+
+### exclude-deploy-md-mirror
+TEST:test-deploy-md.sh
+JUDGE:check-php-mirror.sh
+WHY:런북 본문 대조 — §9 가 그 명령을 부르는지 글자로 볼 뿐 실행하지 않는다
+
+### exclude-deploy-md-readiness
+TEST:test-deploy-md.sh
+JUDGE:release-readiness.sh
+WHY:런북 본문 대조 — 단언 메시지 속 명령 글자다
+
+### exclude-php-mirror-readiness
+TEST:test-check-php-mirror.sh
+JUDGE:release-readiness.sh
+WHY:check-php-mirror.sh 가 소싱하는 라이브러리 — 그 쌍(test-check-php-mirror.sh × check-php-mirror.sh)이 덮는다
+
+### exclude-dispatch-versions
+TEST:test-dispatch-release.sh
+JUDGE:check-versions.mjs
+WHY:--list 로 버전 SSOT 를 읽을 뿐 판정 대상이 아니다(그 판정은 test-check-versions.sh 가 본다)
+
+### exclude-wiring-canaries
+TEST:test-check-hp-attest-wiring.sh
+JUDGE:check-canaries-ran.mjs
+WHY:픽스처 워크플로 YAML 안의 글자다
+
+### exclude-wiring-attest
+TEST:test-check-hp-attest-wiring.sh
+JUDGE:check-hp-attest.mjs
+WHY:픽스처 워크플로 YAML 안의 글자다
+
+### dependabot-updates-verdict-exit
+FILE:scripts/check-dependabot-updates.mjs
+TEST:scripts/test/test-dependabot-updates.sh
+OLD:  process.exit(d.code)
+NEW:  process.exit(0) // PROBE-REC
+SITE:process.exit(0) // PROBE-REC
+
+### dependabot-alerts-verdict-exit
+FILE:scripts/check-dependabot-alerts.mjs
+TEST:scripts/test/test-dependabot-alerts.sh
+OLD:  process.exit(1)
+NEW:  process.exit(0) // PROBE-REC
+SITE:process.exit(0) // PROBE-REC
