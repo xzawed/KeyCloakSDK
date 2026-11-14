@@ -59,6 +59,7 @@
 // dismiss**한다. dismissed는 `state=open`이 아니므로 이 게이트가 더 이상 세지 않는다(code
 // scanning 쪽에서 이미 5건을 그렇게 닫았다).
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 function gh(args) {
@@ -153,8 +154,25 @@ function repoSlug(argv) {
 
 function main() {
   const argv = process.argv.slice(2)
-  const repo = repoSlug(argv)
-  const res = gh(['api', '-H', 'X-GitHub-Api-Version: 2022-11-28', `repos/${repo}/dependabot/alerts?state=open&per_page=100`])
+  // `--alerts <파일>`: 저장한 경보 응답(`gh api …/dependabot/alerts?state=open`)으로 같은 판정 — 진입점을 조회
+  // 없이 끝까지 시험하는 길이다(판정 함수만 먹이면 열린 경보의 exit 1 을 0 으로 바꿔도 초록이었다).
+  const ai = argv.indexOf('--alerts')
+  const alertsFile = ai >= 0 ? argv[ai + 1] : undefined
+  if (ai >= 0 && !alertsFile) {
+    console.log('::error::--alerts 뒤에 저장한 경보 응답 파일이 없다')
+    process.exit(2)
+  }
+  const repo = alertsFile ? `(저장한 응답 ${alertsFile})` : repoSlug(argv)
+  let res
+  if (alertsFile) {
+    try {
+      res = { ok: true, out: readFileSync(alertsFile, 'utf8') }
+    } catch (e) {
+      res = { ok: false, out: e.message }
+    }
+  } else {
+    res = gh(['api', '-H', 'X-GitHub-Api-Version: 2022-11-28', `repos/${repo}/dependabot/alerts?state=open&per_page=100`])
+  }
   if (!res.ok) {
     console.log(`::error::Dependabot 경보를 조회하지 못했다 — 경보 없음으로 넘기지 않는다.`)
     console.log(`  잡의 permissions에 \`vulnerability-alerts: read\`가 있는지 확인하라(없으면 403).`)
