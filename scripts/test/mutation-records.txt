@@ -184,6 +184,15 @@ OLD:    if [ ! -f "$_er/$_p" ]; then echo "$_p: README 가 링크하는데 파�
 NEW:    if false; then :; fi # PROBE-REC
 SITE:if false; then :; fi # PROBE-REC
 
+# ── 버전 SSOT — 설치 하네스 consume 앱의 kotlin SDK 핀(harness-consume-pin-unsupported · H6, 2026-11-15)
+
+### versions-consume-kotlin-pin
+FILE:scripts/check-versions.mjs
+TEST:scripts/test/test-check-versions.sh
+OLD:    ['kotlin', 'harness/install/consume/kotlin-app/build.gradle.kts', /implementation\("io\.github\.xzawed:keycloak-sdk-kotlin:([^"]+)"\)/, 'io.github.xzawed:keycloak-sdk-kotlin'],
+NEW:    // PROBE-REC consume pin unchecked
+SITE:// PROBE-REC consume pin unchecked
+
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
 
 ### DM1
