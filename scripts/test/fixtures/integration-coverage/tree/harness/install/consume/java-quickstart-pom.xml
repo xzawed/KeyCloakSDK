@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 픽스처 — 실제 harness/install/consume/java-quickstart-pom.xml 의 꼴. 장부의 하네스 소유 판정이 읽는다. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>kc.fixture</groupId>
+  <artifactId>quickstart</artifactId>
+  <version>0.0.1</version>
+  <properties>
+    <exec.mainClass>kc.examples.QuickStart</exec.mainClass>
+  </properties>
+</project>

@@ -18,7 +18,9 @@
 //  · 그 집합을 **고정**한다 — `scripts/integration-coverage.json` 의 `pinned` 와 다르면 FAIL. 파생이 너무 적게 고르면
 //    %가 오른다(실측 2026-09-27: coverlet `<Include>` 를 뒤집자 중첩 async 타입이 빠져 211/312). 핀은 측정 대상이 아니라
 //    **오라클**이다 — SSOT 를 바꾸는 PR 이 「리포트의 분모가 바뀐다」를 같은 diff 에서 보이게 한다.
-//  · 통합이 한 번도 실행하지 않는 함수 목록 — 항목마다 **열린** 등록부 id 가 소유자다(같은 JSON 의 `owners`).
+//  · 통합이 한 번도 실행하지 않는 함수 목록 — 항목마다 **열린** 등록부 id 가 소유자다(같은 JSON 의 `owners`). 갭이 아닌
+//    파일 — 설치 하네스가 실서버에 대고 돌리는 예제 — 의 함수는 `harness:install` 이 소유한다. 그 연결을 트리에서 확인할
+//    때만이다(아래 「하네스 소유」).
 //
 // ⚠️ 「파생 = 핀」만으로는 부족하다 — **도구가 데이터에서 파일을 떨어뜨리는** 길이 따로 있다. 그래서 파생한 파일마다
 // 데이터에 실제로 있는지 본다(없으면 FAIL). 실측(2026-10-09, coverage.py 7.15): `[run] include` 만 쓰면 한 번도
@@ -78,7 +80,8 @@
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
-//   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡거나 핀 밖을 가리키는 항목) — 수치는 유효하다. CI 는 경고로만 본다
+//   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡거나 핀 밖을 가리키는 항목 · 트리에서 확인되지 않는 하네스 연결) —
+//            수치는 유효하다. CI 는 경고로만 본다
 //   2 FAIL   무결성 실패 — 수치를 믿을 수 없게 하는 것 전부. 넷으로 묶인다:
 //            입력 — 핀 · 등록부 · 트리(소스의 이름 범위 · go.mod · 통합 스위트 정의) · 데이터가 없거나, 못 읽거나, 이
 //              리더가 모르는 꼴이다(잘못 적은 하한 포함).
@@ -303,7 +306,15 @@ function pinFor(l) {
     for (const f of e.surface) if (!existsSync(join(root, f))) fail(l, `${PINS}: ${l}.surface names ${f}, which is not in the tree`)
     surface = e.surface
   }
-  return { pinned: e.pinned, owners, floor, surface }
+  // 하네스 소유의 연결(아래 「하네스 소유」) — 꼴이 틀리면 무결성 실패다(무시하면 소유가 꺼진 줄 모른다). 연결이 서는지는
+  // 소유 판정(DRIFT)이 본다.
+  const harness = e.harness ?? {}
+  const recOk = (r) => typeof r === 'object' && r !== null && !Array.isArray(r) && sortU(Object.keys(r)).join() === HARNESS_KEYS.join() && HARNESS_KEYS.every((k) => typeof r[k] === 'string' && r[k] !== '')
+  if (typeof harness !== 'object' || harness === null || Array.isArray(harness) || !Object.values(harness).every(recOk)) {
+    fail(l, `${PINS}: ${l}.harness must map a pinned file to { ${HARNESS_KEYS.join(', ')} } (repository paths)`)
+    return null
+  }
+  return { pinned: e.pinned, owners, floor, surface, harness }
 }
 const floorText = (pin) => (pin?.floor ? `floor ${pin.floor.metric} ≥ ${pin.floor.percent}%` : null)
 // run 이 바이트를 기록할 admin 표면 파일 — 판정은 report 가 한다. 여기서는 핀이 깨져 있어도 실패하지 않고 빈 목록이다
@@ -354,6 +365,169 @@ function loadRegistry() {
   }
   registry = { open }
   return registry
+}
+
+// ── 하네스 소유 — 통합 스위트가 아니라 설치 하네스가 실행하는 파일 ───────────────────────────────
+// 단위 omit 집합에는 경계가 아닌 파일도 든다 — java 의 jacoco.skip 모듈(예제)은 coverage-boundary 가 일부러 넣는다(모듈 하나를
+// 통째로 건너뛰는 변이가 조용히 지나가지 않게). 그 함수는 통합 스위트가 안 돌리지만 갭이 아니다 — 설치 하네스(harness.yml 의
+// install-all · 릴리스의 install-smoke)가 실서버에 대고 돌린다. `owners` 의 값 `harness:install` 이 그것이고, 같은 JSON 의
+// `harness` 가 그 파일을 돌리는 세 파일을 댄다. 이 리더는 그 연결을 트리에서 확인할 때만 소유로 친다(아니면 DRIFT):
+//   image      마지막 단계의 주석 아닌 `COPY` 가 그 파일(이나 조상 디렉터리)을 넣고, 뒤의 COPY 가 그 자리(나 조상)로 오지 않으며
+//              뒤에 `RUN` 도 없다(그 파일을 고칠 수 있다) — project · entrypoint 도 같다. CMD/ENTRYPOINT 가 entrypoint 를 돌린다.
+//   project    그 파일이 project 옆 `src/main/java/` 아래에 떨어지고, project(pom)의 `<exec.mainClass>` 가 하나이고 그 클래스다.
+//              `<skip>` · `<exec.skip>` · 플러그인 설정의 `<mainClass>`(속성을 이긴다)가 없다.
+//   entrypoint `if <… -f <project> … exec:java …>; then` 바로 다음 줄이 `: > "$STATUS/quickstart.ok"` 다. 조건에 `!` · `|` · `;` ·
+//              단독 `&` 가 없고(있으면 실행이 실패해도 표지가 선다) `-Dexec.*` · `-Dskip` · `--file` · 두 번째 `-f` 도 없다. 표지를
+//              쓰는 줄은 그 한 줄이다(`rm` 은 된다). 표지에서 판정까지(quickstartOk → install-matrix --strict)는 하네스 자신의 시험이
+//              소유한다.
+// ⚠️ 연결은 파일 단위지만 소유는 함수 단위다 — 파일에 함수가 늘면 그 함수도 소유자 항목을 받아야 한다(main 이 그 함수를 부르는지는
+//    이 리더가 보지 않는다 — 검토자의 판정이다). 실행 스크립트가 돌리기 전에 그 파일을 고치는 것 · 변수로 만든 표지 이름도 보지
+//    않는다.
+// ⚠️ java(Maven exec:java)만 읽는다 — 다른 언어의 기록은 확인할 수 없으므로 DRIFT 다.
+const HARNESS_OWNER = 'harness:install'
+const HARNESS_KEYS = ['entrypoint', 'image', 'project']
+// Dockerfile 의 명령 — 주석 줄(첫 비공백이 `#`)을 먼저 버리고 줄 이음(`\` + 줄끝)을 잇는다(Docker 와 같은 순서 — 이어진 명령 속의
+// 주석 줄은 명령을 끊지 않는다). 줄 중간의 `#` 는 주석이 아니다.
+function dockerInstructions(text) {
+  const kept = text.replace(/\r\n/g, '\n').split('\n').filter((x) => !/^\s*#/.test(x)).join('\n')
+  const res = []
+  for (const line of kept.replace(/\\[ \t]*\n/g, ' ').split('\n')) {
+    const m = /^\s*([A-Za-z]+)\s+(.*?)\s*$/.exec(line)
+    if (m) res.push({ op: m[1].toUpperCase(), args: m[2] })
+  }
+  return res
+}
+// 명령의 인자 — JSON 꼴(`["a", "b"]`)이면 그 배열, 아니면 공백으로 나눈 것. 못 읽는 JSON 꼴은 null(인정하지 않는다).
+function dockerArgs(args) {
+  if (!args.startsWith('[')) return args.split(/\s+/).filter(Boolean)
+  try {
+    const a = JSON.parse(args)
+    return Array.isArray(a) && a.every((x) => typeof x === 'string') ? a : null
+  } catch {
+    return null
+  }
+}
+// 최종 이미지(마지막 단계)가 빌드 맥락에서 받는 COPY 와 실행 명령. 대상은 WORKDIR 를 따라 절대 경로로 푼다(못 풀면 그 COPY 는
+// 인정하지 않는다). `--from` 은 다른 단계에서 오고 `--parents` 는 경로 규칙이 달라 건너뛴다. 와일드카드는 읽지 않는다.
+function dockerImage(text) {
+  let wd = null
+  let copies = []
+  let runs = []
+  let cmd = []
+  let entry = []
+  for (const { op, args } of dockerInstructions(text)) {
+    if (op === 'FROM') {
+      wd = null
+      copies = []
+      runs = []
+      cmd = []
+      entry = []
+    } else if (op === 'RUN') {
+      // 그때까지의 COPY 수 — 이 RUN 은 그 앞의 COPY 가 넣은 파일을 고칠 수 있다.
+      runs.push(copies.length)
+    } else if (op === 'WORKDIR') {
+      const w = dockerArgs(args)?.[0] ?? ''
+      wd = w.startsWith('/') ? posix.normalize(w) : wd && w ? posix.join(wd, w) : null
+    } else if (op === 'COPY') {
+      const a = dockerArgs(args)
+      if (!a || a.some((x) => /^--(from|parents)(=|$)/.test(x))) continue
+      const rest = a.filter((x) => !x.startsWith('--'))
+      if (rest.length < 2) continue
+      const raw = rest[rest.length - 1]
+      const dest = raw.startsWith('/') ? posix.normalize(raw) : wd ? posix.join(wd, raw) : null
+      if (dest) copies.push({ srcs: rest.slice(0, -1), dest: dest.length > 1 ? dest.replace(/\/+$/, '') : dest, dir: rest.length > 2 || raw.endsWith('/') })
+    } else if (op === 'CMD' || op === 'ENTRYPOINT') {
+      const a = dockerArgs(args) ?? []
+      if (op === 'CMD') cmd = a
+      else entry = a
+    }
+  }
+  return { copies, runs, start: [...entry, ...cmd] }
+}
+// 빌드 맥락의 `file` 이 이 COPY 로 이미지의 어디에 떨어지는가(안 떨어지면 null). 디렉터리 소스는 그 **내용**이 대상 아래로 간다
+// (디렉터리 자신이 아니다 — Docker 의 COPY). 소스가 여럿이거나 대상이 `/` 로 끝나면 대상은 디렉터리다.
+function landing(copy, file) {
+  for (const src of copy.srcs) {
+    const s = posix.normalize(src).replace(/^\/+/, '').replace(/\/+$/, '') || '.'
+    if (s === '.') return posix.join(copy.dest, file)
+    if (s === file) return copy.dir ? posix.join(copy.dest, posix.basename(file)) : copy.dest
+    if (file.startsWith(`${s}/`)) return posix.join(copy.dest, file.slice(s.length + 1))
+  }
+  return null
+}
+// 그 파일을 넣는 마지막 COPY 의 자리. 뒤의 COPY 가 그 자리나 조상 디렉터리로 오면 덮였을 수 있고(보수적이다 — 덮는 쪽에 그
+// 파일이 없어도), 뒤에 RUN 이 있으면 고쳐졌을 수 있다 — 둘 다 인정하지 않는다.
+function placed(img, file) {
+  let at = -1
+  img.copies.forEach((c, i) => {
+    if (landing(c, file)) at = i
+  })
+  if (at < 0) return {}
+  const to = landing(img.copies[at], file)
+  const by = img.copies.slice(at + 1).find((c) => c.dest === '/' || c.dest === to || to.startsWith(`${c.dest}/`))
+  return { to, by, rewritten: img.runs.some((n) => n > at) }
+}
+const harnessMemo = new Map()
+// 연결이 서면 null, 아니면 그 까닭(파일마다 한 번 잰다).
+function harnessWhy(l, file, rec) {
+  const k = `${l}\0${file}`
+  if (!harnessMemo.has(k)) harnessMemo.set(k, harnessLink(l, file, rec))
+  return harnessMemo.get(k)
+}
+function harnessLink(l, file, rec) {
+  if (l !== 'java') return `this reader checks the java link only (Maven exec:java) — a ${l} record cannot be verified`
+  const text = {}
+  for (const k of HARNESS_KEYS) {
+    if (!existsSync(join(root, rec[k]))) return `${k} ${rec[k]} is not in the tree`
+    text[k] = readFileSync(join(root, rec[k]), 'utf8').replace(/\r\n/g, '\n')
+  }
+  const img = dockerImage(text.image)
+  const at = {}
+  for (const [k, f] of [['file', file], ['project', rec.project], ['entrypoint', rec.entrypoint]]) {
+    const p = placed(img, f)
+    if (!p.to) return `${rec.image} does not COPY ${f} into the final image`
+    if (p.by) return `${rec.image}: a later COPY to ${p.by.dest} may overwrite ${f} at ${p.to}`
+    if (p.rewritten) return `${rec.image}: a RUN after the COPY of ${f} may rewrite it at ${p.to}`
+    at[k] = p.to
+  }
+  if (!img.start.includes(at.entrypoint)) return `${rec.image}: CMD/ENTRYPOINT does not run ${at.entrypoint} (${rec.entrypoint})`
+  const src = `${posix.dirname(at.project)}/src/main/java/`
+  if (!at.file.startsWith(src) || !at.file.endsWith('.java')) return `${file} lands at ${at.file}, outside the source root ${src} of ${at.project}`
+  const cls = at.file.slice(src.length, -'.java'.length).replace(/\//g, '.')
+  // 주석은 같은 길이의 공백으로 지운다(java run 의 pom 과 같은 이유 — 지워 붙이면 새 `<!--` 가 생길 수 있다).
+  const pom = text.project.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+  const mains = [...pom.matchAll(/<exec\.mainClass>\s*([^<]*?)\s*<\/exec\.mainClass>/g)].map((m) => m[1])
+  if (mains.length !== 1 || mains[0] !== cls) return `${rec.project} must name ${cls} as its one <exec.mainClass> (found ${mains.join(', ') || 'none'})`
+  // 실행을 끄거나(`<skip>` · `<exec.skip>`) 플러그인 설정의 `<mainClass>` 가 속성을 이기면 그 클래스가 안 돈다(독립 레그 지목).
+  if (/<skip>|<exec\.skip>|<mainClass>/.test(pom)) return `${rec.project} overrides the run — <skip>, <exec.skip> or a plugin <mainClass>`
+  const lines = text.entrypoint.split('\n').filter((x) => !/^\s*#/.test(x)).join('\n').replace(/\\[ \t]*\n/g, ' ').split('\n').map((x) => x.trim()).filter(Boolean)
+  // 실행이 실패해도 조건이 참일 수 있는 꼴 — 부정 · 파이프 · `||` · `;` · 배경 실행(`2>&1` · `&&` · `&>` 는 아니다).
+  const unsafe = (c) => /^!/.test(c) || /[|;]/.test(c) || /(^|[^>&])&(?![&>])/.test(c)
+  // 프로젝트를 그대로 돌리지 않는 꼴 — 실행을 끄거나(-Dexec.skip · -Dskip) 진입점을 바꾸거나(-Dexec.mainClass) 다른 pom 을 준다.
+  const overrides = (t) => t.some((w) => /^-D(exec\.|skip\b)/.test(w) || /^--file\b/.test(w)) || t.filter((w) => w === '-f').length !== 1
+  const i = lines.findIndex((x) => {
+    const m = /^if\s+(.*?)\s*;\s*then$/.exec(x)
+    if (!m || unsafe(m[1])) return false
+    const t = m[1].split(/\s+/)
+    return !overrides(t) && t.includes('exec:java') && t.some((w, j) => w === '-f' && t[j + 1] === at.project)
+  })
+  if (i < 0) return `${rec.entrypoint} has no \`if … -f ${at.project} … exec:java …; then\` whose condition fails when the run fails (no !, |, ; or lone &) and runs the project as it is (no -Dexec.*, -Dskip, --file or second -f)`
+  if (!/^:\s*>\s*"?\$\{?STATUS\}?\/quickstart\.ok"?$/.test(lines[i + 1] ?? '')) return `${rec.entrypoint}: the line after that if is not : > "$STATUS/quickstart.ok"`
+  // 표지는 그 한 줄만 쓴다 — else 갈래나 다른 자리에서도 쓰면 실행이 실패해도 표지가 선다(독립 레그 지목). 지우는 줄(rm)은 된다.
+  const stray = lines.find((x, j) => j !== i + 1 && x.includes('quickstart.ok') && !/^rm\s/.test(x))
+  if (stray) return `${rec.entrypoint}: quickstart.ok is written outside that if too — ${stray}`
+  return null
+}
+// 소유자 판정 — 열린 등록부 항목이거나, 트리에서 확인되는 하네스 연결이다. 문제가 없으면 null.
+function ownerProblem(l, pin, reg, key, id) {
+  if (id === HARNESS_OWNER) {
+    const file = key.slice(0, key.indexOf(':'))
+    const rec = pin.harness[file]
+    if (!rec) return `${key} is owned by ${HARNESS_OWNER}, but ${PINS} has no ${l}.harness record for ${file}`
+    const why = harnessWhy(l, file, rec)
+    return why ? `${key} is owned by ${HARNESS_OWNER}, but the link does not hold — ${why}` : null
+  }
+  return reg && !reg.open.has(id) ? `${key} is owned by ${id}, which is not an open item of ${REGISTRY}` : null
 }
 
 // ── go: 커버 프로필 + 소스의 함수 범위 ────────────────────────────────────────────────────
@@ -2921,8 +3095,8 @@ function report(l) {
         const key = `${x.file}:${x.name}`
         neverKeys.add(key)
         x.owner = pin.owners[key] ?? 'NONE'
-        if (!pin.owners[key]) drift(l, `unowned never-executed function ${key} — name an open item of ${REGISTRY} for it in ${PINS}`)
-        else if (reg && !reg.open.has(x.owner)) drift(l, `${key} is owned by ${x.owner}, which is not an open item of ${REGISTRY}`)
+        const why = pin.owners[key] ? ownerProblem(l, pin, reg, key, x.owner) : `unowned never-executed function ${key} — name an open item of ${REGISTRY} for it in ${PINS}`
+        if (why) drift(l, why)
       }
       // admin 표면 — 핀 밖 파일은 같은 실행의 데이터를 그 파일들로 한 번 더 읽는다(미실행 함수만 쓴다 — 수치 · 하한에 섞지
       // 않는다). 그 파일이 데이터에 없거나 다른 바이트의 것이면 리더가 FAIL 을 낸다(재지 않은 표면은 초록이 아니다).
@@ -2934,7 +3108,8 @@ function report(l) {
         const key = `${x.file}:${x.name}`
         neverKeys.add(key)
         x.owner = pin.owners[key] ?? 'NONE'
-        if (pin.owners[key] && reg && !reg.open.has(x.owner)) drift(l, `${key} is owned by ${x.owner}, which is not an open item of ${REGISTRY}`)
+        const why = pin.owners[key] ? ownerProblem(l, pin, reg, key, x.owner) : null
+        if (why) drift(l, why)
       }
       for (const x of [...data.never, ...extraNever]) {
         if (S.has(x.file) && x.owner === 'NONE') {
@@ -2959,7 +3134,7 @@ function report(l) {
   if (BODY_LANGS.has(l)) head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
   const n = data.never.length
   const fns = n ? `${n} never-executed function${n > 1 ? 's' : ''}` : 'no never-executed functions'
-  const owned = n && !nd ? ', all owned by open registry items' : ''
+  const owned = n && !nd ? `, all owned by open registry items${data.never.some((x) => x.owner === HARNESS_OWNER) ? ' or the install harness' : ''}` : ''
   const problems = nd ? ` · ${nd} ownership problem${nd > 1 ? 's' : ''}` : ''
   const fl = floorText(pin) ? ` · ${floorText(pin)}` : ''
   // 하한 — 분모가 0 이면 위 「아무것도 안 돈 실행」이 이미 FAIL 이다. 정수식으로 비교한다(같으면 통과).
@@ -3040,6 +3215,7 @@ function check() {
   const p = loadPins()
   const counts = []
   let owners = 0
+  let linked = 0
   for (const l of LANGS) {
     const d = derivedFor(l)
     const pin = p ? pinFor(l) : null
@@ -3050,11 +3226,20 @@ function check() {
     const S = new Set(pin.surface)
     for (const [key, id] of Object.entries(pin.owners)) {
       owners++
+      if (id === HARNESS_OWNER) linked++
       const at = key.indexOf(':')
       if (at < 0 || !(P.has(key.slice(0, at)) || S.has(key.slice(0, at)))) drift(l, `owner entry ${key} names a file outside the pin${S.size ? ' and the admin surface' : ''}`)
-      if (reg && !reg.open.has(id)) drift(l, `${key} is owned by ${id}, which is not an open item of ${REGISTRY}`)
+      const why = id === HARNESS_OWNER && at < 0 ? null : ownerProblem(l, pin, reg, key, id)
+      if (why) drift(l, why)
     }
     console.log(`[${l}] owners: ${Object.keys(pin.owners).length} entries (${sortU(Object.values(pin.owners)).join(' · ') || 'none'})`)
+    // 하네스 기록 — 핀 안의 파일이고, 그 파일의 함수를 하네스가 소유한다고 적은 항목이 있어야 한다(쓰이지 않는 기록은 낡았다).
+    const used = new Set(Object.entries(pin.owners).filter(([k, id]) => id === HARNESS_OWNER && k.includes(':')).map(([k]) => k.slice(0, k.indexOf(':'))))
+    for (const [f, rec] of Object.entries(pin.harness)) {
+      if (!P.has(f)) drift(l, `harness record ${f} names a file outside the pin`)
+      else if (!used.has(f)) drift(l, `harness record ${f} is not used by any owner entry — drop it`)
+      else console.log(`[${l}] harness: ${f} ← ${rec.image} (${harnessWhy(l, f, rec) ? 'the link does not hold' : 'linked'})`)
+    }
     if (S.size) console.log(`[${l}] admin surface: ${S.size} files (${pin.surface.filter((f) => !P.has(f)).length} outside the pin)`)
     console.log(`[${l}] ${floorText(pin)?.replace(/^floor /, 'floor: ') ?? 'floor: none (report mode)'}`)
   }
@@ -3065,7 +3250,7 @@ function check() {
     console.log(`integration-coverage check: ${nf ? 'FAIL' : 'DRIFT'} — ${nf} fail · ${nd} drift`)
     return nf ? 2 : 1
   }
-  console.log(`integration-coverage check: OK — ${counts.join(' · ')} files pinned · ${owners} owner entries, all open`)
+  console.log(`integration-coverage check: OK — ${counts.join(' · ')} files pinned · ${owners} owner entries, ${linked ? `${owners - linked} open · ${linked} linked to the install harness` : 'all open'}`)
   return 0
 }
 
