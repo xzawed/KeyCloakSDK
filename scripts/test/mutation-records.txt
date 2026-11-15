@@ -773,3 +773,82 @@ TEST:scripts/test/test-check-docs.sh
 OLD:      ['-C', ROOT, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
 NEW:      ['-C', ROOT, 'ls-files', '--others', '--exclude-standard', '--directory', '-z'], // PROBE-REC
 SITE:'--exclude-standard', '--directory', '-z'], // PROBE-REC
+
+# ── check-docs kind=compat — 호환성 표 ↔ 그 행 판의 태그(compat-table-library-cells-drift, 2026-11-15)
+
+### docs-compat-tag-oracle
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    return tag
+NEW:    return null // PROBE-REC
+SITE:return null // PROBE-REC
+
+### docs-compat-value
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:      if (compatNorm(actual) !== compatNorm(doc)) errors.push(`${row} 의 '${name}' 문서=${doc} ${at_}=${actual}`)
+NEW:      if (false) errors.push('value') // PROBE-REC
+SITE:errors.push('value') // PROBE-REC
+
+### docs-compat-reactor-at-tag
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    .filter((p) => /(^|\/)pom\.xml$/.test(p))
+NEW:    .filter((p) => p === srcRel) // PROBE-REC
+SITE:p === srcRel) // PROBE-REC
+
+### docs-compat-unbound-bold
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    if (unbound.length) errors.push(`${row}: 이름 없는 굵은 값(${unbound.join(', ')}) — \`이름\` **값** 으로 적어야 대조된다`)
+NEW:    if (false) errors.push('unbound') // PROBE-REC
+SITE:errors.push('unbound') // PROBE-REC
+
+### docs-compat-runtime
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    else if (!mentionsValue(rest, v) && !(/^\d+\.0$/.test(v) && mentionsValue(rest, v.slice(0, -2))))
+NEW:    else if (false) // PROBE-REC
+SITE:else if (false) // PROBE-REC
+
+### docs-compat-deploy-langs
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    else if (!seenLabels.has(label)) errors.push(`${where} 호환성 표에 ${label} 행이 없다(DEPLOY_LANGS)`)
+NEW:    else if (false) errors.push('missing') // PROBE-REC
+SITE:errors.push('missing') // PROBE-REC
+
+### docs-compat-no-table
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:  if (!/^\s*\|/.test(lines[at + 1] ?? '') || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[at + 2] ?? '')) {
+NEW:  if (false) { // PROBE-REC
+SITE:if (false) { // PROBE-REC
+
+### docs-compat-vacuous-row
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    if (claims.length === 0) errors.push(`${row}: 대조할 굵은 라이브러리 값이 없다 — 공허하게 통과하지 않는다`)
+NEW:    if (false) errors.push('vacuous') // PROBE-REC
+SITE:errors.push('vacuous') // PROBE-REC
+
+### docs-compat-tagless-clone
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:  if (inGitRepo() && !gitOut(['tag', '-l']).trim()) {
+NEW:  if (false && inGitRepo()) { // PROBE-REC
+SITE:if (false && inGitRepo())
+
+### docs-compat-consumer-floor
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:        errors.push(`${row}: 소비자 하한 ${fv}(${at_}:${cf[0]} 의 languageVersion) 를 「${label} ${fv}+」 로 말하지 않는다`)
+NEW:        void 0 // PROBE-REC
+SITE:void 0 // PROBE-REC
+
+### docs-compat-consumer-floor-unreadable
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:      if (fv === null) errors.push(`${row}: ${at_}:${cf[0]} 에서 소비자 하한을 읽지 못했다`)
+NEW:      if (fv === null) void 0 // PROBE-REC
+SITE:if (fv === null) void 0 // PROBE-REC

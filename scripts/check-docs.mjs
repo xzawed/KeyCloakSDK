@@ -193,23 +193,26 @@ function findReactorRoot(pomAbsPath) {
 function fromPomReactor(pomAbsPath) {
   const root = findReactorRoot(pomAbsPath)
   const files = new Set([pomAbsPath, ...walkFiles(root, (name) => name === 'pom.xml')])
-  const entries = [...files].map((f) => ({ path: f, text: readFileSync(f, 'utf8') }))
+  return fromPomEntries(
+    [...files].map((f) => ({ rel: relative(ROOT, f).replace(/\\/g, '/'), text: readFileSync(f, 'utf8') })),
+  )
+}
+// 리액터의 pom 텍스트들(`{ rel, text }`)에서 좌표 → 해석된 버전. 디스크(위)와 태그의 blob(kind=compat) 이 함께 쓴다.
+function fromPomEntries(entries) {
   const props = new Map()
   for (const { text } of entries) for (const [k, v] of parsePomProps(text)) props.set(k, v)
-  const resolved = new Map() // "groupId:artifactId" -> { version, pomPath } — 충돌 보고용으로 출처 pom도 함께 기억한다.
-  for (const { path, text } of entries) {
+  const resolved = new Map() // "groupId:artifactId" -> { version, rel } — 충돌 보고용으로 출처 pom도 함께 기억한다.
+  for (const { rel, text } of entries) {
     for (const dep of parsePomDependencies(text)) {
       const coord = `${dep.groupId}:${dep.artifactId}`
       const ver = resolveProp(dep.version, props)
       const prev = resolved.get(coord)
       if (prev && prev.version !== ver) {
-        const prevRel = relative(ROOT, prev.pomPath).replace(/\\/g, '/')
-        const curRel = relative(ROOT, path).replace(/\\/g, '/')
         throw new Error(
-          `좌표 '${coord}' 가 리액터 안에서 서로 다른 pom에 의해 다른 버전으로 선언됨: ${prev.version} (${prevRel}) vs ${ver} (${curRel}) — 어느 쪽이 진실인지 가드가 임의로 고를 수 없다`,
+          `좌표 '${coord}' 가 리액터 안에서 서로 다른 pom에 의해 다른 버전으로 선언됨: ${prev.version} (${prev.rel}) vs ${ver} (${rel}) — 어느 쪽이 진실인지 가드가 임의로 고를 수 없다`,
         )
       }
-      resolved.set(coord, { version: ver, pomPath: path })
+      resolved.set(coord, { version: ver, rel })
     }
   }
   const m = new Map()
@@ -447,7 +450,10 @@ function fromPyproject(t) {
 function extract(sourceRel) {
   const abs = join(ROOT, sourceRel)
   if (sourceRel.endsWith('pom.xml')) return fromPomReactor(abs)
-  const text = readFileSync(abs, 'utf8')
+  return fromText(sourceRel, readFileSync(abs, 'utf8'))
+}
+// pom 이 아닌 매니페스트 한 장의 텍스트 → 좌표 맵. 작업 트리(위)와 태그의 blob(kind=compat) 이 함께 쓴다.
+function fromText(sourceRel, text) {
   if (sourceRel.endsWith('.gradle.kts')) return fromGradle(text)
   if (sourceRel.endsWith('package-lock.json')) return fromPackageLock(text)
   if (sourceRel.endsWith('composer.json')) return fromComposer(text)
@@ -664,6 +670,159 @@ const RELEASE_TAG_PREFIX = {
 // ⚠️ HEAD 에서는 1차 추출기(`JvmTarget.JVM_17`)가 먼저 맞으므로 이 폴백은 닿지 않는다.
 const PUBLISHED_FALLBACK = {
   kotlin: (t) => /jvmToolchain\((\d+)\)/.exec(t)?.[1],
+}
+
+// ── kind=compat — 호환성 표의 굵은 라이브러리 값 · 런타임 하한 ↔ 그 행이 말하는 판의 **태그** ──────────
+// 표의 행은 첫 열의 게시판이 함께 나간 값을 말한다(compatibility.md 머리 문단). 판 칸은 test-publication-claims.sh 가
+// SSOT 와 대조하지만 라이브러리 칸에는 대조가 없었다 — Node 행 셋이 태그 시점 락파일과 갈렸고, Python 행은 선언
+// `>=1.7,<2` 를 `1.7.x` 로 좁혀 적어 소비자가 받는 joserfc 1.8.0 을 부정했다(실측 2026-11-15).
+// 오라클은 그 판의 **태그**다(kind=runtime 두 번째 오라클과 같은 이유). 태그가 아직 없으면 작업 트리다 — 런북 §4 는
+// 범프(표의 판 칸 포함)를 태그보다 먼저 병합하므로, 그 창의 행은 곧 태그가 될 트리를 말한다.
+// ⚠️ 문서 간 같은 좌표 대조(검사 2)에 넣지 않는다 — 이 표는 게시판을, CLAUDE.md 표는 main 을 말하므로 갈리는 것이 정상이다.
+// 행 라벨 → [언어, 그 행의 오라클 파일]. Node 칸은 태그 시점 **락파일**의 해석된 판(CI 가 시험한 판)이고 나머지는
+// 매니페스트의 선언 그대로다(범위면 범위). 언어 집합은 DEPLOY_LANGS 가 소유한다 — checkCompatTable 이 둘을 맞춘다.
+const COMPAT = {
+  Java: ['java', 'java/pom.xml'],
+  Python: ['python', 'python/pyproject.toml'],
+  Node: ['node', 'node/package-lock.json'],
+  Go: ['go', 'go/go.mod'],
+  'C#/.NET': ['dotnet', 'dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj'],
+  PHP: ['php', 'php/composer.json'],
+  Rust: ['rust', 'rust/Cargo.toml'],
+  Ruby: ['ruby', 'ruby/keycloak-sdk.gemspec'],
+  Kotlin: ['kotlin', 'kotlin/build.gradle.kts'],
+}
+// 런타임 하한과 별도로 그 행이 말하는 하한 — Kotlin 은 소비자 컴파일러 하한(`languageVersion` = 게시 메타데이터 판)을
+// 「Kotlin X.Y+」 로 적는다. ⚠️ mentions 로 보지 않는다 — 같은 칸의 「metadata pinned to 2.2」 가 대신 걸려 통과한다.
+const COMPAT_CONSUMER_FLOOR = {
+  kotlin: ['kotlin/build.gradle.kts', (t) => /languageVersion\.set\([^)]*KotlinVersion\.KOTLIN_(\d+)_(\d+)\)/.exec(t)?.slice(1, 3).join('.')],
+}
+// 정규식에 넣는 값의 메타문자를 전부 이스케이프한다(mentionsValue 와 같은 집합 — 점만 이스케이프하면 CodeQL 이 막는다).
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// `name` **값** — 이름 뒤 괄호 설명(`jwt` (ruby-jwt) **~>3.2**)은 건너뛴다.
+const COMPAT_CLAIM = /`([^`]+)`(?:\s*\([^)]*\))?\s*\*\*([^*]+)\*\*/g
+// 그 판의 태그가 있으면 태그 이름, 없으면 null(작업 트리).
+function compatRef(lang, version) {
+  if (!inGitRepo()) return null
+  const tag = `${RELEASE_TAG_PREFIX[lang]}${version}`
+  try {
+    gitOut(['rev-parse', '--verify', '-q', `refs/tags/${tag}^{}`])
+    return tag
+  } catch {
+    return null
+  }
+}
+function compatText(ref, srcRel) {
+  return ref === null ? readFileSync(join(ROOT, srcRel), 'utf8') : gitOut(['show', `${ref}:${srcRel}`])
+}
+// 그 판의 좌표 → 값. pom 은 그 디렉터리의 pom.xml 전부(리액터)를 읽어 \${...} 를 푼다 — 루트 pom 은 속성만 갖는다.
+function compatMap(ref, srcRel) {
+  if (!srcRel.endsWith('pom.xml')) return fromText(srcRel, compatText(ref, srcRel))
+  if (ref === null) return fromPomReactor(join(ROOT, srcRel))
+  const poms = gitOut(['ls-tree', '-r', '--name-only', ref, '--', dirname(srcRel)])
+    .split(/\r?\n/)
+    .filter((p) => /(^|\/)pom\.xml$/.test(p))
+  return fromPomEntries(poms.map((p) => ({ rel: `${ref}:${p}`, text: gitOut(['show', `${ref}:${p}`]) })))
+}
+// 값 비교는 kind=dep 과 같은 normalizeRequirement(연산자까지 값이다) — 공백과 go 의 `v` 접두만 양쪽에서 뗀다.
+const compatNorm = (s) => normalizeRequirement(s.replace(/\s+/g, '').replace(/^v(?=\d)/, ''))
+function checkCompatTable(rel, lines, at) {
+  const where = `${rel}:${at + 1}`
+  if (!/^\s*\|/.test(lines[at + 1] ?? '') || !/^\s*\|[\s:|-]+\|\s*$/.test(lines[at + 2] ?? '')) {
+    errors.push(`${where} 앵커 뒤에 호환성 표가 없다 — 앵커는 바로 다음 줄의 표(머리 · 구분선 · 행)를 소유한다`)
+    return
+  }
+  // ⚠️ 태그를 하나도 받지 않은 클론(얕은 · 태그 미수신)은 「아직 안 민 태그」와 다르다 — 거기서 트리로 물러서면 트리와
+  // 맞춰 둔 표가 게시판과 갈려도 통과한다(독립 레그 지목). doc-facts 잡은 fetch-tags 로 받는다.
+  if (inGitRepo() && !gitOut(['tag', '-l']).trim()) {
+    errors.push(`${where} 이 클론에는 태그가 하나도 없다 — 행은 게시판의 태그와 대조한다(git fetch --tags 뒤 다시 돌린다)`)
+    return
+  }
+  const seenLabels = new Set()
+  for (let j = at + 3; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
+    const cells = lines[j].trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
+    const head = /^(.+?)\s+`([^`]+)`$/.exec(cells[0])
+    if (!head) {
+      errors.push(`${rel}:${j + 1} 호환성 행의 첫 칸이 「라벨 \`판\`」 모양이 아니다: ${cells[0]}`)
+      continue
+    }
+    const [, label, version] = head
+    if (!COMPAT[label]) {
+      errors.push(`${rel}:${j + 1} 호환성 행 라벨 '${label}' 를 모른다 — COMPAT 에 그 언어와 오라클 파일을 더하라`)
+      continue
+    }
+    if (seenLabels.has(label)) errors.push(`${rel}:${j + 1} 호환성 표에 ${label} 행이 둘이다`)
+    seenLabels.add(label)
+    const [lang, srcRel] = COMPAT[label]
+    const ref = compatRef(lang, version)
+    const at_ = ref ?? '트리'
+    const row = `${rel}:${j + 1} ${label} \`${version}\``
+    let map
+    try {
+      map = compatMap(ref, srcRel)
+    } catch (e) {
+      errors.push(`${row}: ${at_}:${srcRel} 를 읽지 못했다 — ${e.message}`)
+      continue
+    }
+    const cell = cells[cells.length - 1]
+    const claims = [...cell.matchAll(COMPAT_CLAIM)]
+    const rest = cell.replace(COMPAT_CLAIM, ' ')
+    const unbound = [...rest.matchAll(/\*\*([^*]+)\*\*/g)].map((m) => m[1])
+    if (claims.length === 0) errors.push(`${row}: 대조할 굵은 라이브러리 값이 없다 — 공허하게 통과하지 않는다`)
+    if (unbound.length) errors.push(`${row}: 이름 없는 굵은 값(${unbound.join(', ')}) — \`이름\` **값** 으로 적어야 대조된다`)
+    for (const [, name, doc] of claims) {
+      const keys = map.has(name) ? [name] : [...map.keys()].filter((k) => k.endsWith(`:${name}`) || k.endsWith(`/${name}`))
+      if (keys.length !== 1) {
+        errors.push(
+          keys.length === 0
+            ? `${row}: '${name}' 를 ${at_}:${srcRel} 에서 찾지 못했다`
+            : `${row}: '${name}' 가 ${at_}:${srcRel} 의 좌표 여럿(${keys.join(', ')})에 걸린다 — 더 긴 이름으로 적어라`,
+        )
+        continue
+      }
+      const actual = map.get(keys[0])
+      if (compatNorm(actual) !== compatNorm(doc)) errors.push(`${row} 의 '${name}' 문서=${doc} ${at_}=${actual}`)
+    }
+    // 런타임 하한 — 굵은 주장을 걷어 낸 나머지가 그 판의 하한을 말해야 한다(.NET 은 `net8.0` 을 `8+` 로도 적는다).
+    const [rtRel, pick] = RUNTIME[lang]
+    let raw = null
+    try {
+      const t = compatText(ref, rtRel)
+      raw = pick(t) || PUBLISHED_FALLBACK[lang]?.(t) || null
+    } catch {
+      raw = null
+    }
+    const v = raw === null ? null : normalizeVersion(raw)
+    if (v === null) errors.push(`${row}: ${at_}:${rtRel} 에서 런타임 하한을 읽지 못했다`)
+    else if (!mentionsValue(rest, v) && !(/^\d+\.0$/.test(v) && mentionsValue(rest, v.slice(0, -2))))
+      errors.push(`${row}: 런타임 하한 ${v}(${at_}:${rtRel} 의 ${raw}) 를 이 칸이 말하지 않는다`)
+    const cf = COMPAT_CONSUMER_FLOOR[lang]
+    if (cf) {
+      let fv = null
+      try {
+        fv = cf[1](compatText(ref, cf[0])) ?? null
+      } catch {
+        fv = null
+      }
+      if (fv === null) errors.push(`${row}: ${at_}:${cf[0]} 에서 소비자 하한을 읽지 못했다`)
+      else if (!new RegExp(`(?<![\\d.])${reEsc(label)} ${reEsc(fv)}\\+`).test(rest))
+        errors.push(`${row}: 소비자 하한 ${fv}(${at_}:${cf[0]} 의 languageVersion) 를 「${label} ${fv}+」 로 말하지 않는다`)
+    }
+    facts++
+  }
+  // 언어 집합은 DEPLOY_LANGS 가 소유한다 — 표가 한 언어를 빠뜨리거나 COMPAT 이 새 언어를 모르면 실패한다.
+  let deployFacts = null
+  try {
+    deployFacts = readFileSync(join(ROOT, 'scripts/lib/deploy-facts.sh'), 'utf8')
+  } catch {
+    deployFacts = null // 배포 사실 SSOT 가 없는 트리(가드 자신의 픽스처) — 언어 집합 대조는 건너뛴다.
+  }
+  const langs = deployFacts && /DEPLOY_LANGS="([^"]+)"/.exec(deployFacts)?.[1].trim().split(/\s+/)
+  for (const lang of langs ?? []) {
+    const label = Object.keys(COMPAT).find((l) => COMPAT[l][0] === lang)
+    if (!label) errors.push(`${where} DEPLOY_LANGS 의 '${lang}' 를 COMPAT 이 모른다 — 그 언어의 행 라벨과 오라클 파일을 더하라`)
+    else if (!seenLabels.has(label)) errors.push(`${where} 호환성 표에 ${label} 행이 없다(DEPLOY_LANGS)`)
+  }
 }
 
 function gitOut(args) {
@@ -1342,6 +1501,11 @@ for (const file of walk(ROOT)) {
     // kind=runtime은 표가 아니라 앵커 뒤 인라인 코드 한 개(백틱)로 표기된 단일
     // 최소 런타임 값을 검사한다 — kind=dep의 min/표 처리와 무관하므로 여기서
     // 갈라져 별도로 완결 처리하고 continue한다.
+    // kind=compat 은 호환성 표 하나 — 행마다 그 판의 태그와 대조한다(checkCompatTable 주석).
+    if (attrs.kind === 'compat') {
+      checkCompatTable(rel, lines, i)
+      continue
+    }
     if (attrs.kind === 'runtime') {
       const spec = RUNTIME[attrs.lang]
       if (!spec) {
