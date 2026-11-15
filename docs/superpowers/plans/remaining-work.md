@@ -63,7 +63,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `307`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `308`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -447,7 +447,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 95건 (열림 36)
+## D. 원장 밖 — 96건 (열림 36)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -504,7 +504,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
 - [x] `php-mirror-check-pretag-ssot` **[M/S · 신규·닫힘 2026-11-14 #1081]** 미러 확인이 태그 전에 움직이는 SSOT 를 봤다 — readiness 는 정상에 ⚠️ · 번 버전에 ✅, `php-mirror` 잡은 릴리스 PR 마다 빨강(#937). 기준선으로
 
-### 테스트 실행 갭 — 11
+### 테스트 실행 갭 — 12
 
 - [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
 
@@ -523,7 +523,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - 등록되지 않은 새 사본 파일
   - 자리를 늘리거나 그 모양을 FAIL 로 · `scripts/coverage-boundary.mjs`
 - [x] `readme-quickstarts-ungated` **[M/M · 닫힘 2026-11-15 #1099]** 다섯 언어 예제를 타입검사 · 정적분석 · 컴파일에(ruby 는 가짜 서버 실행) · `ruby/spec/unit/examples_quickstart_spec.rb`
-- [ ] `examples-never-run-against-keycloak` **[L/M · 신규 2026-11-15]** README 예제는 실서버에 대고 돈 적이 없다(기본값이 통합 렐름) · `scripts/integration-coverage.json`
+- [x] `examples-never-run-against-keycloak` **[L/M · 신규·닫힘 2026-11-15 #1102]** 설치 하네스가 README 예제 일곱을 실서버에 대고 돌린다(사본 넷 삭제 · php · ruby · rust 는 이미였다) · `harness/install/consume/`
+- [ ] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15]** 통합 커버리지 장부는 통합 스위트만 센다 — 하네스가 야간에 돌리는 Java QuickStart 가 미실행으로 남는다 · `scripts/integration-coverage.json`
 
 ### 1.0 이후 운영 — 21
 
@@ -584,7 +585,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `probe-new-file-mutation-dies-silent` **[M/S · 신규·닫힘 2026-09-26 #591]** 새 파일만 만드는 변이에서 `probe.sh` 가 판정 없이 1(SILENT 의 코드)로 죽었다 — diff 가 비면 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 끝냈다(실측: 0 바이트 · exit 1). `|| true` 한 곳 + 판정 줄을 보는 자가테스트 둘(RED → 18/18) · `scripts/probe.sh`
 - [x] `probe-verdict-line-glued-or-name-split` **[L/S · 신규·닫힘 2026-09-26 #595]** Grok 레그의 퍼저(193 사례, 인자 이동 버그를 고쳐 돌림)가 러너 계약 위반 둘을 냈다 — 끝 개행 없는 새 파일이면 판정 줄이 미리보기 뒤에 붙어(`+plantedCAUGHT — …`) `^CAUGHT` 로 읽는 쪽이 판정을 못 보고, 이름에 공백이 든 새 파일은 `for … in $(…)` 가 쪼개 맞는 변이를 INVALID 로 거부했다. 나머지 INVALID 는 전부 fail-closed. 자가테스트 둘 RED → 20/20, 되돌림 변이 둘 CAUGHT · `scripts/probe.sh`
 - [x] `node-error-cause-carries-response-tokens` **[M/S · 신규·닫힘 2026-09-26 #603]** 형식이 틀린 토큰 응답에서 난 오류가 cause 사슬로 토큰을 찍었다 — oauth4webapi 가 응답 본문 전체나 원문 id_token 을 `cause` 에 싣고 SDK 가 그대로 달았다. 실측: id_token 이 JWT 가 아니면 `console.log(err)` 에 원문 id_token, access_token·expires_in·token_type 이 틀리면 깊은 inspect 에 access/refresh 토큰. 걷기 테스트(#599)가 첫 경우를 잡았다. `KeycloakError` 생성자 한 곳에서 cause 를 이름·메시지·code·스택 사본으로 — 원본 하위 오류도 안 샌다(§4). ⚠️ Grok 적대 레그가 그 사본에서 하나 더 찾았다: 200 에 JSON 아닌 본문이면 `SyntaxError` 가 본문을(짧으면 전부, 길면 앞 10 자) 메시지·스택에 인용한다 — 그 둘은 옮기지 않는다. 변이 6/6 · `node/src/errors.ts`
-- [x] `error-cause-chain-carries-response-body-crosslang` **[M/M · 신규 2026-09-26 · 닫힘 2026-09-26 #617–#624]** 여덟 전부 샜다 — 먼저 쟀다(수정 전, 언어당 변형 17–40 · 누출 6–18): java·kotlin `Caused by:` 가 비-JSON 본문·토큰째, python 트레이스백·메시지, go `RetrieveError` 본문·`error_description`, .NET `ToString()` 내부 예외, php `getPrevious()` 원본과 트레이스 인자, rust `oauth_error` 의 `error_description`, ruby `full_message`·`Faraday::ParsingError#inspect`. 되울린 `error_description` 이 보낸 refresh·code·verifier·Basic 을 싣는 경로도 여럿. 각 경계에서 하위 원인을 타입 이름·프레임만 남긴 사본으로 · 보낸 비밀은 `***` · 코드 모양만 OAuth 오류로. 언어마다 변이 8–13 CAUGHT, Grok 레그(ruby 는 여섯째 시도) 주장 측정·채택. 워크플로 한 번(격리 워크트리 여덟)
+- [x] `error-cause-chain-carries-response-body-crosslang` **[M/M · 신규 2026-09-26 · 닫힘 2026-09-26 #617–#624]** 여덟 전부 샜다 — 하위 원인 사슬(`Caused by:` · 트레이스백 · `ToString()` · `getPrevious()` · `full_message` 등)이 응답 본문과 보낸 비밀을 실었다. 각 경계에서 원인을 타입 이름 · 프레임만 남긴 사본으로, 보낸 비밀은 `***` 로. 언어별 경로 · 변이 수는 그 PR 들이 소유한다
 - [ ] `error-description-foreign-token-residue` **[L/S · 신규 2026-09-26]** 위 수정이 **설계상 남긴** 자리 일곱 — `KNOWN_LEAKS` 가 고정한다(낡으면 실패): java 셋(보내지 않은 20 자 미만 값·소문자만의 긴 값이 `error_description` 에 — 산문 식별자와 가를 수 없다), kotlin 둘(남의 토큰을 되울린 `error_description`), .NET 둘(서버가 OAuth `error` **코드 자리**에 토큰을 넣음 — 코드 모양이면 그대로 둔다). 모두 IdP 가 이미 가진 값이나 적대적 IdP 가 심은 값이다 — 더 좁히려면 오류 설명을 통째로 버리는 결정이 필요하다 · `*/…MalformedTokenResponse*`
 <!-- 2026-10-05(kotlin 물결 4 구현 레그, 소스 판독 — 미측정): java 는 보낸 시크릿과 10 자 창을 공유하는 런과 20 자 이상의 토큰 모양 런까지 가리고(AuthClient.java:346-420) kotlin 은 정확한 꼴(+ #718 의 되울림 꼴)만 가린다 — 잘리거나 다시 인코딩된 되울림은 kotlin 메시지에 남을 수 있다. -->
 - [x] `rust-admin-unreachable-classified-admin` **[L/S · 닫힘 2026-11-10 #1009]** `Transport` 다(`facade_dump.rs`)
