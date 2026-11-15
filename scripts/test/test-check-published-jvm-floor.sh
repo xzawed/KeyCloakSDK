@@ -452,7 +452,7 @@ for v in 1.0.1 1.0.2; do reg_pom "$BB" keycloak-sdk "$v" jar; reg_jar "$BB" keyc
 printf '{}' > "$FIX/db-none.json"
 _o="$(FAKE_ATTEST_DB="$FIX/db-none.json" env -u GITHUB_REPOSITORY node "$GUARD" "--root=$RB" "--base=$BB" --lang=java --attest --repo=o/r "--gh=$FAKE" 2>&1)" && _c=0 || _c=$?
 assert_eq "1" "$_c" "[증명 경계] 1.0.2 는 증명이 없으면 실패한다"
-assert_contains "$_o" "keycloak-sdk 1.0.2" "[증명 경계] 실패한 판이 1.0.2 다"
+assert_contains "$_o" "java keycloak-sdk 1.0.2: 증명" "[증명 경계] 실패한 판이 1.0.2 다(하한 쪽 ok 줄이 아니라 증명 실패 줄)"
 assert_contains "$_o" "skip java keycloak-sdk 1.0.1 — 봉인" "[증명 경계] 1.0.1 은 봉인 이전 판으로 건너뛴다"
 # 공허 — 잴 판이 하나도 없으면(전부 봉인 이전) 「증명 일치」 가 아니다.
 RV="$FIX/repo-old"; BV="$FIX/base-old"
