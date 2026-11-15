@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=138738 max-raw-bytes=148265 -->
+<!-- doc-budget: max-bytes=138277 max-raw-bytes=148096 -->
+<!-- max-bytes 138738 → 138277 · max-raw-bytes 148265 → 148096: readme-quickstarts-ungated 마감(#1099) — 후속
+     examples-never-run-against-keycloak 를 올리고, 닫힌 rust-msrv 줄의 경위를 그 가드 주석으로 보냈다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 141179 → 138738 · max-raw-bytes 156086 → 148265: published-bytes-have-no-oracle 마감(#1096) — 열린 항목의 하위
      불릿 일곱과 설계 블록 주석((a)–(f))이 닫힌 한 줄이 됐다. 경위는 PR 본문. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-raw-bytes 156584 → 156086: wall-clock-ordering-in-tests 마감(#1088) — 남은 자리 주석이 닫힌 한 줄이 되고, go 비행
@@ -59,7 +61,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `306`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `307`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -184,7 +186,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `doc-audit-2026-09-05-confirmed-six` **[M/M · 신규·닫힘 2026-09-05]** 고정 스냅샷 문서감사가 확정한 6건 — 전부 「가드받는 SSOT 의 사본이 갈렸다」 부류다 · `.claude/rules/`
 - [x] `harness-gradle-version-copies-unguarded` **[M/S · 신규·닫힘 2026-09-05]** 하네스의 gradle 버전 사본이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
 - [x] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규·닫힘 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,ruby}.md`
-- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** ⚠️ **지목 줄이 빗나가 있었다** — `rust-ci.yml:21` 은 주석이고 실제 레그는 **`:24`** 다. 주장 자체는 참이었다(실측: 매트릭스 레그만 올리면 **아무 검사도 실패하지 않는다** — `check-docs.mjs` 의 `MATRIX` 는 java·ruby 둘뿐이라 rust 는 표에 없다). `H3-harness-image-and-lock-pins` 와 **같은 불변식**이라 한 가드로 닫았다(`check-versions.mjs` 의 툴체인 리터럴 축). ⚠️ **산문을 조준하지 않는 것이 이 가드가 required 안에서 사는 조건이다** — CHANGELOG 의 「MSRV 1.88 그대로」는 **이력**이라 MSRV 가 올라도 바뀌면 안 되고, README·getting-started 의 「1.88+」는 `check-docs.mjs:544` 의 kind=runtime 앵커가 이미 소유한다. 그래서 대상은 **지시어 행 둘**뿐이다(매트릭스 축 · `^FROM rust:<ver>`). 변이 M3/M4 양방향 `CAUGHT` + OFF 짝 `SILENT`.
+- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** 매트릭스 레그만 올려도 아무 검사가 실패하지 않았다 — `H3-harness-image-and-lock-pins` 와 한 가드(`check-versions.mjs` 툴체인 리터럴 축, 지시어 행 둘)로 닫음. 산문을 조준하지 않는 이유는 그 가드의 주석이 소유한다.
 - [x] `matrix-fail-fast-cancels-floor-leg` **[M/S · 신규·닫힘 2026-09-05]** 매트릭스 워크플로 8개 중 **6개에 `fail-fast: false` 가 없어** 최신 레그가 깨지면 소비자 하한 레그가 취소된다 · `.github/workflows/`
 - [x] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 닫힘 2026-09-24]** 1.0.1 게시(Portal Publish 후 repo1 첫 404 → 약 10 분 뒤 200)로 닫았다 — 게시 바이트 **전부 major ≤ 61**(`node scripts/check-published-jvm-floor.mjs`; metadata 가 늦은 `-core` 는 jar 직접 16/16). API 기저선 1.0.0 → 1.0.1 은 같은 PR(DEPLOY §4 step 9)
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝 · 그중 둘은 독립 레그가 낸 구멍)
@@ -445,7 +447,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 94건 (열림 37)
+## D. 원장 밖 — 95건 (열림 37)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -502,7 +504,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
 - [x] `php-mirror-check-pretag-ssot` **[M/S · 신규·닫힘 2026-11-14 #1081]** 미러 확인이 태그 전에 움직이는 SSOT 를 봤다 — readiness 는 정상에 ⚠️ · 번 버전에 ✅, `php-mirror` 잡은 릴리스 PR 마다 빨강(#937). 기준선으로
 
-### 테스트 실행 갭 — 10
+### 테스트 실행 갭 — 11
 
 - [ ] `realm-copies-unguarded` **[L/S · 신규 2026-09-27]** 통합 렐름 사본 아홉을 대조하는 가드가 없다. 지금은 우연히 둘로 수렴해 있다 — 일곱이 `3e76565`, java·kotlin 이 `191515a` 다. 코드 교환 이식이 클라이언트 둘을 손으로 아홉 곳에 복사했다. 다시 재는 명령: `git ls-files '*it-realm-realm.json' | xargs -n1 git hash-object`. JVM 짝이 공개 클라이언트 하나를 더 가진 것은 의도다 — 가드는 「두 집합, 그 차이만」을 고정하면 된다.
 
@@ -520,7 +522,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - pom 속성 간접 참조 `${…}`, Kover `excludedSourceSets`, vitest `'!…'` 부정 패턴, SimpleCov 필터를 다른 파일로 옮기기
   - 등록되지 않은 새 사본 파일
   - 자리를 늘리거나 그 모양을 FAIL 로 · `scripts/coverage-boundary.mjs`
-- [ ] `readme-quickstarts-ungated` **[M/M]** README가 정본이라 부르는 quickstart 예제가 어떤 게이트에도 안 걸린다 — 하네스가 실제로 돌리는 것은 별도 사본이다 · `node/examples/quickstart.ts:1`
+- [x] `readme-quickstarts-ungated` **[M/M · 닫힘 2026-11-15 #1099]** 다섯 언어 예제를 타입검사 · 정적분석 · 컴파일에(ruby 는 가짜 서버 실행) · `ruby/spec/unit/examples_quickstart_spec.rb`
+- [ ] `examples-never-run-against-keycloak` **[L/M · 신규 2026-11-15]** README 예제는 실서버에 대고 돈 적이 없다(기본값이 통합 렐름) · `scripts/integration-coverage.json`
 
 ### 1.0 이후 운영 — 21
 

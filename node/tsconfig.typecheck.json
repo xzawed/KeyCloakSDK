@@ -17,7 +17,9 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    // README 가 링크하는 예제는 게시 패키지 이름으로 import 한다 — 검사는 방출 전이므로 그 이름을 src 로 잇는다.
+    "paths": { "@xzawed/keycloak-sdk": ["./src/index.ts"] }
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "examples"]
 }
