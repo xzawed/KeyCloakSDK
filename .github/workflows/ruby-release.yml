@@ -138,7 +138,8 @@ jobs:
     environment: release
     permissions:
       contents: read
-      id-token: write          # RubyGems Trusted Publishing(OIDC) — 저장 시크릿 없음
+      id-token: write          # RubyGems Trusted Publishing(OIDC) — 저장 시크릿 없음 · 출처 증명의 서명
+      attestations: write      # 출처 증명 — 내용·태그·패키지를 못 건드린다(release.yml 과 같은 이유)
     defaults:
       run:
         working-directory: ruby
@@ -163,3 +164,9 @@ jobs:
         run: |
           gem build keycloak-sdk.gemspec
           gem push keycloak-sdk-*.gem
+      # 출처 증명 — `gem push` 가 올린 그 `.gem`. RubyGems 는 받은 바이트를 그대로 준다 — 실측(1.4.1): 내려받은
+      # 파일의 sha256 = API 의 `sha`. 게시 **뒤에** 건다(release.yml 과 같은 원칙). `uses:` 의 경로는 저장소 루트부터다.
+      - name: Attest build provenance (게시한 그 바이트)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'ruby/keycloak-sdk-*.gem'

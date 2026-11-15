@@ -1,14 +1,19 @@
 #!/usr/bin/env sh
 # **게시하는 잡은 게시한 것을 증명한다** — 출처 증명(attestation) 불변식.
 #
-# 무엇을 지키는가: Central 의 바이트가 **우리가 빌드한 것인지**를 증명하는 것은 릴리스 잡의
-# `actions/attest-build-provenance` 다. 그 단계가 조용히 빠지면 — 권한 정리 중에, 잡을 옮기다가,
-# 액션 상향을 되돌리다가 — 그 판은 증명 없이 나간다. `published-floor.yml` 의 `--attest` 는 그것을
-# **게시된 뒤에야** 본다. 이 시험은 태그 전에 막는다.
+# 무엇을 지키는가: 게시한 바이트가 **우리가 빌드한 것인지**를 증명하는 것은 릴리스 잡의
+# `actions/attest-build-provenance` 다(Central · NuGet · crates.io · RubyGems · Packagist 미러). 그 단계가 조용히
+# 빠지면 — 권한 정리 중에, 잡을 옮기다가, 액션 상향을 되돌리다가 — 그 판은 증명 없이 나간다. `published-floor.yml`
+# 의 `--attest` 는 그것을(JVM 만) **게시된 뒤에야** 본다. 이 시험은 태그 전에 막는다.
+# npm · PyPI 는 레지스트리가 증명을 단다(`npm publish --provenance` · pypa 액션의 PEP 740) — 그 스위치와 서명 권한을
+# 본다(`_native_findings`). Go 는 게시 명령이 없다 — proxy 가 태그를 가져가고 체크섬 DB 가 모두에게 같은 바이트를
+# 보장한다(`_unclassified` 의 면제 하나).
 #
-# ⚠️ **대상을 손으로 적지 않는다.** 「게시하는 잡」은 파생한다 — Central 에 올리는 명령
-# (`mvn … deploy` · `publishToMavenCentral`)을 부르는 워크플로가 그것이다. 새 JVM 레인이 생기면
-# 자동으로 조준에 들어온다(손목록이면 그때 조용히 빠진다).
+# ⚠️ **대상을 손으로 적지 않는다.** 「게시하는 잡」은 파생한다 — 레지스트리에 올리는 명령
+# (`mvn … deploy` · `publishToMavenCentral` · `dotnet nuget push` · `cargo publish` · `gem push` · 미러 태그 push)을
+# 부르는 워크플로가 그것이다. 그리고 그 파생이 놓치는 레인이 없도록 **태그로 트리거되는 워크플로는 전부**
+# 셋 중 하나로 분류돼야 한다(`_unclassified`) — 게시 명령의 표기가 바뀌어(`gem push` → `rake release`) 조준에서
+# 빠지면 조용하지 않고 운다.
 #
 # ⚠️ **판정을 함수로 뽑은 것은 취향이 아니라 대조군 때문이다** — 같은 `_findings` 를 실제 트리와
 # 합성 픽스처에 각각 먹인다. 자기 자신을 다시 부르는 방식은 무한 재귀가 되고, 살아 있는 상태만
@@ -27,7 +32,9 @@ ATTEST='actions/attest-build-provenance'
 #   · `publishAndReleaseToMavenCentral` — vanniktech 의 다른 태스크이고, **하필 사람 Portal 클릭을
 #     없애는 쪽**이다(사람 게이트를 빼는 그 변경이 증명 게이트까지 함께 뺐다)
 # 그래서 (a) 줄 이음을 **먼저 잇고** (b) 패턴을 표기 변주에 견디게 쓴다.
-PUBLISH_RE='mvnw?[^|]*deploy|publish[A-Za-z]*MavenCentral|publishAllPublications'
+# ⚠️ 미러 태그 push 는 `<브랜치>:refs/tags/…` 꼴만이다 — `dispatch-release.yml` 이 이 저장소에 태그를 미는
+# `git push <url> "refs/tags/<tag>"` 는 게시가 아니다(콜론이 없다 — 대조군이 고정한다).
+PUBLISH_RE='mvnw?[^|]*deploy|publish[A-Za-z]*MavenCentral|publishAllPublications|dotnet nuget push|cargo publish|gem push|git push[^|]*[^[:space:]"'"'"']:refs/tags/'
 
 # ── 판정 ────────────────────────────────────────────────────────────────────
 # 위반을 한 줄에 하나씩 stdout 으로 낸다(빈 출력 = 위반 없음). 「게시 워크플로 0개」도 위반이다.
@@ -155,9 +162,69 @@ _findings() { # _findings <워크플로 디렉터리>
   [ "$found" -ge 1 ] || echo "게시 명령(\`$PUBLISH_RE\`)을 부르는 워크플로를 하나도 못 찾았다 — 파생이 깨졌다"
 }
 
+# ── 레지스트리가 증명을 다는 레인(npm · PyPI) ─────────────────────────────────
+# npm 은 `--provenance`, PyPI 는 pypa 액션의 `attestations`(기본 켜짐)로 레지스트리가 증명을 단다. 둘 다 그 잡의
+# `id-token: write` 로 서명한다. 셋 중 하나만 빠져도 증명 없이 나가고 게시는 초록이다 — 그 셋을 본다.
+NPM_RE='(^|[^[:alnum:]_-])npm publish'
+PYPI_RE='uses:[[:space:]]*pypa/gh-action-pypi-publish@'
+# 그 정규식을 담은 잡 블록 가운데 `id-token: write` 가 없는 수(잡 슬라이스는 `_findings` 와 같다 — 권한이 다른 잡에
+# 있으면 안 된다).
+_blocks_without_idtoken() { # <주석 걷은 본문> <정규식>
+  printf '%s\n' "$1" | awk -v re="$2" '
+    /^jobs:[[:space:]]*$/ { injobs = 1; next }
+    !injobs { next }
+    /^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$/ { if (hit && !tok) n++; hit = 0; tok = 0 }
+    { if ($0 ~ re) hit = 1; if ($0 ~ /id-token:[[:space:]]*write/) tok = 1 }
+    END { if (hit && !tok) n++; print n + 0 }
+  '
+}
+_native_findings() { # _native_findings <워크플로 디렉터리>
+  wfdir="$1"; n_npm=0; n_pypi=0
+  for f in "$wfdir"/*.yml "$wfdir"/*.yaml; do
+    [ -f "$f" ] || continue
+    nc="$(_nc "$f")"; wf="$(basename "$f")"
+    pubs="$(printf '%s\n' "$nc" | grep -E "$NPM_RE" || true)"
+    if [ -n "$pubs" ]; then
+      n_npm=$((n_npm + 1))
+      # 플래그 그 자체여야 한다 — `--provenance=false` 는 아니다.
+      if printf '%s\n' "$pubs" | grep -vqE -- '--provenance([[:space:]]|$)'; then echo "$wf: \`npm publish\` 에 \`--provenance\` 가 없다 — npm 이 출처 증명 없이 게시한다"; fi
+      [ "$(_blocks_without_idtoken "$nc" "$NPM_RE")" = 0 ] || echo "$wf: \`npm publish\` 잡에 \`id-token: write\` 가 없다 — 증명을 서명할 수 없다"
+    fi
+    if printf '%s\n' "$nc" | grep -qE "$PYPI_RE"; then
+      n_pypi=$((n_pypi + 1))
+      if printf '%s\n' "$nc" | grep -qiE "^[[:space:]]*attestations:[[:space:]]*[\"']?false"; then echo "$wf: pypa 게시 액션의 \`attestations\` 를 껐다 — PyPI 가 PEP 740 증명 없이 게시한다"; fi
+      [ "$(_blocks_without_idtoken "$nc" "$PYPI_RE")" = 0 ] || echo "$wf: pypa 게시 잡에 \`id-token: write\` 가 없다 — 증명을 서명할 수 없다"
+    fi
+  done
+  [ "$n_npm" -ge 1 ] || echo "\`npm publish\` 를 부르는 워크플로를 하나도 못 찾았다 — 파생이 깨졌다"
+  [ "$n_pypi" -ge 1 ] || echo "pypa 게시 액션을 쓰는 워크플로를 하나도 못 찾았다 — 파생이 깨졌다"
+}
+
+# ── 분류 — 태그로 트리거되는 워크플로는 전부 셋 중 하나다 ─────────────────────────
+# (1) 게시 명령(PUBLISH_RE — 위 `_findings` 가 증명을 본다) (2) 레지스트리 증명(npm · PyPI — `_native_findings`) (3) 면제.
+# 어디에도 없으면 그 레인은 게시 명령의 표기가 바뀌어 조준에서 빠진 것이다 — 그때 조용하지 않게 운다.
+# 면제는 이유와 함께 이름으로만 둔다 — go: 게시 명령이 없다. 태그를 proxy.golang.org 가 가져가고 sum.golang.org
+# 체크섬 DB 가 모두에게 같은 바이트를 준다(빌드 산출물이 없다).
+EXEMPT_UNPUBLISHED='go-release.yml'
+_unclassified() { # _unclassified <워크플로 디렉터리>
+  wfdir="$1"; n=0
+  for f in "$wfdir"/*.yml "$wfdir"/*.yaml; do
+    [ -f "$f" ] || continue
+    nc="$(_nc "$f")"; wf="$(basename "$f")"
+    printf '%s\n' "$nc" | grep -qE '^[[:space:]]+tags:' || continue
+    n=$((n + 1))
+    if printf '%s\n' "$nc" | grep -qE "$PUBLISH_RE|$NPM_RE|$PYPI_RE"; then continue; fi
+    case " $EXEMPT_UNPUBLISHED " in *" $wf "*) continue ;; esac
+    echo "$wf: 태그로 트리거되는데 게시 명령을 알아보지 못했다 — 출처 증명 조준에서 빠진다(PUBLISH_RE · npm · PyPI · 면제 어디에도 없다)"
+  done
+  [ "$n" -ge 1 ] || echo "태그로 트리거되는 워크플로를 하나도 못 찾았다 — 파생이 깨졌다"
+}
+
 # ── 실제 트리 ───────────────────────────────────────────────────────────────
 real="$(_findings "$ROOT/.github/workflows")"
 assert_eq "" "$real" "[출처증명] 실제 워크플로에 위반이 있다"
+assert_eq "" "$(_native_findings "$ROOT/.github/workflows")" "[출처증명] npm · PyPI 의 증명 스위치나 서명 권한에 위반이 있다"
+assert_eq "" "$(_unclassified "$ROOT/.github/workflows")" "[출처증명] 태그로 게시하는데 분류되지 않은 워크플로가 있다 — 패턴이 그 레인의 게시 명령을 못 알아본다"
 
 # ── 음성 대조 ───────────────────────────────────────────────────────────────
 TMP="$(mktemp -d)"
@@ -271,5 +338,67 @@ done
 # (f) 게시 명령이 하나도 없으면 공허 하한이 운다.
 printf '%s\n' 'name: x' 'jobs:' '  a:' '    steps:' '      - run: echo hi' > "$W/x.yml"
 assert_contains "$(_findings "$W")" "하나도 못 찾았다" "[음성대조] 게시 워크플로가 0개면 공허 하한이 운다"
+
+# ── 네 레인(.NET · Rust · Ruby · PHP 미러)의 게시 명령도 조준에 든다(release-provenance-four-lanes) ──
+for cmd in '      - run: dotnet nuget push "artifacts/*.nupkg" --api-key "$K" --source https://api.nuget.org/v3/index.json' \
+  '      - run: cargo publish --locked --token "$T"' \
+  '      - run: gem push keycloak-sdk-*.gem' \
+  '      - run: git push "$REMOTE" "php-split:refs/tags/v${VERSION}"'; do
+  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "$cmd"
+  assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 게시 명령으로 본다 — $cmd"
+  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$cmd" "$PIN" "$WITH" "$SUBJ"
+  assert_eq "" "$(_findings "$W")" "[대조] 증명이 뒤에 있으면 위반 없음 — $cmd"
+done
+# 이 저장소에 태그를 미는 push(dispatch-release 의 꼴)는 게시가 아니다 — 콜론 없는 ref 다.
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: git push "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"'
+assert_not_contains "$(_findings "$W")" "단계가 없다" "[대조] 이 저장소의 태그 push 는 게시가 아니다"
+
+# ── npm · PyPI — 레지스트리 증명의 스위치와 서명 권한 ─────────────────────────────────
+N="$TMP/native"; mkdir -p "$N"
+_native_ok() {
+  rm -f "$N"/*.yml
+  printf '%s\n' 'name: n' 'on:' '  push:' "    tags: ['node-v*']" 'jobs:' '  release:' '    permissions:' '      contents: read' \
+    '      id-token: write' '    steps:' '      - run: npm publish --provenance --access public' > "$N/node.yml"
+  printf '%s\n' 'name: p' 'on:' '  push:' "    tags: ['py-v*']" 'jobs:' '  release:' '    permissions:' '      id-token: write' \
+    '    steps:' '      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33' '        with:' \
+    '          packages-dir: python/dist' > "$N/py.yml"
+}
+_native_ok
+assert_eq "" "$(_native_findings "$N")" "[대조] 정상 npm · PyPI 는 위반 없음"
+for mut in 's/ --provenance//' 's/--provenance/--provenance=false/'; do
+  _native_ok; sed -i "$mut" "$N/node.yml"
+  assert_contains "$(_native_findings "$N")" "\`npm publish\` 에 \`--provenance\` 가 없다" "[음성대조] npm 증명 플래그를 빼면 운다 — $mut"
+done
+_native_ok; sed -i '/id-token: write/d' "$N/node.yml"
+assert_contains "$(_native_findings "$N")" "\`npm publish\` 잡에 \`id-token: write\` 가 없다" "[음성대조] npm 잡에 서명 권한이 없으면 운다"
+_native_ok
+printf '%s\n' 'name: n' 'jobs:' '  other:' '    permissions:' '      id-token: write' '  release:' '    permissions:' '      contents: read' \
+  '    steps:' '      - run: npm publish --provenance' > "$N/node.yml"
+assert_contains "$(_native_findings "$N")" "\`npm publish\` 잡에 \`id-token: write\` 가 없다" "[음성대조] 서명 권한이 다른 잡에 있으면 운다"
+for off in '          attestations: false' "          attestations: 'false'"; do
+  _native_ok; printf '%s\n' "$off" >> "$N/py.yml"
+  assert_contains "$(_native_findings "$N")" "\`attestations\` 를 껐다" "[음성대조] PyPI 증명을 끄면 운다 — $off"
+done
+_native_ok; sed -i '/id-token: write/d' "$N/py.yml"
+assert_contains "$(_native_findings "$N")" "pypa 게시 잡에 \`id-token: write\` 가 없다" "[음성대조] PyPI 잡에 서명 권한이 없으면 운다"
+rm -f "$N"/*.yml
+assert_contains "$(_native_findings "$N")" "\`npm publish\` 를 부르는 워크플로를 하나도 못 찾았다" "[음성대조] npm 레인이 0 이면 공허 하한이 운다"
+assert_contains "$(_native_findings "$N")" "pypa 게시 액션을 쓰는 워크플로를 하나도 못 찾았다" "[음성대조] PyPI 레인이 0 이면 공허 하한이 운다"
+
+# ── 분류 — 게시 명령의 표기가 바뀌어 조준에서 빠진 레인은 운다 ─────────────────────────
+U="$TMP/uncl"; mkdir -p "$U"
+printf '%s\n' 'name: r' 'on:' '  push:' "    tags: ['ruby-v*']" 'jobs:' '  release:' '    steps:' '      - run: bundle exec rake release' > "$U/ruby-release.yml"
+assert_contains "$(_unclassified "$U")" "ruby-release.yml: 태그로 트리거되는데 게시 명령을 알아보지 못했다" "[음성대조] 표기가 바뀐 게시(rake release)는 분류 밖이라 운다"
+rm -f "$U"/*.yml
+printf '%s\n' 'name: g' 'on:' '  push:' "    tags: ['go/v*']" 'jobs:' '  release:' '    steps:' '      - run: echo tagged' > "$U/go-release.yml"
+assert_eq "" "$(_unclassified "$U")" "[대조] go 는 면제(체크섬 DB) — 게시 명령이 없어도 분류된다"
+mv "$U/go-release.yml" "$U/go2-release.yml"
+assert_contains "$(_unclassified "$U")" "go2-release.yml: 태그로 트리거되는데" "[음성대조] 면제는 그 이름뿐 — 다른 파일은 분류 밖"
+for f in "$ROOT"/.github/workflows/*-release.yml "$ROOT/.github/workflows/release.yml"; do cp "$f" "$U/"; done
+rm -f "$U/go2-release.yml"
+assert_eq "" "$(_unclassified "$U")" "[대조] 실제 릴리스 워크플로 아홉은 전부 분류된다"
+rm -f "$U"/*.yml
+printf '%s\n' 'name: c' 'on: [pull_request]' 'jobs:' '  a:' '    steps:' '      - run: echo' > "$U/ci.yml"
+assert_contains "$(_unclassified "$U")" "하나도 못 찾았다" "[음성대조] 태그 트리거 워크플로가 0 이면 공허 하한이 운다"
 
 assert_report

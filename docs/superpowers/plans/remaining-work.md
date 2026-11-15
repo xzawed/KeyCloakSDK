@@ -63,7 +63,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `308`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `309`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -447,7 +447,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 96건 (열림 34)
+## D. 원장 밖 — 97건 (열림 34)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -554,7 +554,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `php-admin-client-0.44-upgrade` **[L/M · 닫힘 2026-10-09 #759]** 0.44 가 감싼 예외를 `ErrorTranslation` 이 벗긴다(#750 대체)
 - [x] `kotlin-pom-description-jdk-floor` **[M/S · 닫힘 2026-11-02 #933]** POM 이 「JDK 21+」였다(게시 1.0.1–1.0.8) — 17+ 로 고치고 `check-versions.mjs` 가 `KOTLIN_X_Y`·`JvmTarget` 과 대조한다
 
-### 완전성 비평 신규 — 26
+### 완전성 비평 신규 — 27
 
 - [x] `runtime-eol-support-window` **[H/M]** 선언된 소비자 런타임 하한 둘이 상류 지원 종료다 — Ruby 3.2는 이미 EOL, .NET 8은 68일 뒤 · `ruby/keycloak-sdk.gemspec:20`
 - [x] `consumer-intake-surface-absent` **[M/S · 닫힘 2026-11-15 #1094]** 이슈 양식 둘 · PR 템플릿 · CODEOWNERS · 행동강령 — 양식의 언어 목록은 트리와 대조한다 · `scripts/test/test-community-intake.sh`
@@ -567,11 +567,12 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **하한을 짐작으로 15 를 박았다가 가드가 자기 자신을 빨갛게 했다**(실측 12). 등록부가 이미 경고한 부류다 — **세어서 박는다**. 그리고 상수를 검사와 문구 **두 곳**에 적어 갈렸다(조건 10 · 문구 15) — `BI_MIN` 변수 하나로 묶었다.
   - ⏸ **열어 두는 절반 — dependabot 의 `docker` 생태계.** 이 저장소는 전부 `directory:` 단수를 쓰고 Dockerfile 이 20개 디렉터리에 흩어져 있다. 추가하면 **주간 봇 PR 양**이 바뀌고, 이 리포는 이미 dependabot 잡이 빨개지는 소음을 겪었다(ruby `parallel` 사례). **봇 설정은 사람 판단이 붙는 자리**라 측정만 남기고 연다.
 - [x] `release-artifact-verification-undocumented` **[M/M · 닫힘 2026-11-15 #1095]** 아홉 레지스트리의 검증 명령을 최신 게시본으로 재어 적었다 · `docs/guides/verifying-releases.md`
-- [ ] `release-provenance-four-lanes` **[M/M · 신규 2026-11-15]** .NET · PHP · Rust · Ruby 게시물엔 빌드 출처 증명이 없다 — 소비자 검증이 저장소 서명 · 체크섬 · 재빌드뿐이다(JVM · Python · Node 는 있고 Go 는 체크섬 DB) · `.github/workflows/ruby-release.yml:162`
+- [x] `release-provenance-four-lanes` **[M/M · 신규 2026-11-15 · 닫힘 2026-11-16 #1105]** 네 레인이 게시한 바이트를 증명한다 — .NET 은 nupkg · snupkg 와 그 DLL(nuget.org 가 nupkg 를 저장소 서명으로 바꾼다 — 실측), PHP 는 미러로 보낸 파일 · 가드가 태그 트리거 아홉을 분류하고 npm · PyPI 의 스위치도 본다 · `scripts/test/test-release-attestation.sh`
+- [ ] `four-lanes-provenance-unproven-on-published-bytes` **[M/S · 신규 2026-11-16]** 네 레인의 증명 단계는 다음 릴리스에서 처음 돈다 — 그 게시 바이트에 `gh attestation verify` 를 돌리기 전까지 검증 안내는 「증명 없음」 그대로이고 주간 `--attest` 도 JVM 만 · `docs/guides/verifying-releases.md:25`
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
 - [x] `java-short-code-verifier-leaks-iae` **[M/S · 신규·닫힘 2026-09-25 #585]** 아홉을 쟀다 — 잘못된 verifier 를 로컬에서 거부하는 것은 JVM 짝(Nimbus)뿐이고 자매 일곱은 전송 → 400 → SDK 인증 오류다. 부류 재스캔이 verifier 밖으로 넓혔다: 빈 code·refresh·introspect 토큰, client_credentials 공백 scope(전례가 인가 요청만 고쳤다), kotlin 문자열 redirectUri, Nimbus `build()` 의 redirect_uri 검사(Grok 레그가 찾음), java null 셋 — 전부 SDK 타입으로, 변이 22/22 CAUGHT · `java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientInputBoundaryTest.java`
-- [x] `jvm-config-values-leak-lower-exceptions` **[M/M · 신규·닫힘 2026-09-25 #588]** 아홉을 쟀다 — 같은 설정값에서 SDK 밖 예외가 새는 것은 JVM 짝만이 아니었다(ruby·dotnet·node 는 아래 신규 항목). JVM 은 생성 시점 검증(serverUrl 절대 http(s)·authority·`toURL`·포트 · 타임아웃 1 ms~int ms · null 목록 · clockSkew·jwksMinRefetch ≥ 0 과 밀리초 표현) → `KeycloakConfigException`, realm 은 엔드포인트에서만 퍼센트 인코딩, openid 없는 scopes 는 자매 일곱처럼 그대로 보냄 — 「덧붙인다 vs 거부한다」 판정은 측정이 셋째 안(통과)으로 정했다. Kotlin 은 Grok 레그가 구현했고, 다른 레그의 적대적 계약 프로브(927 사례)가 남은 누출을 찾아 같은 PR 에서 닫았다(최종 위반 0) · 변이 31/31 · `java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/KeycloakConfig.java`
+- [x] `jvm-config-values-leak-lower-exceptions` **[M/M · 신규·닫힘 2026-09-25 #588]** JVM 은 설정값을 생성 시점에 검증해 `KeycloakConfigException` 으로 낸다 — 검증 목록 · 판정 · 계약 프로브(927 사례) · 변이 31/31 은 #588 이 소유한다 · `java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/KeycloakConfig.java`
 - [x] `config-url-values-leak-ruby-dotnet-node` **[M/M · 신규 2026-09-25 · 닫힘 2026-09-26 #589]** 셋 다 생성 시 ConfigError — ruby(URI::HTTP·host·port, realm 은 엔드포인트에서만 인코딩) · dotnet(`Uri.TryCreate` Absolute + http(s)) · node(`new URL` + http(s)). 밑줄 호스트는 셋 다 받는다(실측). ruby·dotnet 은 Grok 레그가 구현, 변이 7/7 · 음수 타임아웃 동형 문제는 아래 신규 항목 · `ruby/lib/keycloak_sdk/config.rb`
 - [x] `config-timeouts-accept-negative-node-python-php` **[L/S · 신규·닫힘 2026-09-26 #590]** 셋의 0·음수를 먼저 쟀다 — 누출은 없고 쓸 수 없거나 위험한 설정이었다(php 0 = 무한 대기, node 2^31 이상 = 타이머가 1ms 로 바꿔 즉시 abort, python admin 은 즉시 실패). 셋 다 타임아웃 유한 > 0(node 는 ≤ 2147483647), skew·재조회 유한 ≥ 0 → 생성 시 ConfigError. python·php 는 Grok 레그가 구현, 변이 10/10 · `node/src/config.ts`
 - [ ] `release-publish-job-holds-contents-write` **[M/S · 신규 2026-09-25]** dotnet·php 에서 레지스트리 자격증명(`NUGET_API_KEY` · `PHP_SPLIT_TOKEN`)을 쥔 잡이 `gh release create` 때문에 저장소 `contents: write` 도 쥔다 — 게시와 Release 를 잡으로 나누면 풀리지만 그것은 `irreversible-publish-no-reentry` 의 보류된 안이라, **권한만을 위한 분리**가 값을 하는지는 별도 판정이다 · `.github/workflows/dotnet-release.yml`
