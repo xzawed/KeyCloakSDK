@@ -16,9 +16,10 @@ WORKDIR /work
 
 COPY harness/install/consume/java-settings.xml ./settings.xml
 
-# quickstart 스모크(별도 최소 Maven 프로젝트 — java/ 소스 트리와 무관, SDK를 저장소 해석으로 설치해 사용).
+# quickstart 스모크(별도 최소 Maven 프로젝트 — SDK 를 저장소 해석으로 설치해 사용). 소스는 README 가 링크하는 예제
+# **그 자체**다(사본을 두지 않는다 — java/keycloak-sdk-examples 는 SDK 리액터 밖에서는 이 한 파일뿐이다).
 COPY harness/install/consume/java-quickstart-pom.xml ./quickstart/pom.xml
-COPY harness/install/quickstart/java/io ./quickstart/src/main/java/io
+COPY java/keycloak-sdk-examples/src/main/java/io ./quickstart/src/main/java/io
 
 # harness app(설치된 패키지 소비 pom) + 무변경 소스(App.java/HarnessController.java/application.properties).
 COPY harness/install/consume/java-app-pom.xml ./app/pom.xml

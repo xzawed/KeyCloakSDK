@@ -1,5 +1,5 @@
-// Command quickstart is the install-smoke(b1) equivalent of
-// harness/install/quickstart/node/quickstart.mjs for the go SDK.
+// Command quickstart is the install-smoke(b1) equivalent, for the go SDK, of the README
+// examples (node/examples/quickstart.ts and others, which the harness runs as they are).
 //
 // go/example_test.go's Example() documents the same flow but is package
 // keycloak_test (not package main) and has no Output comment, so `go test`

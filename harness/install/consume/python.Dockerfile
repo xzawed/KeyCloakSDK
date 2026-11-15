@@ -17,7 +17,9 @@ WORKDIR /app
 # 설치한다(python-run.sh). requirements.txt에는 SDK가 포함되지 않는다(app의 프레임워크 의존만).
 COPY harness/apps/python/requirements.txt ./requirements.txt
 
-COPY harness/install/quickstart/python/quickstart.py ./quickstart.py
+# quickstart 스모크는 README 가 링크하는 예제 **그 자체**다(사본을 두지 않는다 — 사본만 돌면 README 예제는 실서버에 대고
+# 돈 적이 없다). 예제는 KC_SERVER_URL · KC_REALM · KC_CLIENT_ID · KC_CLIENT_SECRET 를 읽는다.
+COPY python/examples/quickstart.py python/examples/async_quickstart.py ./
 COPY harness/apps/python/main.py ./main.py
 COPY harness/install/consume/python-run.sh ./run.sh
 

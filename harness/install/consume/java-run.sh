@@ -164,8 +164,10 @@ else
   sleep 3600; exit 1   # 컨테이너를 살려둬 진단 가능하게(오케스트레이터는 마커 부재로 실패 판정)
 fi
 
-echo "[java-run] 2/3 quickstart 스모크 — mvn -f /work/quickstart/pom.xml compile exec:java"
-if mvn -s "$SETTINGS" -B -q -f /work/quickstart/pom.xml compile exec:java >/tmp/qs.log 2>&1; then
+echo "[java-run] 2/3 quickstart 스모크 — README 예제 mvn -f /work/quickstart/pom.xml compile exec:java"
+# 예제는 KEYCLOAK_* 를 읽는다 — 오케스트레이터가 넘기는 KC_* 를 그 이름으로 잇는다(exec:java 는 같은 JVM 의 환경을 본다).
+if KEYCLOAK_URL="$KC_SERVER_URL" KEYCLOAK_REALM="$KC_REALM" KEYCLOAK_CLIENT_ID="$KC_CLIENT_ID" \
+   KEYCLOAK_CLIENT_SECRET="$KC_CLIENT_SECRET" mvn -s "$SETTINGS" -B -q -f /work/quickstart/pom.xml compile exec:java >/tmp/qs.log 2>&1; then
   : > "$STATUS/quickstart.ok"
   echo "[java-run] quickstart OK"
 else

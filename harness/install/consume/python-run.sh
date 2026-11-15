@@ -85,8 +85,8 @@ else
   sleep 3600; exit 1   # 컨테이너를 살려둬 진단 가능하게(오케스트레이터는 마커 부재로 실패 판정)
 fi
 
-echo "[python-run] 2/3 quickstart 스모크 — python3 quickstart.py"
-if python3 quickstart.py >/tmp/qs.log 2>&1; then
+echo "[python-run] 2/3 quickstart 스모크 — README 예제 python3 quickstart.py · async_quickstart.py"
+if python3 quickstart.py >/tmp/qs.log 2>&1 && python3 async_quickstart.py >>/tmp/qs.log 2>&1; then
   : > "$STATUS/quickstart.ok"
   echo "[python-run] quickstart OK"
 else

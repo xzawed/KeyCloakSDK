@@ -1,4 +1,4 @@
-// Install-smoke(b1) — harness/install/quickstart/node/quickstart.mjs의 .NET 등가물.
+// Install-smoke(b1) — README 예제(node/examples/quickstart.ts 등 — 하네스가 그 파일을 그대로 돌린다)의 .NET 등가물.
 //
 // dotnet/examples/에는 quickstart 예제가 없어(부재) 이 하네스 전용 파일로 신설했다 — Xzawed.Keycloak.Sdk
 // 배포 아티팩트(nupkg)에는 포함되지 않는다. consume/dotnet.Dockerfile이 BaGetter에서 설치한

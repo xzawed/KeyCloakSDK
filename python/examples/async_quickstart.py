@@ -8,14 +8,15 @@ server, `python -c "import ast; ast.parse(...)"` and `mypy` must pass). The logi
 network calls is in `main()` and runs only behind the `if __name__ == "__main__":` guard, so
 merely importing the module sends no request.
 
-To run it, fill in the `KeycloakConfig` values below with a real Keycloak server's details and
-run `python examples/async_quickstart.py` (the service account needs the required permission
-roles).
+To run it, set `KC_SERVER_URL` · `KC_REALM` · `KC_CLIENT_ID` · `KC_CLIENT_SECRET` to a real
+Keycloak server's details and run `python examples/async_quickstart.py` (the service account
+needs the required permission roles).
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 
 from keycloak_sdk import mask
 from keycloak_sdk.aio import AsyncKeycloakClient
@@ -23,11 +24,12 @@ from keycloak_sdk.config import KeycloakConfig
 
 
 async def main() -> None:
+    # Settings come from the environment; the defaults are placeholders. Never hard-code a secret.
     config = KeycloakConfig(
-        server_url="https://keycloak.example.com",
-        realm="my-realm",
-        client_id="my-client",
-        client_secret="my-client-secret",  # load the real value from env vars/a secret manager
+        server_url=os.environ.get("KC_SERVER_URL", "https://keycloak.example.com"),
+        realm=os.environ.get("KC_REALM", "my-realm"),
+        client_id=os.environ.get("KC_CLIENT_ID", "my-client"),
+        client_secret=os.environ.get("KC_CLIENT_SECRET", "my-client-secret"),
     )
 
     # AsyncKeycloakClient.create() assembles auth (AsyncAuthClient) eagerly. admin is created

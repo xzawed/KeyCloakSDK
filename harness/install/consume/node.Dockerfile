@@ -14,7 +14,9 @@ WORKDIR /app
 # `npm install @xzawed/keycloak-sdk@0.1.0 express --registry …`로 설치한다(node-run.sh).
 RUN printf '%s' '{"name":"harness-app-node-installed","private":true,"type":"module","engines":{"node":">=22"}}' > package.json
 
-COPY harness/install/quickstart/node/quickstart.mjs ./quickstart.mjs
+# quickstart 스모크는 README 가 링크하는 예제 **그 자체**다(사본을 두지 않는다). TS 지만 타입 주석뿐이라
+# node 22 의 타입 제거로 그대로 돈다(위 package.json 이 ESM). 예제는 KEYCLOAK_* 를 읽는다(node-run.sh 가 잇는다).
+COPY node/examples/quickstart.ts ./quickstart.ts
 COPY harness/apps/node/server.js ./server.js
 COPY harness/install/consume/node-run.sh ./run.sh
 
