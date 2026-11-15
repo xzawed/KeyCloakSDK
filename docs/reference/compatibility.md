@@ -28,15 +28,16 @@
 
 Each SDK's own SemVer is decoupled from the Keycloak server and underlying library versions. See the table below for the supported server range and the base libraries · runtimes.
 
-> ⚠️ **Each row describes what that row's published version actually shipped.** The library versions in a cell are the values in the release named in the first column, not whatever `main` happens to pin today. `main` can already be ahead; the next release of that language is when this table should move. Java and Kotlin have no lockfile — their published POM / `build.gradle.kts` pins are the source; Go has no lockfile either, so its row is the `go/go.mod` of the tagged commit (`go/v1.2.5`, which the proxy serves as the module's `.mod`). Every row now names a published version — there is no "current `main`" row left. The contract a *new* consumer resolves is still the range in each manifest; read the manifest, not this table, when that difference matters.
+> ⚠️ **Each row describes what that row's published version actually shipped.** The library versions in a cell are the values in the release named in the first column, not whatever `main` happens to pin today. `main` can already be ahead; the next release of that language is when this table should move. The source is that release's tag: Node's `package-lock.json` (what its CI tested), every other row's manifest as declared — a range stays a range. `check-docs` (`kind=compat`) compares each bold value and the runtime floor with that tag, or with the tree until the tag exists. The contract a *new* consumer resolves is still the range in each manifest; read the manifest, not this table, when that difference matters.
 
 > ⚠️ **The JVM rows state the floor of the *published* artifact, not of the source tree.** Both are **JDK 17** as of `1.0.1` — that pair of releases is what lowered it; `v1.0.0`/`kotlin-v1.0.0` were compiled for 21, so anyone still pinned there must build against 21. ⚠️ **When the tree and the published artifact next diverge, do not "correct" these rows from the manifest** — read the tag (`git show v1.0.1:java/pom.xml | grep maven.compiler.release`, `git show kotlin-v1.0.1:kotlin/build.gradle.kts | grep -E 'jvmTarget|jvmToolchain'`) and lower them only in the release that actually publishes the new floor. Detail: [getting-started.md](../guides/getting-started.md#java).
 
 
+<!-- doc-guard: kind=compat -->
 | SDK | Target Keycloak server | Base libraries · runtime |
 |---|---|---|
 | Java `1.2.4` | 26.6.x (integration tests: actual **26.6**) | `keycloak-admin-client` **26.0.12** (an independent version track from the server — there is no "26.6.x admin-client") · Nimbus `oauth2-oidc-sdk` **11.38.2** · `nimbus-jose-jwt` **10.10** · JDK 17+ |
-| Python `1.0.7` | 26.6.x (integration tests: actual **26.6**) | `python-keycloak` **7.1.x** · `joserfc` **1.7.x** · Python 3.10+ |
+| Python `1.0.7` | 26.6.x (integration tests: actual **26.6**) | `python-keycloak` **>=7.1,<8** · `joserfc` **>=1.7,<2** · Python 3.10+ |
 | Node `1.0.7` | 26.6.x (integration tests: actual **26.6**) | `@keycloak/keycloak-admin-client` **26.8.1** · `openid-client` **6.8.8** · `jose` **6.2.13** · Node 22+ |
 | Go `1.2.5` | 26.6.x (integration tests: actual **26.6**) | `Nerzal/gocloak/v13` **13.9.0** · `golang.org/x/oauth2` **0.37.0** · `go-jose/v4` **4.1.6** · Go 1.26+ |
 | C#/.NET `1.0.7` | 26.6.x (integration tests: actual **26.6**) | `Keycloak.AuthServices.Sdk` **2.7.0** · `Duende.IdentityModel` **8.1.0** · `Microsoft.IdentityModel.JsonWebTokens` **8.23.0** · .NET 8+ |

@@ -75,7 +75,7 @@ grep -c '^- \[x\]' docs/superpowers/plans/remaining-work.md   # 닫힘
 ```sh
 git clone https://github.com/xzawed/KeyCloakSDK && cd KeyCloakSDK
 node scripts/doctor.mjs                 # 이 PC에 무엇이 없는지. 설치·환경변수는 docs/guides/development-setup.md
-node scripts/check-docs.mjs . --strict --min-facts=79 --min-anchors=26 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
+node scripts/check-docs.mjs . --strict --min-facts=88 --min-anchors=27 --min-anchor-links=24 --min-blob-refs=5 --min-count-anchors=4
 git branch --show-current               # ⚠️ 아래 함정 (e)
 ```
 
