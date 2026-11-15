@@ -116,6 +116,31 @@ for L in node dotnet rust ruby php go; do
   run "a-$L" "$L" 1.0.0 100 90 "${L}_live"; expect "a-$L" 0 LIVE
 done
 
+# CI 와 같은 호출 — published-floor.yml 은 이 가드를 **인자 없이** 부른다: 루트는 작업 디렉터리, 시각은 지금, 응답은 실제
+# 레지스트리다(재시도 · 시간 제한 · User-Agent 를 단 fetch). 위 사례들의 `--root` · `--fixtures` · `--now` 는 그 기본값을 안
+# 지난다 — `--fixtures` 는 fetch 길을 통째로 건너뛰어, 그 길은 주간 일정 잡만 탔다(등록부 selftests-miss-the-real-callsite).
+# net-stub.mjs 로 fetch · 시계만 바꾸고(같은 픽스처 배치 · `.status` 관용) argv 는 CI 그대로 둔다.
+. "$DIR/net-stub.sh"
+run_ci() { # run 과 같은 인자 → OUT · CODE (argv 는 CI 그대로 — 인자 없음)
+  _n="$1"; _l="$2"; _v="$3"; _sa="$4"; _ta="$5"; _fill="$6"
+  _r="$FIX/$_n/repo"; _f="$FIX/$_n/fix"
+  mkrepo "$_r" "$_l" "$_v" "$_sa" "$_ta"
+  mkdir -p "$_f"; "$_fill" "$_f"
+  : > "$FIX/$_n.net.log"
+  set +e
+  OUT="$(cd "$_r" && STUB_FETCH="$_f" STUB_NOW="$NOW" STUB_LOG="$FIX/$_n.net.log" NODE_OPTIONS="$NET_STUB_IMPORT" node "$GUARD" 2>&1)"
+  CODE=$?
+  set -e
+}
+run_ci ci-live    python 1.0.0 100 90 py_live; expect ci-live 0 LIVE
+assert_contains "$(cat "$FIX/ci-live.net.log")" "fetch https://pypi.org/pypi/keycloak-sdk/json" "[ci-live] 기본 경로가 실제 레지스트리 URL 을 묻는다"
+run_ci ci-missing python 1.1.0 100 30 py_live; expect ci-missing 1 MISSING
+# 기본 시각은 지금이다 — 유예 안(태그 2h)의 판정이 그 시계에 달렸다(시각이 밀리면 MISSING 으로 뒤집힌다).
+run_ci ci-pending python 1.1.0 100 2  py_live; expect ci-pending 0 PENDING
+# 판정 불가도 기본 경로(재시도 끝)에서 — 5xx 를 「없다」로 읽지 않는다.
+run_ci ci-503     python 1.0.0 100 90 py_503;  expect ci-503 2 INCONCLUSIVE
+assert_eq "3" "$(grep -c 'fetch https://pypi.org/pypi/keycloak-sdk/json' "$FIX/ci-503.net.log")" "[ci-503] 5xx 를 재시도한다(RETRIES 2 → 세 번)"
+
 # 공허 방지 — 언어 목록이 비면 0 개를 훑고 통과하지 않는다.
 mkdir -p "$FIX/empty/scripts/lib"
 printf '%s\n' "DEPLOY_LANGS=''" > "$FIX/empty/scripts/lib/deploy-facts.sh"
