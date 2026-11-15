@@ -697,6 +697,8 @@ const COMPAT = {
 const COMPAT_CONSUMER_FLOOR = {
   kotlin: ['kotlin/build.gradle.kts', (t) => /languageVersion\.set\([^)]*KotlinVersion\.KOTLIN_(\d+)_(\d+)\)/.exec(t)?.slice(1, 3).join('.')],
 }
+// 정규식에 넣는 값의 메타문자를 전부 이스케이프한다(mentionsValue 와 같은 집합 — 점만 이스케이프하면 CodeQL 이 막는다).
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // `name` **값** — 이름 뒤 괄호 설명(`jwt` (ruby-jwt) **~>3.2**)은 건너뛴다.
 const COMPAT_CLAIM = /`([^`]+)`(?:\s*\([^)]*\))?\s*\*\*([^*]+)\*\*/g
 // 그 판의 태그가 있으면 태그 이름, 없으면 null(작업 트리).
@@ -803,7 +805,7 @@ function checkCompatTable(rel, lines, at) {
         fv = null
       }
       if (fv === null) errors.push(`${row}: ${at_}:${cf[0]} 에서 소비자 하한을 읽지 못했다`)
-      else if (!new RegExp(`(?<![\\d.])${label} ${fv.replace(/\./g, '\\.')}\\+`).test(rest))
+      else if (!new RegExp(`(?<![\\d.])${reEsc(label)} ${reEsc(fv)}\\+`).test(rest))
         errors.push(`${row}: 소비자 하한 ${fv}(${at_}:${cf[0]} 의 languageVersion) 를 「${label} ${fv}+」 로 말하지 않는다`)
     }
     facts++
