@@ -44,6 +44,9 @@ let MIN_ESCALATIONS = 0
 // 규칙 11(PR 에서 시크릿을 쥐는 잡)도 발견 기반이다 — 시크릿 참조 표기나 트리거가 바뀌면 0건을
 // 검사하고 초록을 낸다. 기본값 0 은 규칙 1b 와 같은 이유이고, 실측치는 CI 가 넘긴다.
 let MIN_PR_SECRET_JOBS = 0
+// 규칙 13(시크릿을 명령줄에 싣지 않는다)도 발견 기반이다 — 바인딩 표기가 바뀌거나 확장을 못 찾으면 0건을 가르고 초록을
+// 낸다. 센 확장(넷으로 가른 것 전부)의 하한이다. 기본값 0 은 규칙 1b 와 같은 이유이고, 실측치는 CI 가 넘긴다.
+let MIN_SECRET_EXPANSIONS = 0
 for (const arg of process.argv.slice(2)) {
   if (/^--min-release=\d+$/.test(arg)) MIN_RELEASE = Number(arg.slice('--min-release='.length))
   else if (/^--min-publish=\d+$/.test(arg)) MIN_PUBLISH = Number(arg.slice('--min-publish='.length))
@@ -54,6 +57,8 @@ for (const arg of process.argv.slice(2)) {
     MIN_ESCALATIONS = Number(arg.slice('--min-escalations='.length))
   else if (/^--min-pr-secret-jobs=\d+$/.test(arg))
     MIN_PR_SECRET_JOBS = Number(arg.slice('--min-pr-secret-jobs='.length))
+  else if (/^--min-secret-expansions=\d+$/.test(arg))
+    MIN_SECRET_EXPANSIONS = Number(arg.slice('--min-secret-expansions='.length))
   else if (!arg.startsWith('--') && rootArg === null) rootArg = arg
 }
 const root = rootArg ?? DEFAULT_ROOT
@@ -1021,6 +1026,113 @@ const rulePrSecretJobRunsNoCode = (wf, out) => {
   }
 }
 
+// 규칙 13(저장소 전체): 배포 시크릿은 **환경 변수로만** 프로세스에 닿는다 — 명령줄(argv)에 싣지 않는다.
+//
+// argv 는 그 러너의 모든 프로세스가 `ps` · `/proc/<pid>/cmdline` 으로 읽는다(로그 마스킹과 무관하다). env 는 그 프로세스와
+// 자식만 본다. rust 게시가 `cargo publish --token "$CARGO_REGISTRY_TOKEN"` 으로, cargo 가 env 에서 이미 읽는 토큰을 argv 에
+// 한 번 더 실었다(실측 cargo 1.89 · 오프라인: env 만 주면 토큰 검사를 지나 업로드로 간다, 없으면 「no token found, please run
+// `cargo login` or use environment variable CARGO_REGISTRY_TOKEN」).
+//
+// 판정 — 잡이 `secrets.*` 에 묶은 env 이름(규칙 8 의 바인딩)의 셸 확장을 `run:` 본문에서 전부 찾고, **받는 꼴 둘 · 면제**
+// 밖이면 실패다(확장마다 그 `$` 의 자리로 가린다 — 같은 줄의 다른 확장은 따로 본다):
+//   · 빈값 검사 `[ -z "$X" ]` · `[ -n "$X" ]` — `[` 가 명령 자리의 셸 내장이라 argv 가 없다(`/usr/bin/[` 는 외부 명령이다)
+//   · 자격 증명 도우미 `credential.helper='!f() { … echo "password=$X"; }; f'` — 글자 그대로 넘어가, git 이 돌리는 셸의
+//     내장 `echo` 가 실행 때 env 에서 읽어 표준 출력으로 낸다
+//   · 면제(`ARGV_SECRET_EXEMPT`) — 명령줄 말고는 받을 길이 없는 자리, 근거와 함께
+// ⚠️ 작은따옴표 안이라고 다 받지 않는다 — 그 글을 나중에 푸는 셸이 명령줄에 싣는다(`sh -c 'tool --key "$X"'` · Grok 레그).
+// 그리고 `run:` 본문의 `${{ secrets.… }}` 는 값이 스크립트 글자에 박히므로 늘 실패다(주석 안이어도 — 식은 실행 전에 풀린다).
+// ⚠️ 범위 밖 — `GITHUB_TOKEN` · `github.token` 은 잡이 끝나면 만료되는 잡 범위 토큰이다(dispatch-release 의 curl
+// `-H "Authorization: Bearer …"` 가 그것이다). 환경을 다시 읽어 싣는 길(`$(printenv X)` · `printenv X | xargs …` ·
+// 인터프리터의 `os.environ`)과 옮겨 싣기(`K="$X"; tool --key "$K"`) · `eval` 은 이름의 확장이 아니라 쫓지 않는다.
+// 받는 꼴 밖은 안전해도 실패다 — `printf '%s' "$X" | tool --password-stdin` 처럼 표준 입력으로 넘기는 꼴이 생기면 그때 넓힌다.
+const ARGV_SECRET_EXEMPT = {
+  // 파일 → env 이름 → 근거. 그 파일에서 쓰이지 않는 면제는 낡은 것이라 실패다.
+  'dotnet-release.yml': {
+    NUGET_API_KEY:
+      '`dotnet nuget push` 는 API 키 입력이 `-k|--api-key` 하나다(learn.microsoft.com 의 dotnet-nuget-push 옵션 — 환경 변수 경로가 없다)',
+  },
+}
+// `$NAME` · `${NAME…}` 확장의 자리 → [{ i(본문 안 위치), line, st }]. 셸 주석은 건너뛰고, 따옴표 상태(none · double ·
+// single)를 줄을 넘어 이어 간다. 역슬래시는 작은따옴표 밖에서 다음 글자를 글자로 만든다(`\$X` 는 확장이 아니다).
+const expansionsOf = (text, name) => {
+  const at = new RegExp(String.raw`^\$(?:\{${name}(?=[}:#%/^,@[-])|${name}(?![A-Za-z0-9_]))`)
+  const out = []
+  let st = 'none'
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (st === 'single') {
+      if (c === "'") st = 'none'
+      else if (c === '$' && at.test(text.slice(i))) out.push({ i, st })
+    } else if (c === '\\') i++
+    else if (c === "'" && st === 'none') st = 'single'
+    else if (c === '"') st = st === 'double' ? 'none' : 'double'
+    else if (c === '#' && st === 'none' && (i === 0 || /\s/.test(text[i - 1]))) {
+      const nl = text.indexOf('\n', i)
+      if (nl < 0) break
+      i = nl - 1
+    } else if (c === '$' && at.test(text.slice(i))) out.push({ i, st })
+  }
+  for (const x of out) x.line = text.slice(0, x.i).split('\n').length - 1
+  return out
+}
+// 받는 꼴 — 본문 전체에 맞춘다(도우미는 `credential.helper \` 다음 줄에 값을 둔다). 무리 1 이 그 확장의 `$` 자리다(`d`
+// 깃발의 indices 로 확장의 절대 위치와 맞춘다).
+const ALLOWED_SECRET_FORMS = (env) => [
+  { kind: 'test', st: 'double', re: new RegExp(String.raw`(?<![^\s;&|(!{])\[\s+-[zn]\s+"(\$)\{?${env}\}?"\s+\]`, 'gd') },
+  {
+    kind: 'helper',
+    st: 'single',
+    re: new RegExp(
+      String.raw`credential\.helper(?:=|[ \t]+(?:\\\n[ \t]*)?)'!f\(\) \{ [^']*\becho "password=(\$)\{?${env}\}?"; \}; f'`,
+      'gd',
+    ),
+  },
+]
+const ruleSecretNotOnCommandLine = (wf, out) => {
+  const tally = { test: 0, helper: 0, exempt: 0, argv: 0 }
+  const exempt = ARGV_SECRET_EXEMPT[wf.file] ?? {}
+  const used = new Set()
+  for (const job of wf.jobs) {
+    const raw = jobLines(wf, job)
+    const bound = new Set()
+    for (const l of raw) {
+      const m = ENV_SECRET_BINDING.exec(splitComment(l).body)
+      if (m && m[2] !== 'GITHUB_TOKEN') bound.add(m[1])
+    }
+    for (const { at, text } of runBlocksOf(raw)) {
+      const where = `${wf.file}:${job.node.n + at} 잡 \`${job.name}\``
+      if (/\$\{\{\s*secrets\./.test(text))
+        out.push(`${where} 의 \`run:\` 본문에 \`\${{ secrets.… }}\` 가 있다 — 값이 스크립트 글자에 박힌다. \`env:\` 에 묶고 변수로 읽을 것`)
+      const lines = text.split('\n')
+      for (const env of bound) {
+        const forms = ALLOWED_SECRET_FORMS(env)
+        for (const x of expansionsOf(text, env)) {
+          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+          if (form) {
+            tally[form.kind]++
+            continue
+          }
+          if (Object.hasOwn(exempt, env)) {
+            tally.exempt++
+            used.add(env)
+            continue
+          }
+          tally.argv++
+          out.push(
+            x.st === 'single'
+              ? `${where} 이 배포 시크릿 \`$${env}\` 를 작은따옴표 글에 담는다 — \`${lines[x.line].trim()}\`. 그 글을 나중에 푸는 셸이 명령줄에 실을 수 있다(\`sh -c '…'\`) — 받는 꼴은 자격 증명 도우미(\`credential.helper='!f() { … echo "password=$${env}"; }; f'\`)뿐이다`
+              : `${where} 이 배포 시크릿 \`$${env}\` 를 명령줄에 싣는다 — \`${lines[x.line].trim()}\`. argv 는 러너의 모든 프로세스가 읽는다 — 도구가 env 로 읽게 할 것`,
+          )
+        }
+      }
+    }
+  }
+  for (const env of Object.keys(exempt))
+    if (!used.has(env))
+      out.push(`${wf.file}: 명령줄 면제 \`${env}\` 가 쓰이지 않는다 — 그 자리가 env 로 옮겨 갔다면 면제를 지울 것(낡은 면제는 다음 사본을 가린다)`)
+  return tally
+}
+
 // ── 실행 ────────────────────────────────────────────────────────────────────
 
 const dir = join(root, '.github', 'workflows')
@@ -1053,8 +1165,10 @@ let publishJobs = 0
 let usesRefs = 0
 let writeCheckouts = 0
 let prSecretJobs = 0
+const secretUses = { test: 0, helper: 0, exempt: 0, argv: 0 }
 for (const wf of workflows) {
   jobCount += wf.jobs.length
+  for (const [k, v] of Object.entries(ruleSecretNotOnCommandLine(wf, errors))) secretUses[k] += v
   writeCheckouts += ruleWriteJobDropsCheckoutCreds(wf, errors)
   prSecretJobs += ruleDependabotPrSecretSkip(wf, errors)
   rulePrSecretJobRunsNoCode(wf, errors)
@@ -1101,9 +1215,14 @@ if (prSecretJobs < MIN_PR_SECRET_JOBS)
   errors.push(
     `PR 에서 시크릿을 쥐는 잡이 ${prSecretJobs}개뿐이다(기대 ${MIN_PR_SECRET_JOBS}개 이상) — 시크릿 참조 표기나 트리거가 바뀌어 규칙 11 이 조용히 비었을 수 있다`,
   )
+const secretExpansions = Object.values(secretUses).reduce((a, b) => a + b, 0)
+if (secretExpansions < MIN_SECRET_EXPANSIONS)
+  errors.push(
+    `배포 시크릿의 셸 확장이 ${secretExpansions}개뿐이다(기대 ${MIN_SECRET_EXPANSIONS}개 이상) — 바인딩 표기나 확장 탐지가 바뀌어 규칙 13 이 조용히 비었을 수 있다`,
+  )
 
 console.log(
-  `  워크플로 ${workflows.length}개 · 릴리스 ${releases.length}개 · 잡 ${jobCount}개 · 게시 잡 ${publishJobs}개 · 비로컬 uses ${usesRefs}개 · 릴리스 잡의 write 상승 ${writeGrants}건 · write+체크아웃 잡 ${writeCheckouts}개 · PR 시크릿 잡 ${prSecretJobs}개`,
+  `  워크플로 ${workflows.length}개 · 릴리스 ${releases.length}개 · 잡 ${jobCount}개 · 게시 잡 ${publishJobs}개 · 비로컬 uses ${usesRefs}개 · 릴리스 잡의 write 상승 ${writeGrants}건 · write+체크아웃 잡 ${writeCheckouts}개 · PR 시크릿 잡 ${prSecretJobs}개 · 시크릿 확장 ${secretExpansions}개(빈값 검사 ${secretUses.test} · 자격 증명 도우미 ${secretUses.helper} · 면제 ${secretUses.exempt} · 명령줄 ${secretUses.argv})`,
 )
 if (errors.length) {
   for (const e of errors) console.log(`::error::${e}`)

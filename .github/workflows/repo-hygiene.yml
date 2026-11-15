@@ -465,7 +465,8 @@ jobs:
         # 이제 fail-closed 로 막히고, 이 하한이 「줄어드는 것」 자체를 막는다.
         # `--min-pr-secret-jobs=1` 은 규칙 11·12(PR 에서 시크릿을 쥐는 잡 — 지금은 sonarcloud 의 scan 하나)의 하한이다.
         # `--min-uses=204` 는 2026-10-23 실측(sonarcloud 를 두 잡으로 나누며 +3 — 그 전 실측 201 인데 하한은 187 에 남아 있었다).
-        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=204 --min-escalations=6 --min-write-checkout=5 --min-pr-secret-jobs=1
+        # `--min-secret-expansions=15` 는 규칙 13(배포 시크릿을 명령줄에 싣지 않는다)이 가른 확장 수의 하한이다(2026-11-16 실측 15).
+        run: node scripts/check-ci-permissions.mjs . --min-release=10 --min-publish=9 --min-uses=204 --min-escalations=6 --min-write-checkout=5 --min-pr-secret-jobs=1 --min-secret-expansions=15
 
   # ⚠️ **이 잡은 `ci.yml` 에서 옮겨 왔다(2026-09-01).** 거기서는 워크플로 `paths:` 가
   # `java/**` 뿐이라 **kotlin-only PR 에서는 체크가 생성조차 되지 않았다** — 아래 스캔이

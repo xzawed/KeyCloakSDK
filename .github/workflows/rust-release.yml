@@ -136,10 +136,12 @@ jobs:
             echo "::error::CARGO_REGISTRY_TOKEN 미설정 — 시크릿 사전등록 전에 rust-v 태그가 push되었다. 배포를 중단한다."
             exit 1
           fi
+      # 토큰은 env 로만 넘긴다 — cargo 가 `CARGO_REGISTRY_TOKEN` 을 읽는다. `--token` 으로 다시 실으면 argv 라 러너의 모든
+      # 프로세스가 읽는다(check-ci-permissions 규칙 13).
       - name: cargo publish (crates.io)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked --token "${CARGO_REGISTRY_TOKEN}"
+        run: cargo publish --locked
       # 출처 증명 — `cargo publish` 가 올린 그 `.crate`(패키징한 파일을 그대로 올리고 `target/package/` 에 남긴다).
       # crates.io 는 받은 바이트를 그대로 준다 — 실측(1.1.5): static.crates.io 의 파일 sha256 = 인덱스의 `cksum`.
       # 게시 **뒤에** 건다(release.yml 과 같은 원칙). `uses:` 의 경로는 `defaults.run` 을 안 따른다 — 저장소 루트부터다.

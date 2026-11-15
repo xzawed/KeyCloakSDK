@@ -1119,3 +1119,73 @@ TEST:scripts/test/test-check-docs.sh
 OLD:      if (fv === null) errors.push(`${row}: ${at_}:${cf[0]} 에서 소비자 하한을 읽지 못했다`)
 NEW:      if (fv === null) void 0 // PROBE-REC
 SITE:if (fv === null) void 0 // PROBE-REC
+
+### secret-argv-wired
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:  for (const [k, v] of Object.entries(ruleSecretNotOnCommandLine(wf, errors))) secretUses[k] += v
+NEW:  for (const [k, v] of Object.entries(ruleSecretNotOnCommandLine(wf, [] /* PROBE-REC */))) secretUses[k] += v
+SITE:[] /* PROBE-REC */
+
+### secret-argv-single-report
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:      else if (c === '$' && at.test(text.slice(i))) out.push({ i, st })
+NEW:      else if (false /* PROBE-REC */) out.push({ i, st })
+SITE:false /* PROBE-REC */
+
+### secret-argv-form-pos
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+NEW:          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].length > 0 /* PROBE-REC */)
+SITE:.length > 0 /* PROBE-REC */
+
+### secret-argv-form-st
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+NEW:          const form = forms.find((f) => /* PROBE-REC */ [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+SITE:(f) => /* PROBE-REC */
+
+### secret-argv-test-command-position
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:  { kind: 'test', st: 'double', re: new RegExp(String.raw`(?<![^\s;&|(!{])\[\s+-[zn]\s+"(\$)\{?${env}\}?"\s+\]`, 'gd') },
+NEW:  { kind: 'test', st: 'double', re: new RegExp(String.raw`(?<!PROBE-REC)\[\s+-[zn]\s+"(\$)\{?${env}\}?"\s+\]`, 'gd') },
+SITE:(?<!PROBE-REC)
+
+### secret-argv-helper-echo
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:      String.raw`credential\.helper(?:=|[ \t]+(?:\\\n[ \t]*)?)'!f\(\) \{ [^']*\becho "password=(\$)\{?${env}\}?"; \}; f'`,
+NEW:      String.raw`credential\.helper(?:=|[ \t]+(?:\\\n[ \t]*)?)'!f\(\) \{ [^']*(\$)\{?${env}\}?[^']*\}; f'` /* PROBE-REC */,
+SITE:` /* PROBE-REC */,
+
+### secret-argv-dquote
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:    else if (c === "'" && st === 'none') st = 'single'
+NEW:    else if (c === "'" /* PROBE-REC */) st = 'single'
+SITE:"'" /* PROBE-REC */
+
+### secret-argv-expr
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:      if (/\$\{\{\s*secrets\./.test(text))
+NEW:      if (/\$\{\{\s*secrets-PROBE-REC\./.test(text))
+SITE:secrets-PROBE-REC
+
+### secret-argv-stale-exempt
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:    if (!used.has(env))
+NEW:    if (!used.has(env) && false /* PROBE-REC */)
+SITE:&& false /* PROBE-REC */
+
+### secret-argv-floor
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:if (secretExpansions < MIN_SECRET_EXPANSIONS)
+NEW:if (secretExpansions < MIN_SECRET_EXPANSIONS && false /* PROBE-REC */)
+SITE:MIN_SECRET_EXPANSIONS && false /* PROBE-REC */
