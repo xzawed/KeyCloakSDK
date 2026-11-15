@@ -27,7 +27,7 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 11개 · 게시 잡 1개 · 비로컬 uses 5개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개 · PR 시크릿 잡 1개" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃·PR 시크릿 잡을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 11개 · 게시 잡 1개 · 비로컬 uses 5개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개 · PR 시크릿 잡 1개 · 시크릿 확장 3개(빈값 검사 2 · 작은따옴표 1 · 면제 0 · 명령줄 0)" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃·PR 시크릿 잡·시크릿 확장을 실제로 센다"
 
 # ── 변이 1b: 쓰기 토큰을 쥔 잡이 체크아웃 자격증명을 남긴다 ──
 # ⚠️ **이 규칙은 오래 자가테스트가 전혀 덮지 않았다**(픽스처에 write+체크아웃 잡이 없었다).
@@ -36,7 +36,7 @@ rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
 sed -i '/^          persist-credentials: false$/d' "$TMP/.github/workflows/demo-release.yml"
 assert_fails node "$GUARD" "$TMP"
 out=$(node "$GUARD" "$TMP" 2>&1 || true)
-assert_contains "$out" "attestations: write" "⚠️ `contents: write` 가 아닌 쓰기 스코프도 대상이다 — 실제 스코프 이름을 짚는다"
+assert_contains "$out" "attestations: write" "⚠️ \`contents: write\` 가 아닌 쓰기 스코프도 대상이다 — 실제 스코프 이름을 짚는다"
 assert_contains "$out" "persist-credentials: false\` 가 없다" "자격증명을 남기는 쓰기 잡을 잡는다"
 
 # ⚠️ **주석이 설정 행세를 하면 안 된다.** 실측: 이 규칙을 넓히면서 `release.yml` 에 경위 주석을
@@ -643,6 +643,78 @@ assert_ok node "$GUARD" "$TMP"
 # 대조군 — `shell: bash --noprofile --norc …` 는 bash 다(오탐이라는 지적은 재현되지 않았다).
 fresh; base_scan; printf '      - shell: bash --noprofile --norc -eo pipefail {0}\n        run: echo ok\n' >> "$SCAN"
 assert_ok node "$GUARD" "$TMP"
+
+# ── 규칙 13: 배포 시크릿은 env 로만 프로세스에 닿는다 — 명령줄(argv)에 싣지 않는다 ──
+# rust 게시가 cargo 가 env 로 이미 읽는 토큰을 `--token "$CARGO_REGISTRY_TOKEN"` 으로 argv 에 한 번 더 실었다
+# (등록부 rust-token-in-argv). 변이는 픽스처의 작은따옴표 줄(`credential.helper=`)을 다른 셸 줄로 바꿔 쓴다.
+REL="$TMP/.github/workflows/demo-release.yml"
+r13_put() { # $1 = 그 줄 자리에 넣을 셸 줄 — 여러 줄이면 `\n` 으로 잇는다(awk -v 가 푼다)
+  awk -v rep="$1" 'index($0, "credential.helper=") { n = split(rep, a, "\n"); for (i = 1; i <= n; i++) print "          " a[i]; next } { print }' \
+    "$REL" > "$REL.new" && mv "$REL.new" "$REL"
+}
+r13() { # <설명> <기대 문구>
+  assert_fails node "$GUARD" "$TMP"
+  out=$(node "$GUARD" "$TMP" 2>&1 || true)
+  assert_contains "$out" "$2" "$1"
+}
+fresh; r13_put 'some-tool --token "$DEMO_TOKEN"'
+assert_contains "$(cat "$REL")" 'some-tool --token "$DEMO_TOKEN"' "(변이가 착지했는지 먼저 본다)"
+r13 "명령줄에 실린 시크릿을 이름으로 지목한다" "배포 시크릿 \`\$DEMO_TOKEN\` 를 명령줄에 싣는다"
+fresh; r13_put 'some-tool --token="${DEMO_TOKEN}"'
+r13 "중괄호 확장도 잡는다" "배포 시크릿 \`\$DEMO_TOKEN\` 를 명령줄에 싣는다"
+fresh; r13_put '[ -z "$DEMO_TOKEN" ] || some-tool --token "$DEMO_TOKEN"'
+r13 "빈값 검사와 같은 줄의 다른 확장은 따로 본다" "배포 시크릿 \`\$DEMO_TOKEN\` 를 명령줄에 싣는다"
+fresh; r13_put 'echo "it'"'"'s" && some-tool --token "$DEMO_TOKEN"'
+r13 "큰따옴표 안의 작은따옴표를 따옴표의 시작으로 읽지 않는다" "배포 시크릿 \`\$DEMO_TOKEN\` 를 명령줄에 싣는다"
+fresh; r13_put 'some-tool --token "${{ secrets.DEMO_TOKEN }}"'
+r13 "run 본문의 secrets 식을 잡는다" "스크립트 글자에 박힌다"
+fresh; r13_put '# ${{ secrets.DEMO_TOKEN }} 는 주석 안에서도 풀린다'
+r13 "셸 주석 안의 secrets 식도 잡는다 — 식은 실행 전에 풀린다" "스크립트 글자에 박힌다"
+# 대조군 — 셸 주석 · 여러 줄에 걸친 작은따옴표 · GITHUB_TOKEN 은 명령줄이 아니거나 범위 밖이다.
+fresh; r13_put '# some-tool --token "$DEMO_TOKEN"'
+assert_ok node "$GUARD" "$TMP"
+fresh; r13_put 'sh -c '"'"'\nprintf %s "$DEMO_TOKEN" | some-tool --password-stdin\n'"'"''
+assert_contains "$(cat "$REL")" '          printf %s "$DEMO_TOKEN" | some-tool --password-stdin' "(여러 줄 변이가 착지했는지 먼저 본다)"
+assert_ok node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "작은따옴표 1 · 면제 0 · 명령줄 0" "여러 줄에 걸친 작은따옴표 안의 확장을 글자로 센다"
+fresh; r13_put 'some-tool --token "$GH_TOKEN"'
+assert_ok node "$GUARD" "$TMP"
+# 면제 — 명령줄 말고는 받을 길이 없는 자리(파일 → env 이름). 쓰이면 세고, 그 파일에서 안 쓰이면 낡은 면제라 실패다.
+fresh
+cat > "$TMP/.github/workflows/dotnet-release.yml" <<'EOF'
+name: dotnet-release
+on:
+  push:
+    tags: ['dotnet-v*']
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: push
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::NUGET_API_KEY 미설정"
+            exit 1
+          fi
+          dotnet nuget push "a.nupkg" --api-key "$NUGET_API_KEY" --source https://example.invalid/v3/index.json
+EOF
+assert_ok node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "시크릿 확장 5개(빈값 검사 3 · 작은따옴표 1 · 면제 1 · 명령줄 0)" "면제된 명령줄 확장을 따로 센다"
+sed -i 's| --api-key "\$NUGET_API_KEY"||' "$TMP/.github/workflows/dotnet-release.yml"
+assert_not_contains "$(cat "$TMP/.github/workflows/dotnet-release.yml")" '--api-key' "(변이가 착지했는지 먼저 본다)"
+r13 "그 파일에서 쓰이지 않는 면제를 낡은 것으로 본다" "명령줄 면제 \`NUGET_API_KEY\` 가 쓰이지 않는다"
+# 공허성 — 하한.
+fresh
+assert_ok node "$GUARD" "$TMP" --min-secret-expansions=3
+assert_fails node "$GUARD" "$TMP" --min-secret-expansions=99
+out=$(node "$GUARD" "$TMP" --min-secret-expansions=99 2>&1 || true)
+assert_contains "$out" "규칙 13 이 조용히 비었을 수 있다" "확장 하한이 공허를 막는다"
 
 # ── 오탐 대조군 3: 저장소 루트 실물에 대해 통과해야 한다 ──
 # 픽스처에서만 도는 가드는 실제 트리와 어긋난 채로 초록불을 유지할 수 있다.
