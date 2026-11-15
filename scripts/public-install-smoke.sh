@@ -8,6 +8,8 @@
 # 판은 SSOT 가 아니라 **레지스트리가 고른다** — 판 없이 설치하면 새 소비자가 받는 최신 안정판이다(JVM 은 판이 필수라
 # maven-metadata 의 <release>). SSOT 는 범프가 태그보다 먼저 오르므로(런북 §4) 그것으로 고르면 그 창에서 거짓 빨강이 난다
 # (published-floor.yml 과 같은 원칙). 받은 판은 출력에 남긴다.
+# ⚠️ 예제는 **main 의 것**이다 — README 가 blob/main 의 예제를 링크하므로, 소비자가 복사하는 바로 그 예제가 게시판과
+# 맞아야 한다. 예제가 아직 게시되지 않은 API 를 쓰면 여기서 빨개진다 — 그것이 신호다(예제를 고치거나 릴리스를 낸다).
 #
 # 사용:
 #   scripts/public-install-smoke.sh keycloak-up        # 하네스 렐름(it-realm)으로 Keycloak 을 띄우고 준비될 때까지 기다린다
