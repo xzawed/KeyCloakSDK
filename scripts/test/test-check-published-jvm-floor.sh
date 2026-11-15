@@ -381,4 +381,86 @@ assert_ok node "$GUARD" "--root=$R" "--base=$FIX/b-mr"
 out=$(node "$GUARD" "--root=$R" "--base=$FIX/b-mr" 2>&1 || true)
 assert_contains "$out" "MR 제외" "Multi-Release 제외를 출력에 밝힌다"
 
+# ── --attest: 받은 바이트가 **우리 릴리스 워크플로가 그 태그에서 증명한 바로 그 바이트**인가 ──────────
+# (등록부 published-bytes-have-no-oracle — 봉인은 PR #550, 검증은 손으로 하고 있었다.) 가짜 검증기는 실제 gh 처럼
+# 다이제스트로 증명을 찾고 **고정값 넷과 --deny-self-hosted-runners 가 다 와야** 판정한다 — 판정기가 고정 하나를
+# 빼먹으면(서명자를 안 묶으면 아무 잡이나 재서명할 수 있다) 여기서 거부된다.
+FAKE="$FIX/fake-gh.mjs"
+cat > "$FAKE" <<'EOF'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+const a = process.argv.slice(2)
+if (a[0] !== 'attestation' || a[1] !== 'verify') { console.error(`fake gh: unexpected ${a.join(' ')}`); process.exit(64) }
+const opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined }
+for (const n of ['--repo', '--signer-workflow', '--source-ref', '--source-digest']) {
+  if (!opt(n)) { console.error(`fake gh: ${n} 가 없다`); process.exit(64) }
+}
+if (!a.includes('--deny-self-hosted-runners')) { console.error('fake gh: --deny-self-hosted-runners 가 없다'); process.exit(64) }
+const sha = createHash('sha256').update(readFileSync(a[2])).digest('hex')
+const list = JSON.parse(readFileSync(process.env.FAKE_ATTEST_DB, 'utf8'))[sha] ?? []
+if (list.length === 0) { console.error('Error: no attestations found'); process.exit(1) }
+const ok = list.some((e) => `${opt('--repo')}/${e.workflow}` === opt('--signer-workflow') && e.ref === opt('--source-ref') && e.digest === opt('--source-digest'))
+if (!ok) { console.error('Error: verifying with issuer "sigstore.dev"'); process.exit(1) }
+EOF
+sha_of() { sha256sum "$1" | cut -d' ' -f1; }
+C="$(git -C "$R" rev-parse 'v9.9.0^{commit}')"
+JW='.github/workflows/release.yml'; KW='.github/workflows/kotlin-release.yml'
+S1="$(sha_of "$B/$G/keycloak-sdk/9.9.0/keycloak-sdk-9.9.0.jar")"
+S2="$(sha_of "$B/$G/keycloak-sdk-core/9.9.0/keycloak-sdk-core-9.9.0.jar")"
+S3="$(sha_of "$B/$G/keycloak-sdk-kotlin/9.9.0/keycloak-sdk-kotlin-9.9.0.jar")"
+ent() { printf '{"workflow":"%s","ref":"refs/tags/%s","digest":"%s"}' "$1" "$2" "$3"; }
+attest() { # <db 파일> <base> [추가 인자…] → "<종료 코드>|<출력>"
+  _db="$1"; _b="$2"; shift 2
+  _o="$(FAKE_ATTEST_DB="$_db" env -u GITHUB_REPOSITORY node "$GUARD" "--root=$R" "--base=$_b" --attest --repo=o/r "--gh=$FAKE" "$@" 2>&1)" && _c=0 || _c=$?
+  printf '%s|%s' "$_c" "$_o"
+}
+printf '{"%s":[%s],"%s":[%s],"%s":[%s]}' "$S1" "$(ent "$JW" v9.9.0 "$C")" "$S2" "$(ent "$JW" v9.9.0 "$C")" \
+  "$S3" "$(ent "$KW" kotlin-v9.9.0 "$C")" > "$FIX/db-ok.json"
+_r="$(attest "$FIX/db-ok.json" "$B")"
+assert_eq "0" "${_r%%|*}" "[증명] 세 jar 가 자기 워크플로 · 태그 · 커밋으로 증명되면 통과한다"
+assert_contains "$_r" "증명 일치" "[증명] 일치를 jar 마다 출력한다"
+# 음성 — 증명 없음 · 다른 서명자 · 다른 커밋 · 증명을 못 찾는 바이트.
+printf '{"%s":[%s],"%s":[%s]}' "$S1" "$(ent "$JW" v9.9.0 "$C")" "$S3" "$(ent "$KW" kotlin-v9.9.0 "$C")" > "$FIX/db-miss.json"
+_r="$(attest "$FIX/db-miss.json" "$B")"
+assert_eq "1" "${_r%%|*}" "[증명] 한 jar 라도 증명이 없으면 실패한다"
+assert_contains "$_r" "attestation-failed" "[증명] 실패 이름이 attestation-failed 다"
+assert_contains "$_r" "keycloak-sdk-core 9.9.0" "[증명] 어느 jar 인지 말한다"
+printf '{"%s":[%s],"%s":[%s],"%s":[%s]}' "$S1" "$(ent "$JW" v9.9.0 "$C")" "$S2" "$(ent "$JW" v9.9.0 "$C")" \
+  "$S3" "$(ent "$JW" kotlin-v9.9.0 "$C")" > "$FIX/db-signer.json"
+# 종료 코드는 첫 `|` 앞에서 읽는다 — 출력이 여러 줄이라 `cut` 은 둘째 줄부터를 통째로 돌려준다.
+_r="$(attest "$FIX/db-signer.json" "$B")"
+assert_eq "1" "${_r%%|*}" "[증명] kotlin jar 를 java 워크플로가 서명했으면 실패한다 — 서명자는 레인마다 고정이다"
+printf '{"%s":[%s],"%s":[%s],"%s":[%s]}' "$S1" "$(ent "$JW" v9.9.0 0000000000000000000000000000000000000000)" \
+  "$S2" "$(ent "$JW" v9.9.0 "$C")" "$S3" "$(ent "$KW" kotlin-v9.9.0 "$C")" > "$FIX/db-digest.json"
+_r="$(attest "$FIX/db-digest.json" "$B")"
+assert_eq "1" "${_r%%|*}" "[증명] 태그의 커밋과 다른 소스에서 증명됐으면 실패한다"
+# 바이트가 같은 재릴리스 — 증명이 릴리스마다 하나씩이고, 맞는 것 하나만 있으면 통과한다(kotlin 1.0.8 = 1.0.9 실측).
+printf '{"%s":[%s],"%s":[%s],"%s":[%s,%s]}' "$S1" "$(ent "$JW" v9.9.0 "$C")" "$S2" "$(ent "$JW" v9.9.0 "$C")" \
+  "$S3" "$(ent "$KW" kotlin-v9.8.0 1111111111111111111111111111111111111111)" "$(ent "$KW" kotlin-v9.9.0 "$C")" > "$FIX/db-twice.json"
+_r="$(attest "$FIX/db-twice.json" "$B")"
+assert_eq "0" "${_r%%|*}" "[증명] 증명이 둘이어도 고정값에 맞는 것이 있으면 통과한다"
+# 저장소를 모르면 고정할 서명자가 없다 — 조용히 건너뛰지 않는다.
+_c=0; FAKE_ATTEST_DB="$FIX/db-ok.json" env -u GITHUB_REPOSITORY node "$GUARD" "--root=$R" "--base=$B" --attest "--gh=$FAKE" >/dev/null 2>&1 || _c=$?
+assert_eq "1" "$_c" "[증명] --repo 도 GITHUB_REPOSITORY 도 없으면 실패한다"
+
+# 봉인 이전 판 — **경계 상수 하나로 얼린다**(1.0.2 미만은 증명이 없다, 실측). 1.0.1 은 건너뛰고 1.0.2 는 반드시 잰다.
+RB="$FIX/repo-seal"; BB="$FIX/base-seal"
+mkrepo "$RB" 17 "$K17" keycloak-sdk
+for v in 1.0.1 1.0.2; do tagit "$RB" "v$v"; done
+reg_meta "$BB" keycloak-sdk 1.0.1 1.0.2
+for v in 1.0.1 1.0.2; do reg_pom "$BB" keycloak-sdk "$v" jar; reg_jar "$BB" keycloak-sdk "$v" 61:2; done
+printf '{}' > "$FIX/db-none.json"
+_o="$(FAKE_ATTEST_DB="$FIX/db-none.json" env -u GITHUB_REPOSITORY node "$GUARD" "--root=$RB" "--base=$BB" --lang=java --attest --repo=o/r "--gh=$FAKE" 2>&1)" && _c=0 || _c=$?
+assert_eq "1" "$_c" "[증명 경계] 1.0.2 는 증명이 없으면 실패한다"
+assert_contains "$_o" "keycloak-sdk 1.0.2" "[증명 경계] 실패한 판이 1.0.2 다"
+assert_contains "$_o" "skip java keycloak-sdk 1.0.1 — 봉인" "[증명 경계] 1.0.1 은 봉인 이전 판으로 건너뛴다"
+# 공허 — 잴 판이 하나도 없으면(전부 봉인 이전) 「증명 일치」 가 아니다.
+RV="$FIX/repo-old"; BV="$FIX/base-old"
+mkrepo "$RV" 17 "$K17" keycloak-sdk
+tagit "$RV" v1.0.1
+reg_meta "$BV" keycloak-sdk 1.0.1; reg_pom "$BV" keycloak-sdk 1.0.1 jar; reg_jar "$BV" keycloak-sdk 1.0.1 61:2
+_o="$(FAKE_ATTEST_DB="$FIX/db-none.json" env -u GITHUB_REPOSITORY node "$GUARD" "--root=$RV" "--base=$BV" --lang=java --attest --repo=o/r "--gh=$FAKE" 2>&1)" && _c=0 || _c=$?
+assert_eq "1" "$_c" "[증명 공허] 증명을 하나도 대조하지 못했으면 실패한다"
+assert_contains "$_o" "vacuous-attest" "[증명 공허] 실패 이름이 vacuous-attest 다"
+
 assert_report
