@@ -6,8 +6,8 @@
 // -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin
 // quay.io/keycloak/keycloak:26.6 start-dev`).
 //
-// Dependency: io.github.xzawed:keycloak-sdk-kotlin:<version> (Maven Central, after a `kotlin-v*` tag release —
-// currently unpublished, held at the human approval gate).
+// Dependency: io.github.xzawed:keycloak-sdk-kotlin:<version> on Maven Central — the current version is in
+// kotlin/README.md.
 
 import io.github.xzawed.keycloak.KeycloakClient
 import io.github.xzawed.keycloak.KeycloakConfig

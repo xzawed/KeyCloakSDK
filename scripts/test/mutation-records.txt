@@ -154,6 +154,36 @@ OLD:if (ATTEST && !/^[\w.-]+\/[\w.-]+$/.test(REPO)) {
 NEW:if (false && REPO) { // PROBE-REC
 SITE:if (false && REPO)
 
+# ── 게시 주장 — README 가 링크하는 예제는 게시 상태 · 판을 말하지 않는다(example-and-readme-publication-drift, 2026-11-15)
+
+### examples-status-words
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+NEW:      | grep -nEi 'not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+SITE:grep -nEi 'not (yet )?published|
+
+### examples-version-literal
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+NEW:      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate' \
+SITE:release candidate' \
+
+### examples-ipv4-mask
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:    sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/<ip>/g' "$_er/$_p" \
+NEW:    cat "$_er/$_p" \
+SITE:cat "$_er/$_p" \
+
+### examples-missing-file
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:    if [ ! -f "$_er/$_p" ]; then echo "$_p: README 가 링크하는데 파일이 없다"; continue; fi
+NEW:    if false; then :; fi # PROBE-REC
+SITE:if false; then :; fi # PROBE-REC
+
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
 
 ### DM1
