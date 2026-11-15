@@ -34,6 +34,7 @@ on:
       - mutation-sweep
       - Node CI
       - php-ci
+      - public-install
       - published-floor
       - Python CI
       - repo-hygiene

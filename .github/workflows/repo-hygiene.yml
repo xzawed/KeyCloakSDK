@@ -328,6 +328,11 @@ jobs:
       - name: 야간 실패 알림 커버리지(schedule 워크플로 ↔ 감시 목록)
         run: sh scripts/test/test-nightly-alert.sh
 
+      # 공개 레지스트리 설치 스모크의 정적 계약 — 실제 설치 · 실행은 public-install.yml(예약 · 수동)이 공개 레지스트리에
+      # 대고 한다. 여기서는 네트워크 없이 언어 분기 · 행렬이 DEPLOY_LANGS 와 같은지, 인자 오류가 설치 전에 실패하는지 본다.
+      - name: 공개 레지스트리 설치 스모크 자가테스트(언어 집합 ↔ DEPLOY_LANGS · 인자 오류)
+        run: sh scripts/test/test-public-install-smoke.sh
+
       # ⚠️ 태그 트리거 워크플로가 겹쳐 돌면 게시가 경합한다. 실측 2026-09-22: 릴리스 워크플로
       # 10 개 중 **9 개에 `concurrency:` 가 없었다**. php 는 subtree split 결과를 미러의
       # `refs/heads/main` 에 `git push --force` 로 덮으므로 늦게 끝난 쪽이 이긴다.
