@@ -370,6 +370,12 @@ try {
   console.error(`::error::${e.message}`)
   process.exit(2)
 }
+// `--langs` — 이 진단이 아는 언어 집합(`covered <언어>`). scripts/test/test-lang-universe.sh 가 트리의 언어 집합과 분할로
+// 대조한다 — 열 번째 언어가 「전부 진단」을 조용히 빠져나가지 못하게(등록부 symmetry-guards-cover-a-subset).
+if (argv.includes('--langs')) {
+  for (const key of Object.keys(ALL)) console.log(`covered ${key}`)
+  process.exit(0)
+}
 
 const unknown = wanted.filter((w) => !(w in ALL))
 if (unknown.length) {

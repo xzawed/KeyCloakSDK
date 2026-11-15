@@ -46,11 +46,13 @@ function usage(msg) {
   if (msg) console.error(msg)
   console.error('usage: node scripts/coverage-boundary.mjs list [ROOT] [--lang <id>] [--json]')
   console.error('       node scripts/coverage-boundary.mjs check [ROOT]')
+  console.error('       node scripts/coverage-boundary.mjs langs')
   process.exit(2)
 }
 const argv = process.argv.slice(2)
 const cmd = argv[0]
-if (cmd !== 'list' && cmd !== 'check') usage(cmd ? `알 수 없는 명령: ${cmd}` : '')
+if (cmd !== 'list' && cmd !== 'check' && cmd !== 'langs') usage(cmd ? `알 수 없는 명령: ${cmd}` : '')
+if (cmd === 'langs' && argv.length > 1) usage(`langs 는 인자를 받지 않는다: ${argv.slice(1).join(' ')}`)
 let root = null
 let onlyLang = null
 let asJson = false
@@ -1096,6 +1098,12 @@ const SSOT = {
   },
 }
 const LANG_IDS = Object.keys(SSOT)
+// `langs` — 이 가드가 omit 목록을 조인하는 언어 집합을 내보낸다(`covered <언어>`). `scripts/test/test-lang-universe.sh` 가 트리의
+// 언어 집합과 분할로 대조한다 — 열 번째 언어가 이 표를 조용히 건너뛰지 못하게(등록부 symmetry-guards-cover-a-subset).
+if (cmd === 'langs') {
+  for (const id of LANG_IDS) console.log(`covered ${id}`)
+  process.exit(0)
+}
 
 // 그 절에 `key =` 줄이 있으면 줄 번호(1부터), 없으면 0.
 function tomlKeyLine(text, section, key) {

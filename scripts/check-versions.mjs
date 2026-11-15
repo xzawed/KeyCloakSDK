@@ -117,6 +117,19 @@ const manifests = [
   // 달게 되므로 함께 검사한다.
   ['dotnet', 'dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj', /<Version>([^<]+)<\/Version>/],
 ]
+// 매니페스트에 판이 없어 대상이 아닌 언어 — 태그가 버전 SSOT 다(scripts/lib/deploy-facts.sh 의 df_versionbump).
+const TAG_SSOT = {
+  go: '태그가 버전 SSOT 다 — go.mod 에 판 칸이 없다',
+  php: '태그가 버전 SSOT 다 — composer.json 에 version 을 두지 않는다',
+}
+// `--langs` — 이 가드가 대조하는 언어(`covered`)와 대상이 아닌 언어(`exempt <언어> <근거>`)를 내보낸다.
+// `scripts/test/test-lang-universe.sh` 가 트리의 언어 집합과 분할로 대조한다 — 열 번째 언어의 매니페스트 판이 이 표를 조용히
+// 건너뛰지 못하게(등록부 symmetry-guards-cover-a-subset).
+if (cliArgs.includes('--langs')) {
+  for (const l of ['java', ...manifests.map(([l]) => l)]) console.log(`covered ${l}`)
+  for (const [l, why] of Object.entries(TAG_SSOT)) console.log(`exempt ${l} ${why}`)
+  process.exit(0)
+}
 for (const [lang, p, re] of manifests) {
   const v = pick(p, re, lang)
   if (v) found.push([lang, v, p])

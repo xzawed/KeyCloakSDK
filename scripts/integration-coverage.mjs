@@ -151,6 +151,12 @@ function usage(msg) {
 const argv = process.argv.slice(2)
 let cmd = argv[0]
 let rest = argv.slice(1)
+// `langs` — 이 장부가 재는 언어 집합을 내보낸다(`covered <언어>`). `scripts/test/test-lang-universe.sh` 가 트리의 언어 집합과
+// 분할로 대조한다 — 열 번째 언어가 이 손 목록을 조용히 건너뛰지 못하게(등록부 symmetry-guards-cover-a-subset).
+if (cmd === 'langs' && rest.length === 0) {
+  for (const l of LANGS) console.log(`covered ${l}`)
+  process.exit(0)
+}
 if (cmd !== undefined && !['run', 'report', 'check'].includes(cmd) && !cmd.startsWith('-')) {
   rest = argv
   cmd = 'local'

@@ -18,6 +18,9 @@ LIB="$ROOT/harness/install/lib/verify-lib.sh"
 assert_ok test -f "$LIB"
 # shellcheck source=/dev/null
 . "$LIB"
+# 언어 목록은 손으로 적지 않는다 — DEPLOY_LANGS(test-deploy-facts.sh 가 트리와 대조한다)를 돈다(등록부 symmetry-guards-cover-a-subset).
+# shellcheck source=/dev/null
+. "$ROOT/scripts/lib/deploy-facts.sh"
 
 # ---------------------------------------------------------------------------
 # 1) 순서 의존성 회귀 — 이 테스트가 존재하는 이유
@@ -61,9 +64,12 @@ assert_eq " go=0.1.0 php=0.1.0 java=0.1.0" "$iv_seq2" "기본 순서(대조군)�
 # 끼어들면 "내가 지정한 것과 다른 것을 검증했다"가 된다.
 PKG_VER_EXPLICIT=1
 PKG_VER="9.9.9"
-for L in python node rust ruby kotlin dotnet go php java; do
+_iv_n=0
+for L in $DEPLOY_LANGS; do
   assert_eq "9.9.9" "$(ver_for_lang "$L")" "--version 명시 시 $L 이 매니페스트 값을 쓴다"
+  _iv_n=$((_iv_n + 1))
 done
+assert_ok test "$_iv_n" -gt 0
 PKG_VER_EXPLICIT=0
 PKG_VER="$PKG_VER_DEFAULT"
 
@@ -74,12 +80,18 @@ PKG_VER="$PKG_VER_DEFAULT"
 # ⚠️ 이 여섯과 나머지 셋의 구분이 곧 "publish가 무엇을 만드는가"다. 여섯은 매니페스트가 산출물
 # 이름을 정하므로 다른 버전을 기대하면 publish에서 반드시 죽는다. 셋(go·php는 태그 SSOT,
 # java는 versions:set 주입)은 publish→consume이 자기완결이라 기본값으로 충분하다.
-for L in python node rust ruby kotlin dotnet; do
+_iv_manifest="python node rust ruby kotlin dotnet"
+_iv_default="go php java"
+for L in $_iv_manifest; do
   assert_eq "${MANIFEST_VER[$L]}" "$(ver_for_lang "$L")" "$L 은 매니페스트 파생 버전을 써야 한다"
 done
-for L in go php java; do
+for L in $_iv_default; do
   assert_eq "$PKG_VER_DEFAULT" "$(ver_for_lang "$L")" "$L 은 기본값을 써야 한다(태그 SSOT·주입)"
 done
+# ⚠️ 두 목록은 DEPLOY_LANGS 를 **나눠야** 한다 — 열 번째 언어가 어느 쪽에도 없으면 그 언어의 판 파생을 아무도 안 본다.
+_iv_sorted() { printf '%s\n' $1 | sed '/^$/d' | sort | tr '\n' ' '; }
+assert_eq "$(_iv_sorted "$DEPLOY_LANGS")" "$(_iv_sorted "$_iv_manifest $_iv_default")" \
+  "매니페스트 파생 · 기본값 두 목록이 DEPLOY_LANGS 를 나누지 않는다 — 언어가 들고 났는데 이 분류가 안 따라왔다(겹침도 여기서 운다)"
 
 # ⚠️ 매니페스트 값이 **비어 있으면** 폴백으로 내려가야 한다(파생 실패를 조용히 빈 버전으로
 # 넘기면 컨테이너가 `@` 뒤에 아무것도 없는 좌표를 받는다).

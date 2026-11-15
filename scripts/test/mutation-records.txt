@@ -59,6 +59,31 @@ TEST:test-integration-coverage-harness.sh
 JUDGE:coverage-boundary.mjs
 WHY:위와 같다 — 같은 픽스처로 하네스 소유만 떼어 낸 시험이다(파생 도구의 종료 코드를 쓰지 않는다)
 
+### exclude-lang-universe-ledger
+TEST:test-lang-universe.sh
+JUDGE:integration-coverage.mjs
+WHY:언어 집합을 내보낸 출력(`langs`)만 읽는다 — 실패 종료가 없는 경로라 M1 이 바꾸는 것이 없다. 판정은 test-integration-coverage.sh 가 본다(M1 CAUGHT)
+
+### exclude-lang-universe-boundary
+TEST:test-lang-universe.sh
+JUDGE:coverage-boundary.mjs
+WHY:위와 같다(`langs`) — 판정은 test-coverage-boundary.sh 가 본다(M1 CAUGHT)
+
+### exclude-lang-universe-versions
+TEST:test-lang-universe.sh
+JUDGE:check-versions.mjs
+WHY:위와 같다(`--langs`) — 판정은 test-check-versions.sh 가 본다(M1 CAUGHT)
+
+### exclude-lang-universe-admin
+TEST:test-lang-universe.sh
+JUDGE:check-admin-capability.mjs
+WHY:위와 같다(`--langs`) — 판정은 test-admin-capability.sh 가 본다(M1 CAUGHT)
+
+### exclude-lang-universe-doctor
+TEST:test-lang-universe.sh
+JUDGE:doctor.mjs
+WHY:위와 같다(`--langs`) — 판정은 test-doctor.sh 가 본다(M1 CAUGHT)
+
 ### release-readiness-version-typo
 FILE:scripts/release-readiness.sh
 TEST:scripts/test/test-release-readiness.sh
@@ -1189,3 +1214,101 @@ TEST:scripts/test/test-check-ci-permissions.sh
 OLD:if (secretExpansions < MIN_SECRET_EXPANSIONS)
 NEW:if (secretExpansions < MIN_SECRET_EXPANSIONS && false /* PROBE-REC */)
 SITE:MIN_SECRET_EXPANSIONS && false /* PROBE-REC */
+
+### lang-universe-missing
+FILE:scripts/test/test-lang-universe.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:    case "$_c$_e" in 00) _o="$_o $_l(빠짐)" ;; 11) _o="$_o $_l(둘 다)" ;; esac
+NEW:    case "$_c$_e" in 00-PROBE-REC) _o="$_o $_l(빠짐)" ;; 11) _o="$_o $_l(둘 다)" ;; esac
+SITE:00-PROBE-REC)
+
+### lang-universe-overlap
+FILE:scripts/test/test-lang-universe.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:    case "$_c$_e" in 00) _o="$_o $_l(빠짐)" ;; 11) _o="$_o $_l(둘 다)" ;; esac
+NEW:    case "$_c$_e" in 00) _o="$_o $_l(빠짐)" ;; 11-PROBE-REC) _o="$_o $_l(둘 다)" ;; esac
+SITE:11-PROBE-REC)
+
+### lang-universe-ghost
+FILE:scripts/test/test-lang-universe.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:    case " $1 " in *" $_l "*) ;; *) _o="$_o $_l(유령)" ;; esac
+NEW:    case " $1 " in *) ;; esac # PROBE-REC
+SITE:*) ;; esac # PROBE-REC
+
+### lang-universe-exempt-reason
+FILE:scripts/test/test-lang-universe.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:  _exe="$(printf '%s\n' "$2" | awk '$1 == "exempt" && NF >= 3 { print $2 }')"
+NEW:  _exe="$(printf '%s\n' "$2" | awk '$1 == "exempt" && NF >= 2 { print $2 } # PROBE-REC')"
+SITE:# PROBE-REC')"
+
+### lang-universe-exempt-none
+FILE:scripts/test/test-lang-universe.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:      none) _o="$_o $_l" ;;
+NEW:      none) ;; # PROBE-REC
+SITE:none) ;; # PROBE-REC
+
+### lang-universe-exempt-tag
+FILE:scripts/test/test-lang-universe.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:      tag-ssot) case "$(df_versionbump "$_l")" in none*) ;; *) _o="$_o $_l" ;; esac ;;
+NEW:      tag-ssot) ;; # PROBE-REC
+SITE:tag-ssot) ;; # PROBE-REC
+
+### lang-universe-export-ledger
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-lang-universe.sh
+OLD:  for (const l of LANGS) console.log(`covered ${l}`)
+NEW:  for (const l of LANGS.slice(1)) console.log(`covered ${l}`) // PROBE-REC
+SITE:.slice(1)) console.log(`covered ${l}`) // PROBE-REC
+
+### lang-universe-export-boundary
+FILE:scripts/coverage-boundary.mjs
+TEST:scripts/test/test-lang-universe.sh
+OLD:  for (const id of LANG_IDS) console.log(`covered ${id}`)
+NEW:  for (const id of LANG_IDS.slice(1)) console.log(`covered ${id}`) // PROBE-REC
+SITE:.slice(1)) console.log(`covered ${id}`) // PROBE-REC
+
+### lang-universe-export-versions
+FILE:scripts/check-versions.mjs
+TEST:scripts/test/test-lang-universe.sh
+OLD:  for (const l of ['java', ...manifests.map(([l]) => l)]) console.log(`covered ${l}`)
+NEW:  for (const l of [...manifests.map(([l]) => l)]) console.log(`covered ${l}`) // PROBE-REC
+SITE:console.log(`covered ${l}`) // PROBE-REC
+
+### lang-universe-export-admin
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-lang-universe.sh
+OLD:    for (const id of Object.values(LANGS)) console.log(`covered ${id}`);
+NEW:    for (const id of Object.values(LANGS).slice(1)) console.log(`covered ${id}`); // PROBE-REC
+SITE:.slice(1)) console.log(`covered ${id}`); // PROBE-REC
+
+### lang-universe-export-doctor
+FILE:scripts/doctor.mjs
+TEST:scripts/test/test-lang-universe.sh
+OLD:  for (const key of Object.keys(ALL)) console.log(`covered ${key}`)
+NEW:  for (const key of Object.keys(ALL).slice(1)) console.log(`covered ${key}`) // PROBE-REC
+SITE:.slice(1)) console.log(`covered ${key}`) // PROBE-REC
+
+### lang-universe-manifest-copy
+FILE:scripts/test/test-security-defaults.sh
+TEST:scripts/test/test-lang-universe.sh
+OLD:SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|Cargo\.toml|build\.gradle\.kts|[^/]+\.gemspec|[^/]+\.sln'
+NEW:SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|Cargo\.toml|build\.gradle\.kts|[^/]+\.gemspec|[^/]+\.sln|mix\.exs'
+SITE:|mix\.exs'
+
+### install-verify-lang-partition
+FILE:scripts/test/test-install-verify.sh
+TEST:scripts/test/test-install-verify.sh
+OLD:_iv_default="go php java"
+NEW:_iv_default="go php" # PROBE-REC
+SITE:_iv_default="go php" # PROBE-REC
+
+### dispatch-bump-partition
+FILE:scripts/test/test-dispatch-release.sh
+TEST:scripts/test/test-dispatch-release.sh
+OLD:  [ "$(df_bump_mode "$L")" = manual ] || continue
+NEW:  [ "$(df_bump_mode "$L")" = manual-PROBE-REC ] || continue
+SITE:manual-PROBE-REC
