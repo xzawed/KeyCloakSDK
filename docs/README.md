@@ -37,8 +37,9 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 | [Getting Started](guides/getting-started.md) | 운영 | 언어마다 설치→퀵스타트를 한 흐름으로 밟는 유일한 자리. Python `aio` / Node / .NET / Rust **async 변형**을 나란히 둔 것. 언어별 런타임 하한이 `doc-guard`로 빌드 파일과 대조되는 자리이기도 하다. |
 | [Compatibility reference](reference/compatibility.md) | 운영 | 각 **게시본**이 실제로 어떤 Keycloak 서버 범위·기반 라이브러리·런타임으로 나갔는가. `main`이 아니라 그 릴리스의 값이라는 것이 이 표의 요지다. 버전 칸은 `df_published_version`과 기계 대조된다. |
 | [Admin capability reference](reference/admin-capability.md) | 운영 | 언어별 admin 직접 커버리지 5×5 표와, 편의 메서드가 없을 때 무엇을 대신 부르는가. **U 열은 아홉 소스와 기계 대조된다**(`check-admin-capability.mjs`) — 표를 찾는 세 줄은 문구가 곧 조준점이다. |
-| [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 **절차**와 `node scripts/doctor.mjs` 사용법. 변수 이름(`KCSDK_*`)은 CLAUDE.md·rules에도 있으나, 설치 순서는 여기에만 있다. |
+| [Development environment setup](guides/development-setup.md) | 운영 | 새 PC에서 언어별 툴체인을 세우는 **절차**와 `node scripts/doctor.mjs` 사용법. `KCSDK_*` 변수 표는 여기에만 있다. |
 | [Deploying a Keycloak server](guides/deploying-keycloak-server.md) | 운영 | SDK가 아니라 **상대편 서버**를 세우는 법 — 단일 VM + Docker Compose + Caddy 자동 TLS 프로덕션 구성. |
+| [Verifying a release](guides/verifying-releases.md) | 운영 | 레지스트리별 게시물 검증 명령(서명 · 출처 증명 · 재빌드)과 그것이 증명하지 않는 것. |
 | [Add-a-language playbook](guides/add-a-language-playbook.md) | 운영 | 10번째 언어를 추가할 때 밟는 순서. **코드 생성기도 저품질 티어도 두지 않는다**는 depth-first 원칙과 그 이유. **§4 계약의 진실 원천은 [CLAUDE.md](../CLAUDE.md)다**(원본 스펙이 아니라). |
 | [Language support roadmap](roadmap/language-support.md) | 운영 | 다음에 어떤 언어를, 왜 그 순서로 하는지. 채택/기각된 후보와 판단 근거. |
 
@@ -56,7 +57,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 | 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |
 |---|---|---|---|
-| [잔여작업 등록부](superpowers/plans/remaining-work.md) | 2026-09-03 | 진행 | **전수 감사가 남긴 209건이 어떤 작업 패키지로 접히는지, 그리고 무엇이 아직 열려 있는지**(여기에만 있다 — 패키지 수는 그 문서가 자기 체크박스로 세고 검사 11 이 대조하므로 여기 옮겨 적지 않는다). 감사는 아무것도 커밋하지 않아 원장이 저장소 밖에만 있었다 — 이 문서가 그 복원본이자 열린 항목의 진실 원천이다. 착수 순서와 그 순서를 정한 근거(잠복 결함보다 게시본에서 활성인 것이 먼저), 그리고 **되살리면 안 되는 기각 자리 둘**도 여기 적혀 있다. |
+| [잔여작업 등록부](superpowers/plans/remaining-work.md) | 2026-09-03 | 진행 | **전수 감사가 남긴 209건이 어떤 작업 패키지로 접히는지, 그리고 무엇이 아직 열려 있는지**(여기에만 있다 — 패키지 수는 그 문서가 자기 체크박스로 세고 검사 11 이 대조하므로 여기 옮겨 적지 않는다). 이 문서가 열린 항목의 진실 원천이다. 착수 순서와 그 순서를 정한 근거(잠복 결함보다 게시본에서 활성인 것이 먼저), 그리고 **되살리면 안 되는 기각 자리 둘**도 여기 적혀 있다. |
 
 열린 계획서는 `docs/superpowers/plans/`에 두고 여기 한 줄을 넣는다 —
 `| 문서 | 날짜 | 상태 | 여기서만 알 수 있는 것 |` 네 칸이고, 검사 9가 마지막 칸의 길이까지 본다.
@@ -68,7 +69,7 @@ SDK를 **쓰는** 사람을 위한 문서다. 영문으로 유지하며 한글 �
 
 ## 이 지도의 유지
 
-`scripts/check-docs.mjs`(검사 9)가 대조한다. **양방향 링크는 그중 둘일 뿐이다** — 어서션은 열둘이고, 각 문서가 **첫 칸이 링크인 표 행**으로 실려 있는지, `운영/완료/진행` 상태 칸이 있는지, 그것이 문서 자신의 `doc-status` 마커와 맞는지, 마지막 칸이 최소 길이를 넘는지, `진행`이면 미체크 항목이 남아 있는지까지 본다. ⚠️ **마지막 칸의 *내용*은 안 본다** — 이 문서의 감사 발견이 전부 거기 있었다. 링크 축은 이렇다:
+`scripts/check-docs.mjs`(검사 9)가 대조한다. **양방향 링크는 그중 둘일 뿐이다** — 어서션은 열둘이고, 각 문서가 **첫 칸이 링크인 표 행**으로 실려 있는지, `운영/완료/진행` 상태 칸이 있는지, 그것이 문서 자신의 `doc-status` 마커와 맞는지, 마지막 칸이 최소 길이를 넘는지, `진행`이면 미체크 항목이 남아 있는지까지 본다. ⚠️ **마지막 칸의 *내용*은 안 본다.** 링크 축은 이렇다:
 
 - `docs/**/*.md` 중 이 지도에 링크되지 않은 파일이 있으면 실패 — 문서를 추가하고 지도에 안 넣는 것을 막는다.
 - 이 지도의 링크가 존재하지 않는 파일을 가리키면 실패 — 문서를 지우거나 옮기고 지도를 안 고치는 것을 막는다.

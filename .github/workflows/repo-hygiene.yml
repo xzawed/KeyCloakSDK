@@ -258,6 +258,8 @@ jobs:
       # 이 목록을 고칠 때는 로컬 통과로 만족하지 말고 dash로 한 번 돌릴 것(각 테스트 상단 참고).
       - name: 소비자 유입 표면 자가테스트(이슈 양식의 언어 = 트리 · 비공개 신고 링크 · 비밀 확인란 · 기본 소유자)
         run: sh scripts/test/test-community-intake.sh
+      - name: 게시물 검증 안내 자가테스트(서명 워크플로가 있다 · 태그 접두 = df_tag · 표의 SDK = 트리)
+        run: sh scripts/test/test-verifying-releases.sh
       - name: 배포 문서·헬퍼 자가테스트(DEPLOY.md ↔ deploy-facts SSOT · readiness · trigger · request · dispatch)
         run: |
           sh scripts/test/test-deploy-facts.sh

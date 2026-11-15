@@ -57,7 +57,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `305`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `306`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -433,8 +433,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `wall-clock-ordering-in-tests` **[M/M · 닫힘 2026-11-14 #1088]** 붕괴 시험을 멈춘 시계로 · 창 크기는 결정적 시험(변이 CAUGHT) · W3c 는 도달 확인 · go 비행은 `token-provider-cache-invariants`
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 - [x] `dotnet-allocation-test-process-wide-counter-flaky` **[L/S · 신규 2026-10-23 · 닫힘 2026-11-13 #1061]** 다섯 창의 최솟값(`Allocation.SmallestOfAsync`) — 호출 비용 ≈ 58 KB(300 회 실측), 잡음은 더하기만 한다 · 그 규칙을 고정하는 시험
-- [x] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27 · 닫힘 2026-11-13 #1059]** 기제 — 닫힘을 알리지 않은 응답 뒤 닫힌 연결을 풀이 다음 POST 에 재사용했고, 본문을 보낸 요청은 재시도되지 않는다(응답 뒤 200 ms 지연 재현 40/100 · `Connection: close` 대조 0). keep-alive 로 고침 · 고정 테스트 `Raw_server_answers_every_request_on_one_kept_alive_connection`
-- [x] `rust-integration-floor-toolchain-drift` **[H/S · 신규 · 닫힘 2026-11-13 #1056]** rustc 1.100.0 이 `.map_err(|e| …)?` 줄을 돌지 않은 클로저에 귀속시켜 같은 소스가 527/594 → 511/588 — 실행 판정은 불변(함수 100 · 잃은 줄의 클로저 11 이 두 판 다 0 회), 하한 88.5 → 86.9. 판정 방법은 `scripts/integration-coverage.mjs` 머리
+- [x] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27 · 닫힘 2026-11-13 #1059]** 풀이 닫힌 연결을 본문 있는 POST 에 재사용했다(재시도 없음) — keep-alive 로 고침 · `Raw_server_answers_every_request_on_one_kept_alive_connection`
+- [x] `rust-integration-floor-toolchain-drift` **[H/S · 신규 · 닫힘 2026-11-13 #1056]** rustc 1.100.0 이 줄 귀속만 바꿨다(실행 판정 불변) — 하한 88.5 → 86.9 · 판정 방법은 `scripts/integration-coverage.mjs` 머리
 
 ### 가드·CI — 20
 
@@ -511,7 +511,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 93건 (열림 37)
+## D. 원장 밖 — 94건 (열림 37)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -616,7 +616,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `php-admin-client-0.44-upgrade` **[L/M · 닫힘 2026-10-09 #759]** 0.44 가 감싼 예외를 `ErrorTranslation` 이 벗긴다(#750 대체)
 - [x] `kotlin-pom-description-jdk-floor` **[M/S · 닫힘 2026-11-02 #933]** POM 이 「JDK 21+」였다(게시 1.0.1–1.0.8) — 17+ 로 고치고 `check-versions.mjs` 가 `KOTLIN_X_Y`·`JvmTarget` 과 대조한다
 
-### 완전성 비평 신규 — 25
+### 완전성 비평 신규 — 26
 
 - [x] `runtime-eol-support-window` **[H/M]** 선언된 소비자 런타임 하한 둘이 상류 지원 종료다 — Ruby 3.2는 이미 EOL, .NET 8은 68일 뒤 · `ruby/keycloak-sdk.gemspec:20`
 - [x] `consumer-intake-surface-absent` **[M/S · 닫힘 2026-11-15 #1094]** 이슈 양식 둘 · PR 템플릿 · CODEOWNERS · 행동강령 — 양식의 언어 목록은 트리와 대조한다 · `scripts/test/test-community-intake.sh`
@@ -628,7 +628,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - **가드**: `scripts/test/test-base-images.sh`(repo-hygiene 배선, 5 단언) — 같은 저장소는 한 태그 · 떠다니는 태그 금지 · 공허 하한(`BI_MIN`) · 면제표(이유 강제 + 낡으면 실패). 변이 **3/3 CAUGHT**(갈림·떠다님·파싱 무력화, 각각 **격리해서**). ⚠️ `eclipse-temurin` 은 **jdk/jre 가 정당하게 갈려** 면제표에 이유와 함께 있다.
   - ⚠️ **하한을 짐작으로 15 를 박았다가 가드가 자기 자신을 빨갛게 했다**(실측 12). 등록부가 이미 경고한 부류다 — **세어서 박는다**. 그리고 상수를 검사와 문구 **두 곳**에 적어 갈렸다(조건 10 · 문구 15) — `BI_MIN` 변수 하나로 묶었다.
   - ⏸ **열어 두는 절반 — dependabot 의 `docker` 생태계.** 이 저장소는 전부 `directory:` 단수를 쓰고 Dockerfile 이 20개 디렉터리에 흩어져 있다. 추가하면 **주간 봇 PR 양**이 바뀌고, 이 리포는 이미 dependabot 잡이 빨개지는 소음을 겪었다(ruby `parallel` 사례). **봇 설정은 사람 판단이 붙는 자리**라 측정만 남기고 연다.
-- [ ] `release-artifact-verification-undocumented` **[M/M]** 소비자가 게시물의 무결성을 확인할 방법이 문서에 0건 — 증명 수단이 레인마다 다른데 아무도 그 표를 쓰지 않았다 · `SECURITY.md:96`
+- [x] `release-artifact-verification-undocumented` **[M/M · 닫힘 2026-11-15 #1095]** 아홉 레지스트리의 검증 명령을 최신 게시본으로 재어 적었다 · `docs/guides/verifying-releases.md`
+- [ ] `release-provenance-four-lanes` **[M/M · 신규 2026-11-15]** .NET · PHP · Rust · Ruby 게시물엔 빌드 출처 증명이 없다 — 소비자 검증이 저장소 서명 · 체크섬 · 재빌드뿐이다(JVM · Python · Node 는 있고 Go 는 체크섬 DB) · `.github/workflows/ruby-release.yml:162`
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
 - [x] `java-short-code-verifier-leaks-iae` **[M/S · 신규·닫힘 2026-09-25 #585]** 아홉을 쟀다 — 잘못된 verifier 를 로컬에서 거부하는 것은 JVM 짝(Nimbus)뿐이고 자매 일곱은 전송 → 400 → SDK 인증 오류다. 부류 재스캔이 verifier 밖으로 넓혔다: 빈 code·refresh·introspect 토큰, client_credentials 공백 scope(전례가 인가 요청만 고쳤다), kotlin 문자열 redirectUri, Nimbus `build()` 의 redirect_uri 검사(Grok 레그가 찾음), java null 셋 — 전부 SDK 타입으로, 변이 22/22 CAUGHT · `java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientInputBoundaryTest.java`
