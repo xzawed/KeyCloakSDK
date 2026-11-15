@@ -103,6 +103,57 @@ OLD:  process.exit(d.code)
 NEW:  process.exit(0) // PROBE-REC
 SITE:process.exit(0) // PROBE-REC
 
+# ── 게시 바이트 오라클 --attest — 고정값 · 봉인 경계 · 공허 · 실행 불가 · 저장소 미상(published-bytes-have-no-oracle, 2026-11-15)
+
+### jvm-attest-signer-per-lane
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:  const args = ['attestation', 'verify', file, '--repo', REPO, '--signer-workflow', `${REPO}/${SIGNER[lang]}`,
+NEW:  const args = ['attestation', 'verify', file, '--repo', REPO, '--signer-workflow', `${REPO}/${SIGNER.java}`, // PROBE-REC
+SITE:SIGNER.java}
+
+### jvm-attest-source-pins
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:    '--source-ref', `refs/tags/${tag}`, '--source-digest', commit, '--deny-self-hosted-runners']
+NEW:    '--deny-self-hosted-runners'] // PROBE-REC
+SITE:'--deny-self-hosted-runners'] // PROBE-REC
+
+### jvm-attest-seal-boundary
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:const FIRST_ATTESTED = { java: '1.0.2', kotlin: '1.0.2' }
+NEW:const FIRST_ATTESTED = { java: '1.0.3', kotlin: '1.0.2' } // PROBE-REC
+SITE:java: '1.0.3'
+
+### jvm-attest-unparsable-version
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:  const p = (s) => (/^\d+(\.\d+){0,2}([-+].*)?$/.test(s) ? s.split(/[-+]/)[0].split('.').map(Number) : null)
+NEW:  const p = (s) => s.split(/[-+]/)[0].split('.').map((n) => Number(n) || 0) // PROBE-REC
+SITE:Number(n) || 0) // PROBE-REC
+
+### jvm-attest-vacuous
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:if (ATTEST && errors.length === 0 && attested === 0) {
+NEW:if (false && attested === 0) { // PROBE-REC
+SITE:if (false && attested === 0)
+
+### jvm-attest-tool-unavailable
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:    fail('attest-tool-unavailable', `${lang} ${artifact} ${v}: gh 를 실행하지 못했다 — ${r.error.message}`, '증명을 판정하지 못했다(통과가 아니다).')
+NEW:    attested++ // PROBE-REC
+SITE:attested++ // PROBE-REC
+
+### jvm-attest-no-repo
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:if (ATTEST && !/^[\w.-]+\/[\w.-]+$/.test(REPO)) {
+NEW:if (false && REPO) { // PROBE-REC
+SITE:if (false && REPO)
+
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
 
 ### DM1

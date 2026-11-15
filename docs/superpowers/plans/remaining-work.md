@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=141179 max-raw-bytes=156086 -->
+<!-- doc-budget: max-bytes=138738 max-raw-bytes=148265 -->
+<!-- max-bytes 141179 → 138738 · max-raw-bytes 156086 → 148265: published-bytes-have-no-oracle 마감(#1096) — 열린 항목의 하위
+     불릿 일곱과 설계 블록 주석((a)–(f))이 닫힌 한 줄이 됐다. 경위는 PR 본문. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-raw-bytes 156584 → 156086: wall-clock-ordering-in-tests 마감(#1088) — 남은 자리 주석이 닫힌 한 줄이 되고, go 비행
      시험 한 줄만 token-provider-cache-invariants 의 주석으로 옮겼다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 141742 → 141179 · max-raw-bytes 156896 → 156584: coverage-omit-overreach 재판정 마감(#1087) — 하위 측정
@@ -163,7 +165,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 52건 (열림 9)
+## B. 재검증 대상 — 52건 (열림 8)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -188,75 +190,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝 · 그중 둘은 독립 레그가 낸 구멍)
 - [x] `write-token-persists-into-build` **[H/S · 신규·닫힘 2026-09-23]** 규칙 1b 가 `contents: write` 에만 걸려 `attestations: write` 잡의 자격증명 잔류를 못 봤고, ⚠️ **그 규칙은 자가테스트가 전혀 안 덮고 있었다** · `check-ci-permissions.mjs`(변이 4/4 · PR #550)
 - [x] `published-jar-bytes-never-read` **[H/M · 신규·닫힘 2026-09-23]** 게시된 jar 를 받아 바이트를 읽는 호출 지점이 **0 개**였다 — 사슬이 태그에서 끊겨, 릴리스가 다른 JDK 로 빌드했거나 업로드가 부분 실패해도 저장소는 전부 초록이었다 · `scripts/check-published-jvm-floor.mjs` + `published-floor.yml`(예약·required 밖 · 변이 15/15 CAUGHT + OFF 짝 · 그중 하나는 **실제 repo1 바이트**로 CAUGHT · 실측 274 클래스, 1.0.0 부분만 세면 91 로 손측정과 일치 · ⚠️ 독립 리뷰 **BLOCK** 뒤 다섯 구멍 수정)
-- [ ] `published-bytes-have-no-oracle` **[M/M · 신규 2026-09-06 · 범위 축소 2026-09-23]** 남은 것은 **다이제스트 동일성** — 게시 바이트를 읽는 것은 위 항목이 닫았고 「우리가 올린 그 바이트인가」는 못 닫았다
-  - ⚠️ **봉인은 PR #550 이 놓았다(attest) — 검증은 아직 손으로 한다(`git log --grep=signer-workflow`).** 검증 설계는 아래 블록 주석 (f).
-
-<!-- 설계 판정 2026-09-23 (독립 레그 + 재판정). 예산에 계상되지 않는 자리에 둔다 — 이 항목을
-     실제로 착수하는 세션만 읽으면 되는 판정이고, 상시 표면에 둘 것은 위 한 줄이면 족하다.
-
-     (a) **이 이름이 뜻하는 것은 다이제스트 동일성이다.** 업로드한 바이트의 다이제스트를 남기는
-         릴리스 워크플로가 없고 두 빌드 다 `outputTimestamp` 가 없어(재현 불가) **대조 대상
-         자체가 없다.** 다시 재는 법:
-             grep -rn 'outputTimestamp\|sha256sum\|sha512sum' .github/workflows java/pom.xml kotlin/build.gradle.kts
-         ⚠️ 봉인 단계를 먼저 넣지 않으면 이 이름은 닫히지 않는다. 「게시 jar 를 받아 클래스
-         major 를 읽는다」는 **더 약한 별건**이므로 그것으로 이 항목을 닫지 말 것.
-
-     (b) ⚠️ **2026-09-23 저녁에 이 줄을 고쳤다 — 앞서 적은 규칙이 틀렸다.**
-         틀린 규칙: 「SSOT(`df_published_version`)가 「게시됨」이라 말하는 좌표가 전파 창을
-         넘겨서도 404 면 SSOT 가 거짓이므로 실패」. **틀린 이유**: `df_published_version` 은
-         런북 §4 **1단계**에서 태그보다 **먼저** 올라간다 — 그것은 *의도*이지 현재 사실의
-         주장이 아니고, 레지스트리를 앞서는 것이 설계다. 그 규칙대로면 사람이 Portal 을 누르기
-         전 구간 내내 거짓 빨강이 난다(독립 레그가 「결함」으로 판정했고 그 판정이 옳다).
-         **바른 규칙(구현됨)**: 검사 대상을 `maven-metadata.xml` 이 **실제로 싣는 버전**으로
-         잡는다. 그러면 타이머도, Portal 상태도, 전파 창도 필요 없다 — 미게시는 애초에 대상이
-         아니고, 게시된 것은 전부 대상이다. ⚠️ 그래도 **미결을 초록으로 저장하는 부류**는
-         남으므로 (d) 의 공허 규칙이 그것을 맡는다.
-
-     (c) **어디서 도는가**: required 밖 · 스케줄 워크플로. 릴리스 워크플로 안의 단계로 넣으면
-         Publish 가 사람 클릭이라 **언제나 스테이징을 보고 공허해진다**. required 에 넣으면
-         네트워크 의존 검사가 저장소를 잠근다(CLAUDE.md).
-
-     (d) **공허 하한은 상수가 아니라 규칙**(구현됨): 좌표가 하나라도 있으면 **(아티팩트, 버전)
-         쌍을 하나 이상 실제로 읽어야** 한다(`vacuous-run`). jar 에 클래스가 0 개인 것도 실패
-         (`vacuous-jar`). `-bom` 은 `<packaging>pom</packaging>` 이라 **jar 를 요청하지 않고**,
-         `-examples` 는 자기 metadata 에 그 버전이 없어 건너뛴다 — 둘 다 **파생**이지 손으로
-         적은 예외가 아니다. ⚠️ java 는 **집합 모듈만 보면 공허하다**(실측: `keycloak-sdk` 의
-         jar 는 버전당 클래스가 **1 개**다) — 형제 목록을 그 버전의 태그에서 뽑고, 0 개를 뽑으면
-         `no-siblings` 로 실패한다.
-         ⚠️ **경계값 대조군이 없으면 환산식이 한 칸 느슨해져도 안 보인다** — 변이 증명에서
-         `feature + 44` → `+ 45` 가 **SILENT** 이었다(65 대 61 처럼 먼 케이스만 있었다).
-         하한 17 의 상한은 정확히 major 61 이므로 **62 는 실패하고 61 은 통과**해야 한다.
-
-     (f) **봉인(PR #550, 2026-09-23 밤) — 놓인 것과 남은 것.**
-         놓인 것: 두 JVM 릴리스 잡이 `actions/attest-build-provenance` 로 **배포한 그 바이트**를
-         증명한다. ⚠️ **게시 뒤에 건다** — 앞이면 Maven 이 라이프사이클을 다시 돌아 서명한
-         바이트와 올라간 바이트가 갈린다(두 빌드 다 재현 가능하지 않다). 실패해도 Portal 은
-         스테이징일 뿐이고 공개는 사람이 누르므로 이 순서가 fail-closed 다.
-         권한: `id-token: write` + `attestations: write`. 같은 목적을 Release 자산으로 하면
-         `contents: write` 가 필요해 **더 큰 권한**이 된다 — 그래서 이 둘이 최소다.
-         ⚠️ **기존 6 버전에는 소급되지 않는다. 첫 증명은 다음 릴리스에 생긴다.**
-
-         남은 것(검증): 오라클이 Central 에서 받은 바이트의 다이제스트로 `gh attestation verify`.
-         ⚠️ **반드시 `--signer-workflow` 로 서명자를 고정한다.** 안 하면 `attestations: write` 를
-         가진 **아무 잡이나** Central 에서 내려받은 바이트를 재서명할 수 있고, 그러면 검사가
-         「릴리스 빌드가 이것을 만들었다」에서 「누군가 Central 에 이미 있던 것을 재서명했다」로
-         조용히 바뀐다(독립 레그 지목).
-         ⚠️ 증명이 없는 옛 버전은 **건너뜀도 경고도 아니라 얼린 허용목록**이다 — 주간 경고는
-         묵음되고, 건너뜀은 attest 단계를 지워도 초록이다. 허용목록은 스스로 자라지 못한다.
-         ⚠️ **미검증 전제**: 「Portal 이 jar 바이트를 재포장하지 않는다」는 독립 레그의 주장이고
-         **우리가 잰 적이 없다**(봉인 이전 버전으로는 잴 방법이 없다). 첫 증명이 생긴 릴리스에서
-         그 전제가 처음으로 시험된다 — 틀렸다면 검증이 실패하므로 방향은 안전하다.
-
-     (e) ⚠️ **이 오라클은 상수풀을 끝내 읽지 않으므로 `jvm-api-surface-pin-unguarded` 를 대신할
-         수 없다** — major 가 61 이어도 `--release` 없이 컴파일하면 상수풀이 빌드 JDK 의 API 를
-         가리키고, 그 사고는 바이트를 아무리 받아 봐도 안 보인다. -->
-
-  - 독립 검증 레그(Grok)가 「릴리스만 남았다」를 검증하다 낸 것이고, 셋은 실측으로 확인했다.
-  - ⚠️ **독립 검증 레그가 (1)을 「오버스테이트」로 판정했으나 그건 맥락 부족이었다** — 「릴리스 후 `published=21` 을 **지워야** 통과한다」는 규칙은 실제로 구현돼 있다(`check-docs.mjs:1252` + 자가테스트 (f)). 나머지 둘(위 (2)의 「어떤 가드도」, `-examples` 의 「pom-only」)은 **레그가 옳았고 고쳤다**. 레그의 판정도 액면가로 받지 않는다 — 양방향이다.
-  - **(1) 태그 ≠ Central.** `kind=runtime` 의 오라클 B 는 `git show <태그>:<매니페스트>` 다. 사람이 태그를 밀면 트리·태그가 함께 17 이 되어 `published=21` 을 **지워야 통과**하는데, 그 시점에 Portal Publish 가 안 됐거나 실패했거나 일부 모듈만 올라갔어도 가드는 초록이다 — 소비자는 여전히 21 짜리 `1.0.0` 을 받는다. ⚠️ `CLAUDE.md` 가 이미 「워크플로 초록 ≠ 게시」를 경고하나 **그 경고를 집행하는 것은 없다**.
-  - **(2) 선언 ≠ 방출된 바이트.** ✅ **닫혔다** — `published-jar-bytes-never-read`. ⚠️ 남긴 서술 규칙: 「**어떤** 가드도 안 읽는다」처럼 전수를 주장하지 말 것(레그가 지목했다). 참인 진술은 「게시 jar 를 받아 바이트를 읽는 **호출 지점**이 0 개」였고, 그 수를 세는 것이 판정이다.
-  - **(3) 「최신 태그」 ≠ 소비자가 고정한 좌표.** 가드는 최신 태그만 본다. `1.0.1` 이 17 로 나가도 `1.0.0` 에 핀한 소비자는 계속 21 이 필요하고, 그때 문서를 현재형으로 고쳐 쓰면 그 사실이 지워진다.
-  - **되살릴 조건이 아니라 착수 조건**: JVM 릴리스를 낼 때 이 항목을 함께 본다 — 그 순간이 (1)이 실현되는 유일한 창이다. 최소 형태는 「게시 후 `repo1` 에서 jar 를 받아 major 를 재는 스텝」이고, 재는 법은 위 재현 명령이 이미 갖고 있다.
+- [x] `published-bytes-have-no-oracle` **[M/M · 신규 2026-09-06 · 닫힘 2026-11-15 #1096]** Central 에서 받은 jar 마다 레인의 릴리스 워크플로 · 태그 · 커밋 고정으로 증명 대조, 봉인 경계 1.0.2 · `scripts/check-published-jvm-floor.mjs --attest`
 - [x] `registry-contract-claims-use-tree-oracle` **[H/L · 신규 2026-09-06 · 닫힘 2026-09-06 #415]** `doc-guard: kind=runtime` 이 **작업 트리**를 오라클로 썼다 — 소비자가 받는 것은 태그·레지스트리라, 트리가 맞는 동안 소비자에게 거짓을 **집행**할 수 있다 · `scripts/check-docs.mjs:526-545`
 - [x] `consumer-floor-change-needs-release-or-registered-gap` **[M/S · 신규 2026-09-06 · 닫힘 2026-09-06 #415]** 소비자 가시 하한을 바꾸는 PR 이 릴리스 없이 머지되면 문서가 즉시 거짓이 된다 — 기각 체크리스트에 항목이 없었다 · `docs/governance/process.md`
 - [x] `doc-audit-batch1-remainder` **[H/L · 신규 2026-09-06 · 닫힘 2026-09-06 #416]** 소비자 문서 배치 1(10개) 감사의 **잔여 9건** — 인용 181건 전건 실재(계측기 5/5 자가검증), 반박 10건 중 2건 refuted · `docs/guides/` · `docs/reference/`

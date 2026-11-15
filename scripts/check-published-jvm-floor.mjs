@@ -15,12 +15,24 @@
 // **그 버전의 태그**가 소유한다. 상수는 어디에도 없다.
 //
 // 사용:
-//   node scripts/check-published-jvm-floor.mjs [--base=<URL|디렉터리>] [--lang=java,kotlin]
+//   node scripts/check-published-jvm-floor.mjs [--base=<URL|디렉터리>] [--lang=java,kotlin] [--attest [--repo=<owner/repo>]]
 //   --base 가 디렉터리면 네트워크를 쓰지 않는다(자가테스트가 그 경로로 전부 검증한다).
+//
+// --attest: 받은 jar 마다 **우리 릴리스 워크플로가 그 태그 · 커밋에서 증명한 바로 그 바이트인가**를 `gh attestation
+// verify` 로 잰다(등록부 published-bytes-have-no-oracle — 봉인은 PR #550, 검증은 손으로 하고 있었다). 고정값 넷을 다 건다:
+//   --repo · --signer-workflow(레인의 릴리스 워크플로) · --source-ref(그 판의 태그) · --source-digest(그 태그의 커밋)
+// ⚠️ **서명자를 반드시 고정한다** — 안 하면 `attestations: write` 를 가진 아무 잡이나 Central 의 바이트를 재서명할 수
+// 있고, 검사는 「릴리스 빌드가 만들었다」에서 「누군가 재서명했다」로 조용히 바뀐다. 바이트가 같은 재릴리스는 증명이
+// 릴리스마다 하나씩이고(kotlin 1.0.8 = 1.0.9 실측) 고정값이 맞는 것을 고른다.
+// ⚠️ 봉인 이전 판은 **경계 상수 하나**로 얼린다(FIRST_ATTESTED — 목록이 아니라 「이 판 미만」). 고치지 않으면 늘지 않고,
+// 고치면 diff 에 보인다. 실측 2026-11-15: 1.0.2 이상 main jar 36/36 에 증명이 있고 그 미만에는 없다.
+// --gh=<실행 파일> 은 검증기를 바꾼다(기본은 PATH 의 gh). `.mjs` 면 node 로 띄운다 — 자가테스트의 가짜 검증기다.
+// 띄우지 못하면(없는 경로 · 시간 초과) attest-tool-unavailable 로 실패한다 — 판정 못 함은 통과가 아니다.
 
-import { readFileSync, existsSync, statSync } from 'node:fs'
+import { readFileSync, existsSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { inflateRawSync } from 'node:zlib'
 
 const argv = process.argv.slice(2)
@@ -32,6 +44,13 @@ const BASE = opt('--base', 'https://repo1.maven.org/maven2')
 const ONLY = opt('--lang', '')
 const ROOT = opt('--root', '.')
 const OFFLINE = !/^https?:\/\//.test(BASE)
+const ATTEST = argv.includes('--attest')
+const REPO = opt('--repo', process.env.GITHUB_REPOSITORY ?? '')
+const GH = opt('--gh', '')
+// 레인마다 그 판을 배포하고 증명한 워크플로 — 서명자 고정값이다.
+const SIGNER = { java: '.github/workflows/release.yml', kotlin: '.github/workflows/kotlin-release.yml' }
+// 봉인(PR #550) 이전 판 — 증명이 없다. ⚠️ 경계 상수 하나로 얼린다(머리 주석).
+const FIRST_ATTESTED = { java: '1.0.2', kotlin: '1.0.2' }
 
 const errors = []
 const notes = []
@@ -233,6 +252,65 @@ const readJarMajors = (buf, label) => {
   return { classes: out, skippedMR }
 }
 
+// ── 증명(--attest) ──────────────────────────────────────────────────────────
+// 판의 숫자 부분(x.y.z)만 비교한다 — `0.1.0-RC1` 은 0.1.0 이고, `1.0.2-RC1` 은 경계와 같아 증명을 요구한다.
+// ⚠️ 숫자로 못 읽는 판은 **건너뛰지 않는다**(증명을 요구하는 쪽) — 느슨하게 0 으로 읽으면 x.0.1 이 0.0.1 이 되어
+// 봉인 이전으로 빠지고, 옆 판이 증명되는 한 실행은 초록이다(독립 레그 지목).
+const coreLess = (a, b) => {
+  const p = (s) => (/^\d+(\.\d+){0,2}([-+].*)?$/.test(s) ? s.split(/[-+]/)[0].split('.').map(Number) : null)
+  const x = p(a), y = p(b)
+  if (!x || !y) return false
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0)
+  return false
+}
+const tagCommit = (tag) => {
+  try {
+    return execFileSync('git', ['-C', ROOT, 'rev-parse', `${tag}^{commit}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return null
+  }
+}
+let attested = 0
+const attestCheck = (lang, artifact, v, tag, jar) => {
+  if (coreLess(v, FIRST_ATTESTED[lang])) {
+    notes.push(`skip ${lang} ${artifact} ${v} — 봉인(#550) 이전 판이라 증명이 없다(경계 ${FIRST_ATTESTED[lang]})`)
+    return
+  }
+  const commit = tagCommit(tag)
+  if (!commit) {
+    fail('attest-no-tag-commit', `${lang} ${artifact} ${v}: 태그 ${tag} 의 커밋을 못 읽었다 — 고정할 소스가 없다.`)
+    return
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'kcsdk-attest-'))
+  const file = join(dir, `${artifact}-${v}.jar`)
+  writeFileSync(file, jar)
+  const args = ['attestation', 'verify', file, '--repo', REPO, '--signer-workflow', `${REPO}/${SIGNER[lang]}`,
+    '--source-ref', `refs/tags/${tag}`, '--source-digest', commit, '--deny-self-hosted-runners']
+  const r = GH.endsWith('.mjs')
+    ? spawnSync(process.execPath, [GH, ...args], { encoding: 'utf8' })
+    : spawnSync(GH || 'gh', args, { encoding: 'utf8', windowsHide: true, timeout: 120_000 })
+  rmSync(dir, { recursive: true, force: true })
+  if (r.error) {
+    fail('attest-tool-unavailable', `${lang} ${artifact} ${v}: gh 를 실행하지 못했다 — ${r.error.message}`, '증명을 판정하지 못했다(통과가 아니다).')
+    return
+  }
+  if (r.status !== 0) {
+    fail(
+      'attestation-failed',
+      `${lang} ${artifact} ${v}: 증명이 고정값과 맞지 않거나 없다 — 서명자 ${SIGNER[lang]} · ${tag} · ${commit.slice(0, 12)}`,
+      ...`${r.stderr || ''}${r.stdout || ''}`.trim().split('\n').slice(-3).map((l) => `  ${l}`),
+      '소비자가 받는 바이트를 우리 릴리스 워크플로가 그 태그에서 만들었다는 증거가 없다.',
+    )
+    return
+  }
+  attested++
+  notes.push(`ok   ${lang} ${artifact} ${v} — 증명 일치(${SIGNER[lang]} @ ${tag} ${commit.slice(0, 12)})`)
+}
+if (ATTEST && !/^[\w.-]+\/[\w.-]+$/.test(REPO)) {
+  fail('no-repo', `--attest 인데 저장소를 모른다(--repo · GITHUB_REPOSITORY 없음: '${REPO}') — 고정할 서명자가 없다.`)
+  process.exit(1)
+}
+
 // ── 본체 ────────────────────────────────────────────────────────────────────
 let versionsChecked = 0
 let classesRead = 0
@@ -361,6 +439,7 @@ for (const { lang, path } of targets) {
       } else {
         notes.push(`ok   ${lang} ${artifact} ${v} — 클래스 ${read.classes.length}개 전부 major ≤ ${cap} (${floor.how}=${floor.feature})${mr}`)
       }
+      if (ATTEST) attestCheck(lang, artifact, v, tag, jar)
     }
     // ⚠️ **버전 단위 공허** — 그 버전에서 아티팩트를 하나도 못 읽었으면 「위반 없음」이 아니다.
     if (readThisVersion === 0) {
@@ -406,6 +485,11 @@ if (errors.length === 0 && versionsChecked === 0) {
     `좌표 ${targets.length}개를 훑고 **버전을 하나도 대조하지 못했다** — 「위반 없음」이 아니라 검사가 안 돈 것이다.`,
     '태그 이름 규칙이 바뀌었거나(git fetch --tags 가 안 돌았거나) 좌표가 옮겨졌다.',
   )
+}
+// ⚠️ 증명 공허 — --attest 인데 jar 를 하나도 증명과 대조하지 못했으면(전부 봉인 이전이거나 경로가 끊겼으면) 「증명 일치」 가
+// 아니다. 개수를 박지 않는다 — 규칙은 「하나 이상」이다.
+if (ATTEST && errors.length === 0 && attested === 0) {
+  fail('vacuous-attest', `--attest 인데 증명과 대조한 jar 가 0 개다 — 봉인 경계(${JSON.stringify(FIRST_ATTESTED)}) 이상의 판을 하나도 못 읽었다.`)
 }
 
 if (errors.length) {
