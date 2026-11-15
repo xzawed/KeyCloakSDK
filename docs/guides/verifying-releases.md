@@ -1,5 +1,5 @@
 # Verifying a release
-<!-- doc-budget: max-bytes=8060 -->
+<!-- doc-budget: max-bytes=8275 -->
 
 Every SDK in this repository is built and published by a GitHub Actions workflow from a release tag.
 What you can check afterwards depends on the registry: four SDKs (Java, Kotlin, Python, Node.js)
@@ -56,13 +56,16 @@ Without a GitHub login, fetch the attestation from the public API (60 unauthenti
 hour) and hand it to the CLI, which then verifies offline:
 
 ```sh
-sha=$(sha256sum keycloak-sdk-core-<version>.jar | cut -d' ' -f1)
+sha=$(sha256sum keycloak-sdk-core-<version>.jar | cut -d' ' -f1)   # macOS: shasum -a 256
 curl -s "https://api.github.com/repos/xzawed/KeyCloakSDK/attestations/sha256:$sha" \
-  | jq -c '.attestations[0].bundle' > bundle.json
-gh attestation verify keycloak-sdk-core-<version>.jar --repo xzawed/KeyCloakSDK --bundle bundle.json \
+  | jq -c '.attestations[].bundle' > bundles.jsonl
+gh attestation verify keycloak-sdk-core-<version>.jar --repo xzawed/KeyCloakSDK --bundle bundles.jsonl \
   --signer-workflow xzawed/KeyCloakSDK/.github/workflows/release.yml \
   --source-ref refs/tags/v<version> --source-digest <commit> --deny-self-hosted-runners
 ```
+
+Keep every bundle (`.attestations[]`, not the first): a byte-identical jar carries one attestation per
+release, and the API does not promise their order — the pins pick the right one.
 
 Not covered: the POMs (and Kotlin's `.module`) have PGP signatures but no provenance; versions before
 1.0.2 have no provenance; Kotlin's artifacts come with `.md5`/`.sha1` checksum files but no `.sha256`.
