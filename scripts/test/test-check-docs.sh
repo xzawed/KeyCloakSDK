@@ -1991,5 +1991,12 @@ assert_contains "$(_compat_out)" "좌표 여럿(@a/jose, @b/jose)" "[compat] 꼬
 printf '%s\n' '{ "name": "x" }' > "$TMP/node/package.json"
 assert_fails node "$GUARD" "$TMP"
 assert_contains "$(_compat_out)" "트리:node/package.json 에서 런타임 하한을 읽지 못했다" "[compat] 하한을 못 읽으면 통과가 아니다"
+# 태그를 하나도 받지 않은 클론은 「아직 안 민 태그」와 다르다 — 트리로 물러서지 않고 실패한다(독립 레그 지목:
+# 트리와 맞춰 둔 표가 게시판과 갈려도 거기서는 통과했다).
+_compat_repo
+for t in $(git -C "$TMP" tag -l); do git -C "$TMP" tag -d "$t" >/dev/null 2>&1; done
+assert_eq "" "$(git -C "$TMP" tag -l)" "[compat] 픽스처의 태그를 실제로 다 지웠다"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "태그가 하나도 없다" "[compat] 태그 없는 클론에서는 트리로 물러서지 않는다"
 
 assert_report

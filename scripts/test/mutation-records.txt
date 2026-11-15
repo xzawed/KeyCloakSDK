@@ -831,3 +831,10 @@ TEST:scripts/test/test-check-docs.sh
 OLD:    if (claims.length === 0) errors.push(`${row}: 대조할 굵은 라이브러리 값이 없다 — 공허하게 통과하지 않는다`)
 NEW:    if (false) errors.push('vacuous') // PROBE-REC
 SITE:errors.push('vacuous') // PROBE-REC
+
+### docs-compat-tagless-clone
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:  if (inGitRepo() && !gitOut(['tag', '-l']).trim()) {
+NEW:  if (false && inGitRepo()) { // PROBE-REC
+SITE:if (false && inGitRepo())

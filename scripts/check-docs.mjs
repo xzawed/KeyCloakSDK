@@ -725,6 +725,12 @@ function checkCompatTable(rel, lines, at) {
     errors.push(`${where} 앵커 뒤에 호환성 표가 없다 — 앵커는 바로 다음 줄의 표(머리 · 구분선 · 행)를 소유한다`)
     return
   }
+  // ⚠️ 태그를 하나도 받지 않은 클론(얕은 · 태그 미수신)은 「아직 안 민 태그」와 다르다 — 거기서 트리로 물러서면 트리와
+  // 맞춰 둔 표가 게시판과 갈려도 통과한다(독립 레그 지목). doc-facts 잡은 fetch-tags 로 받는다.
+  if (inGitRepo() && !gitOut(['tag', '-l']).trim()) {
+    errors.push(`${where} 이 클론에는 태그가 하나도 없다 — 행은 게시판의 태그와 대조한다(git fetch --tags 뒤 다시 돌린다)`)
+    return
+  }
   const seenLabels = new Set()
   for (let j = at + 3; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
     const cells = lines[j].trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
