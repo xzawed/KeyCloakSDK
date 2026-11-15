@@ -32,8 +32,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json",
-    "lint": "eslint src test --no-error-on-unmatched-pattern",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint": "eslint src test examples --no-error-on-unmatched-pattern",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"examples/**/*.ts\"",
     "test": "vitest run --coverage",
     "test:unit": "vitest run --coverage test/unit",
     "test:it": "vitest run --config vitest.integration.config.ts"
