@@ -1061,8 +1061,10 @@ ex_violations() { # $1 = 루트, 나머지 = 그 아래 경로 → 「경로: �
   _er="$1"; shift
   for _p in "$@"; do
     if [ ! -f "$_er/$_p" ]; then echo "$_p: README 가 링크하는데 파일이 없다"; continue; fi
-    grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
-      "$_er/$_p" | sed "s|^|$_p:|" || true
+    # IPv4 는 판이 아니다 — `127.0.0.1` 의 앞 세 마디가 판 리터럴로 걸리지 않게 먼저 가린다(독립 레그 지목).
+    sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/<ip>/g' "$_er/$_p" \
+      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+      | sed "s|^|$_p:|"
   done
 }
 _ex_list="$(ex_targets)"
@@ -1073,11 +1075,11 @@ assert_eq "1" "$([ "$_ex_n" -ge 9 ] && echo 1 || echo 0)" "[예제] README 가 �
 _ex_tmp="$(mktemp -d)"
 printf '%s\n' '// Dependency: x:y:<version> (Maven Central — currently unpublished).' > "$_ex_tmp/a.kt"
 printf '%s\n' 'implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.9")' > "$_ex_tmp/b.kts"
-printf '%s\n' 'serverUrl = "http://localhost:8080" // Keycloak 26.6' > "$_ex_tmp/c.kt"
+printf '%s\n' 'serverUrl = "http://localhost:8080" // Keycloak 26.6' 'val ip = "http://127.0.0.1:8080"' > "$_ex_tmp/c.kt"
 assert_contains "$(ex_violations "$_ex_tmp" a.kt)" "a.kt:1:" "[예제 판정] 「unpublished」 를 잡는다"
 assert_contains "$(ex_violations "$_ex_tmp" b.kts)" "b.kts:1:" "[예제 판정] 판 리터럴을 잡는다"
 assert_contains "$(ex_violations "$_ex_tmp" missing.kt)" "파일이 없다" "[예제 판정] 링크된 파일이 없으면 공허하게 통과하지 않는다"
-assert_eq "" "$(ex_violations "$_ex_tmp" c.kt)" "[예제 판정] 포트 · 두 마디 판은 주장이 아니다(대조군)"
+assert_eq "" "$(ex_violations "$_ex_tmp" c.kt)" "[예제 판정] 포트 · 두 마디 판 · IPv4 는 주장이 아니다(대조군)"
 rm -rf "$_ex_tmp"
 
 assert_report

@@ -159,16 +159,23 @@ SITE:if (false && REPO)
 ### examples-status-words
 FILE:scripts/test/test-publication-claims.sh
 TEST:scripts/test/test-publication-claims.sh
-OLD:    grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
-NEW:    grep -nEi 'not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+OLD:      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+NEW:      | grep -nEi 'not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
 SITE:grep -nEi 'not (yet )?published|
 
 ### examples-version-literal
 FILE:scripts/test/test-publication-claims.sh
 TEST:scripts/test/test-publication-claims.sh
-OLD:    grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
-NEW:    grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate' \
+OLD:      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+NEW:      | grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate' \
 SITE:release candidate' \
+
+### examples-ipv4-mask
+FILE:scripts/test/test-publication-claims.sh
+TEST:scripts/test/test-publication-claims.sh
+OLD:    sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/<ip>/g' "$_er/$_p" \
+NEW:    cat "$_er/$_p" \
+SITE:cat "$_er/$_p" \
 
 ### examples-missing-file
 FILE:scripts/test/test-publication-claims.sh
