@@ -216,6 +216,113 @@ OLD:    die "모르는 언어: $lang"
 NEW:    exit 0 # PROBE-REC
 SITE:exit 0 # PROBE-REC
 
+# ── 통합 장부의 하네스 소유 — 연결의 고리마다(integration-ledger-blind-to-harness-runs, 2026-11-16)
+
+### ledger-harness-copy
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:    if (!p.to) return `${rec.image} does not COPY ${f} into the final image`
+NEW:    if (!p.to) return null // PROBE-REC copy
+SITE:return null // PROBE-REC copy
+
+### ledger-harness-overwrite
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:    if (p.by) return `${rec.image}: a later COPY to ${p.by.dest} may overwrite ${f} at ${p.to}`
+NEW:    if (p.by) void 0 // PROBE-REC overwrite
+SITE:void 0 // PROBE-REC overwrite
+
+### ledger-harness-rewrite
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:    if (p.rewritten) return `${rec.image}: a RUN after the COPY of ${f} may rewrite it at ${p.to}`
+NEW:    if (p.rewritten) void 0 // PROBE-REC rewrite
+SITE:void 0 // PROBE-REC rewrite
+
+### ledger-harness-from-reset
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:      copies = []
+NEW:      void 0 // PROBE-REC from-reset
+SITE:void 0 // PROBE-REC from-reset
+
+### ledger-harness-from-skip
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:      if (!a || a.some((x) => /^--(from|parents)(=|$)/.test(x))) continue
+NEW:      if (!a) continue // PROBE-REC from-skip
+SITE:if (!a) continue // PROBE-REC from-skip
+
+### ledger-harness-cmd
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  if (!img.start.includes(at.entrypoint)) return `${rec.image}: CMD/ENTRYPOINT does not run ${at.entrypoint} (${rec.entrypoint})`
+NEW:  // PROBE-REC cmd
+SITE:// PROBE-REC cmd
+
+### ledger-harness-mainclass
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  if (mains.length !== 1 || mains[0] !== cls) return `${rec.project} must name ${cls} as its one <exec.mainClass> (found ${mains.join(', ') || 'none'})`
+NEW:  // PROBE-REC mainclass
+SITE:// PROBE-REC mainclass
+
+### ledger-harness-pom-override
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  if (/<skip>|<exec\.skip>|<mainClass>/.test(pom)) return `${rec.project} overrides the run — <skip>, <exec.skip> or a plugin <mainClass>`
+NEW:  // PROBE-REC pom-override
+SITE:// PROBE-REC pom-override
+
+### ledger-harness-unsafe
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  const unsafe = (c) => /^!/.test(c) || /[|;]/.test(c) || /(^|[^>&])&(?![&>])/.test(c)
+NEW:  const unsafe = () => false // PROBE-REC unsafe
+SITE:() => false // PROBE-REC unsafe
+
+### ledger-harness-overrides
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  const overrides = (t) => t.some((w) => /^-D(exec\.|skip\b)/.test(w) || /^--file\b/.test(w)) || t.filter((w) => w === '-f').length !== 1
+NEW:  const overrides = () => false // PROBE-REC overrides
+SITE:() => false // PROBE-REC overrides
+
+### ledger-harness-f-adjacent
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:    return !overrides(t) && t.includes('exec:java') && t.some((w, j) => w === '-f' && t[j + 1] === at.project)
+NEW:    return !overrides(t) && t.includes('exec:java') // PROBE-REC f-adjacent
+SITE:// PROBE-REC f-adjacent
+
+### ledger-harness-marker
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  if (!/^:\s*>\s*"?\$\{?STATUS\}?\/quickstart\.ok"?$/.test(lines[i + 1] ?? '')) return `${rec.entrypoint}: the line after that if is not : > "$STATUS/quickstart.ok"`
+NEW:  // PROBE-REC marker
+SITE:// PROBE-REC marker
+
+### ledger-harness-stray
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:  const stray = lines.find((x, j) => j !== i + 1 && x.includes('quickstart.ok') && !/^rm\s/.test(x))
+NEW:  const stray = null // PROBE-REC stray
+SITE:const stray = null // PROBE-REC stray
+
+### ledger-harness-no-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:    if (!rec) return `${key} is owned by ${HARNESS_OWNER}, but ${PINS} has no ${l}.harness record for ${file}`
+NEW:    if (!rec) return null // PROBE-REC no-record
+SITE:return null // PROBE-REC no-record
+
+### ledger-harness-unused
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-integration-coverage.sh
+OLD:      else if (!used.has(f)) drift(l, `harness record ${f} is not used by any owner entry — drop it`)
+NEW:      else if (!used.has(f)) void 0 // PROBE-REC unused
+SITE:void 0 // PROBE-REC unused
+
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
 
 ### DM1

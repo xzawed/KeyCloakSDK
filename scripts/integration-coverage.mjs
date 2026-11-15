@@ -372,14 +372,17 @@ function loadRegistry() {
 // 통째로 건너뛰는 변이가 조용히 지나가지 않게). 그 함수는 통합 스위트가 안 돌리지만 갭이 아니다 — 설치 하네스(harness.yml 의
 // install-all · 릴리스의 install-smoke)가 실서버에 대고 돌린다. `owners` 의 값 `harness:install` 이 그것이고, 같은 JSON 의
 // `harness` 가 그 파일을 돌리는 세 파일을 댄다. 이 리더는 그 연결을 트리에서 확인할 때만 소유로 친다(아니면 DRIFT):
-//   image      마지막 단계의 주석 아닌 `COPY` 가 그 파일(이나 조상 디렉터리)을 넣고, 뒤의 COPY 가 그 자리(나 조상)로 오지 않는다 —
-//              project · entrypoint 도 같다. CMD/ENTRYPOINT 가 entrypoint 를 돌린다.
+//   image      마지막 단계의 주석 아닌 `COPY` 가 그 파일(이나 조상 디렉터리)을 넣고, 뒤의 COPY 가 그 자리(나 조상)로 오지 않으며
+//              뒤에 `RUN` 도 없다(그 파일을 고칠 수 있다) — project · entrypoint 도 같다. CMD/ENTRYPOINT 가 entrypoint 를 돌린다.
 //   project    그 파일이 project 옆 `src/main/java/` 아래에 떨어지고, project(pom)의 `<exec.mainClass>` 가 하나이고 그 클래스다.
+//              `<skip>` · `<exec.skip>` · 플러그인 설정의 `<mainClass>`(속성을 이긴다)가 없다.
 //   entrypoint `if <… -f <project> … exec:java …>; then` 바로 다음 줄이 `: > "$STATUS/quickstart.ok"` 다. 조건에 `!` · `|` · `;` ·
-//              단독 `&` 가 없다(있으면 실행이 실패해도 표지가 선다). 표지에서 판정까지(quickstartOk → install-matrix --strict)는
-//              하네스 자신의 시험이 소유한다.
+//              단독 `&` 가 없고(있으면 실행이 실패해도 표지가 선다) `-Dexec.*` · `-Dskip` · `--file` · 두 번째 `-f` 도 없다. 표지를
+//              쓰는 줄은 그 한 줄이다(`rm` 은 된다). 표지에서 판정까지(quickstartOk → install-matrix --strict)는 하네스 자신의 시험이
+//              소유한다.
 // ⚠️ 연결은 파일 단위지만 소유는 함수 단위다 — 파일에 함수가 늘면 그 함수도 소유자 항목을 받아야 한다(main 이 그 함수를 부르는지는
-//    이 리더가 보지 않는다 — 검토자의 판정이다). `RUN` 이 복사한 파일을 지우거나 고치는 것도 보지 않는다.
+//    이 리더가 보지 않는다 — 검토자의 판정이다). 실행 스크립트가 돌리기 전에 그 파일을 고치는 것 · 변수로 만든 표지 이름도 보지
+//    않는다.
 // ⚠️ java(Maven exec:java)만 읽는다 — 다른 언어의 기록은 확인할 수 없으므로 DRIFT 다.
 const HARNESS_OWNER = 'harness:install'
 const HARNESS_KEYS = ['entrypoint', 'image', 'project']
@@ -409,14 +412,19 @@ function dockerArgs(args) {
 function dockerImage(text) {
   let wd = null
   let copies = []
+  let runs = []
   let cmd = []
   let entry = []
   for (const { op, args } of dockerInstructions(text)) {
     if (op === 'FROM') {
       wd = null
       copies = []
+      runs = []
       cmd = []
       entry = []
+    } else if (op === 'RUN') {
+      // 그때까지의 COPY 수 — 이 RUN 은 그 앞의 COPY 가 넣은 파일을 고칠 수 있다.
+      runs.push(copies.length)
     } else if (op === 'WORKDIR') {
       const w = dockerArgs(args)?.[0] ?? ''
       wd = w.startsWith('/') ? posix.normalize(w) : wd && w ? posix.join(wd, w) : null
@@ -434,7 +442,7 @@ function dockerImage(text) {
       else entry = a
     }
   }
-  return { copies, run: [...entry, ...cmd] }
+  return { copies, runs, start: [...entry, ...cmd] }
 }
 // 빌드 맥락의 `file` 이 이 COPY 로 이미지의 어디에 떨어지는가(안 떨어지면 null). 디렉터리 소스는 그 **내용**이 대상 아래로 간다
 // (디렉터리 자신이 아니다 — Docker 의 COPY). 소스가 여럿이거나 대상이 `/` 로 끝나면 대상은 디렉터리다.
@@ -447,8 +455,8 @@ function landing(copy, file) {
   }
   return null
 }
-// 그 파일을 넣는 마지막 COPY 의 자리. 뒤의 COPY 가 그 자리나 조상 디렉터리로 오면 덮였을 수 있어 인정하지 않는다(보수적이다 —
-// 덮는 쪽에 그 파일이 없어도).
+// 그 파일을 넣는 마지막 COPY 의 자리. 뒤의 COPY 가 그 자리나 조상 디렉터리로 오면 덮였을 수 있고(보수적이다 — 덮는 쪽에 그
+// 파일이 없어도), 뒤에 RUN 이 있으면 고쳐졌을 수 있다 — 둘 다 인정하지 않는다.
 function placed(img, file) {
   let at = -1
   img.copies.forEach((c, i) => {
@@ -457,7 +465,7 @@ function placed(img, file) {
   if (at < 0) return {}
   const to = landing(img.copies[at], file)
   const by = img.copies.slice(at + 1).find((c) => c.dest === '/' || c.dest === to || to.startsWith(`${c.dest}/`))
-  return { to, by }
+  return { to, by, rewritten: img.runs.some((n) => n > at) }
 }
 const harnessMemo = new Map()
 // 연결이 서면 null, 아니면 그 까닭(파일마다 한 번 잰다).
@@ -479,9 +487,10 @@ function harnessLink(l, file, rec) {
     const p = placed(img, f)
     if (!p.to) return `${rec.image} does not COPY ${f} into the final image`
     if (p.by) return `${rec.image}: a later COPY to ${p.by.dest} may overwrite ${f} at ${p.to}`
+    if (p.rewritten) return `${rec.image}: a RUN after the COPY of ${f} may rewrite it at ${p.to}`
     at[k] = p.to
   }
-  if (!img.run.includes(at.entrypoint)) return `${rec.image}: CMD/ENTRYPOINT does not run ${at.entrypoint} (${rec.entrypoint})`
+  if (!img.start.includes(at.entrypoint)) return `${rec.image}: CMD/ENTRYPOINT does not run ${at.entrypoint} (${rec.entrypoint})`
   const src = `${posix.dirname(at.project)}/src/main/java/`
   if (!at.file.startsWith(src) || !at.file.endsWith('.java')) return `${file} lands at ${at.file}, outside the source root ${src} of ${at.project}`
   const cls = at.file.slice(src.length, -'.java'.length).replace(/\//g, '.')
@@ -489,17 +498,24 @@ function harnessLink(l, file, rec) {
   const pom = text.project.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
   const mains = [...pom.matchAll(/<exec\.mainClass>\s*([^<]*?)\s*<\/exec\.mainClass>/g)].map((m) => m[1])
   if (mains.length !== 1 || mains[0] !== cls) return `${rec.project} must name ${cls} as its one <exec.mainClass> (found ${mains.join(', ') || 'none'})`
+  // 실행을 끄거나(`<skip>` · `<exec.skip>`) 플러그인 설정의 `<mainClass>` 가 속성을 이기면 그 클래스가 안 돈다(독립 레그 지목).
+  if (/<skip>|<exec\.skip>|<mainClass>/.test(pom)) return `${rec.project} overrides the run — <skip>, <exec.skip> or a plugin <mainClass>`
   const lines = text.entrypoint.split('\n').filter((x) => !/^\s*#/.test(x)).join('\n').replace(/\\[ \t]*\n/g, ' ').split('\n').map((x) => x.trim()).filter(Boolean)
   // 실행이 실패해도 조건이 참일 수 있는 꼴 — 부정 · 파이프 · `||` · `;` · 배경 실행(`2>&1` · `&&` · `&>` 는 아니다).
   const unsafe = (c) => /^!/.test(c) || /[|;]/.test(c) || /(^|[^>&])&(?![&>])/.test(c)
+  // 프로젝트를 그대로 돌리지 않는 꼴 — 실행을 끄거나(-Dexec.skip · -Dskip) 진입점을 바꾸거나(-Dexec.mainClass) 다른 pom 을 준다.
+  const overrides = (t) => t.some((w) => /^-D(exec\.|skip\b)/.test(w) || /^--file\b/.test(w)) || t.filter((w) => w === '-f').length !== 1
   const i = lines.findIndex((x) => {
     const m = /^if\s+(.*?)\s*;\s*then$/.exec(x)
     if (!m || unsafe(m[1])) return false
     const t = m[1].split(/\s+/)
-    return t.includes('exec:java') && t.some((w, j) => w === '-f' && t[j + 1] === at.project)
+    return !overrides(t) && t.includes('exec:java') && t.some((w, j) => w === '-f' && t[j + 1] === at.project)
   })
-  if (i < 0) return `${rec.entrypoint} has no \`if … -f ${at.project} … exec:java …; then\` whose condition fails when the run fails (no !, |, ; or lone &)`
+  if (i < 0) return `${rec.entrypoint} has no \`if … -f ${at.project} … exec:java …; then\` whose condition fails when the run fails (no !, |, ; or lone &) and runs the project as it is (no -Dexec.*, -Dskip, --file or second -f)`
   if (!/^:\s*>\s*"?\$\{?STATUS\}?\/quickstart\.ok"?$/.test(lines[i + 1] ?? '')) return `${rec.entrypoint}: the line after that if is not : > "$STATUS/quickstart.ok"`
+  // 표지는 그 한 줄만 쓴다 — else 갈래나 다른 자리에서도 쓰면 실행이 실패해도 표지가 선다(독립 레그 지목). 지우는 줄(rm)은 된다.
+  const stray = lines.find((x, j) => j !== i + 1 && x.includes('quickstart.ok') && !/^rm\s/.test(x))
+  if (stray) return `${rec.entrypoint}: quickstart.ok is written outside that if too — ${stray}`
   return null
 }
 // 소유자 판정 — 열린 등록부 항목이거나, 트리에서 확인되는 하네스 연결이다. 문제가 없으면 null.
