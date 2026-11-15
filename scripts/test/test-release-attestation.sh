@@ -24,7 +24,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$DIR/../.."
 
 ATTEST='actions/attest-build-provenance'
-# Central 에 올리는 명령. 새 표기가 생기면 여기 더한다 — 그 diff 자체가 리뷰 대상이다.
+# 레지스트리에 올리는 명령(정규식) → 그 레지스트리가 **소비자에게 주는** 파일 종류. 이 표가 게시 명령의 SSOT 다 —
+# PUBLISH_RE 는 여기서 파생한다. 새 표기가 생기면 여기 더한다 — 그 diff 자체가 리뷰 대상이다.
+# ⚠️ 종류는 「올린 것」이 아니라 「받는 것」이다 — nuget.org 는 nupkg 에 저장소 서명을 넣어 바이트를 바꾸므로(실측)
+# 소비자가 잴 수 있는 것은 그 안의 `.dll` 이고, Packagist 는 GitHub zipball 을 주므로 그 안의 `.php` 다.
 #
 # ⚠️ **좁게 쓰면 서식 변경 하나로 워크플로가 조준에서 빠진다**(독립 리뷰 지목, 셋 다 집안 관용이다):
 #   · 줄 이음 — `mvn -B -f java/pom.xml \` + `  -Prelease deploy` → 어느 줄도 매치 안 됨
@@ -34,7 +37,33 @@ ATTEST='actions/attest-build-provenance'
 # 그래서 (a) 줄 이음을 **먼저 잇고** (b) 패턴을 표기 변주에 견디게 쓴다.
 # ⚠️ 미러 태그 push 는 `<브랜치>:refs/tags/…` 꼴만이다 — `dispatch-release.yml` 이 이 저장소에 태그를 미는
 # `git push <url> "refs/tags/<tag>"` 는 게시가 아니다(콜론이 없다 — 대조군이 고정한다).
-PUBLISH_RE='mvnw?[^|]*deploy|publish[A-Za-z]*MavenCentral|publishAllPublications|dotnet nuget push|cargo publish|gem push|git push[^|]*[^[:space:]"'"'"']:refs/tags/'
+TAB="$(printf '\t')"
+KINDS="$(printf '%s\t%s\n' \
+  'mvnw?[^|]*deploy' '.jar' \
+  'publish[A-Za-z]*MavenCentral' '.jar' \
+  'publishAllPublications' '.jar' \
+  'dotnet nuget push' '.dll' \
+  'cargo publish' '.crate' \
+  'gem push' '.gem' \
+  'git push[^|]*[^[:space:]"'"'"']:refs/tags/' '.php')"
+PUBLISH_RE="$(printf '%s\n' "$KINDS" | cut -f1 | paste -sd'|' -)"
+
+# 잡 블록 안의 증명 단계마다 「subject-path 값 <TAB> continue-on-error 유무 <TAB> if 유무」 한 줄. 단계의 경계는
+# `steps:` 바로 아래 들여쓰기의 `- ` 다(더 깊은 `- ` 는 그 단계의 값이다).
+_attest_steps() { # <잡 블록>
+  printf '%s\n' "$1" | awk -v at="$ATTEST" '
+    function flush() { if (step ~ at) printf "%s\t%d\t%d\n", subj, coe, cond; step = ""; subj = ""; coe = 0; cond = 0 }
+    /^[[:space:]]*steps:[[:space:]]*(#.*)?$/ { flush(); match($0, /^[[:space:]]*/); si = RLENGTH + 2; next }
+    si && match($0, /^[[:space:]]*- /) && RLENGTH - 2 == si { flush() }
+    si {
+      step = step "\n" $0
+      if ($0 ~ /^[[:space:]]*(- )?subject-path:/) { v = $0; sub(/^[[:space:]]*(- )?subject-path:[[:space:]]*/, "", v); sub(/[[:space:]]+$/, "", v); gsub(/^["\047]|["\047]$/, "", v); subj = v }
+      if ($0 ~ /^[[:space:]]*(- )?continue-on-error:/) coe = 1
+      if ($0 ~ /^[[:space:]]*(- )?if:/) cond = 1
+    }
+    END { flush() }
+  '
+}
 
 # ── 판정 ────────────────────────────────────────────────────────────────────
 # 위반을 한 줄에 하나씩 stdout 으로 낸다(빈 출력 = 위반 없음). 「게시 워크플로 0개」도 위반이다.
@@ -145,6 +174,26 @@ _findings() { # _findings <워크플로 디렉터리>
       # `build/libs` 가 없는 새 트리를 체크아웃하고 죽는다.
       printf '%s' "$b" | grep -qF "$ATTEST" ||
         echo "$wf: 증명 단계가 게시 잡 **밖**에 있다 — 그 잡은 산출물이 없는 트리에서 돈다"
+      # ⚠️ **증명 단계마다** 셋을 본다(독립 레그 지목 — 셋 다 「단계가 있다」로는 통과했다):
+      #   · `subject-path` 는 글롭 **하나**다 — 액션은 목록 **전체**가 0 일 때만 실패하므로, 한 목록의 글롭 하나가
+      #     비어도(DLL 꺼내기가 깨졌다) 다른 글롭이 맞으면 초록이다.
+      #   · `continue-on-error` · `if:` 가 없다 — 증명이 실패하거나 조건부로 빠져도 게시는 초록이다.
+      #   · 그 잡의 게시 명령마다 레지스트리가 **소비자에게 주는** 파일 종류(KINDS)를 덮는 증명이 있다 — nupkg 만 ·
+      #     gemspec · composer.json 만 증명하면 단계는 있는데 소비자가 받은 바이트는 아무도 증명하지 않는다.
+      steps="$(_attest_steps "$b")"
+      printf '%s\n' "$steps" | while IFS="$TAB" read -r subj coe cond; do
+        [ -n "$subj$coe$cond" ] || continue
+        case "$subj" in
+          '' | '|'* | '>'* | *,*) echo "$wf: 증명 단계의 \`subject-path\` 가 글롭 하나가 아니다(${subj:-빈 값}) — 목록이면 빈 글롭이 다른 글롭에 가려 조용히 지나간다" ;;
+        esac
+        [ "$coe" = 0 ] || echo "$wf: 증명 단계에 \`continue-on-error\` 가 있다 — 증명이 실패해도 게시는 초록이다"
+        [ "$cond" = 0 ] || echo "$wf: 증명 단계에 \`if:\` 가 있다 — 증명이 조건부로 빠질 수 있다"
+      done
+      printf '%s\n' "$KINDS" | while IFS="$TAB" read -r kre ext; do
+        printf '%s' "$b" | grep -qE -- "$kre" || continue
+        printf '%s\n' "$steps" | cut -f1 | grep -qE -- "\\${ext}\$" ||
+          echo "$wf: 게시 명령(\`$kre\`)의 레지스트리가 주는 \`*$ext\` 를 덮는 증명 단계가 없다 — 소비자가 받은 바이트를 아무도 증명하지 않는다"
+      done
     done
     IFS="$OLDIFS"
     [ "$nblk" -ge 1 ] ||
@@ -340,15 +389,38 @@ printf '%s\n' 'name: x' 'jobs:' '  a:' '    steps:' '      - run: echo hi' > "$W
 assert_contains "$(_findings "$W")" "하나도 못 찾았다" "[음성대조] 게시 워크플로가 0개면 공허 하한이 운다"
 
 # ── 네 레인(.NET · Rust · Ruby · PHP 미러)의 게시 명령도 조준에 든다(release-provenance-four-lanes) ──
-for cmd in '      - run: dotnet nuget push "artifacts/*.nupkg" --api-key "$K" --source https://api.nuget.org/v3/index.json' \
-  '      - run: cargo publish --locked --token "$T"' \
-  '      - run: gem push keycloak-sdk-*.gem' \
-  '      - run: git push "$REMOTE" "php-split:refs/tags/v${VERSION}"'; do
+while IFS="$TAB" read -r cmd subj; do
   _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" "$cmd"
   assert_contains "$(_findings "$W")" "단계가 없다" "[음성대조] 게시 명령으로 본다 — $cmd"
-  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$cmd" "$PIN" "$WITH" "$SUBJ"
-  assert_eq "" "$(_findings "$W")" "[대조] 증명이 뒤에 있으면 위반 없음 — $cmd"
+  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$cmd" "$PIN" "$WITH" "          subject-path: '$subj'"
+  assert_eq "" "$(_findings "$W")" "[대조] 받는 파일을 덮는 증명이 뒤에 있으면 위반 없음 — $cmd"
+  # 레지스트리가 주는 종류가 아닌 것만 증명하면(nupkg · gemspec · composer.json — 독립 레그 지목) 운다.
+  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$cmd" "$PIN" "$WITH" "          subject-path: 'out/other.txt'"
+  assert_contains "$(_findings "$W")" "를 덮는 증명 단계가 없다" "[음성대조] 받는 파일 종류를 안 덮으면 운다 — $cmd"
+done <<EOF
+      - run: dotnet nuget push "artifacts/*.nupkg" --api-key "\$K" --source https://api.nuget.org/v3/index.json${TAB}nupkg-content/lib/**/*.dll
+      - run: cargo publish --locked --token "\$T"${TAB}rust/target/package/keycloak-sdk-*.crate
+      - run: gem push keycloak-sdk-*.gem${TAB}ruby/keycloak-sdk-*.gem
+      - run: git push "\$REMOTE" "php-split:refs/tags/v\${VERSION}"${TAB}php/src/**/*.php
+EOF
+# 실제로 있었던 꼴 셋 — nupkg 만 · gemspec · composer.json 만(독립 레그 지목).
+for bad in "      - run: dotnet nuget push x.nupkg${TAB}artifacts/*.nupkg" "      - run: gem push x.gem${TAB}ruby/keycloak-sdk.gemspec" \
+  "      - run: git push \"\$R\" \"s:refs/tags/v1\"${TAB}php/composer.json"; do
+  _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "${bad%%"$TAB"*}" "$PIN" "$WITH" "          subject-path: '${bad##*"$TAB"}'"
+  assert_contains "$(_findings "$W")" "를 덮는 증명 단계가 없다" "[음성대조] 소비자가 받지 않는 것만 증명하면 운다 — ${bad##*"$TAB"}"
 done
+# 증명 단계마다 — 글롭 목록 · continue-on-error · if: 는 운다(정상 꼴은 위 (e) 가 이미 0 이다).
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$PUBSTEP" "$PIN" "$WITH" '          subject-path: |' '            java/*/target/*.jar' '            other/*.dll'
+assert_contains "$(_findings "$W")" "글롭 하나가 아니다(|)" "[음성대조] 블록 목록의 subject-path 는 운다"
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$PUBSTEP" "$PIN" "$WITH" "          subject-path: 'java/*/target/*.jar,other/*.dll'"
+assert_contains "$(_findings "$W")" "글롭 하나가 아니다(java/*/target/*.jar,other/*.dll)" "[음성대조] 쉼표 목록의 subject-path 는 운다"
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$PUBSTEP" "$PIN" '        continue-on-error: true' "$WITH" "$SUBJ"
+assert_contains "$(_findings "$W")" "\`continue-on-error\` 가 있다" "[음성대조] continue-on-error 를 단 증명은 운다"
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$PUBSTEP" "$PIN" "        if: \${{ false }}" "$WITH" "$SUBJ"
+assert_contains "$(_findings "$W")" "\`if:\` 가 있다" "[음성대조] if: 를 단 증명은 운다"
+# 다른 단계의 if: · continue-on-error 는 증명 단계의 것이 아니다(단계 경계를 옳게 자른다).
+_wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$OKPERM1" "$OKPERM2" "$STEPS" "$PUBSTEP" '        if: always()' '        continue-on-error: true' "$PIN" "$WITH" "$SUBJ"
+assert_eq "" "$(_findings "$W")" "[대조] 앞 단계의 if: · continue-on-error 는 증명 단계의 것이 아니다"
 # 이 저장소에 태그를 미는 push(dispatch-release 의 꼴)는 게시가 아니다 — 콜론 없는 ref 다.
 _wf "$HEAD1" "$HEAD2" "$HEAD3" "$PERMS" "$RDPERM" "$STEPS" '      - run: git push "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"'
 assert_not_contains "$(_findings "$W")" "단계가 없다" "[대조] 이 저장소의 태그 push 는 게시가 아니다"

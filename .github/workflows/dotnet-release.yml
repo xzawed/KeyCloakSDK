@@ -172,17 +172,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: gh release create "${GITHUB_REF_NAME}" artifacts/* --prerelease="${PRERELEASE}" --title "${GITHUB_REF_NAME}" --generate-notes
-      # 출처 증명 — 이 잡이 게시한 그 바이트(release.yml 과 같은 원칙: 게시 **뒤에** 건다 · 글롭이 비면 액션이 실패한다).
+      # 출처 증명 — 이 잡이 게시한 그 바이트(release.yml 과 같은 원칙: 게시 **뒤에** 건다).
       # ⚠️ nuget.org 는 받은 nupkg 에 저장소 서명(`.signature.p7s`)을 넣어 **바이트를 바꾼다** — 실측(1.0.7): 이 잡이
-      # 올린 nupkg(Release 자산)와 nuget.org 의 nupkg 는 다르고, 그 안의 DLL 은 같은 바이트였다. 그래서 nupkg ·
-      # snupkg 의 증명은 Release 자산과 맞고, nuget.org 에서 받은 패키지는 nupkg 에서 꺼낸 DLL 의 증명으로 잰다
-      # (전역 패키지 폴더의 `lib/<tfm>/*.dll`). Release 자산(`artifacts/*`)에 섞이지 않게 위 단계 뒤에 꺼낸다.
+      # 올린 nupkg(Release 자산)와 nuget.org 의 nupkg 는 다르고, 그 안의 DLL 은 같은 바이트였다. 그래서 nupkg 의 증명은
+      # Release 자산과 맞고, nuget.org 에서 받은 패키지는 nupkg 에서 꺼낸 DLL 의 증명으로 잰다(전역 패키지 폴더의
+      # `lib/<tfm>/*.dll`). Release 자산(`artifacts/*`)에 섞이지 않게 위 단계 뒤에 꺼낸다. 기호(snupkg)는 실행되는 코드가
+      # 아니라 증명하지 않는다.
+      # ⚠️ **글롭 하나에 단계 하나다.** 액션은 목록 전체가 0 일 때만 실패한다 — 한 목록에 두면 꺼내기가 깨져 DLL 글롭이
+      # 비어도 nupkg 가 맞아 초록이다(독립 레그 지목 · `test-release-attestation.sh` 가 강제한다).
       - name: Extract the DLLs the package carries
         run: unzip -q -o 'artifacts/*.nupkg' 'lib/*' -d nupkg-content
-      - name: Attest build provenance (게시한 그 바이트)
+      - name: Attest build provenance (게시한 nupkg — Release 자산)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: |
-            artifacts/*.nupkg
-            artifacts/*.snupkg
-            nupkg-content/lib/**/*.dll
+          subject-path: 'artifacts/*.nupkg'
+      - name: Attest build provenance (패키지가 싣는 DLL — nuget.org 에서 받은 그 바이트)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'nupkg-content/lib/**/*.dll'
