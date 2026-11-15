@@ -692,6 +692,11 @@ const COMPAT = {
   Ruby: ['ruby', 'ruby/keycloak-sdk.gemspec'],
   Kotlin: ['kotlin', 'kotlin/build.gradle.kts'],
 }
+// 런타임 하한과 별도로 그 행이 말하는 하한 — Kotlin 은 소비자 컴파일러 하한(`languageVersion` = 게시 메타데이터 판)을
+// 「Kotlin X.Y+」 로 적는다. ⚠️ mentions 로 보지 않는다 — 같은 칸의 「metadata pinned to 2.2」 가 대신 걸려 통과한다.
+const COMPAT_CONSUMER_FLOOR = {
+  kotlin: ['kotlin/build.gradle.kts', (t) => /languageVersion\.set\([^)]*KotlinVersion\.KOTLIN_(\d+)_(\d+)\)/.exec(t)?.slice(1, 3).join('.')],
+}
 // `name` **값** — 이름 뒤 괄호 설명(`jwt` (ruby-jwt) **~>3.2**)은 건너뛴다.
 const COMPAT_CLAIM = /`([^`]+)`(?:\s*\([^)]*\))?\s*\*\*([^*]+)\*\*/g
 // 그 판의 태그가 있으면 태그 이름, 없으면 null(작업 트리).
@@ -789,6 +794,18 @@ function checkCompatTable(rel, lines, at) {
     if (v === null) errors.push(`${row}: ${at_}:${rtRel} 에서 런타임 하한을 읽지 못했다`)
     else if (!mentionsValue(rest, v) && !(/^\d+\.0$/.test(v) && mentionsValue(rest, v.slice(0, -2))))
       errors.push(`${row}: 런타임 하한 ${v}(${at_}:${rtRel} 의 ${raw}) 를 이 칸이 말하지 않는다`)
+    const cf = COMPAT_CONSUMER_FLOOR[lang]
+    if (cf) {
+      let fv = null
+      try {
+        fv = cf[1](compatText(ref, cf[0])) ?? null
+      } catch {
+        fv = null
+      }
+      if (fv === null) errors.push(`${row}: ${at_}:${cf[0]} 에서 소비자 하한을 읽지 못했다`)
+      else if (!new RegExp(`(?<![\\d.])${label} ${fv.replace(/\./g, '\\.')}\\+`).test(rest))
+        errors.push(`${row}: 소비자 하한 ${fv}(${at_}:${cf[0]} 의 languageVersion) 를 「${label} ${fv}+」 로 말하지 않는다`)
+    }
     facts++
   }
   // 언어 집합은 DEPLOY_LANGS 가 소유한다 — 표가 한 언어를 빠뜨리거나 COMPAT 이 새 언어를 모르면 실패한다.

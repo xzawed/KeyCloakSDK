@@ -2015,5 +2015,11 @@ _compat_doc "6.2.13" "Node 22+" "11.38.2"
 _kt_row 2.3
 assert_fails node "$GUARD" "$TMP"
 assert_contains "$(_compat_out)" "소비자 하한 2.2" "[compat] Kotlin 소비자 하한(languageVersion)을 「Kotlin X.Y+」 로 말하지 않으면 실패한다"
+# 소비자 하한을 못 읽으면 통과가 아니다 — 태그 없는 판(트리)의 빌드 파일에서 languageVersion 을 지운다.
+_compat_doc "6.2.13" "Node 22+" "11.38.2"
+printf '%s\n' "| Kotlin \`1.0.1\` | 26.6.x | \`nimbus-jose-jwt\` **10.10** · Kotlin 2.2+ consumers · JDK 17+ |" >> "$TMP/compat.md"
+sed -i '/languageVersion/d' "$TMP/kotlin/build.gradle.kts"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "트리:kotlin/build.gradle.kts 에서 소비자 하한을 읽지 못했다" "[compat] 소비자 하한을 못 읽으면 실패한다"
 
 assert_report
