@@ -21,7 +21,7 @@ cd python && "$PY" -m pytest -m "not integration" --cov=keycloak_sdk   # unit + 
 cd python && "$PY" -m pytest -m integration                            # needs Docker (testcontainers)
 cd python && "$PY" -m ruff check src tests examples                    # includes the security S/bandit rules
 cd python && "$PY" -m ruff format --check src tests examples
-cd python && "$PY" -m mypy src                                         # strict
+cd python && "$PY" -m mypy src examples                                # strict
 cd python && "$PY" -m pip install build && "$PY" -m build              # release build check (`build` is not in [dev])
 ```
 

@@ -57,7 +57,8 @@ jobs:
         working-directory: .
         run: node scripts/check-canaries-ran.mjs --lang python --report "$RUNNER_TEMP/canaries/python.xml"
       - name: mypy (strict)
-        run: mypy src
+        # examples 도 본다 — README 가 링크하는 예제가 이름이 바뀐 API 를 부르면 여기서 실패한다(실행은 실서버가 필요해 하지 않는다).
+        run: mypy src examples
       - name: pip-audit (의존성 취약점 감사)
         # editable 로컬 패키지(keycloak-sdk, PyPI 미배포)는 감사 불가로 skip되고, pip-audit는
         # skip이 하나라도 있으면 종료코드 1(불완전 감사 신호)을 낸다(--skip-editable도 라벨만 바꿈).
