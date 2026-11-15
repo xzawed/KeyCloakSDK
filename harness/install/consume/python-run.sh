@@ -85,8 +85,11 @@ else
   sleep 3600; exit 1   # 컨테이너를 살려둬 진단 가능하게(오케스트레이터는 마커 부재로 실패 판정)
 fi
 
-echo "[python-run] 2/3 quickstart 스모크 — python3 quickstart.py"
-if python3 quickstart.py >/tmp/qs.log 2>&1; then
+echo "[python-run] 2/3 quickstart 스모크 — README 예제 python3 quickstart.py · async_quickstart.py"
+# 둘 다 돈다 — 동기가 실패해도 aio 를 돌려, 두 번째 고장이 첫 고장 뒤에 가려지지 않게 한다(판정은 둘 다 성공일 때만).
+python3 quickstart.py >/tmp/qs.log 2>&1; _qs_sync=$?
+python3 async_quickstart.py >>/tmp/qs.log 2>&1; _qs_aio=$?
+if [ "$_qs_sync" = 0 ] && [ "$_qs_aio" = 0 ]; then
   : > "$STATUS/quickstart.ok"
   echo "[python-run] quickstart OK"
 else

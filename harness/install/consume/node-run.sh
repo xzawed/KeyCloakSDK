@@ -75,8 +75,10 @@ else
   sleep 3600; exit 1   # 컨테이너를 살려둬 진단 가능하게(오케스트레이터는 마커 부재로 실패 판정)
 fi
 
-echo "[node-run] 2/3 quickstart 스모크 — node quickstart.mjs"
-if node quickstart.mjs >/tmp/qs.log 2>&1; then
+echo "[node-run] 2/3 quickstart 스모크 — README 예제 node --experimental-strip-types quickstart.ts"
+# 예제는 KEYCLOAK_* 를 읽는다 — 오케스트레이터가 넘기는 KC_* 를 그 이름으로 잇는다.
+if KEYCLOAK_URL="$KC_SERVER_URL" KEYCLOAK_REALM="$KC_REALM" KEYCLOAK_CLIENT_ID="$KC_CLIENT_ID" \
+   KEYCLOAK_CLIENT_SECRET="$KC_CLIENT_SECRET" node --experimental-strip-types quickstart.ts >/tmp/qs.log 2>&1; then
   : > "$STATUS/quickstart.ok"
   echo "[node-run] quickstart OK"
 else

@@ -14,8 +14,9 @@ WORKDIR /work
 COPY harness/install/consume/kotlin-app/ ./app/
 # harness app 소스(무변경 재사용) — Application.kt(boot 앱, io.github.xzawed.harness 패키지).
 COPY harness/apps/kotlin/src ./app/src
-# quickstart 소스(설치 스모크 main) — 같은 패키지 경로에 추가해 함께 컴파일.
-COPY harness/install/quickstart/kotlin/Quickstart.kt ./app/src/main/kotlin/io/github/xzawed/harness/Quickstart.kt
+# quickstart 소스(설치 스모크 main)는 README 가 링크하는 예제 **그 자체**다(사본을 두지 않는다). 기본 패키지라
+# 클래스는 QuickstartKt 이고(build.gradle.kts 의 runQuickstart), 예제는 KC_SERVER_URL · KC_REALM · … 를 읽는다.
+COPY kotlin/examples/quickstart.kt ./app/src/main/kotlin/quickstart.kt
 
 COPY harness/install/consume/kotlin-run.sh ./run.sh
 

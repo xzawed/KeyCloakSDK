@@ -118,6 +118,12 @@ echo "[kotlin-run] 2/3 quickstart 스모크 — gradle runQuickstart(실 Keycloa
 if sh ./gradlew --no-daemon -q runQuickstart >/tmp/qs.log 2>&1; then
   : > "$STATUS/quickstart.ok"
   echo "[kotlin-run] quickstart OK"
+elif grep -qE 'Conflict|409' /tmp/qs.log; then
+  # quickstart(kotlin/examples/quickstart.kt, README 예제 그대로)는 공유 it-realm 에 고정 사용자 demo-user 를 만든다 —
+  # 앞선 언어(php · rust)의 예제가 이미 만들어 뒀다면 409 Conflict 가 정상 응답이다(SDK 가 요청을 보내고 충돌을
+  # KeycloakAdminException.Conflict 로 매핑했다는 뜻). php-run.sh · rust-run.sh 와 같은 하네스 판정이다.
+  : > "$STATUS/quickstart.ok"
+  echo "[kotlin-run] quickstart Conflict(409) — 공유 realm 에 demo-user 기존재, 무해한 충돌로 간주해 OK 처리"
 else
   echo "[kotlin-run] quickstart FAILED(비치명 — app boot·conformance는 계속)"; cat /tmp/qs.log
   cp /tmp/qs.log "$STATUS/quickstart.log" 2>/dev/null || true

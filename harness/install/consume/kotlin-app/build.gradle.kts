@@ -63,9 +63,10 @@ application {
     applicationName = "harness-app-kotlin"
 }
 
-// 설치 스모크(quickstart) — 설치된 SDK 패키지로 실 Keycloak에 client-credentials 토큰을 받아 검증한다.
+// 설치 스모크(quickstart) — README 가 링크하는 예제(kotlin/examples/quickstart.kt, 기본 패키지)를 설치된 SDK 패키지로
+// 실 Keycloak 에 대고 돌린다(토큰 · 검증 · admin 사용자 생성).
 tasks.register<JavaExec>("runQuickstart") {
     group = "verification"
-    mainClass.set("io.github.xzawed.harness.QuickstartKt")
+    mainClass.set("QuickstartKt")
     classpath = sourceSets["main"].runtimeClasspath
 }
