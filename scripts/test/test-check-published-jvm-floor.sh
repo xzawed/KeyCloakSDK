@@ -457,8 +457,14 @@ _r="$(attest "$FIX/db-twice.json" "$BA")"
 assert_eq "0" "${_r%%|*}" "[증명] 증명이 둘이어도 고정값에 맞는 것이 있으면 통과한다"
 # 저장소를 모르면 고정할 서명자가 없다 — 조용히 건너뛰지 않는다.
 cp "$FIX/db-ok.json" "$FIX/db.json"
-_c=0; env -u GITHUB_REPOSITORY node "$GUARD" "--root=$R" "--base=$BA" --attest "--gh=$FAKE" >/dev/null 2>&1 || _c=$?
+_o="$(env -u GITHUB_REPOSITORY node "$GUARD" "--root=$R" "--base=$BA" --attest "--gh=$FAKE" 2>&1)" && _c=0 || _c=$?
 assert_eq "1" "$_c" "[증명] --repo 도 GITHUB_REPOSITORY 도 없으면 실패한다"
+# 이름까지 본다 — 이 분기가 없어도 가짜 검증기가 빈 --repo 를 거부해 종료 코드는 같은 1 이다.
+assert_contains "$_o" "no-repo" "[증명] 실패 이름이 no-repo 다 — 검증기가 빈 저장소를 거부해 나는 실패와 가른다"
+# 검증기를 실행하지 못하면(gh 가 없다) 판정을 못 한 것이지 통과가 아니다.
+_o="$(env -u GITHUB_REPOSITORY node "$GUARD" "--root=$R" "--base=$BA" --attest --repo=o/r "--gh=$FIX/no-such-gh" 2>&1)" && _c=0 || _c=$?
+assert_eq "1" "$_c" "[증명] 검증기를 실행하지 못하면 실패한다"
+assert_contains "$_o" "attest-tool-unavailable" "[증명] 실패 이름이 attest-tool-unavailable 다 — 「증명 불일치」 와 가른다"
 
 # 봉인 이전 판 — **경계 상수 하나로 얼린다**(1.0.2 미만은 증명이 없다, 실측). 1.0.1 은 건너뛰고 1.0.2 는 반드시 잰다.
 RB="$FIX/repo-seal"; BB="$FIX/base-seal"
