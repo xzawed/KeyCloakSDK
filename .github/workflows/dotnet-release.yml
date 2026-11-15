@@ -150,6 +150,14 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           dotnet pack dotnet/src/Xzawed.Keycloak.Sdk/Xzawed.Keycloak.Sdk.csproj -c Release -o artifacts -p:Version="$VERSION" -p:ContinuousIntegrationBuild=true
+      # 아래 출처 증명이 잴 DLL 을 **되돌릴 수 없는 push 전에** 꺼내고 있는지 본다 — 게시 뒤에 처음 깨지면 그 판은 증명 없이
+      # 남는다(다시 돌리면 push 가 중복으로 실패해 증명에 닿지 못한다). 멤버 패턴(`'lib/*'`)을 쓰지 않는다 — Info-ZIP 의
+      # `WILD_STOP_AT_DIR` 빌드에서 `*` 는 `/` 를 못 넘어 `lib/net8.0/…` 에 안 맞는다(실측: 1.0.7 nupkg 에 exit 11).
+      # Release 자산(`artifacts/*`)에 섞이지 않게 그 밖에 꺼낸다.
+      - name: Extract the DLLs the package carries (before the irreversible push)
+        run: |
+          unzip -q -o 'artifacts/*.nupkg' -d nupkg-content
+          ls -l nupkg-content/lib/*/*.dll
       # ⚠️ 시크릿 미설정은 "건너뛸 상황"이 아니라 실패다 — NUGET_API_KEY 없이 태그가 push되었다는 것은
       # 사람이 사전등록 전에 태그를 밀었다는 뜻이고, 그때 잡이 green으로 끝나면 게시되지 않은 버전이
       # 게시된 것처럼 보인다. 또한 `--skip-duplicate`는 이미 존재하는 버전에 대한 push를 성공으로
@@ -176,12 +184,9 @@ jobs:
       # ⚠️ nuget.org 는 받은 nupkg 에 저장소 서명(`.signature.p7s`)을 넣어 **바이트를 바꾼다** — 실측(1.0.7): 이 잡이
       # 올린 nupkg(Release 자산)와 nuget.org 의 nupkg 는 다르고, 그 안의 DLL 은 같은 바이트였다. 그래서 nupkg 의 증명은
       # Release 자산과 맞고, nuget.org 에서 받은 패키지는 nupkg 에서 꺼낸 DLL 의 증명으로 잰다(전역 패키지 폴더의
-      # `lib/<tfm>/*.dll`). Release 자산(`artifacts/*`)에 섞이지 않게 위 단계 뒤에 꺼낸다. 기호(snupkg)는 실행되는 코드가
-      # 아니라 증명하지 않는다.
-      # ⚠️ **글롭 하나에 단계 하나다.** 액션은 목록 전체가 0 일 때만 실패한다 — 한 목록에 두면 꺼내기가 깨져 DLL 글롭이
-      # 비어도 nupkg 가 맞아 초록이다(독립 레그 지목 · `test-release-attestation.sh` 가 강제한다).
-      - name: Extract the DLLs the package carries
-        run: unzip -q -o 'artifacts/*.nupkg' 'lib/*' -d nupkg-content
+      # `lib/<tfm>/*.dll` — 꺼내기는 push 앞이다). 기호(snupkg)는 실행되는 코드가 아니라 증명하지 않는다.
+      # ⚠️ **글롭 하나에 단계 하나다.** 액션은 목록 전체가 0 일 때만 실패한다 — 한 목록에 두면 DLL 글롭이 비어도 nupkg 가
+      # 맞아 초록이다(독립 레그 지목 · `test-release-attestation.sh` 가 강제한다).
       - name: Attest build provenance (게시한 nupkg — Release 자산)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
