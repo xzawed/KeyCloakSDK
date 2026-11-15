@@ -5,9 +5,9 @@ AllCops:
   TargetRubyVersion: 3.2
   NewCops: enable
   SuggestExtensions: false
+  # examples 는 뺄 대상이 아니다 — README 가 링크하는 예제의 문법 · 린트를 이 단계가 본다(실행 게이트는 spec/unit 의 가짜 서버 실행).
   Exclude:
     - "vendor/**/*"
-    - "examples/**/*"
 
 # 코드베이스 전반이 double-quote·LF(크로스플랫폼·CI Linux 정렬)
 Style/StringLiterals:
