@@ -683,3 +683,26 @@ TEST:scripts/test/test-community-intake.sh
 OLD:ci_default_owner() { grep -qE '^\*[[:space:]]+@[A-Za-z0-9][A-Za-z0-9-]*' "$1" 2>/dev/null && echo ok || echo MISSING; }
 NEW:ci_default_owner() { grep -qE '@' "$1" 2>/dev/null && echo ok || echo MISSING; }
 SITE:grep -qE '@' "$1"
+
+# ── 게시물 검증 안내(release-artifact-verification-undocumented, 2026-11-15) — 판정 셋이 음성 대조에 잡히는가
+
+### verify-missing-workflow
+FILE:scripts/test/test-verifying-releases.sh
+TEST:scripts/test/test-verifying-releases.sh
+OLD:    [ -f "$2/$_w" ] || _m="$_m $_w"
+NEW:    [ -f "$2/$_w" ] || _m="$_m"
+SITE:|| _m="$_m"
+
+### verify-bad-tag-prefix
+FILE:scripts/test/test-verifying-releases.sh
+TEST:scripts/test/test-verifying-releases.sh
+OLD:    case "$_ok" in *" $_t "*) ;; *) _b="$_b $_t" ;; esac
+NEW:    case "$_ok" in *) ;; esac
+SITE:case "$_ok" in *) ;; esac
+
+### verify-table-unknown-label
+FILE:scripts/test/test-verifying-releases.sh
+TEST:scripts/test/test-verifying-releases.sh
+OLD:          .NET) echo dotnet ;; PHP) echo php ;; Rust) echo rust ;; Ruby) echo ruby ;; *) echo "?$_l" ;;
+NEW:          .NET) echo dotnet ;; PHP) echo php ;; Rust) echo rust ;; Ruby) echo ruby ;; *) : ;;
+SITE:*) : ;;
