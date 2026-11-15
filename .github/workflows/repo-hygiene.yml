@@ -256,6 +256,8 @@ jobs:
       # ⚠️ 이 잡의 셸은 dash다(우분투의 /bin/sh). 로컬 Git Bash와 동작이 갈리는 지점이 실제로
       # 있었다 — `. "$SH" --lib`(dash는 dot의 인자를 무시한다)와 `echo`의 백슬래시 확장이다.
       # 이 목록을 고칠 때는 로컬 통과로 만족하지 말고 dash로 한 번 돌릴 것(각 테스트 상단 참고).
+      - name: 소비자 유입 표면 자가테스트(이슈 양식의 언어 = 트리 · 비공개 신고 링크 · 비밀 확인란 · 기본 소유자)
+        run: sh scripts/test/test-community-intake.sh
       - name: 배포 문서·헬퍼 자가테스트(DEPLOY.md ↔ deploy-facts SSOT · readiness · trigger · request · dispatch)
         run: |
           sh scripts/test/test-deploy-facts.sh

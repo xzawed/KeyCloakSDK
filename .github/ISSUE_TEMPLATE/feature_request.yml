@@ -1,0 +1,36 @@
+name: Feature request
+description: Something the SDKs should do but do not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The SDKs keep one API shape across nine languages, so a request usually means the same feature in all of them. Describe the problem first — the API can follow.
+  - type: dropdown
+    id: sdk
+    attributes:
+      label: SDK
+      description: Which SDKs do you use? Leave it empty if the request is about all of them.
+      multiple: true
+      options:
+        - Java
+        - Kotlin
+        - Python
+        - Node.js / TypeScript
+        - Go
+        - C# / .NET
+        - PHP
+        - Rust
+        - Ruby
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The use case, and what you do today instead (raw HTTP, the underlying library, …).
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API (optional)
+      description: How you would like to call it, in the language you use.
