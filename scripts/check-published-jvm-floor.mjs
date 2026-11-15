@@ -26,7 +26,8 @@
 // 릴리스마다 하나씩이고(kotlin 1.0.8 = 1.0.9 실측) 고정값이 맞는 것을 고른다.
 // ⚠️ 봉인 이전 판은 **경계 상수 하나**로 얼린다(FIRST_ATTESTED — 목록이 아니라 「이 판 미만」). 고치지 않으면 늘지 않고,
 // 고치면 diff 에 보인다. 실측 2026-11-15: 1.0.2 이상 main jar 36/36 에 증명이 있고 그 미만에는 없다.
-// --gh=<node 스크립트> 는 자가테스트의 가짜 검증기다(실제 실행은 PATH 의 gh).
+// --gh=<실행 파일> 은 검증기를 바꾼다(기본은 PATH 의 gh). `.mjs` 면 node 로 띄운다 — 자가테스트의 가짜 검증기다.
+// 띄우지 못하면(없는 경로 · 시간 초과) attest-tool-unavailable 로 실패한다 — 판정 못 함은 통과가 아니다.
 
 import { readFileSync, existsSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -282,9 +283,9 @@ const attestCheck = (lang, artifact, v, tag, jar) => {
   writeFileSync(file, jar)
   const args = ['attestation', 'verify', file, '--repo', REPO, '--signer-workflow', `${REPO}/${SIGNER[lang]}`,
     '--source-ref', `refs/tags/${tag}`, '--source-digest', commit, '--deny-self-hosted-runners']
-  const r = GH
+  const r = GH.endsWith('.mjs')
     ? spawnSync(process.execPath, [GH, ...args], { encoding: 'utf8' })
-    : spawnSync('gh', args, { encoding: 'utf8', windowsHide: true, timeout: 120_000 })
+    : spawnSync(GH || 'gh', args, { encoding: 'utf8', windowsHide: true, timeout: 120_000 })
   rmSync(dir, { recursive: true, force: true })
   if (r.error) {
     fail('attest-tool-unavailable', `${lang} ${artifact} ${v}: gh 를 실행하지 못했다 — ${r.error.message}`, '증명을 판정하지 못했다(통과가 아니다).')
