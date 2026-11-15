@@ -12,9 +12,10 @@ import org.keycloak.representations.idm.UserRepresentation;
  * obtains a token with the client-credentials grant and prints it only masked with {@link Secrets#mask(String)}
  * (the raw token is never written to a log), then lists the realm's users.
  *
- * <p>Because it needs a real Keycloak server, this class is not deployed — the parent POM's
- * {@code <excludeArtifacts>} keeps this module out of the Central bundle — and only its compilation is
- * verified. To run it, set the environment variables below to real values:
+ * <p>It needs a real Keycloak server, so the build only compiles it, and the parent POM's
+ * {@code <excludeArtifacts>} keeps this module out of the Central bundle. The install harness runs this
+ * file against a real Keycloak ({@code harness/install/consume/java.Dockerfile}). To run it yourself,
+ * set the environment variables below to real values:
  *
  * <pre>{@code
  * KEYCLOAK_URL=https://kc.example.com \

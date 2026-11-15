@@ -447,7 +447,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 96건 (열림 35)
+## D. 원장 밖 — 96건 (열림 34)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -524,7 +524,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - 자리를 늘리거나 그 모양을 FAIL 로 · `scripts/coverage-boundary.mjs`
 - [x] `readme-quickstarts-ungated` **[M/M · 닫힘 2026-11-15 #1099]** 다섯 언어 예제를 타입검사 · 정적분석 · 컴파일에(ruby 는 가짜 서버 실행) · `ruby/spec/unit/examples_quickstart_spec.rb`
 - [x] `examples-never-run-against-keycloak` **[L/M · 신규·닫힘 2026-11-15 #1102]** 설치 하네스가 README 예제 일곱을 실서버에 대고 돌린다(사본 넷 삭제 · php · ruby · rust 는 이미였다) · `harness/install/consume/`
-- [ ] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15]** 통합 커버리지 장부는 통합 스위트만 센다 — 하네스가 야간에 돌리는 Java QuickStart 가 미실행으로 남는다 · `scripts/integration-coverage.json`
+- [x] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15 · 닫힘 2026-11-16 #1104]** 장부가 `harness:install` 소유를 받는다 — 이미지 COPY · pom 진입점 · 실행 스크립트의 표지를 트리에서 확인할 때만 · `scripts/integration-coverage.mjs`
 
 ### 1.0 이후 운영 — 21
 
