@@ -26,6 +26,9 @@ repositories {
 kotlin {
     jvmToolchain(21)
     explicitApi() // JDK21 + public API 엄격
+    // README 가 링크하는 예제를 단위 test 컴파일에 얹는다 — 이름이 바뀐 API 를 부르면 `build` · `ktlintCheck` 가 실패한다
+    // (실행은 실서버가 필요해 하지 않는다). test 소스셋이라 Kover 계측 · 게시물 · explicitApi 대상이 아니다.
+    sourceSets.named("test") { kotlin.srcDir("examples") }
 
     // ⚠️ 소비자 Kotlin 하한선 — 게시 아티팩트의 바이너리 메타데이터 버전을 결정한다.
     // KGP 2.4.10로 그냥 빌드하면 @Metadata(mv=[2,4,…])가 박혀 **Kotlin 2.4 미만 소비자는

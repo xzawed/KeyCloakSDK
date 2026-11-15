@@ -1,8 +1,8 @@
 // QuickStart — issue a client-credentials token → hardened JWT validation → create a user through admin.
 //
-// A documentation snippet to put into a separate project that consumes this SDK and run there (this monorepo's
-// `kotlin/` build.gradle.kts compiles only src/main, src/test and src/integrationTest; examples/ is not part of any
-// source set). Keycloak is needed before running it (locally: `docker run -p 8080:8080
+// A documentation snippet to put into a separate project that consumes this SDK and run there (this monorepo
+// compiles it with the unit tests so it follows the API, but never runs it). Keycloak is needed before running it
+// (locally: `docker run -p 8080:8080
 // -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin
 // quay.io/keycloak/keycloak:26.6 start-dev`).
 //
