@@ -1045,4 +1045,39 @@ for _bl in $DEPLOY_LANGS; do
     "$_bf 의 배너 버전이 게시 SSOT(df_published_version)와 다르다 — 이 파일이 레지스트리 랜딩 페이지다"
 done
 
+# ---- README 가 링크하는 예제는 **게시 상태를 말하지 않는다** ----
+#
+# 배너 · 설치 스니펫은 위 블록들이 SSOT 와 대조하지만 예제는 아무도 보지 않았다 — kotlin 예제가 1.0.9 가 게시된 뒤에도
+# 「currently unpublished, held at the human approval gate」 를 말하고 있었다(등록부 example-and-readme-publication-drift).
+# 예제는 대조할 SSOT 자리가 아니므로 상태를 **아예 적지 않는다** — 판은 `<version>` 자리표시, 상태는 README 배너 몫이다.
+# 대상은 파생한다: 아홉 README 가 저장소 안으로 링크하는 example 파일.
+ex_targets() { # → 저장소 경로(한 줄에 하나)
+  for _l in $DEPLOY_LANGS; do
+    grep -oE 'https://github\.com/xzawed/KeyCloakSDK/blob/main/[^) ]*' "$ROOT/$_l/README.md" 2>/dev/null \
+      | grep -i 'example' | sed 's|^https://github\.com/xzawed/KeyCloakSDK/blob/main/||'
+  done | sort -u
+}
+ex_violations() { # $1 = 루트, 나머지 = 그 아래 경로 → 「경로: 줄」 (빈 출력 = 위반 없음)
+  _er="$1"; shift
+  for _p in "$@"; do
+    if [ ! -f "$_er/$_p" ]; then echo "$_p: README 가 링크하는데 파일이 없다"; continue; fi
+    grep -nEi 'unpublished|not (yet )?published|approval gate|pre-?release|release candidate|[0-9]+\.[0-9]+\.[0-9]+' \
+      "$_er/$_p" | sed "s|^|$_p:|" || true
+  done
+}
+_ex_list="$(ex_targets)"
+assert_eq "" "$(ex_violations "$ROOT" $_ex_list)" "[예제] README 가 링크하는 예제가 게시 상태나 판을 말한다 — 판은 <version>, 상태는 README 배너 몫이다"
+_ex_n="$(printf '%s\n' "$_ex_list" | grep -c . || true)"
+assert_eq "1" "$([ "$_ex_n" -ge 9 ] && echo 1 || echo 0)" "[예제] README 가 링크하는 예제를 ${_ex_n}개만 찾았다(실측 9) — 링크 모양이 바뀌었나"
+# 판정의 음성 대조 — 같은 함수에 합성 입력을 먹인다(살아 있는 트리만 단언하면 판정을 지워도 초록이다).
+_ex_tmp="$(mktemp -d)"
+printf '%s\n' '// Dependency: x:y:<version> (Maven Central — currently unpublished).' > "$_ex_tmp/a.kt"
+printf '%s\n' 'implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.9")' > "$_ex_tmp/b.kts"
+printf '%s\n' 'serverUrl = "http://localhost:8080" // Keycloak 26.6' > "$_ex_tmp/c.kt"
+assert_contains "$(ex_violations "$_ex_tmp" a.kt)" "a.kt:1:" "[예제 판정] 「unpublished」 를 잡는다"
+assert_contains "$(ex_violations "$_ex_tmp" b.kts)" "b.kts:1:" "[예제 판정] 판 리터럴을 잡는다"
+assert_contains "$(ex_violations "$_ex_tmp" missing.kt)" "파일이 없다" "[예제 판정] 링크된 파일이 없으면 공허하게 통과하지 않는다"
+assert_eq "" "$(ex_violations "$_ex_tmp" c.kt)" "[예제 판정] 포트 · 두 마디 판은 주장이 아니다(대조군)"
+rm -rf "$_ex_tmp"
+
 assert_report
