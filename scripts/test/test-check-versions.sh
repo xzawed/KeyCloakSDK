@@ -78,8 +78,9 @@ sed -i 's/"version": "0.1.0"/"version": "0.1.0-rc.1"/' "$TMP/node/package.json"
 sed -i 's/VERSION = "0.1.0"/VERSION = "0.1.0.rc1"/' "$TMP/ruby/lib/keycloak_sdk/version.rb"
 sed -i 's/version = "0.1.0"/version = "0.1.0-RC1"/' "$TMP/kotlin/build.gradle.kts"
 # ⚠️ kotlin SDK를 범프했으면 하네스 앱의 핀도 **같은 커밋에서** 따라가야 한다(아래 하네스 절).
-# 이 줄이 없으면 이 픽스처는 2026-08-11 사고 그 자체가 된다.
-sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.1.0-RC1"/' "$TMP/harness/apps/kotlin/build.gradle.kts"
+# 이 줄이 없으면 이 픽스처는 2026-08-11 사고 그 자체가 된다. 설치 하네스의 consume 앱 핀도 같이 간다.
+sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.1.0-RC1"/' "$TMP/harness/apps/kotlin/build.gradle.kts" \
+  "$TMP/harness/install/consume/kotlin-app/build.gradle.kts"
 assert_ok node "$GUARD" "$TMP"
 
 # --list: 기계가독 모드 — harness/install/install-verify.sh가 무명시 실행에서 언어별 검증 버전을
@@ -189,7 +190,7 @@ assert_ok node "$GUARD" "$TMP"
 # 좌표 해석은 **문자열 정확비교**다. 그래서 이 검사만 문자열 동일을 요구한다(언어 간 기저 비교가
 # 경고인 것과 반대 — 여기서는 정책 충돌이 없고 드리프트가 곧 빌드 실패다).
 #
-# 대상은 **리터럴 버전을 쓰는 두 앱뿐**이다. 나머지 일곱은 경로/파일 참조라 드리프트할 값이 없다
+# 대상은 **리터럴 버전을 쓰는 세 자리**다(하네스 앱 둘 + 설치 하네스 kotlin consume 앱). 나머지 일곱은 경로/파일 참조라 드리프트할 값이 없다
 # (node `file:./…tgz` · php path repo `*` · ruby `path:` · rust `path` · dotnet `ProjectReference` ·
 # go `replace` + `v0.0.0` · python은 Dockerfile이 소스에서 설치).
 rm -rf "$TMP" && mkdir -p "$TMP"

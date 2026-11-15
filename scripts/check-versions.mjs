@@ -225,7 +225,7 @@ for (const [lang, p, re] of manifests) {
 // 갈림이 경고인 것과 반대로 여기서는 오류다 — 독립 버저닝 정책과 충돌하지 않고(같은 언어 안의
 // 기계적 참조다) 드리프트가 곧 빌드 실패이기 때문이다.
 //
-// 대상은 리터럴 버전을 쓰는 **두 앱뿐**이다. 나머지 일곱은 경로/파일 참조라 드리프트할 값이 없다
+// 대상은 리터럴 버전을 쓰는 **세 자리**다 — 하네스 앱 둘 + 설치 하네스의 kotlin consume 앱. 나머지 일곱은 경로/파일 참조라 드리프트할 값이 없다
 // (node `file:./…tgz` · php path repo `*` · ruby `path:` · rust `path` · dotnet `ProjectReference` ·
 // go `replace` + `v0.0.0` · python은 Dockerfile이 소스에서 설치). 새 하네스 앱이 리터럴 핀을
 // 쓰게 되면 여기에 추가할 것.
@@ -237,6 +237,10 @@ for (const [lang, p, re] of manifests) {
     // 값을 SSOT와 대조했다 — 픽스처가 실제 파일보다 깨끗해서 자가테스트를 통과했고, 진짜 저장소에
     // 돌려보고서야 드러났다. 픽스처에 그 주석을 미끼로 넣어 고정했다.
     ['kotlin', 'harness/apps/kotlin/build.gradle.kts', /implementation\("io\.github\.xzawed:keycloak-sdk-kotlin:([^"]+)"\)/, 'io.github.xzawed:keycloak-sdk-kotlin'],
+    // ⚠️ 설치 하네스의 consume 앱 — 컨테이너 안에서는 kotlin-run.sh 가 이 줄을 PKG_VER 로 치환하지만, 주간 OSV 감사
+    // (security-audit.yml 의 harness-kotlin)는 컨테이너 **밖에서** 이 핀을 그대로 해석한다. 갈리면 지원하지 않는 판의
+    // 의존 트리를 잰다(등록부 harness-consume-pin-unsupported · H6 — 0.1.0 을 재고 있었다).
+    ['kotlin', 'harness/install/consume/kotlin-app/build.gradle.kts', /implementation\("io\.github\.xzawed:keycloak-sdk-kotlin:([^"]+)"\)/, 'io.github.xzawed:keycloak-sdk-kotlin'],
   ]
   for (const [lang, p, re, coord] of harnessPins) {
     // ⚠️ **부재와 추출 실패를 구분한다**(node lockfile 검사와 같은 관용). 하네스가 없는 트리
