@@ -27,7 +27,7 @@ assert_ok node "$GUARD" "$TMP"
 # 계수를 동시에 고정한다 — 특히 write 계수는 주석 제거(`write # 이유` → `write`)가 살아
 # 있어야만 1이 나온다. 주석을 안 걷어내면 값이 "write # ..."가 되어 상승이 보이지 않는다.
 out=$(node "$GUARD" "$TMP" 2>&1)
-assert_contains "$out" "릴리스 1개 · 잡 11개 · 게시 잡 1개 · 비로컬 uses 5개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개 · PR 시크릿 잡 1개 · 시크릿 확장 3개(빈값 검사 2 · 작은따옴표 1 · 면제 0 · 명령줄 0)" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃·PR 시크릿 잡·시크릿 확장을 실제로 센다"
+assert_contains "$out" "릴리스 1개 · 잡 11개 · 게시 잡 1개 · 비로컬 uses 5개 · 릴리스 잡의 write 상승 2건 · write+체크아웃 잡 1개 · PR 시크릿 잡 1개 · 시크릿 확장 3개(빈값 검사 2 · 자격 증명 도우미 1 · 면제 0 · 명령줄 0)" "잡·릴리스·게시잡·uses·권한상승·write+체크아웃·PR 시크릿 잡·시크릿 확장을 실제로 센다"
 
 # ── 변이 1b: 쓰기 토큰을 쥔 잡이 체크아웃 자격증명을 남긴다 ──
 # ⚠️ **이 규칙은 오래 자가테스트가 전혀 덮지 않았다**(픽스처에 write+체크아웃 잡이 없었다).
@@ -646,11 +646,12 @@ assert_ok node "$GUARD" "$TMP"
 
 # ── 규칙 13: 배포 시크릿은 env 로만 프로세스에 닿는다 — 명령줄(argv)에 싣지 않는다 ──
 # rust 게시가 cargo 가 env 로 이미 읽는 토큰을 `--token "$CARGO_REGISTRY_TOKEN"` 으로 argv 에 한 번 더 실었다
-# (등록부 rust-token-in-argv). 변이는 픽스처의 작은따옴표 줄(`credential.helper=`)을 다른 셸 줄로 바꿔 쓴다.
+# (등록부 rust-token-in-argv). 변이는 픽스처의 자격 증명 도우미 두 줄(`credential.helper \` + 값 줄)을 다른 셸 줄로 바꿔 쓴다.
 REL="$TMP/.github/workflows/demo-release.yml"
-r13_put() { # $1 = 그 줄 자리에 넣을 셸 줄 — 여러 줄이면 `\n` 으로 잇는다(awk -v 가 푼다)
-  awk -v rep="$1" 'index($0, "credential.helper=") { n = split(rep, a, "\n"); for (i = 1; i <= n; i++) print "          " a[i]; next } { print }' \
+r13_put() { # $1 = 그 두 줄 자리에 넣을 셸 줄 — 여러 줄이면 `\n` 으로 잇는다(awk -v 가 푼다)
+  awk -v rep="$1" 'index($0, "credential.helper \\") { n = split(rep, a, "\n"); for (i = 1; i <= n; i++) print "          " a[i]; getline; next } { print }' \
     "$REL" > "$REL.new" && mv "$REL.new" "$REL"
+  assert_not_contains "$(cat "$REL")" "credential.helper \\" "(도우미 두 줄이 바뀌었는지 먼저 본다)"
 }
 r13() { # <설명> <기대 문구>
   assert_fails node "$GUARD" "$TMP"
@@ -670,16 +671,35 @@ fresh; r13_put 'some-tool --token "${{ secrets.DEMO_TOKEN }}"'
 r13 "run 본문의 secrets 식을 잡는다" "스크립트 글자에 박힌다"
 fresh; r13_put '# ${{ secrets.DEMO_TOKEN }} 는 주석 안에서도 풀린다'
 r13 "셸 주석 안의 secrets 식도 잡는다 — 식은 실행 전에 풀린다" "스크립트 글자에 박힌다"
-# 대조군 — 셸 주석 · 여러 줄에 걸친 작은따옴표 · GITHUB_TOKEN 은 명령줄이 아니거나 범위 밖이다.
-fresh; r13_put '# some-tool --token "$DEMO_TOKEN"'
-assert_ok node "$GUARD" "$TMP"
-fresh; r13_put 'sh -c '"'"'\nprintf %s "$DEMO_TOKEN" | some-tool --password-stdin\n'"'"''
-assert_contains "$(cat "$REL")" '          printf %s "$DEMO_TOKEN" | some-tool --password-stdin' "(여러 줄 변이가 착지했는지 먼저 본다)"
+# ⚠️ 작은따옴표 안이라고 다 받지 않는다 — 그 글을 나중에 푸는 셸이 명령줄에 싣는다(Grok 적대 레그: `sh -c '…'`).
+# 여러 줄에 걸친 작은따옴표도 그 상태로 읽는다(셋째 줄의 확장이 첫 줄에서 연 작은따옴표 안이다).
+fresh; r13_put 'sh -c '"'"'\nsome-tool --token "$DEMO_TOKEN"\n'"'"''
+assert_contains "$(cat "$REL")" '          some-tool --token "$DEMO_TOKEN"' "(여러 줄 변이가 착지했는지 먼저 본다)"
+r13 "다른 셸이 푸는 작은따옴표 글을 받지 않는다" "를 작은따옴표 글에 담는다"
+# 자격 증명 도우미도 그 꼴(`echo "password=$X"`)만 — 도우미 안의 외부 명령에 실으면 실패다.
+fresh; r13_put 'git -c credential.helper='"'"'!f() { /usr/bin/printf "password=%s" "$DEMO_TOKEN"; }; f'"'"' --version'
+r13 "자격 증명 도우미 안의 외부 명령을 받지 않는다" "를 작은따옴표 글에 담는다"
+# 꼴이 같아도 따옴표 상태가 다르면 받지 않는다 — 큰따옴표로 감싼 도우미는 git 의 argv 를 만들 때 값이 풀린다.
+fresh; r13_put 'git -c "credential.helper='"'"'!f() { echo "password=$DEMO_TOKEN"; }; f'"'"'" --version'
+assert_contains "$(cat "$REL")" '-c "credential.helper=' "(변이가 착지했는지 먼저 본다)"
+r13 "큰따옴표로 감싼 도우미의 확장을 명령줄로 본다" "배포 시크릿 \`\$DEMO_TOKEN\` 를 명령줄에 싣는다"
+# 빈값 검사는 `[` 가 명령 자리의 셸 내장일 때만 — `/usr/bin/[` 는 외부 명령이라 argv 에 값이 실린다(Grok 적대 레그).
+fresh; r13_put '/usr/bin/[ -z "$DEMO_TOKEN" ] || exit 1'
+r13 "외부 명령 [ 를 빈값 검사로 받지 않는다" "배포 시크릿 \`\$DEMO_TOKEN\` 를 명령줄에 싣는다"
+# 대조군 — 한 줄 `-c credential.helper='…'` 꼴도 도우미다. 셸 주석은 명령줄이 아니고 GITHUB_TOKEN 은 범위 밖이다.
+# 명령 자리의 `[` 는 `||` · `;` 뒤에서도 받는다.
+fresh; r13_put 'git -c credential.helper='"'"'!f() { echo username=x-access-token; echo "password=$DEMO_TOKEN"; }; f'"'"' --version'
 assert_ok node "$GUARD" "$TMP"
 out=$(node "$GUARD" "$TMP" 2>&1 || true)
-assert_contains "$out" "작은따옴표 1 · 면제 0 · 명령줄 0" "여러 줄에 걸친 작은따옴표 안의 확장을 글자로 센다"
+assert_contains "$out" "자격 증명 도우미 1 · 면제 0 · 명령줄 0" "한 줄 -c 꼴의 도우미를 도우미로 센다"
+fresh; r13_put '# some-tool --token "$DEMO_TOKEN"'
+assert_ok node "$GUARD" "$TMP"
 fresh; r13_put 'some-tool --token "$GH_TOKEN"'
 assert_ok node "$GUARD" "$TMP"
+fresh; r13_put 'true || [ -n "$DEMO_TOKEN" ]; [ -z "$DEMO_TOKEN" ] && exit 1'
+assert_ok node "$GUARD" "$TMP"
+out=$(node "$GUARD" "$TMP" 2>&1 || true)
+assert_contains "$out" "시크릿 확장 4개(빈값 검사 4 · 자격 증명 도우미 0 · 면제 0 · 명령줄 0)" "명령 자리의 [ 를 연산자 뒤에서도 빈값 검사로 센다"
 # 면제 — 명령줄 말고는 받을 길이 없는 자리(파일 → env 이름). 쓰이면 세고, 그 파일에서 안 쓰이면 낡은 면제라 실패다.
 fresh
 cat > "$TMP/.github/workflows/dotnet-release.yml" <<'EOF'
@@ -705,7 +725,7 @@ jobs:
 EOF
 assert_ok node "$GUARD" "$TMP"
 out=$(node "$GUARD" "$TMP" 2>&1 || true)
-assert_contains "$out" "시크릿 확장 5개(빈값 검사 3 · 작은따옴표 1 · 면제 1 · 명령줄 0)" "면제된 명령줄 확장을 따로 센다"
+assert_contains "$out" "시크릿 확장 5개(빈값 검사 3 · 자격 증명 도우미 1 · 면제 1 · 명령줄 0)" "면제된 명령줄 확장을 따로 센다"
 sed -i 's| --api-key "\$NUGET_API_KEY"||' "$TMP/.github/workflows/dotnet-release.yml"
 assert_not_contains "$(cat "$TMP/.github/workflows/dotnet-release.yml")" '--api-key' "(변이가 착지했는지 먼저 본다)"
 r13 "그 파일에서 쓰이지 않는 면제를 낡은 것으로 본다" "명령줄 면제 \`NUGET_API_KEY\` 가 쓰이지 않는다"

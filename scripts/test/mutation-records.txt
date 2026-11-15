@@ -1127,25 +1127,46 @@ OLD:  for (const [k, v] of Object.entries(ruleSecretNotOnCommandLine(wf, errors)
 NEW:  for (const [k, v] of Object.entries(ruleSecretNotOnCommandLine(wf, [] /* PROBE-REC */))) secretUses[k] += v
 SITE:[] /* PROBE-REC */
 
-### secret-argv-literal
+### secret-argv-single-report
 FILE:scripts/check-ci-permissions.mjs
 TEST:scripts/test/test-check-ci-permissions.sh
-OLD:          if (x.st === 'single') {
-NEW:          if (x.st === 'single-PROBE-REC') {
-SITE:'single-PROBE-REC'
+OLD:      else if (c === '$' && at.test(text.slice(i))) out.push({ i, st })
+NEW:      else if (false /* PROBE-REC */) out.push({ i, st })
+SITE:false /* PROBE-REC */
 
-### secret-argv-test-span
+### secret-argv-form-pos
 FILE:scripts/check-ci-permissions.mjs
 TEST:scripts/test/test-check-ci-permissions.sh
-OLD:          if ([...lines[x.line].matchAll(test)].some((m) => x.col > m.index && x.col < m.index + m[0].length)) {
-NEW:          if ([...lines[x.line].matchAll(test)].length /* PROBE-REC */) {
-SITE:.length /* PROBE-REC */
+OLD:          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+NEW:          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].length > 0 /* PROBE-REC */)
+SITE:.length > 0 /* PROBE-REC */
+
+### secret-argv-form-st
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:          const form = forms.find((f) => f.st === x.st && [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+NEW:          const form = forms.find((f) => /* PROBE-REC */ [...text.matchAll(f.re)].some((m) => m.indices[1][0] === x.i))
+SITE:(f) => /* PROBE-REC */
+
+### secret-argv-test-command-position
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:  { kind: 'test', st: 'double', re: new RegExp(String.raw`(?<![^\s;&|(!{])\[\s+-[zn]\s+"(\$)\{?${env}\}?"\s+\]`, 'gd') },
+NEW:  { kind: 'test', st: 'double', re: new RegExp(String.raw`(?<!PROBE-REC)\[\s+-[zn]\s+"(\$)\{?${env}\}?"\s+\]`, 'gd') },
+SITE:(?<!PROBE-REC)
+
+### secret-argv-helper-echo
+FILE:scripts/check-ci-permissions.mjs
+TEST:scripts/test/test-check-ci-permissions.sh
+OLD:      String.raw`credential\.helper(?:=|[ \t]+(?:\\\n[ \t]*)?)'!f\(\) \{ [^']*\becho "password=(\$)\{?${env}\}?"; \}; f'`,
+NEW:      String.raw`credential\.helper(?:=|[ \t]+(?:\\\n[ \t]*)?)'!f\(\) \{ [^']*(\$)\{?${env}\}?[^']*\}; f'` /* PROBE-REC */,
+SITE:` /* PROBE-REC */,
 
 ### secret-argv-dquote
 FILE:scripts/check-ci-permissions.mjs
 TEST:scripts/test/test-check-ci-permissions.sh
-OLD:    } else if (c === "'" && st === 'none') st = 'single'
-NEW:    } else if (c === "'" /* PROBE-REC */) st = 'single'
+OLD:    else if (c === "'" && st === 'none') st = 'single'
+NEW:    else if (c === "'" /* PROBE-REC */) st = 'single'
 SITE:"'" /* PROBE-REC */
 
 ### secret-argv-expr
@@ -1154,13 +1175,6 @@ TEST:scripts/test/test-check-ci-permissions.sh
 OLD:      if (/\$\{\{\s*secrets\./.test(text))
 NEW:      if (/\$\{\{\s*secrets-PROBE-REC\./.test(text))
 SITE:secrets-PROBE-REC
-
-### secret-argv-comment
-FILE:scripts/check-ci-permissions.mjs
-TEST:scripts/test/test-check-ci-permissions.sh
-OLD:    else if (c === '#' && st === 'none' && (col === 0 || /\s/.test(text[i - 1]))) {
-NEW:    else if (c === '#' && st === 'none-PROBE-REC' && (col === 0 || /\s/.test(text[i - 1]))) {
-SITE:'none-PROBE-REC'
 
 ### secret-argv-stale-exempt
 FILE:scripts/check-ci-permissions.mjs
