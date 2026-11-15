@@ -32,8 +32,9 @@ dependencies {
     // `-e PKG_VER` 로 이 줄을 sed 치환하므로(그 스크립트 26행), 실제로 해석되는 버전은
     // install-verify.sh 가 넘긴 값이다. 여기 남은 값은 **단독 실행용 기본값**이고, 그리고
     // `security-audit.yml` 의 harness-kotlin 잡이 컨테이너 밖에서 해석하는 값이기도 하다 —
-    // 그래서 **Central 에 실재하는 버전이어야** 한다(그 잡은 미해결 좌표에 fail-closed 다).
-    implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")
+    // 그래서 SDK 버전과 **문자열까지** 같아야 한다(`check-versions.mjs` 가 강제한다 — 낡으면 그 감사가
+    // 지원하지 않는 판의 트리를 잰다). 범프 → Portal Publish 사이에는 Central 에 없어 그 감사가 빨갛다(그 잡의 창 메시지).
+    implementation("io.github.xzawed:keycloak-sdk-kotlin:1.0.9")
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
