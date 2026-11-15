@@ -231,10 +231,21 @@ cp -r "$FIX/." "$TMP/"
 sed -i 's|<version>0.1.0-SNAPSHOT</version>|<version>0.0.9</version>|' "$JPIN"
 assert_fails node "$GUARD" "$TMP"
 
+# 변이 C — 설치 하네스의 consume 앱만 낡음. 주간 OSV 감사(security-audit.yml 의 harness-kotlin)가 컨테이너 밖에서
+# **이 핀을 그대로** 해석하므로, SSOT 와 갈리면 지원하지 않는 판의 의존 트리를 잰다(등록부
+# harness-consume-pin-unsupported · H6 — 실제로 0.1.0 을 재고 있었다).
+CPIN="$TMP/harness/install/consume/kotlin-app/build.gradle.kts"
+cp -r "$FIX/." "$TMP/"
+sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.0.8"/' "$CPIN"
+assert_fails node "$GUARD" "$TMP"
+OUT="$(node "$GUARD" "$TMP" 2>&1)" || true
+assert_contains "$OUT" "harness/install/consume/kotlin-app/build.gradle.kts" "consume 앱의 낡은 핀을 지목해야 한다"
+assert_contains "$OUT" 'keycloak-sdk-kotlin 핀이 "0.0.8" 인데' "consume 앱 핀의 낡은 값을 좌표와 함께 보여줘야 한다(주석 미끼 0.0.9 가 아니라)"
+
 # 오탐 방지 — SDK와 하네스 핀을 **함께** 옮기면 통과해야 한다(정상적인 범프 커밋의 모양).
 cp -r "$FIX/." "$TMP/"
 sed -i 's/version = "0.1.0"/version = "0.1.0-RC1"/' "$TMP/kotlin/build.gradle.kts"
-sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.1.0-RC1"/' "$KPIN"
+sed -i 's/keycloak-sdk-kotlin:0.1.0"/keycloak-sdk-kotlin:0.1.0-RC1"/' "$KPIN" "$CPIN"
 assert_ok node "$GUARD" "$TMP"
 
 # 추출 실패도 실패다 — 파일은 있는데 좌표 선언이 사라지면 조용히 통과하면 안 된다(가드 무력화 방지).
