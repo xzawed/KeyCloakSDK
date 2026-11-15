@@ -192,5 +192,4 @@ no long-lived token to fall back on at all. The account logins and their 2FA
 recovery codes must be in place **before** the first publication, not improvised
 during an incident.
 
-Step-by-step publishing commands and per-registry setup live in
-[DEPLOY.md](DEPLOY.md); this section states the policy only.
+To verify a download, see [verifying-releases.md](docs/guides/verifying-releases.md).
