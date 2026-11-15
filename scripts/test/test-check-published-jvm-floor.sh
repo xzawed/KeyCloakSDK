@@ -478,6 +478,20 @@ _o="$(env -u GITHUB_REPOSITORY node "$GUARD" "--root=$RB" "--base=$BB" --lang=ja
 assert_eq "1" "$_c" "[증명 경계] 1.0.2 는 증명이 없으면 실패한다"
 assert_contains "$_o" "java keycloak-sdk 1.0.2: 증명" "[증명 경계] 실패한 판이 1.0.2 다(하한 쪽 ok 줄이 아니라 증명 실패 줄)"
 assert_contains "$_o" "skip java keycloak-sdk 1.0.1 — 봉인" "[증명 경계] 1.0.1 은 봉인 이전 판으로 건너뛴다"
+# 숫자로 못 읽는 판은 봉인 이전으로 **건너뛰지 않는다** — `Number(n) || 0` 이면 x.0.1 이 0.0.1 로 읽혀 빠지고, 옆 판이
+# 증명되는 한 실행은 초록이다(독립 레그 지목, 2026-11-15).
+RG="$FIX/repo-garbage"; BG="$FIX/base-garbage"
+mkrepo "$RG" 17 "$K17" keycloak-sdk
+for v in 1.0.2 x.0.1; do tagit "$RG" "v$v"; done
+reg_meta "$BG" keycloak-sdk 1.0.2 x.0.1
+for v in 1.0.2 x.0.1; do reg_pom "$BG" keycloak-sdk "$v" jar; done
+reg_jar "$BG" keycloak-sdk 1.0.2 61:1; reg_jar "$BG" keycloak-sdk x.0.1 61:2
+printf '{"%s":[%s]}' "$(sha_of "$BG/$G/keycloak-sdk/1.0.2/keycloak-sdk-1.0.2.jar")" \
+  "$(ent "$JW" v1.0.2 "$(git -C "$RG" rev-parse 'v1.0.2^{commit}')")" > "$FIX/db.json"
+_o="$(env -u GITHUB_REPOSITORY node "$GUARD" "--root=$RG" "--base=$BG" --lang=java --attest --repo=o/r "--gh=$FAKE" 2>&1)" && _c=0 || _c=$?
+assert_eq "1" "$_c" "[증명 경계] 숫자로 못 읽는 판은 건너뛰지 않는다 — 증명이 없으면 실패한다"
+assert_contains "$_o" "java keycloak-sdk x.0.1: 증명" "[증명 경계] 실패한 판이 x.0.1 이다(봉인 이전 skip 줄이 아니라)"
+assert_contains "$_o" "증명 일치" "[증명 경계] 옆의 정상 판은 그대로 증명된다 — 대조군"
 # 공허 — 잴 판이 하나도 없으면(전부 봉인 이전) 「증명 일치」 가 아니다.
 RV="$FIX/repo-old"; BV="$FIX/base-old"
 mkrepo "$RV" 17 "$K17" keycloak-sdk
