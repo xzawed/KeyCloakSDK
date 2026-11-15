@@ -193,6 +193,29 @@ OLD:    ['kotlin', 'harness/install/consume/kotlin-app/build.gradle.kts', /imple
 NEW:    // PROBE-REC consume pin unchecked
 SITE:// PROBE-REC consume pin unchecked
 
+# ── 공개 레지스트리 설치 스모크 — 언어 집합 ↔ DEPLOY_LANGS · 인자 오류(public-registry-install-smoke, 2026-11-15)
+
+### public-install-gap
+FILE:scripts/test/test-public-install-smoke.sh
+TEST:scripts/test/test-public-install-smoke.sh
+OLD:  [ -z "$_miss$_extra" ] || printf 'missing:%s extra:%s' "$_miss" "$_extra"
+NEW:  true # PROBE-REC
+SITE:true # PROBE-REC
+
+### public-install-case-langs
+FILE:scripts/test/test-public-install-smoke.sh
+TEST:scripts/test/test-public-install-smoke.sh
+OLD:pis_case_langs() { awk '/^case "\$lang" in$/{p=1;next} p&&/^esac$/{exit} p&&/^  [a-z]+\)$/{sub(/^  /,"");sub(/\)$/,"");print}' "$1"; }
+NEW:pis_case_langs() { printf '%s\n' $DEPLOY_LANGS; } # PROBE-REC
+SITE:printf '%s\n' $DEPLOY_LANGS; } # PROBE-REC
+
+### public-install-unknown-lang
+FILE:scripts/public-install-smoke.sh
+TEST:scripts/test/test-public-install-smoke.sh
+OLD:    die "모르는 언어: $lang"
+NEW:    exit 0 # PROBE-REC
+SITE:exit 0 # PROBE-REC
+
 # ── 인라인 판정의 음성 대조 — 배포 · 릴리스 · 문서 자가테스트(selftests-with-no-negative-case, 2026-11-14 SILENT → CAUGHT)
 
 ### DM1
