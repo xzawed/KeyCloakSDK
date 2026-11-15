@@ -194,8 +194,15 @@
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sharesWindow": "coverage-omit-hides-security-paths",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.transportFailure": "coverage-omit-hides-security-paths",
       "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unitAt": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.env": "integration-ledger-blind-to-harness-runs",
-      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.main": "integration-ledger-blind-to-harness-runs"
+      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.env": "harness:install",
+      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.main": "harness:install"
+    },
+    "harness": {
+      "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java": {
+        "image": "harness/install/consume/java.Dockerfile",
+        "project": "harness/install/consume/java-quickstart-pom.xml",
+        "entrypoint": "harness/install/consume/java-run.sh"
+      }
     }
   },
   "kotlin": {
