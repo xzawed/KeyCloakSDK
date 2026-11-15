@@ -1998,5 +1998,22 @@ for t in $(git -C "$TMP" tag -l); do git -C "$TMP" tag -d "$t" >/dev/null 2>&1; 
 assert_eq "" "$(git -C "$TMP" tag -l)" "[compat] 픽스처의 태그를 실제로 다 지웠다"
 assert_fails node "$GUARD" "$TMP"
 assert_contains "$(_compat_out)" "태그가 하나도 없다" "[compat] 태그 없는 클론에서는 트리로 물러서지 않는다"
+# Kotlin 은 런타임(JDK) 하한과 별도로 **소비자 컴파일러 하한**(`languageVersion`)을 「Kotlin X.Y+」 로 말한다 — 그것도 태그와
+# 대조한다. 「mentions」 가 아니라 그 모양으로 본다: 같은 칸의 「metadata pinned to 2.2」 가 대신 걸려 통과하면 안 된다.
+_compat_repo
+mkdir -p "$TMP/kotlin"
+printf '%s\n' 'kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)' \
+  '  languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2) } }' \
+  'dependencies { implementation("com.nimbusds:nimbus-jose-jwt:10.10") }' > "$TMP/kotlin/build.gradle.kts"
+_kt_row() { printf '%s\n' "| Kotlin \`1.0.0\` | 26.6.x | \`nimbus-jose-jwt\` **10.10** · Kotlin $1+ consumers (metadata pinned to 2.2) · JDK 17+ |" >> "$TMP/compat.md"; }
+_kt_row 2.2
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm kotlin >/dev/null 2>&1
+git -C "$TMP" tag kotlin-v1.0.0 >/dev/null 2>&1
+assert_ok node "$GUARD" "$TMP"
+_compat_doc "6.2.13" "Node 22+" "11.38.2"
+_kt_row 2.3
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "소비자 하한 2.2" "[compat] Kotlin 소비자 하한(languageVersion)을 「Kotlin X.Y+」 로 말하지 않으면 실패한다"
 
 assert_report
