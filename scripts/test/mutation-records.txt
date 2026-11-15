@@ -184,6 +184,99 @@ OLD:    if [ ! -f "$_er/$_p" ]; then echo "$_p: README 가 링크하는데 파�
 NEW:    if false; then :; fi # PROBE-REC
 SITE:if false; then :; fi # PROBE-REC
 
+# ── 출처 증명 — 네 레인의 게시 명령 · npm · PyPI 의 스위치 · 태그 트리거 분류(release-provenance-four-lanes, 2026-11-16)
+
+### attest-kind-lane
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:  'dotnet nuget push' '.dll' \
+NEW:  'dotnet nuget push-PROBE-REC' '.dll' \
+SITE:push-PROBE-REC
+
+### attest-kind-ext
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:  'dotnet nuget push' '.dll' \
+NEW:  'dotnet nuget push' '.nupkg' \
+SITE:'.nupkg' \
+
+### attest-colon-ref
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:  'git push[^|]*[^[:space:]"'"'"']:refs/tags/' '.php')"
+NEW:  'git push[^|]*refs/tags/' '.php')" # PROBE-REC colon-ref
+SITE:# PROBE-REC colon-ref
+
+### attest-single-glob
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:          '' | '|'* | '>'* | *,*) echo "$wf: 증명 단계의 \`subject-path\` 가 글롭 하나가 아니다(${subj:-빈 값}) — 목록이면 빈 글롭이 다른 글롭에 가려 조용히 지나간다" ;;
+NEW:          PROBE-REC-single-glob) : ;;
+SITE:PROBE-REC-single-glob
+
+### attest-continue-on-error
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:        [ "$coe" = 0 ] || echo "$wf: 증명 단계에 \`continue-on-error\` 가 있다 — 증명이 실패해도 게시는 초록이다"
+NEW:        : # PROBE-REC coe
+SITE:: # PROBE-REC coe
+
+### attest-if
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:        [ "$cond" = 0 ] || echo "$wf: 증명 단계에 \`if:\` 가 있다 — 증명이 조건부로 빠질 수 있다"
+NEW:        : # PROBE-REC if
+SITE:: # PROBE-REC if
+
+### attest-kinds-covered
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:          echo "$wf: 게시 명령(\`$kre\`)의 레지스트리가 주는 \`*$ext\` 를 덮는 증명 단계가 없다 — 소비자가 받은 바이트를 아무도 증명하지 않는다"
+NEW:          : # PROBE-REC kinds
+SITE:: # PROBE-REC kinds
+
+### attest-step-boundary
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:    si && match($0, /^[[:space:]]*- /) && RLENGTH - 2 == si { flush() }
+NEW:    # PROBE-REC step-boundary
+SITE:# PROBE-REC step-boundary
+
+### attest-npm-provenance
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:      if printf '%s\n' "$pubs" | grep -vqE -- '--provenance([[:space:]]|$)'; then echo "$wf: \`npm publish\` 에 \`--provenance\` 가 없다 — npm 이 출처 증명 없이 게시한다"; fi
+NEW:      : # PROBE-REC npm-provenance
+SITE:: # PROBE-REC npm-provenance
+
+### attest-pypi-off
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:      if printf '%s\n' "$nc" | grep -qiE "^[[:space:]]*attestations:[[:space:]]*[\"']?false"; then echo "$wf: pypa 게시 액션의 \`attestations\` 를 껐다 — PyPI 가 PEP 740 증명 없이 게시한다"; fi
+NEW:      : # PROBE-REC pypi-off
+SITE:: # PROBE-REC pypi-off
+
+### attest-native-idtoken
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:    END { if (hit && !tok) n++; print n + 0 }
+NEW:    END { print 0 } # PROBE-REC native-idtoken
+SITE:# PROBE-REC native-idtoken
+
+### attest-unclassified
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:    echo "$wf: 태그로 트리거되는데 게시 명령을 알아보지 못했다 — 출처 증명 조준에서 빠진다(PUBLISH_RE · npm · PyPI · 면제 어디에도 없다)"
+NEW:    : # PROBE-REC unclassified
+SITE:: # PROBE-REC unclassified
+
+### attest-exempt
+FILE:scripts/test/test-release-attestation.sh
+TEST:scripts/test/test-release-attestation.sh
+OLD:    case " $EXEMPT_UNPUBLISHED " in *" $wf "*) continue ;; esac
+NEW:    : # PROBE-REC exempt
+SITE:: # PROBE-REC exempt
+
 # ── 버전 SSOT — 설치 하네스 consume 앱의 kotlin SDK 핀(harness-consume-pin-unsupported · H6, 2026-11-15)
 
 ### versions-consume-kotlin-pin

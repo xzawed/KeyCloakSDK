@@ -156,6 +156,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # `gh release create` — 미러 저장소 push는 PHP_SPLIT_TOKEN을 쓰므로 무관하다
+      id-token: write # 출처 증명의 서명 — 내용·태그·패키지를 못 건드린다(release.yml 과 같은 이유)
+      attestations: write # 출처 증명 발행 — 위와 같다
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -209,3 +211,17 @@ jobs:
             printf 'Install: `composer require xzawed/keycloak-sdk:^%s`\n' "${VERSION}"
           } > release-notes.md
           gh release create "${GITHUB_REF_NAME}" --prerelease="${PRERELEASE}" --title "${GITHUB_REF_NAME}" --notes-file release-notes.md
+      # 출처 증명 — 파일 단위로. Packagist 의 배포물은 미러 커밋의 GitHub zipball 이고(`dist.shasum` 이 비었다) 그 아카이브
+      # 바이트는 우리가 만든 것이 아니다. 그 안의 파일은 이 태그의 `php/` 와 같은 blob 이다 — 실측(1.5.2): zipball 의
+      # `src` 42 파일이 `php-v1.5.2:php/src` 와 바이트째 같았다. 그래서 split 이 미러로 보낸 트리의 파일(체크아웃된 이
+      # 태그의 `php/` — `subtree split -b` 는 작업 트리를 안 바꾼다)을 증명하고, 소비자는 `vendor/xzawed/keycloak-sdk` 의
+      # 파일로 잰다. 게시(태그 push) **뒤에** 건다(release.yml 과 같은 원칙). ⚠️ 글롭 하나에 단계 하나다 — 액션은 목록
+      # 전체가 0 일 때만 실패하므로, 한 목록이면 src 글롭이 비어도 composer.json 이 맞아 초록이다(독립 레그 지목).
+      - name: Attest build provenance (미러로 보낸 소스)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'php/src/**/*.php'
+      - name: Attest build provenance (미러로 보낸 composer.json)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'php/composer.json'
