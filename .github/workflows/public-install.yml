@@ -14,7 +14,9 @@ on:
     - cron: '30 5 * * 4' # 매주 목요일 05:30 UTC — harness 매일 03:00 · security-audit 월 04:00 · 레인 월 05:07~07:47 · published-floor 화 05:30 · mutation-sweep 수 05:30 과 겹치지 않게
   pull_request:
     branches: [main]
-    paths: ['.github/workflows/public-install.yml', 'scripts/public-install-smoke.sh']
+    # ⚠️ 스크립트가 쓰는 파일도 받는다 — 렐름 · 하네스 quickstart · kotlin 감사 init script(scripts/check-workflow-paths.mjs 가
+    # 대조한다). 빼면 그 파일만 고친 PR 에서 이 스모크가 돌지 않는다.
+    paths: ['.github/workflows/public-install.yml', 'scripts/public-install-smoke.sh', 'harness/keycloak/harness-realm.json', 'harness/install/quickstart/**', 'harness/install/consume/java-quickstart-pom.xml', 'scripts/gradle/osv-audit-init.gradle']
 
 # 최소권한: 소스를 읽고 공개 레지스트리 · 컨테이너 레지스트리에서 받기만 한다.
 permissions:
