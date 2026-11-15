@@ -1,5 +1,5 @@
 # Verifying a release
-<!-- doc-budget: max-bytes=8275 -->
+<!-- doc-budget: max-bytes=8432 -->
 
 Every SDK in this repository is built and published by a GitHub Actions workflow from a release tag.
 What you can check afterwards depends on the registry: four SDKs (Java, Kotlin, Python, Node.js)
@@ -32,7 +32,8 @@ git ls-remote https://github.com/xzawed/KeyCloakSDK refs/tags/<tag>
 **PGP.** Every file on Central has a detached `.asc` signature. The signing key is Ed25519,
 fingerprint `95FC 7381 2A90 3BAA D9DD  45B8 4D4C 8A03 F0C7 4216`, expiring 2029-08-07. It is on
 keyserver.ubuntu.com (not on keys.openpgp.org). Nobody else has certified it, so `gpg` warns that the
-key is not certified — the fingerprint above is the anchor.
+key is not certified: the keyserver does not vouch for its owner — compare the fingerprint with this
+page, which is served from the repository.
 
 ```sh
 gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 95FC73812A903BAAD9DD45B84D4C8A03F0C74216
@@ -105,9 +106,10 @@ npm install @xzawed/keycloak-sdk@<version>
 npm audit signatures
 ```
 
-`npm audit signatures` checks the registry signature and the provenance attestation of every package
-it installed, this SDK included. `npm view @xzawed/keycloak-sdk@<version> dist.attestations` shows the
-SLSA provenance, which names `node-release.yml` and the `node-v<version>` tag.
+`npm audit signatures` checks the registry signature of every package it installed, and a provenance
+attestation wherever a package published one — this SDK does; many dependencies do not, and still pass.
+`npm view @xzawed/keycloak-sdk@<version> dist.attestations` shows the SLSA provenance, which names
+`node-release.yml` and the `node-v<version>` tag.
 
 Not covered: the audit reports on the whole dependency tree rather than this one package.
 
