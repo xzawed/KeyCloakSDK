@@ -8,11 +8,19 @@ use Xzawed\Keycloak\KeycloakClient;
 use Xzawed\Keycloak\KeycloakConfig;
 use Fschmtt\Keycloak\Representation\User;
 
+// An unset or empty environment variable falls back to the default.
+function envOr(string $name, string $default): string
+{
+    $value = getenv($name);
+
+    return is_string($value) && $value !== '' ? $value : $default;
+}
+
 $client = KeycloakClient::create(new KeycloakConfig(
-    serverUrl: getenv('KC_SERVER_URL') ?: 'http://localhost:8080',
-    realm: getenv('KC_REALM') ?: 'it-realm',
-    clientId: getenv('KC_CLIENT_ID') ?: 'it-client',
-    clientSecret: getenv('KC_CLIENT_SECRET') ?: 'it-secret',
+    serverUrl: envOr('KC_SERVER_URL', 'http://localhost:8080'),
+    realm: envOr('KC_REALM', 'it-realm'),
+    clientId: envOr('KC_CLIENT_ID', 'it-client'),
+    clientSecret: envOr('KC_CLIENT_SECRET', 'it-secret'),
 ));
 
 // 1) Get a token with the client-credentials grant. TokenSet's __toString() is masked automatically (accessToken=***).

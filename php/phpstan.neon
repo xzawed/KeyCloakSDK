@@ -6,3 +6,5 @@ parameters:
   paths:
     - src
     - tests
+    # README 가 링크하는 예제 — 이름이 바뀐 메서드를 부르면 여기서 실패한다(실행은 실서버가 필요해 하지 않는다).
+    - examples
