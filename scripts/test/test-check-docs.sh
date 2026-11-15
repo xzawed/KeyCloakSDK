@@ -1869,4 +1869,24 @@ cp -r "$FIX/." "$TMP/"
 printf '%s\n' '| 단위 테스트 | rspec 3 · webmock | — |' >> "$TMP/ok.md"
 assert_fails node "$GUARD" "$TMP"
 
+# ---- git 이 무시하는 경로는 저장소 문서가 아니다 ----
+# CI 의 깨끗한 체크아웃에는 없고 로컬 주 작업 트리에서만 게이트를 빨갛게 한다(실측 2026-11-15: 하네스 보고서 ·
+# .pytest_cache · 도구 상태 10건이 「doc-budget 앵커가 없다」로 걸렸다). 가르는 기준은 이름이 아니라 **추적 여부**다.
+rm -rf "$TMP"; mkdir -p "$TMP"; cp -r "$FIX/." "$TMP/"
+git init -q "$TMP" >/dev/null 2>&1
+printf 'report/\n' > "$TMP/.gitignore"
+git -C "$TMP" add -A >/dev/null 2>&1
+git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm fixture >/dev/null 2>&1
+mkdir -p "$TMP/report"
+sed 's/| 1\.2\.3 |/| 9.9.9 |/' "$TMP/ok.md" > "$TMP/report/gen.md"
+assert_eq "report/gen.md" "$(git -C "$TMP" check-ignore report/gen.md)" "[무시] 픽스처의 훼손 문서가 실제로 git 무시 대상이다"
+assert_ok node "$GUARD" "$TMP"
+# 대조군 1 — 무시되지 않은 미추적 문서(아직 add 하지 않은 새 문서)는 본다. 로컬 사전 점검이 그것을 놓치면 안 된다.
+cp "$TMP/report/gen.md" "$TMP/draft.md"
+assert_fails node "$GUARD" "$TMP"
+rm -f "$TMP/draft.md"
+# 대조군 2 — 같은 파일을 강제로 추적하면 다시 본다(무시 패턴이 아니라 「추적되지 않고 무시된다」로 가른다).
+git -C "$TMP" add -f report/gen.md >/dev/null 2>&1
+assert_fails node "$GUARD" "$TMP"
+
 assert_report

@@ -82,13 +82,33 @@ for (const arg of process.argv.slice(2)) {
 const ROOT = resolve(rootArg ?? '.')
 const warnings = []
 
+// ⚠️ **git 이 무시하는 미추적 경로는 저장소 문서가 아니다** — CI 의 깨끗한 체크아웃에는 없고 로컬 주 작업 트리에서만
+// 게이트를 빨갛게 한다(실측 2026-11-15: 하네스 보고서 · .pytest_cache · IDE 도구 상태 10건). 이름 SKIP 에 하나씩
+// 더하는 대신 git 에 묻는다. 무시되지 않은 미추적 문서(아직 add 하지 않은 새 문서)와 강제로 추적한 파일은 그대로 본다.
+// git 이 아니거나 실패하면(자가테스트의 픽스처 트리) 거르지 않는다 — 더 많이 보는 쪽이다. `--directory` 라 통째로
+// 무시된 디렉터리는 끝이 `/` 인 한 줄로 온다.
+const GIT_IGNORED = (() => {
+  try {
+    const out = execFileSync(
+      'git',
+      ['-C', ROOT, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 },
+    )
+    return new Set(out.split('\0').filter(Boolean))
+  } catch {
+    return new Set()
+  }
+})()
+
 function walkFiles(dir, matches, out = []) {
   for (const name of readdirSync(dir)) {
     if (SKIP.has(name)) continue
     const p = join(dir, name)
     const rel = relative(ROOT, p).replace(/\\/g, '/')
     if (SKIP_PATHS.has(rel)) continue
-    if (statSync(p).isDirectory()) walkFiles(p, matches, out)
+    const isDir = statSync(p).isDirectory()
+    if (GIT_IGNORED.has(isDir ? `${rel}/` : rel)) continue
+    if (isDir) walkFiles(p, matches, out)
     else if (matches(name)) out.push(p)
   }
   return out

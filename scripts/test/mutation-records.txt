@@ -757,3 +757,19 @@ TEST:scripts/test/test-verifying-releases.sh
 OLD:          .NET) echo dotnet ;; PHP) echo php ;; Rust) echo rust ;; Ruby) echo ruby ;; *) echo "?$_l" ;;
 NEW:          .NET) echo dotnet ;; PHP) echo php ;; Rust) echo rust ;; Ruby) echo ruby ;; *) : ;;
 SITE:*) : ;;
+
+# ── check-docs 의 순회 — git 이 무시하는 미추적 경로만 건너뛴다(2026-11-15, 로컬 거짓 빨강 10건)
+
+### docs-git-ignored-skip
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:    if (GIT_IGNORED.has(isDir ? `${rel}/` : rel)) continue
+NEW:    if (false && GIT_IGNORED.size) continue // PROBE-REC
+SITE:if (false && GIT_IGNORED.size)
+
+### docs-git-ignored-only
+FILE:scripts/check-docs.mjs
+TEST:scripts/test/test-check-docs.sh
+OLD:      ['-C', ROOT, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+NEW:      ['-C', ROOT, 'ls-files', '--others', '--exclude-standard', '--directory', '-z'], // PROBE-REC
+SITE:'--exclude-standard', '--directory', '-z'], // PROBE-REC
