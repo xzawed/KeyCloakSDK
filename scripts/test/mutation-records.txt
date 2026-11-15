@@ -126,6 +126,13 @@ OLD:const FIRST_ATTESTED = { java: '1.0.2', kotlin: '1.0.2' }
 NEW:const FIRST_ATTESTED = { java: '1.0.3', kotlin: '1.0.2' } // PROBE-REC
 SITE:java: '1.0.3'
 
+### jvm-attest-unparsable-version
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:  const p = (s) => (/^\d+(\.\d+){0,2}([-+].*)?$/.test(s) ? s.split(/[-+]/)[0].split('.').map(Number) : null)
+NEW:  const p = (s) => s.split(/[-+]/)[0].split('.').map((n) => Number(n) || 0) // PROBE-REC
+SITE:Number(n) || 0) // PROBE-REC
+
 ### jvm-attest-vacuous
 FILE:scripts/check-published-jvm-floor.mjs
 TEST:scripts/test/test-check-published-jvm-floor.sh

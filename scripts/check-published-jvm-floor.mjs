@@ -254,9 +254,12 @@ const readJarMajors = (buf, label) => {
 
 // ── 증명(--attest) ──────────────────────────────────────────────────────────
 // 판의 숫자 부분(x.y.z)만 비교한다 — `0.1.0-RC1` 은 0.1.0 이고, `1.0.2-RC1` 은 경계와 같아 증명을 요구한다.
+// ⚠️ 숫자로 못 읽는 판은 **건너뛰지 않는다**(증명을 요구하는 쪽) — 느슨하게 0 으로 읽으면 x.0.1 이 0.0.1 이 되어
+// 봉인 이전으로 빠지고, 옆 판이 증명되는 한 실행은 초록이다(독립 레그 지목).
 const coreLess = (a, b) => {
-  const p = (s) => s.split(/[-+]/)[0].split('.').map((n) => Number(n) || 0)
+  const p = (s) => (/^\d+(\.\d+){0,2}([-+].*)?$/.test(s) ? s.split(/[-+]/)[0].split('.').map(Number) : null)
   const x = p(a), y = p(b)
+  if (!x || !y) return false
   for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0)
   return false
 }
