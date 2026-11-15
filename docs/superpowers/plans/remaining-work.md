@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=138277 max-raw-bytes=148096 -->
+<!-- doc-budget: max-bytes=137146 max-raw-bytes=147273 -->
+<!-- max-bytes 138277 → 137146 · max-raw-bytes 148096 → 147273: H6 · harness-consume-pin-unsupported 마감(#1101) — H6 의
+     재판정 하위 불릿 둘(「야간이 아니라 주간」 · 「Central 에 실재해야」)이 닫힌 한 줄이 됐다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 138738 → 138277 · max-raw-bytes 148265 → 148096: readme-quickstarts-ungated 마감(#1099) — 후속
      examples-never-run-against-keycloak 를 올리고, 닫힌 rust-msrv 줄의 경위를 그 가드 주석으로 보냈다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 141179 → 138738 · max-raw-bytes 156086 → 148265: published-bytes-have-no-oracle 마감(#1096) — 열린 항목의 하위
@@ -248,7 +250,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 148건 (열림 46)
+## C. 품질 부채 — 148건 (열림 45)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -438,16 +440,14 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **compose 만 바꾸면 안 된다 — 리터럴이 두 곳이다.** `install-verify.sh` 의 `wait_healthy` 가 `http://localhost:18180/...` 류를 **5곳**에서 직접 적는다. verify 하네스는 `docker compose port` 로 읽고 있어 compose 한 곳만 고치면 됐지만(그래서 #506 이 쌌다), 여기는 **두 소스가 함께 움직여야** 한다.
   - ⚠️ **로컬 실측 비용이 크다** — `install-verify.sh` 는 9종 레지스트리 + 9언어 Docker 파이프라인이라 한 번 도는 데 길다(야간 `install-all` 타임아웃이 90분). 그래서 이 세션은 **재지 않고 등록만** 한다. 착수하는 세션은 8080 을 비우거나 그 변수를 먼저 만든다.
 - [ ] `H5-install-version-class-drift` **[L/M]** install 하네스의 「버전을 무엇이 정하는가」 분류가 코드·산문·SSOT 셋에서 갈렸다 — dotnet 이 정반대 · `harness/install/lib/verify-lib.sh:56`
-- [ ] `H6-kotlin-consume-pin-audits-old-artifact` **[L/S]** kotlin 소비자 앱의 0.1.0 리터럴이 야간 OSV 감사가 실제로 해석하는 좌표다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
-  - ⚠️ **재판정 2026-09-15 — 서술 둘이 틀렸다(실측).** (1) **「야간」이 아니라 주간**이다: `.github/workflows/security-audit.yml:20` 이 `cron: '0 4 * * 1'`(매주 월 04:00 UTC)이고, 주석이 「harness 야간 03:00 과 겹치지 않게」라 적고 있다 — **야간인 것은 harness 쪽**이고 OSV 감사가 아니다. (2) 나머지는 **참이다**: `build.gradle.kts:36` 의 `implementation("io.github.xzawed:keycloak-sdk-kotlin:0.1.0")` 이 그 잡이 컨테이너 **밖**에서 해석하는 좌표이고(`kotlin-run.sh` 의 `sed` 치환을 안 탄다), SDK SSOT 는 `1.0.0` 이다. 즉 **주간 감사가 옛 좌표를 잰다**.
-  - ⚠️ **다만 「그냥 1.0.0 으로 바꾸면 된다」가 아니다** — 그 줄 바로 위 주석이 「**Central 에 실재하는 버전이어야** 한다(그 잡은 미해결 좌표에 fail-closed 다)」고 적는다. 바꾸기 전에 `1.0.0` 이 Central 에 있는지 **재고**, 소비자 앱이 그 버전으로 **빌드되는지**도 재야 한다(형제 항목 `harness-consume-pin-unsupported` 와 같은 자리다 — 둘을 함께 본다).
+- [x] `H6-kotlin-consume-pin-audits-old-artifact` **[L/S · 닫힘 2026-11-15 #1101]** consume 앱 핀을 SDK 버전에 묶었다(`check-versions`) — 주간 감사가 0.1.0 의 jackson 2.22.3 · jose 10.9.1 을 쟀다
 - [ ] `H7-harness-readme-vs-tree` **[L/S]** harness/README.md 가 실제 트리와 갈렸다 — install/ 64파일이 지도에 없고 ruby 프레임워크가 틀렸다 · `harness/README.md:16`
   - ⚠️ **재판정 2026-09-15 — 절반이 거짓이다(실측).** **「ruby 프레임워크가 틀렸다」는 거짓**이다: `harness/README.md:16` 이 `| ruby | Sinatra 4 (Puma) |`, 40행이 `Sinatra 4, served by Puma` 이고, `harness/apps/ruby/Gemfile` 이 `sinatra "~> 4.0"`·`puma ">= 8.0.2"` 다 — **일치한다**. 독립 레그가 먼저 짚었고 실측이 확인했다. ⚠️ **내 세션 메모리도 같은 오류(「Rack/Puma」)를 들고 있었고 함께 고쳤다.**
   - ⚠️ **「install/ 64파일이 지도에 없다」는 그 형태로는 반증 불가다** — README 의 Layout 은 **디렉터리 개요**이지 파일 목록이 아니다(`install/` 은 한 노드로 접혀 자체 README·`compose.install.yml`·`install-verify.sh`·`publish/`·`consume/`·`registries/` 만 가리킨다). 「빠진 N 개」는 그 구조에서 셀 수 없다 — **주장을 다시 쓰거나**(예: 「개요가 가리키는 노드와 실제 하위 디렉터리 집합이 어긋난다」) 닫아야 한다.
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 95건 (열림 37)
+## D. 원장 밖 — 95건 (열림 36)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -548,7 +548,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `advisory-path-never-run` **[M/M]** 보안 권고·회수 경로가 문서에만 있고 한 번도 실행된 적 없다 · `SECURITY.md:141`
 - [ ] `divergence-rehearsal-artifact` **[M/M]** 함대가 갈리는 릴리스에서 새로 써야 하는 분기 문장 8건에 초안이 없다 · `scripts/test/test-publication-claims.sh:704`
 - [ ] `keycloak-server-tag-ssot` **[M/L]** Keycloak 서버 태그가 18개 파일에 복제된 채 떠 있고, 호환성 표의 「actual 26.6.4」는 재현 불가한 스냅샷 · `docs/reference/compatibility.md:20`
-- [ ] `harness-consume-pin-unsupported` **[L/S]** 주간 OSV 감사가 지원 대상이 아닌 0.1.0 트리를 재고 있다 · `harness/install/consume/kotlin-app/build.gradle.kts:36`
+- [x] `harness-consume-pin-unsupported` **[L/S · 닫힘 2026-11-15 #1101]** H6 과 같은 수정 — 감사가 지원 판의 트리를 잰다 · `harness/install/consume/kotlin-app/build.gradle.kts`
 - [x] `npm-rc-dist-tag-residue` **[L/S · 닫힘 2026-11-04]** 지웠다 — 정식이 `rc` 를 안 옮겨 RC 뒤 정식마다 남는다 · `npm dist-tag ls @xzawed/keycloak-sdk` · 함정 (nn)
 - [x] `php-admin-client-0.44-upgrade` **[L/M · 닫힘 2026-10-09 #759]** 0.44 가 감싼 예외를 `ErrorTranslation` 이 벗긴다(#750 대체)
 - [x] `kotlin-pom-description-jdk-floor` **[M/S · 닫힘 2026-11-02 #933]** POM 이 「JDK 21+」였다(게시 1.0.1–1.0.8) — 17+ 로 고치고 `check-versions.mjs` 가 `KOTLIN_X_Y`·`JvmTarget` 과 대조한다
