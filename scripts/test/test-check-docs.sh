@@ -1889,4 +1889,80 @@ rm -f "$TMP/draft.md"
 git -C "$TMP" add -f report/gen.md >/dev/null 2>&1
 assert_fails node "$GUARD" "$TMP"
 
+# ---- kind=compat: 호환성 표의 굵은 라이브러리 값 · 런타임 하한 ↔ 그 행이 말하는 판의 **태그** ----
+# 행은 첫 열의 게시판이 함께 나간 값을 말한다. 오라클은 트리가 아니라 그 판의 태그이고, 태그가 아직 없으면(런북 §4 —
+# 범프가 태그보다 먼저 병합된다) 트리다. 실측 2026-11-15: Python 행이 선언 `>=1.7,<2` 를 `1.7.x` 로 좁혀 적어 소비자가
+# 받는 joserfc 1.8.0 을 부정했다(등록부 compat-table-library-cells-drift — Node 행 셋도 한때 태그 락파일과 갈렸다).
+_compat_doc() { # $1 jose · $2 Node 런타임 산문 · $3 oauth2-oidc-sdk · [$4 Node 판]
+  printf '%s\n' '# compat' '' '<!-- doc-guard: kind=compat -->' \
+    '| SDK | Target Keycloak server | Base libraries · runtime |' '|---|---|---|' \
+    "| Node \`${4:-1.0.0}\` | 26.6.x | \`openid-client\` **6.8.8** · \`jose\` **$1** · $2 |" \
+    "| Java \`1.0.0\` | 26.6.x | Nimbus \`oauth2-oidc-sdk\` **$3** · JDK 17+ |" > "$TMP/compat.md"
+}
+_compat_repo() {
+  rm -rf "$TMP"; mkdir -p "$TMP/node" "$TMP/java/core"
+  printf '%s\n' '{ "name": "x", "engines": { "node": ">=22" } }' > "$TMP/node/package.json"
+  printf '%s\n' '{ "lockfileVersion": 3, "packages": { "": {}, "node_modules/jose": { "version": "6.2.13" }, "node_modules/openid-client": { "version": "6.8.8" } } }' > "$TMP/node/package-lock.json"
+  printf '%s\n' '<project><properties><maven.compiler.release>17</maven.compiler.release><nimbus.oidc.version>11.38.2</nimbus.oidc.version></properties></project>' > "$TMP/java/pom.xml"
+  printf '%s\n' '<project><dependencies><dependency><groupId>com.nimbusds</groupId><artifactId>oauth2-oidc-sdk</artifactId><version>${nimbus.oidc.version}</version></dependency></dependencies></project>' > "$TMP/java/core/pom.xml"
+  _compat_doc "6.2.13" "Node 22+" "11.38.2"
+  git init -q "$TMP" >/dev/null 2>&1
+  git -C "$TMP" add -A >/dev/null 2>&1
+  git -C "$TMP" -c user.email=t@example.invalid -c user.name=t commit -qm release >/dev/null 2>&1
+  git -C "$TMP" tag node-v1.0.0 >/dev/null 2>&1
+  git -C "$TMP" tag v1.0.0 >/dev/null 2>&1
+}
+_compat_out() { node "$GUARD" "$TMP" 2>&1 || true; }
+_compat_repo
+assert_eq "node-v1.0.0 v1.0.0" "$(git -C "$TMP" tag -l | sort | tr '\n' ' ' | sed 's/ $//')" "[compat] 픽스처에 두 판의 태그가 실제로 생겼다"
+assert_ok node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "checked 2 facts across 1 anchors" "[compat] 행 하나가 사실 하나로 계수된다(--min-facts 의 대상)"
+_compat_doc "6.2.14" "Node 22+" "11.38.2"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "'jose' 문서=6.2.14 node-v1.0.0=6.2.13" "[compat] 문서 값이 태그 값과 다르면 이름 · 양쪽 값 · 태그를 말한다"
+# 트리만 앞서 간다(락 6.3.0) — 문서가 태그 값을 그대로 말하면 통과한다. **오라클은 트리가 아니라 태그다.**
+sed -i 's/"6.2.13"/"6.3.0"/' "$TMP/node/package-lock.json"
+_compat_doc "6.2.13" "Node 22+" "11.38.2"
+assert_ok node "$GUARD" "$TMP"
+_compat_doc "6.3.0" "Node 22+" "11.38.2"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "node-v1.0.0=6.2.13" "[compat] 문서가 트리를 따라가 게시본과 갈리면 실패한다"
+# 아직 태그가 없는 판(범프 뒤 · 태그 전)은 트리와 대조한다 — 트리 값이면 통과, 낡았으면 실패.
+_compat_doc "6.3.0" "Node 22+" "11.38.2" "1.0.1"
+assert_ok node "$GUARD" "$TMP"
+_compat_doc "6.2.13" "Node 22+" "11.38.2" "1.0.1"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "트리=6.3.0" "[compat] 태그 없는 판은 트리와 대조했다고 말한다"
+# Java — 태그의 리액터 pom 둘을 읽어 \${...} 를 푼다.
+_compat_doc "6.2.13" "Node 22+" "11.39"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "'oauth2-oidc-sdk' 문서=11.39 v1.0.0=11.38.2" "[compat] JVM 값은 태그의 리액터에서 속성을 풀어 대조한다"
+# 런타임 하한 — 태그의 engines >=22 를 산문이 말해야 한다.
+_compat_doc "6.2.13" "Node 20+" "11.38.2"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "런타임 하한 22" "[compat] 런타임 하한이 다르면 실패한다"
+# 이름 없는 굵은 값은 대조할 수 없는 주장이다.
+_compat_doc "6.2.13" "Node 22+ · **24**" "11.38.2"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "이름 없는 굵은 값" "[compat] 이름에 묶이지 않은 굵은 값을 거부한다"
+_compat_doc "6.2.13" "Node 22+" "11.38.2"
+sed -i 's/`jose`/`josee`/' "$TMP/compat.md"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "'josee' 를 node-v1.0.0:node/package-lock.json 에서 찾지 못" "[compat] 소스에 없는 이름을 지목한다"
+_compat_doc "6.2.13" "Node 22+" "11.38.2"
+sed -i 's/^| Node `/| Nodejs `/' "$TMP/compat.md"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "'Nodejs' 를 모른다" "[compat] 모르는 행 라벨을 지목한다"
+printf '%s\n' '# compat' '' '<!-- doc-guard: kind=compat -->' '' 'prose only' > "$TMP/compat.md"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "앵커 뒤에 호환성 표가 없다" "[compat] 표 없는 앵커는 공허하게 통과하지 않는다"
+# 언어 집합은 DEPLOY_LANGS 가 소유한다 — 표가 한 언어를 빠뜨리면 실패한다(손 목록이 조용히 좁아지지 않게).
+_compat_doc "6.2.13" "Node 22+" "11.38.2"
+mkdir -p "$TMP/scripts/lib"
+printf '%s\n' 'DEPLOY_LANGS="node java"' > "$TMP/scripts/lib/deploy-facts.sh"
+assert_ok node "$GUARD" "$TMP"
+printf '%s\n' 'DEPLOY_LANGS="node java python"' > "$TMP/scripts/lib/deploy-facts.sh"
+assert_fails node "$GUARD" "$TMP"
+assert_contains "$(_compat_out)" "Python 행이 없다" "[compat] DEPLOY_LANGS 의 언어가 표에 없으면 실패한다"
+
 assert_report
