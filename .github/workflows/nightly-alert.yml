@@ -38,6 +38,7 @@ on:
       - published-floor
       - Python CI
       - repo-hygiene
+      - revive-watch
       - ruby-ci
       - rust-ci
       - security-audit

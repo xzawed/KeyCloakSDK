@@ -1508,3 +1508,45 @@ TEST:scripts/test/test-harness-failure-evidence.sh
 OLD:UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
 NEW:UNIT=1 # PROBE-REC
 SITE:UNIT=1 # PROBE-REC
+
+### revive-tenth-language
+FILE:scripts/revive-watch.mjs
+TEST:scripts/test/test-revive-watch.sh
+OLD:  return { revive: langs.length > 9, detail: `트리 언어 ${langs.length} 개(판정 당시 9)` }
+NEW:  return { revive: langs.length > 10, detail: `트리 언어 ${langs.length} 개(판정 당시 9)` } // PROBE-REC
+SITE:langs.length > 10
+
+### revive-java-binaries
+FILE:scripts/revive-watch.mjs
+TEST:scripts/test/test-revive-watch.sh
+OLD:      return { revive: n === 0, detail: `sonar.java.binaries= 줄 ${n} 개` }
+NEW:      return { revive: n === -1, detail: `sonar.java.binaries= 줄 ${n} 개` } // PROBE-REC
+SITE:n === -1
+
+### revive-partition-unclassified
+FILE:scripts/revive-watch.mjs
+TEST:scripts/test/test-revive-watch.sh
+OLD:    if (!p && !m) out.push(`분류 없는 행: ${n} — PROBES 에 탐침을 두거나 MANUAL 에 이유를 적는다`)
+NEW:    if (false) out.push(`분류 없는 행: ${n} — PROBES 에 탐침을 두거나 MANUAL 에 이유를 적는다`) // PROBE-REC
+SITE:if (false) out.push
+
+### revive-mypy-sdk-filter
+FILE:scripts/revive-watch.mjs
+TEST:scripts/test/test-revive-watch.sh
+OLD:    .filter((l) => /Module "keycloak_sdk/.test(l) || [...l.matchAll(/"([A-Za-z_]\w*)"/g)].some((m) => classes.has(m[1])))
+NEW:    .filter(() => true) // PROBE-REC
+SITE:.filter(() => true) // PROBE-REC
+
+### revive-rust-branches
+FILE:scripts/revive-watch.mjs
+TEST:scripts/test/test-revive-watch.sh
+OLD:      return { revive: branches.length >= 2, detail: `판정 뒤 실패 ${runs.length} · stable 레그만 ${only.length}(브랜치 ${branches.length}${branches.length ? `: ${branches.join(' · ')}` : ''})` }
+NEW:      return { revive: branches.length >= 1, detail: `판정 뒤 실패 ${runs.length} · stable 레그만 ${only.length}(브랜치 ${branches.length}${branches.length ? `: ${branches.join(' · ')}` : ''})` } // PROBE-REC
+SITE:branches.length >= 1
+
+### revive-sonar-no-token
+FILE:scripts/revive-watch.mjs
+TEST:scripts/test/test-revive-watch.sh
+OLD:      return { revive: noToken.length > 0, detail: `판정 뒤 main 실패 스캔 ${runs.length} · Dependabot 커밋 ${bot.length} · 그중 토큰 없음 ${noToken.length}` }
+NEW:      return { revive: bot.length > 0, detail: `판정 뒤 main 실패 스캔 ${runs.length} · Dependabot 커밋 ${bot.length} · 그중 토큰 없음 ${noToken.length}` } // PROBE-REC
+SITE:revive: bot.length > 0

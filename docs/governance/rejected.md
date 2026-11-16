@@ -1,5 +1,9 @@
 # 기각 레지스트리
-<!-- doc-budget: max-bytes=13867 -->
+<!-- doc-budget: max-bytes=14105 -->
+<!-- 13867 → 14105 (2026-11-16, +238B — 규약 (1): 증가분이 **다시 재는 명령**을 사 왔다). 되살릴 조건을 아무도 돌리지
+     않았다(등록부 revive-conditions-unmeasured) — `scripts/revive-watch.mjs` 가 행마다 탐침 또는 수동 사유를 갖고 주간으로
+     돈다. 같은 커밋이 **거짓 문장을 지웠다**: mypy 행의 「(현재 0건)」은 글자 그대로의 조건(`attr-defined` 하나라도)이 18 로
+     이미 와 있었고(전부 서드파티 좁힘), SONAR 행의 조건은 서버 · 스캐너 오류까지 셌다. 둘 다 그 부류를 재는 꼴로 좁혔다. -->
 <!-- 13580 → 13867 (2026-10-29, +287B = 새 기각 **1건**: `SONAR_TOKEN` 의 Dependabot 시크릿 복제 — 사람 위임
      판정). 2026-09-11 과 같은 규약이다 — 행과 함께 올렸고 여유는 다시 0 이다. -->
 <!-- 13285 → 13580 (2026-09-11, +295B = 새 기각 **1건**: KGP 2.4.20). 규약대로 행과 함께
@@ -56,7 +60,8 @@
 [작업 프로세스 §3](process.md#3-기각--기획검토의-정상-출구)이 소유한다. 이 문서는 **그렇게 내려진 판정의 목록**이다.
 
 ⚠️ **이미 기각된 제안은 되살릴 조건이 오기 전에 다시 만들지 않는다.** 되살릴 조건은 산문이 아니라
-**돌아가는 명령**으로 적는다 — 다음 세션이 판정을 재현할 수 있어야 한다.
+**돌아가는 명령**으로 적는다 — 다음 세션이 판정을 재현할 수 있어야 한다. 기계가 재는 조건은
+`scripts/revive-watch.mjs` 가 돌린다(새 행은 거기 분류해야 지나간다).
 
 | 기각 | 한 줄 | 되살릴 조건 |
 |---|---|---|
@@ -66,7 +71,7 @@
 | pre-1.0 문단 통합 | 8개는 동일하나 Rust는 Cargo 캐럿 고유 사실을 담음. ⚠️ **전제 소멸**(2026-09-06 실측: 아홉 README 어디에도 그 문단이 없다) | 문단이 되살아나 세 번째 자리까지 번질 때 |
 | 게차 그룹화 | 태그 라우팅이 이미 있고 Java·Python은 순손실 | 스텁 계약을 스펙 개정으로 바꾼 뒤 순손실 그룹이 사라졌을 때 |
 | CLAUDE.md 생성물화 | 마커 비용이 이득을 넘고, 매니페스트 파생은 doc-facts를 자기대조로 만듦 | doc-guard 사실이 매니페스트 **바깥** 원천으로 옮겨질 때 |
-| mypy를 `python/tests`로 확장 | 실측 308건 중 270이 `no-untyped-def`(테스트 함수 애너테이션)이고, 잡음을 걷은 38건 중 26은 `func-returns-value`인데 **§4 void 계약을 일부러 단언하는 관용**이라 오탐. 남는 실질 신호 11건은 픽스처 타입뿐 | `cd python && mypy tests --disable-error-code=no-untyped-def`가 **`call-arg`·`attr-defined`·private 접근** 중 하나라도 낼 때. 그것이 Node에서 17건을 숨겼던 API 드리프트 부류다(현재 0건) |
+| mypy를 `python/tests`로 확장 | 실측 308건 중 270이 `no-untyped-def`(테스트 함수 애너테이션)이고, 잡음을 걷은 38건 중 26은 `func-returns-value`인데 **§4 void 계약을 일부러 단언하는 관용**이라 오탐. 남는 실질 신호 11건은 픽스처 타입뿐 | `cd python && mypy tests --disable-error-code=no-untyped-def`가 **SDK 클래스 이름을 가리키는** `call-arg`·`attr-defined`를 하나라도 낼 때. 그것이 Node에서 17건을 숨겼던 API 드리프트 부류다(2026-11-16 0건 — attr-defined 18 은 전부 서드파티 좁힘) |
 | 정식/RC 축 `claim_at` 신설 | 새 positive 앵커가 `DEPLOY.md`의 기존 문장에 **접두 매치**되어 그날로 공허해진다(재발 2). blacklist 확장은 이미 실제 문구를 놓쳤다(재발 3) | 런북이 다시 「지금 무엇이 라이브인가」를 서술해야 할 이유가 생겼을 때. 그때도 containment 가 아니라 **추출 + `assert_eq`** 로 |
 | `DEPLOY.md` 3분할 | 측정한 결합이 분할을 정당화하지 않는다 — `doc-guard` 앵커 **0건**이라 앵커 위험이 없고, 위험은 **경로 고정**이며(`test-deploy-md.sh`가 파일 하나에 묶여 있다), §2-F 는 "일회성 설정"이 아니라 `dispatch-release.yml` 이 운영자에게 가리키는 **살아 있는 복구 절차**다. §-단위 인바운드 인용이 약 20 곳 | **10 번째 언어가 들어오거나 자격증명을 실제로 분실**해 §2 가 평소에 안 읽는 문서가 될 때. 그때 §6 만 먼저 떼는 것이 가장 싸다(스텁 + 링크 + 지도 등재) |
 | 릴리스 순차머지 가드 | 체크리스트 5 번에 걸린다 — **취소된 pending 실행은 스텝을 하나도 돌리지 않으므로** 저장소 안의 어떤 스크립트도 그것을 실패시킬 수 없고, 자가테스트가 GitHub 스케줄러를 흉내 낼 수도 없다 | `release-request.json` 이 `main` 에 닿은 뒤 **나중 push 가 pending Dispatch 를 취소하는 것**이 실측될 때 |
@@ -84,7 +89,7 @@
 | examples 모듈에 `<skipPublishing>` | publish mojo 가 `aggregator=false`·`phase=deploy` 이고 examples 가 `<modules>` 의 **마지막**이라 번들 publish 자체가 그 모듈에서 일어난다 — 거기서 스킵하면 번들 전체가 안 나갈 개연성이 있다. 부모의 `<excludeArtifacts>` 로 갔다(#357, 실제 번들로 검증: 제거 20파일 · 복원 0파일) | publish mojo 가 `aggregator=true` 가 되거나 examples 가 `<modules>` 의 마지막이 아니게 될 때 |
 | php-semver V154 면제 | 「클래스명 대소문자가 바뀌었다」는 `implements` 절 추가만으로 나오는 오탐이나(최소 A/B 로 재현), 도구가 그것을 **PATCH** 로 내므로 MAJOR 만 보는 게이트에 애초에 닿지 않는다. 닿지 않는 면제는 시험되지 않는 코드다 | 리포트에서 V154 가 **MAJOR** 로 나오는 것이 실측될 때 — `grep -cE '^\| MAJOR .*V154' <리포트>` 가 0 이 아니면 그때 술어(선언 토큰 동일성)를 넣는다. 그전까지는 fail-closed 가 옳다 |
 | `with:` 시크릿에 빈값 검사 | 규칙 8 은 **셸** 테스트(`[ -z "$X" ]`)인데 kebab-case `with:` 입력은 환경에 없다 — 그 이름으로 검사를 붙이면 main 에서 실패한다. 세 자리(`gpg-private-key`·`app-id`·`private-key`) 전부 같은 잡에 env 형제가 있어 규칙 8 이 이미 본다. 위험 부류도 다르다(빈 `with:` 는 조용한 스킵이 아니라 불투명한 실패) | `with:` 시크릿을 **env 형제 없이** 받는 자리가 생길 때 |
-| `SONAR_TOKEN` 을 Dependabot 시크릿에 복제 | Dependabot PR 은 매니페스트·잠금 파일만 바꿔 스캔이 얻는 것이 없고 토큰 접근만 넓힌다(2026-10-29 판정) | `gh run list -w sonarcloud.yml -b main -s failure` 에 Dependabot 병합 커밋이 보일 때 |
+| `SONAR_TOKEN` 을 Dependabot 시크릿에 복제 | Dependabot PR 은 매니페스트·잠금 파일만 바꿔 스캔이 얻는 것이 없고 토큰 접근만 넓힌다(2026-10-29 판정) | `gh run list -w sonarcloud.yml -b main -s failure` 의 Dependabot 병합 커밋이 **토큰 없음**(`Not authorized or project not found`)으로 실패할 때 |
 
 <!-- GitHub Release 대칭화 행의 「23태그 중 15개」재판정 (2026-08-28 · 2026-09-22 재측정):
      `git ls-remote --tags origin | grep -v '\^{}' | grep -vc archive/` → 37 ·

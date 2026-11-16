@@ -566,6 +566,12 @@ jobs:
           node-version: '22'
       - name: KNOWN_GAPS id ↔ 등록부 열린 항목(실제 트리)
         run: node scripts/check-known-gaps.mjs
+      - name: 기각 레지스트리 — 행마다 탐침 또는 수동 사유, 트리 탐침(되살릴 조건이 오면 빨강)
+        # docs/governance/rejected.md 의 되살릴 조건을 아무도 돌리지 않았다(등록부 revive-conditions-unmeasured). gh · mypy
+        # 탐침은 주간 revive-watch.yml 이 돌고, 여기서는 분할과 트리 탐침만 본다(네트워크 없음).
+        run: |
+          sh scripts/test/test-revive-watch.sh
+          node scripts/revive-watch.mjs --tree
 
   repo-config:
     # 저장소 설정(브랜치 룰셋) 대조기의 자가테스트.
