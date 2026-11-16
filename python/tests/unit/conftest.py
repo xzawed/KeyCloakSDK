@@ -5,7 +5,9 @@ IdP 의 자체 서명 인증서(`tls_cert` · `server_tls`)."""
 from __future__ import annotations
 
 import base64
+import contextlib
 import datetime
+import gc
 import gzip
 import hashlib
 import hmac
@@ -205,6 +207,26 @@ def server_tls(tls_cert: tuple[str, str]) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(*tls_cert)
     return context
+
+
+@contextlib.contextmanager
+def collector_paused() -> Iterator[None]:
+    """순환 수집기를 멈춘 채로 — 파서를 재귀 한도까지 모는 칸(깊은 중첩 JSON)을 감싼다.
+
+    3.10 은 json 의 C 스캐너가 한도 근처일 때 수집이 걸리면, 대기 중인
+    파이널라이저가 재귀 예산 없이 돌다 `RecursionError` 를 unraisable 로 낸다.
+    pytest 는 그것을 칸의 판정과 무관한 실패로 바꾼다(등록부
+    python-310-deep-json-unraisable-flake · python-ci 43851647004 attempt 1).
+    수집을 파스 깊이 994 · 995 에 겨누면 3.10 에서만 재현되고, 멈추면 0 이다.
+    쓰레기는 풀린 뒤 얕은 스택에서 거둔다.
+    """
+    was = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was:
+            gc.enable()
 
 
 @pytest.fixture

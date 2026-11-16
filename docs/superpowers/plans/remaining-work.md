@@ -452,7 +452,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 99건 (열림 34)
+## D. 원장 밖 — 99건 (열림 33)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -531,7 +531,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `readme-quickstarts-ungated` **[M/M · 닫힘 2026-11-15 #1099]** 다섯 언어 예제를 타입검사 · 정적분석 · 컴파일에(ruby 는 가짜 서버 실행) · `ruby/spec/unit/examples_quickstart_spec.rb`
 - [x] `examples-never-run-against-keycloak` **[L/M · 신규·닫힘 2026-11-15 #1102]** 설치 하네스가 README 예제 일곱을 실서버에 대고 돌린다(사본 넷 삭제 · php · ruby · rust 는 이미였다) · `harness/install/consume/`
 - [x] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15 · 닫힘 2026-11-16 #1104]** 장부가 `harness:install` 소유를 받는다 — 이미지 COPY · pom 진입점 · 실행 스크립트의 표지를 트리에서 확인할 때만 · `scripts/integration-coverage.mjs`
-- [ ] `python-310-deep-json-unraisable-flake` **[L/S · 신규 2026-11-16]** python 3.10 의 r18d(400 · 10만 겹 JSON) sync refresh 가 간헐 실패 — unraisable 예외를 pytest 훅이 서식화하다 재귀 한도에 걸린다(python-ci 43851647004 attempt 1 · 최근 30 회 중 1 · 재실행 초록) · `python/tests/unit/test_token_response_class.py:163`
+- [x] `python-310-deep-json-unraisable-flake` **[L/S · 신규·닫힘 2026-11-16 #1122]** 3.10 은 파스가 재귀 한도 근처일 때 걸린 수집의 파이널라이저가 예산 없이 unraisable 을 낸다 → 그 세 자리를 `collector_paused()` 로 감쌌다 · 재판정: 순환 쓰레기 + gen0 문턱으로 수집을 파스 깊이 d 에 겨눠 센다(3.10 은 994 · 995, 멈춤 · 3.13 은 0)
 
 ### 1.0 이후 운영 — 21
 

@@ -21,7 +21,7 @@ from joserfc.jwk import KeySet, RSAKey
 
 from keycloak_sdk._internal.jwt import JWT_MAX_BYTES, JwtValidator
 from keycloak_sdk.exceptions import TokenKeyError, TokenSignatureError, TokenValidationError
-from tests.unit.conftest import hs_token
+from tests.unit.conftest import collector_paused, hs_token
 
 ISSUER = "https://kc.example.com/realms/r"
 
@@ -472,7 +472,8 @@ def test_a_header_nested_past_the_recursion_limit_ends_in_an_sdk_error():
     depth = 50_000
     header = _b64url(('{"alg":"HS256","x":' + "[" * depth + "]" * depth + "}").encode())
 
-    with pytest.raises(TokenValidationError):
+    # 파서를 재귀 한도까지 모는 칸 — 수집기를 멈춘 채 부른다(`collector_paused`).
+    with collector_paused(), pytest.raises(TokenValidationError):
         validator.validate(f"{header}.e30.c2ln", KeySet([_rsa_key()]))
 
 
