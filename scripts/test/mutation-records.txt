@@ -1551,6 +1551,11 @@ OLD:      return { revive: noToken.length > 0, detail: `판정 뒤 main 실패 �
 NEW:      return { revive: bot.length > 0, detail: `판정 뒤 main 실패 스캔 ${runs.length} · Dependabot 커밋 ${bot.length} · 그중 토큰 없음 ${noToken.length}` } // PROBE-REC
 SITE:revive: bot.length > 0
 
+### exclude-pr-legs-versions
+TEST:test-harness-pr-legs.sh
+JUDGE:check-versions.mjs
+WHY:바뀐 파일 목록 속 이름이다 — 판정 입력이지 실행하지 않는다
+
 ### pr-legs-go
 FILE:scripts/harness-pr-legs.mjs
 TEST:scripts/test/test-harness-pr-legs.sh
