@@ -286,6 +286,10 @@ jobs:
         run: sh scripts/test/test-config-masking.sh
       - name: 보안 기본값 자가테스트(9언어 코드 ↔ 문서 정합)
         run: sh scripts/test/test-security-defaults.sh
+      # ⚠️ 언어를 손 목록으로 드는 가드(통합 장부 · 커버리지 경계 · 버전 대조 · admin 표 · doctor)가 내보낸 언어 집합이 트리를
+      # 나누는가 — 열 번째 언어가 그 가드들을 조용히 건너뛰지 못하게(등록부 symmetry-guards-cover-a-subset).
+      - name: 언어 집합 — 손 목록 가드 ↔ 트리
+        run: sh scripts/test/test-lang-universe.sh
 
       # ⚠️ `.dockerignore` 가 **손 목록으로 썩는 것**을 막는다. 실측 2026-09-15: 아홉째 언어
       # (kotlin)의 Gradle 산출물과 mypy 캐시가 한 번도 반영되지 않아 하네스 Docker 컨텍스트

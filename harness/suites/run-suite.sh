@@ -12,9 +12,9 @@
 # SUITE_INTEGRATION=1 환경변수를 주면 각 <lang>.sh가 best-effort로 통합테스트도 시도한다
 # (docker.sock 마운트 필요 — 로컬/CI 환경에 따라 동작이 다를 수 있음, opt-in).
 #
-# ⚠️ 8언어 전체 실행은 느리다(각 언어 툴체인 이미지 pull+의존성 설치+테스트) — 이 스크립트 자체는
-# 무거운 전체 실행을 막지 않지만, PR 게이트에는 일부(예: node/go)만, 8언어 전체는 야간/수동(CI)에서
-# 돌리는 것을 권장한다(harness/verify.sh 오케스트레이터가 8언어 기본값으로 이 스크립트를 호출).
+# ⚠️ 전 언어 실행은 느리다(각 언어 툴체인 이미지 pull+의존성 설치+테스트) — 이 스크립트 자체는
+# 무거운 전체 실행을 막지 않지만, PR 게이트에는 일부(예: node/go)만, 전 언어는 야간/수동(CI)에서
+# 돌리는 것을 권장한다(harness/verify.sh 오케스트레이터가 자기 기본값 — 전 언어 — 으로 이 스크립트를 호출).
 #
 # ⚠️ 실패 단서 규약(___SUITE_LOG_*) — 각 <lang>.sh 는 TESTSPASSED 를 정한 바로 다음 줄에서, 테스트가
 # 깨졌으면 캡처한 출력 전체를 `___SUITE_LOG_BEGIN` · `___SUITE_LOG_END` 줄 사이에 stderr 로 낸다. 여기서
@@ -27,7 +27,7 @@ mkdir -p report/signals
 export MSYS_NO_PATHCONV=1
 
 if [ "$#" -eq 0 ]; then
-  echo "Usage: $0 <lang> [<lang> ...]   (go dotnet node python java php rust ruby)" >&2
+  echo "Usage: $0 <lang> [<lang> ...]   (e.g. $0 node go — the full list is harness/verify.sh's default)" >&2
   exit 2
 fi
 

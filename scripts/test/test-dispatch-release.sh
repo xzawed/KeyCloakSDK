@@ -70,9 +70,13 @@ assert_contains "$(cat "$WF")" 'merge-base --is-ancestor' "체크아웃된 커�
 # ── (2) 매니페스트 대조 — 아홉 언어가 전부 통과 **가능한가** ──────────────────
 # 자동범프 4종(go·php·dotnet·java)은 태그가 버전 SSOT라 대조 대상이 아니다. 면제를 리터럴로
 # 적으면(과거 `php` 하나) 나머지가 영구 차단된다 — 분류는 SSOT(df_bump_mode)에서 온다.
-for L in go php dotnet java; do
+# 언어 목록은 손으로 적지 않는다 — DEPLOY_LANGS 를 돌고 분류는 df_bump_mode 에서 읽는다(등록부 symmetry-guards-cover-a-subset).
+auto_seen=0
+for L in $DEPLOY_LANGS; do
+  [ "$(df_bump_mode "$L")" = auto ] || continue
   assert_ok run_manifest "$L" 0.1.0
   assert_ok run_manifest "$L" 9.9.9-rc.7   # 값과 무관하게 면제여야 한다(대조할 매니페스트가 없다)
+  auto_seen=$((auto_seen + 1))
 done
 # java의 회귀 그 자체: POM은 설계대로 `-SNAPSHOT`이므로 어떤 요청 버전과도 다르다.
 assert_ok run_manifest java 0.1.0
@@ -82,14 +86,20 @@ assert_ok run_manifest dotnet 0.1.0-rc.2
 # 수동범프 5종은 매니페스트와 **정확히** 일치할 때만 통과한다. 기대값은 추출 SSOT에서 읽는다.
 manifest_version() { node "$ROOT/scripts/check-versions.mjs" --list | awk -v l="$1" '$1 == l { print $2 }'; }
 manual_seen=0
-for L in rust python node ruby kotlin; do
+for L in $DEPLOY_LANGS; do
+  [ "$(df_bump_mode "$L")" = manual ] || continue
   v="$(manifest_version "$L")"
   assert_ok test -n "$v"          # SSOT가 값을 못 주면 아래 두 어서션이 무의미해진다
   assert_ok    run_manifest "$L" "$v"
   assert_fails run_manifest "$L" "${v}9"   # 대조군: 불일치는 반드시 거부된다
   manual_seen=$((manual_seen + 1))
 done
-assert_eq "5" "$manual_seen" "수동범프 5종을 전부 돌았다(루프가 조용히 비면 위 어서션이 0회다)"
+# 분할 — 모든 언어가 둘 중 하나다. 분류가 빈 언어는 dispatch 가 fail-closed 로 거부하므로(아래 klingon) 열 번째 언어는 여기서 먼저
+# 운다. 두 쪽 다 0 이 아니어야 위 루프가 조용히 비지 않았다.
+_dr_n=0; for L in $DEPLOY_LANGS; do _dr_n=$((_dr_n + 1)); done
+assert_eq "$_dr_n" "$((auto_seen + manual_seen))" "DEPLOY_LANGS 에 범프 분류(df_bump_mode)가 auto · manual 어느 쪽도 아닌 언어가 있다 — dispatch 가 그 언어를 거부한다"
+assert_ok test "$auto_seen" -gt 0
+assert_ok test "$manual_seen" -gt 0
 # 미지 언어는 "면제"가 아니라 fail-closed여야 한다 — df_bump_mode가 빈 값을 주는 경우.
 assert_fails run_manifest klingon 0.1.0
 # 면제 판정이 산문(df_versionbump)이 아니라 기계가독 값에서 오는지 고정한다.

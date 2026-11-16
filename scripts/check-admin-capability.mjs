@@ -55,6 +55,11 @@ for (const arg of process.argv.slice(2)) {
     docArg = arg.slice("--doc=".length);
   } else if (arg === "--print-sources") {
     printSources = true;
+  } else if (arg === "--langs") {
+    // 이 가드가 대조하는 언어 집합(`covered <언어>`). scripts/test/test-lang-universe.sh 가 트리의 언어 집합과 분할로
+    // 대조한다 — 열 번째 언어가 이 표를 조용히 건너뛰지 못하게(등록부 symmetry-guards-cover-a-subset).
+    for (const id of Object.values(LANGS)) console.log(`covered ${id}`);
+    process.exit(0);
   } else if (!arg.startsWith("--") && rootArg === null) {
     rootArg = arg;
   }
