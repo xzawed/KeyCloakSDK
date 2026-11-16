@@ -49,16 +49,27 @@ done
 
 # 어떤 언어의 단위테스트라도 실패했거나 suite가 아예 돌지 못했으면 0이 아닌 코드로 끝낸다.
 # verify.sh가 이 코드를 받아 전체 실행의 종료코드에 반영한다.
+# ⚠️ 통과에는 돈 시험 수(`unit`, 0 보다 큰 정수)도 든다 — 테스트 명령이 아무것도 못 찾고 0 으로 끝나거나(실측:
+# `go test` 의 [no test files] · `cargo test` 의 running 0 tests 둘 다 종료 0) 스크립트가 요약 줄을 못 읽으면 「통과 ·
+# 0 개」가 되는데, 그것은 돌지 않은 스위트와 구분되지 않는다(PR 0 에서 dotnet · php 스위트가 실제로 0 개로 돌았다).
+# 가드: scripts/test/test-harness-failure-evidence.sh.
 FAILED_SUITES=""
+VACUOUS_SUITES=""
 for L in "$@"; do
-  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?"ok":"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
+  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?(Number.isInteger(j.unit)&&j.unit>0?"ok":"vacuous"):"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
   [ "$RAN" = "ok" ] || FAILED_SUITES="$FAILED_SUITES $L"
+  [ "$RAN" = "vacuous" ] && VACUOUS_SUITES="$VACUOUS_SUITES $L "
 done
 if [ -n "$FAILED_SUITES" ]; then
   # 실패 표지(아홉 러너의 실패 줄 모양 — go `--- FAIL` · dotnet `Failed` · surefire `<<< FAILURE` · gradle `FAILED` ·
   # vitest `FAIL` · phpunit `1) ` · pytest `FAILED` · rspec `rspec ./` · cargo `---- ` / `panicked`). 앞 40 줄만.
   SUITE_FAIL_RE='FAIL|Failed|failed|failures?|ERROR|Error Message|panic|^---- |^rspec \./|^ *[0-9]+\) '
   for L in $FAILED_SUITES; do
+    case "$VACUOUS_SUITES" in
+      *" $L "*)
+        echo "   !! [$L] 통과라는데 돈 시험이 0 개다(unit) — 공허한 통과는 통과가 아니다 · 원문: report/signals/$L.suite.raw"
+        continue ;;
+    esac
     BLOCK=$(sed -n '/^___SUITE_LOG_BEGIN$/,/^___SUITE_LOG_END$/p' "report/signals/$L.suite.raw" 2>/dev/null \
       | grep -vE '^___SUITE_LOG_(BEGIN|END)$')
     if [ -z "$BLOCK" ]; then

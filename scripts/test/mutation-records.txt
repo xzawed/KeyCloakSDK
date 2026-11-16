@@ -1459,3 +1459,52 @@ TEST:scripts/test/test-check-registry-truth.sh
 OLD:      if (r.status < 500 && r.status !== 429) return last
 NEW:      return last // PROBE-REC
 SITE:return last // PROBE-REC
+
+### suite-unit-floor
+FILE:harness/suites/run-suite.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?(Number.isInteger(j.unit)&&j.unit>0?"ok":"vacuous"):"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
+NEW:  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?(Number.isInteger(j.unit)&&j.unit>=0?"ok":"vacuous"):"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
+SITE:j.unit>=0?
+
+### suite-unit-integer
+FILE:harness/suites/run-suite.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?(Number.isInteger(j.unit)&&j.unit>0?"ok":"vacuous"):"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
+NEW:  RAN=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.ran===true&&j.testsPassed===true?(j.unit>0?"ok":"vacuous"):"bad");}catch(e){console.log("bad");}' "report/signals/$L.suite.json")
+SITE:(j.unit>0?"ok"
+
+### suite-vacuous-fails
+FILE:harness/suites/run-suite.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:  [ "$RAN" = "ok" ] || FAILED_SUITES="$FAILED_SUITES $L"
+NEW:  [ "$RAN" = "ok" ] || [ "$RAN" = "vacuous" ] || FAILED_SUITES="$FAILED_SUITES $L" # PROBE-REC
+SITE:"vacuous" ] || FAILED_SUITES
+
+### suite-vacuous-named
+FILE:harness/suites/run-suite.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:        echo "   !! [$L] 통과라는데 돈 시험이 0 개다(unit) — 공허한 통과는 통과가 아니다 · 원문: report/signals/$L.suite.raw"
+NEW:        : # PROBE-REC
+SITE:: # PROBE-REC
+
+### suite-count-go
+FILE:harness/suites/go.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:UNIT=$(printf '%s\n' "$OUT" | grep -c '^--- PASS:')
+NEW:UNIT=1 # PROBE-REC
+SITE:UNIT=1 # PROBE-REC
+
+### suite-count-python
+FILE:harness/suites/python.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
+NEW:UNIT=1 # PROBE-REC
+SITE:UNIT=1 # PROBE-REC
+
+### suite-count-rust
+FILE:harness/suites/rust.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+NEW:UNIT=1 # PROBE-REC
+SITE:UNIT=1 # PROBE-REC

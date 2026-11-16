@@ -139,6 +139,24 @@ _canary="HFE-CANARY-$$"
 printf '%s\n' "$_canary --- FAIL: TestCanary" '___TESTEXIT=1' > "$_tmp/fail.out"
 # 통과 출력 — 아홉이 각자 보는 통과 마커를 다 담는다(surefire 요약 · 설치 0 · 테스트 0). 음성 대조군이다.
 printf '%s\n' "$_canary ok" 'Tests run: 3, Failures: 0, Errors: 0, Skipped: 0' '___INSTALLEXIT=0' '___TESTEXIT=0' > "$_tmp/pass.out"
+# 돈 시험 수(unit)는 각 러너의 요약 줄에서 읽는다 — 그 아홉 파서는 야간 score-all 에서만 돌았다. 언어마다 **자기 러너의
+# 요약만** 담는다(한 출력에 다 담으면 `N passed` 가 섞이고 rust 는 그것을 합산한다). run-suite.sh 의 하한이 「0 개」를 막고,
+# 이것은 상수 · 엉뚱한 줄의 수를 막는다. 열 번째 언어는 여기에 그 러너의 요약 한 줄을 더해야 지나간다.
+hfe_count_lines() {
+  case "$1" in
+    go) printf '%s\n' '--- PASS: TestA (0.00s)' '--- PASS: TestB (0.00s)' '--- PASS: TestC (0.00s)' '--- PASS: TestD (0.00s)' \
+      '--- PASS: TestE (0.00s)' '--- PASS: TestF (0.00s)' '--- PASS: TestG (0.00s)' ;;
+    java) echo 'Tests run: 7, Failures: 0, Errors: 0, Skipped: 0' ;;
+    kotlin) echo '___UNIT=7' ;;
+    node) echo '      Tests  7 passed (7)' ;;
+    php) echo 'OK (7 tests, 19 assertions)' ;;
+    python) echo '7 passed in 0.31s' ;;
+    ruby) echo '7 examples, 0 failures' ;;
+    rust) echo 'test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out' ;;
+    dotnet) echo 'Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7' ;;
+    *) return 1 ;;
+  esac
+}
 _nl=0
 for _l in $(df_tree_langs "$ROOT"); do
   _nl=$((_nl + 1))
@@ -155,6 +173,14 @@ $_canary --- FAIL: TestCanary" "[하네스 증거] $_l.sh 가 깨진 테스트�
   assert_contains "$_fo" "___SUITE_LOG_END" "[하네스 증거] $_l.sh 의 실패 단서 블록이 닫히지 않는다"
   assert_contains "$_po" '"testsPassed":true' "[하네스 증거] $_l.sh 가 통과 출력을 통과로 판정하지 않는다 — 음성 대조가 공허하다"
   assert_not_contains "$_po" "___SUITE_LOG_BEGIN" "[하네스 증거] $_l.sh 가 통과한 런에도 블록을 낸다 — 단서가 소음이 된다"
+  if _cl="$(hfe_count_lines "$_l")"; then
+    printf '%s\n' "$_canary ok" '___INSTALLEXIT=0' '___TESTEXIT=0' "$_cl" > "$_tmp/count.out"
+    _co="$(PATH="$_tmp/bin:$PATH" HFE_FAKE_OUT="$_tmp/count.out" bash "$_s" 2>&1 || true)"
+    assert_contains "$_co" '"unit":7' "[하네스 증거] $_l.sh 가 러너 요약의 시험 수(7)를 읽지 않는다 — 신호의 unit 이 돈 시험 수가 아니다"
+    assert_contains "$_co" '"testsPassed":true' "[하네스 증거] $_l.sh 가 요약만 있는 통과 출력을 통과로 보지 않는다 — 위 unit 단언이 공허하다"
+  else
+    assert_eq "있음" "없음" "[하네스 증거] $_l 러너의 요약 고정 출력이 없다 — hfe_count_lines 에 그 러너의 요약 한 줄을 더하라"
+  fi
 done
 # 공허 하한 — 파생이 깨져 언어가 줄면 위 루프가 「대상이 없어서」 초록이 된다. ⚠️ 세어서 박는다: 실측 9(2026-11-09).
 assert_eq "ok" "$(ok_if "$([ "$_nl" -ge 9 ] && echo 0 || echo 1)" "$_nl")" \
@@ -166,7 +192,11 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '{ echo ___SUITE_LOG_BEGIN; echo "=== RUN   TestQuiet"; echo "--- FAIL: TestLoud"; echo ___SUITE_LOG_END; } >&2' \
   'echo "{\"lang\":\"broke\",\"ran\":true,\"testsPassed\":false}"' > "$_tmp/h/suites/broke.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"bare\",\"ran\":true,\"testsPassed\":false}"' > "$_tmp/h/suites/bare.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"fine\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/fine.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"fine\",\"unit\":3,\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/fine.sh"
+# 통과했다는데 돈 시험이 0 개 — 공허한 통과다(dotnet · php 스위트가 실제로 그렇게 돌았다, PR 0). 단위 수를 못 읽은 것도 같다.
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"empty\",\"unit\":0,\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/empty.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"nocount\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/nocount.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"strcount\",\"unit\":\"7\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/strcount.sh"
 chmod +x "$_tmp/h/suites/"*.sh
 _rrc=0
 _ro="$(bash "$_tmp/h/suites/run-suite.sh" broke bare fine 2>&1)" || _rrc=$?
@@ -175,5 +205,15 @@ assert_contains "$_ro" "--- FAIL: TestLoud" "[하네스 증거] run-suite.sh 가
 assert_not_contains "$_ro" "TestQuiet" "[하네스 증거] run-suite.sh 가 블록 전체를 잡 로그에 쏟는다 — 실패 표지 줄만이어야 한다"
 assert_contains "$_ro" "[bare] 실패 단서 블록이 없다" "[하네스 증거] run-suite.sh 가 블록 없는 실패를 말하지 않는다 — 빈칸이 「단서 없음」으로 안 읽힌다"
 assert_not_contains "$_ro" "[fine]" "[하네스 증거] run-suite.sh 가 통과한 스위트에 실패 단서를 찍는다"
+# 공허 하한 — 하나씩 돌려 실패의 원인이 그 스위트 자신임을 가른다. 대조군(fine 하나)은 0 이어야 위 둘이 무언가를 잰다.
+for _v in empty nocount strcount; do
+  _vrc=0
+  _vo="$(bash "$_tmp/h/suites/run-suite.sh" "$_v" 2>&1)" || _vrc=$?
+  assert_eq "1" "$_vrc" "[하네스 증거] run-suite.sh 가 시험 0 개인 통과($_v)를 통과로 센다 — 돌지 않은 스위트가 초록이 된다"
+  assert_contains "$_vo" "[$_v] 통과라는데 돈 시험이 0 개다" "[하네스 증거] run-suite.sh 가 공허한 통과($_v)를 그 이름으로 말하지 않는다"
+done
+_frc=0
+_fo2="$(bash "$_tmp/h/suites/run-suite.sh" fine 2>&1)" || _frc=$?
+assert_eq "0" "$_frc" "[하네스 증거] run-suite.sh 가 시험이 돈 통과(fine)도 실패로 센다 — 위 공허 단언이 공허하다: $_fo2"
 
 assert_report
