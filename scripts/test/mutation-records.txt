@@ -1305,3 +1305,73 @@ TEST:scripts/test/test-dispatch-release.sh
 OLD:  [ "$(df_bump_mode "$L")" = manual ] || continue
 NEW:  [ "$(df_bump_mode "$L")" = manual-PROBE-REC ] || continue
 SITE:manual-PROBE-REC
+
+### workflow-paths-covers
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:      if (!covers(spec.paths, file)) {
+NEW:      if (false /* PROBE-REC */) {
+SITE:if (false /* PROBE-REC */) {
+
+### workflow-paths-hop2
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:          for (const h2 of namedInScript(ctx, h1)) if (!seen.has(h2)) seen.set(h2, `${f}:${r.line} 잡 \`${job.name}\` → ${h1}`)
+NEW:          void h1 // PROBE-REC
+SITE:void h1 // PROBE-REC
+
+### workflow-paths-relative-import
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:  if (/\.(mjs|js)$/.test(f))
+NEW:  if (false /* PROBE-REC */ && f)
+SITE:if (false /* PROBE-REC */ && f)
+
+### workflow-paths-cd
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:      if (cd) {
+NEW:      if (cd && false /* PROBE-REC */) {
+SITE:cd && false /* PROBE-REC */
+
+### workflow-paths-step-wd
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:      runs.push({ line: k + 1, text: text.join('\n'), wd: stepWd(body, k, from, key) ?? jobWd })
+NEW:      runs.push({ line: k + 1, text: text.join('\n'), wd: jobWd }) // PROBE-REC
+SITE:wd: jobWd }) // PROBE-REC
+
+### workflow-paths-workspace
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:  const rel = tok.replace(/^(\$\{\{\s*github\.workspace\s*\}\}|\$\{?GITHUB_WORKSPACE\}?)\//, '')
+NEW:  const rel = tok // PROBE-REC
+SITE:const rel = tok // PROBE-REC
+
+### workflow-paths-comment
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:    const line = stripComment(raw)
+NEW:    const line = raw // PROBE-REC
+SITE:const line = raw // PROBE-REC
+
+### workflow-paths-skip-call
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:      if (skipsPullRequest(job.if)) {
+NEW:      if (false /* PROBE-REC */ && job.if) {
+SITE:false /* PROBE-REC */ && job.if
+
+### workflow-paths-skip-pr
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:  return ev.every((e) => e !== null) && !ev.includes('pull_request')
+NEW:  return ev.every((e) => e !== null) // PROBE-REC
+SITE:null) // PROBE-REC
+
+### workflow-paths-floor
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:  if (nWf < MIN_WORKFLOWS) fails.push(`paths 로 거르는 PR 워크플로가 ${nWf}개뿐이다(기대 ${MIN_WORKFLOWS}개 이상) — 트리거 표기가 바뀌어 대조가 조용히 비었을 수 있다`)
+NEW:  if (nWf < MIN_WORKFLOWS && false /* PROBE-REC */) fails.push(`paths 로 거르는 PR 워크플로가 ${nWf}개뿐이다(기대 ${MIN_WORKFLOWS}개 이상) — 트리거 표기가 바뀌어 대조가 조용히 비었을 수 있다`)
+SITE:MIN_WORKFLOWS && false /* PROBE-REC */
