@@ -50,14 +50,16 @@ export const PROBES = {
   '`repo-config`를 required 체크로': {
     kind: 'tree',
     run(root) {
-      const n = (JSON.parse(read(root, '.github/rulesets/main.json')).bypass_actors ?? []).length
-      return { revive: n > 0, detail: `main.json bypass_actors ${n} 개` }
+      const b = JSON.parse(read(root, '.github/rulesets/main.json')).bypass_actors
+      // 배열이 아니면 못 잰다 — `undefined > 0` 처럼 조용히 「안 옴」이 되지 않게(Grok 레그).
+      if (!Array.isArray(b)) throw new Unavailable('main.json 의 bypass_actors 가 배열이 아니다')
+      return { revive: b.length > 0, detail: `main.json bypass_actors ${b.length} 개` }
     },
   },
   'java 린트·정적분석 게이트': {
     kind: 'tree',
     run(root) {
-      const n = read(root, 'sonar-project.properties').split(/\r?\n/).filter((l) => /^sonar\.java\.binaries=/.test(l)).length
+      const n = read(root, 'sonar-project.properties').split(/\r?\n/).filter((l) => /^\s*sonar\.java\.binaries\s*[=:]/.test(l)).length
       return { revive: n === 0, detail: `sonar.java.binaries= 줄 ${n} 개` }
     },
   },
@@ -77,7 +79,8 @@ export const PROBES = {
     run(root) {
       const v = /<TargetFrameworks>([^<]*)<\/TargetFrameworks>/.exec(read(root, 'dotnet/Directory.Build.props'))?.[1]?.trim()
       if (v === undefined) throw new Unavailable('dotnet/Directory.Build.props 에 <TargetFrameworks> 가 없다')
-      return { revive: v !== 'net8.0;net10.0', detail: `TargetFrameworks ${v}` }
+      const set = v.split(';').map((s) => s.trim()).filter(Boolean).sort().join(';') // 공백 · 순서는 대상 집합이 아니다
+      return { revive: set !== 'net10.0;net8.0', detail: `TargetFrameworks ${v}` }
     },
   },
   '`SONAR_TOKEN` 을 Dependabot 시크릿에 복제': {
@@ -111,10 +114,13 @@ export const PROBES = {
     },
   },
   '릴리스 순차머지 가드': {
-    kind: 'gh', // 판정 2026-08-23 — dispatch-release 는 한 그룹이라, 나중 push 가 대기 중인 실행을 취소하면 cancelled 로 남는다
+    // 판정 2026-08-23 — dispatch-release 는 한 그룹이라, 나중 push 가 **대기 중인** 실행을 취소하면 스텝을 하나도 돌리지 않은
+    // cancelled 로 남는다(기각 행의 말 그대로). 사람이 누른 Cancel 은 도는 중이라 스텝이 있다 — 그것은 세지 않는다(Grok 레그).
+    kind: 'gh',
     run() {
       const runs = gh(['run', 'list', '--workflow', 'dispatch-release.yml', '--status', 'cancelled', '--limit', '20', '--json', 'databaseId,createdAt']).filter(since('2026-08-23'))
-      return { revive: runs.length > 0, detail: `판정 뒤 취소된 dispatch-release ${runs.length} 회` }
+      const pending = runs.filter((r) => (gh(['run', 'view', String(r.databaseId), '--json', 'jobs']).jobs ?? []).every((j) => (j.steps ?? []).length === 0))
+      return { revive: pending.length > 0, detail: `판정 뒤 취소된 dispatch-release ${runs.length} · 그중 스텝 없이(대기 중) ${pending.length}` }
     },
   },
   'mypy를 `python/tests`로 확장': {

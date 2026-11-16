@@ -67,6 +67,22 @@ flip target-frameworks '`global.json`으로 .NET SDK 밴드 고정'
 fresh; mkdir -p "$F/zig"; : > "$F/zig/package.json"; git -C "$F" add zig/package.json
 flip tenth-language 'capability matrix **L열** 가드'
 flip tenth-language-deploy '`DEPLOY.md` 3분할'
+# 같은 사실의 다른 표기는 조건이 아니다 — 공백 있는 속성 · 순서와 공백만 다른 대상 집합(Grok 레그).
+same() { # name
+  _src=0
+  _so="$(node "$RW" --tree "$F" 2>&1)" || _src=$?
+  assert_eq "0" "$_src" "[되살림·트리] $1 — 같은 사실의 다른 표기를 되살릴 조건으로 센다: $_so"
+}
+fresh; sed 's/^sonar\.java\.binaries=/sonar.java.binaries = /' "$ROOT/sonar-project.properties" > "$F/sonar-project.properties"
+same binaries-spaced
+fresh; sed 's#<TargetFrameworks>[^<]*</TargetFrameworks>#<TargetFrameworks> net10.0; net8.0 </TargetFrameworks>#' "$ROOT/dotnet/Directory.Build.props" > "$F/dotnet/Directory.Build.props"
+same frameworks-reordered
+# 배열이 아니면 못 잰다 — 조용히 「안 옴」이 되지 않는다(--require-all 이면 exit 2).
+fresh; sed 's/"bypass_actors": *\[\]/"bypass_actors": {}/' "$ROOT/.github/rulesets/main.json" > "$F/.github/rulesets/main.json"
+_rc=0
+_o="$(node "$RW" --tree --require-all "$F" 2>&1)" || _rc=$?
+assert_eq "2" "$_rc" "[되살림·트리] bypass_actors 가 배열이 아닌데 조용히 통과한다"
+assert_contains "$_o" "bypass_actors 가 배열이 아니다" "[되살림·트리] 못 잰 이유를 말하지 않는다"
 
 # ── 분할 ─────────────────────────────────────────────────────────────────────────────────────────
 part() { # name expected-message
@@ -100,6 +116,9 @@ if (a[0] === 'run' && a[1] === 'list') {
   process.stdout.write(JSON.stringify({ login: /\/commits\/bot/.test(a[1]) ? 'dependabot[bot]' : 'someone' }))
 } else if (a[0] === 'run' && a[1] === 'view' && has('--log-failed')) {
   process.stdout.write(a[2] === '9001' ? 'ERROR Not authorized or project not found\n' : 'ERROR CE Task finished abnormally\n')
+} else if (a[0] === 'run' && a[1] === 'view' && ['7', '8'].includes(a[2])) {
+  // dispatch-release — 7 은 대기 중 취소(스텝 없음), 8 은 도는 중 사람이 취소(스텝 있음)
+  process.stdout.write(JSON.stringify({ jobs: [{ name: 'dispatch', conclusion: 'cancelled', steps: a[2] === '8' ? [{ name: 'Set up job' }] : [] }] }))
 } else if (a[0] === 'run' && a[1] === 'view') {
   const only = env('FAKE_STABLE_ONLY').split(',').includes(a[2])
   process.stdout.write(JSON.stringify({ jobs: [
@@ -140,6 +159,7 @@ ghok() { # name
 }
 FAKE_DISPATCH='[{"databaseId":7,"createdAt":"2026-12-01T00:00:00Z"}]' ghflip cancelled-dispatch '릴리스 순차머지 가드'
 FAKE_DISPATCH='[{"databaseId":7,"createdAt":"2026-08-01T00:00:00Z"}]' ghok cancelled-before-judgment
+FAKE_DISPATCH='[{"databaseId":8,"createdAt":"2026-12-01T00:00:00Z"}]' ghok cancelled-by-a-human
 FAKE_RUST='[{"databaseId":1,"createdAt":"2026-12-01T00:00:00Z","headBranch":"a"},{"databaseId":2,"createdAt":"2026-12-02T00:00:00Z","headBranch":"b"}]' \
   FAKE_STABLE_ONLY='1,2' ghflip stable-only-two-branches 'Rust `stable` 레그의 clippy 고정'
 FAKE_RUST='[{"databaseId":1,"createdAt":"2026-12-01T00:00:00Z","headBranch":"a"},{"databaseId":2,"createdAt":"2026-12-02T00:00:00Z","headBranch":"a"}]' \
