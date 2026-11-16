@@ -1299,13 +1299,6 @@ OLD:SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|C
 NEW:SD_MANIFEST='pom\.xml|pyproject\.toml|package\.json|go\.mod|composer\.json|Cargo\.toml|build\.gradle\.kts|[^/]+\.gemspec|[^/]+\.sln|mix\.exs'
 SITE:|mix\.exs'
 
-### install-verify-lang-partition
-FILE:scripts/test/test-install-verify.sh
-TEST:scripts/test/test-install-verify.sh
-OLD:_iv_default="go php java"
-NEW:_iv_default="go php" # PROBE-REC
-SITE:_iv_default="go php" # PROBE-REC
-
 ### dispatch-bump-partition
 FILE:scripts/test/test-dispatch-release.sh
 TEST:scripts/test/test-dispatch-release.sh
