@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest
 import { createHmac, randomBytes } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { generateKeyPair, exportJWK, exportSPKI, SignJWT } from 'jose'
+import { generateKeyPair, exportJWK, exportSPKI, SignJWT, errors as joseErrors } from 'jose'
 import { JwtValidator, type JwtValidatorOptions } from '../../src/jwt.js'
 import { KeycloakTokenValidationError, KeycloakTransportError } from '../../src/errors.js'
 
@@ -73,11 +73,34 @@ async function forgedToken(): Promise<string> {
     .sign(attackerKey)
 }
 
-async function attack(v: JwtValidator, times: number): Promise<void> {
+/**
+ * 거부를 단언하고 그 원인의 이름을 돌려준다. 검증 실패는 전부 `KeycloakTokenValidationError` 로 감싸이므로(`src/jwt.ts`
+ * validate 의 catch) 형만 보면 「IdP 가 답하지 못했다」와 「그 kid 가 없다」를 못 가른다 — `cause` 로만 갈린다.
+ * ⚠️ `cause` 는 `scrubCause` 가 이름·메시지만 남긴 사본이라 `instanceof` 가 아니라 이름으로 본다(아래 `outcome` 과 같다).
+ * 형 없는 `toThrow()` 로 두었을 때 실패한 강제 재조회를 `JWKSNoMatchingKey` 로 바꾸는 변이에 단위 631 개가 전부 초록이었다.
+ */
+async function refusalCause(v: JwtValidator, token: string): Promise<string> {
+  const refused: unknown = await v.validate(token).then(
+    () => undefined,
+    (e: unknown) => e,
+  )
+  expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+  const cause = (refused as Error).cause
+  return cause instanceof Error ? cause.name : 'no cause'
+}
+
+/** 키셋에 없는 kid — 신선한 키셋이 그 kid 를 안 담았거나, 창 안이라 IdP 없이 거부했다(`src/jwt.ts`). */
+const NO_KEY = joseErrors.JWKSNoMatchingKey.name
+/** IdP 가 200 이 아닌 답을 했다 — jose 의 거부다(이 파일의 IdP 장애는 503 이다). */
+const NOT_200 = joseErrors.JOSEError.name
+
+async function attack(v: JwtValidator, times: number): Promise<string[]> {
+  const causes: string[] = []
   for (let i = 0; i < times; i += 1) {
     // kid가 해결되지 않으므로 전부 거부되어야 한다. 통과한다면 그 자체가 심각한 결함이다.
-    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    causes.push(await refusalCause(v, await forgedToken()))
   }
+  return causes
 }
 
 describe('JWKS 재조회 rate-limit (재조회 창 실동작)', () => {
@@ -86,7 +109,7 @@ describe('JWKS 재조회 rate-limit (재조회 창 실동작)', () => {
 
     hits = 0
     const attempts = 12
-    await attack(v, attempts)
+    expect(new Set(await attack(v, attempts))).toEqual(new Set([NO_KEY]))
 
     expect(hits).toBeGreaterThan(0) // 최초 1회는 조회해야 정상이다
     expect(hits).toBeLessThanOrEqual(2) // cooldown이 무시되면 attempts에 비례해 늘어난다
@@ -97,7 +120,7 @@ describe('JWKS 재조회 rate-limit (재조회 창 실동작)', () => {
 
     hits = 0
     const attempts = 6
-    await attack(v, attempts)
+    expect(new Set(await attack(v, attempts))).toEqual(new Set([NO_KEY]))
 
     // 이 단언이 실패하면 히트 계측 자체가 고장난 것이고, 위 테스트의 통과는 무의미해진다.
     expect(hits).toBeGreaterThan(2)
@@ -231,8 +254,10 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
       { now: () => now, jitter: () => 1 },
     )
     downHits = 0
-    await attack(v, 20)
+    const causes = await attack(v, 20)
     expect(downHits).toBe(1)
+    // 첫 시도만 IdP 의 503 이고, 나머지는 백오프가 IdP 없이 거부한 것이다 — 「kid 가 없다」가 아니다.
+    expect(causes).toEqual([NOT_200, ...Array<string>(19).fill(KeycloakTransportError.name)])
   })
 
   // ⚠️ **이 테스트를 지우지 말 것 — 위 단언은 「한 번 실패하면 영원히 차단」으로도 통과한다.**
@@ -246,7 +271,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
     )
     downHits = 0
 
-    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    expect(await refusalCause(v, await forgedToken())).toBe(NOT_200)
     expect(downHits).toBe(1)
 
     // 창 안 — 네트워크로 나가지 않고 즉시 실패한다(sleep 하지 않는다).
@@ -255,7 +280,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
 
     // 창을 넘기면(상한 5초보다 크게 민다) 다시 나간다.
     now += 10_000
-    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    expect(await refusalCause(v, await forgedToken())).toBe(NOT_200)
     expect(downHits).toBe(2)
   })
 
@@ -271,7 +296,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
         { now: () => now },
       )
       downHits = 0
-      await expect(v.validate(await forgedToken())).rejects.toThrow()
+      expect(await refusalCause(v, await forgedToken())).toBe(NOT_200)
       now += 99 // 0.5 × 기준 아래 — 대역 안의 어느 창이든 아직 열려 있다
       await expect(v.validate(await forgedToken())).rejects.toThrow(/backing off/)
       now += 101 // 1.0 × 기준 — 대역 안의 어느 창이든 끝났다
@@ -286,7 +311,7 @@ describe('콜드 캐시 + IdP 장애 백오프', () => {
   it('대조군 — 정상 IdP 의 위조 kid 홍수는 백오프를 트리거하지 않는다', async () => {
     const v = JwtValidator.forJwksUri(jwksUri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
     hits = 0
-    await attack(v, 12)
+    expect(new Set(await attack(v, 12))).toEqual(new Set([NO_KEY]))
 
     // 백오프가 걸렸다면 메시지가 'backing off' 가 된다. 여기서는 그러면 안 된다.
     await expect(v.validate(await forgedToken())).rejects.not.toThrow(/backing off/)
@@ -765,11 +790,12 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
     const { v, t0 } = await warm()
     vi.setSystemTime(t0 + 31_000) // 창이 열린 뒤
     status = 503
+    const causes: string[] = []
     for (let i = 0; i < 5; i += 1) {
-      await expect(v.validate(await forgedKid(`forged-${i}`))).rejects.toBeInstanceOf(
-        KeycloakTokenValidationError,
-      )
+      causes.push(await refusalCause(v, await forgedKid(`forged-${i}`)))
     }
+    // 첫 위조 kid 의 강제 재조회만 IdP 에 닿아 503 을 받았다 — 그것은 「kid 가 없다」가 아니다. 나머지는 창이 IdP 없이 거부했다.
+    expect(causes).toEqual([NOT_200, NO_KEY, NO_KEY, NO_KEY, NO_KEY])
     expect(certs).toBe(2) // 콜드 적재 + 이 창의 강제 재조회 한 번(수정 전: 6)
     // ⚠️ 규칙 (4) — 위조 kid 홍수가 정상 토큰을 막으면 원래 결함보다 나쁘다. 캐시된 kid 는 IdP 없이 통과한다.
     await expect(v.validate(await legit())).resolves.toMatchObject({ subject: 'u' })
@@ -782,10 +808,10 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
     const { v, t0 } = await warm()
     vi.setSystemTime(t0 + 31_000)
     status = 503
-    await expect(v.validate(await forgedKid('forged-a'))).rejects.toThrow()
+    expect(await refusalCause(v, await forgedKid('forged-a'))).toBe(NOT_200)
     expect(certs).toBe(2)
     vi.setSystemTime(t0 + 61_000) // 그 실패한 시도로부터 30 초
-    await expect(v.validate(await forgedKid('forged-b'))).rejects.toThrow()
+    expect(await refusalCause(v, await forgedKid('forged-b'))).toBe(NOT_200)
     expect(certs).toBe(3)
   })
 
@@ -795,7 +821,7 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
     const { v, t0 } = await warm()
     vi.setSystemTime(t0 + 295_000)
     status = 503
-    await expect(v.validate(await forgedKid('late'))).rejects.toThrow()
+    expect(await refusalCause(v, await forgedKid('late'))).toBe(NOT_200)
     expect(certs).toBe(2)
     vi.setSystemTime(t0 + 301_000) // 마지막 성공(t0)으로부터 cacheMaxAge 를 넘었다 — 그 시도로부터는 6 초
     status = 200
@@ -808,7 +834,7 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
     const { v, t0 } = await warm()
     const at = async (offsetMs: number, kid: string): Promise<number> => {
       vi.setSystemTime(t0 + offsetMs)
-      await expect(v.validate(await forgedKid(kid))).rejects.toThrow()
+      expect(await refusalCause(v, await forgedKid(kid))).toBe(NO_KEY)
       return certs
     }
     expect(await at(1_000, 'f1')).toBe(1) // 콜드 적재의 창 안
@@ -1129,7 +1155,7 @@ describe('받는 토큰의 길이 상한 — 콜드 원격 검증기', () => {
     )
     expect(hits).toBe(0)
 
-    await expect(v.validate(await forgedToken())).rejects.toThrow()
+    expect(await refusalCause(v, await forgedToken())).toBe(NO_KEY)
     expect(hits).toBeGreaterThan(0) // 이 계수기가 이 콜드 검증기의 적재를 본다
   })
 })
