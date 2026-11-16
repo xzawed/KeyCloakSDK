@@ -21,6 +21,7 @@ import kotlinx.coroutines.runInterruptible
 import java.io.InterruptedIOException
 import java.net.MalformedURLException
 import java.net.URI
+import java.net.URISyntaxException
 import java.time.Duration
 
 // 받는 토큰의 길이 상한 — 넘으면 분해·base64/JSON 디코드·JWKS 적재보다 먼저 거부한다(아홉 언어가 함께 움직인다).
@@ -128,10 +129,16 @@ public class JwtValidator private constructor(
                     config.connectTimeout.toMillis().toInt(),
                     config.readTimeout.toMillis().toInt(),
                 )
+            // ⚠️ OidcEndpoints 는 공개 data class 라 jwks 가 무엇이든 올 수 있다 — URI 로 안 읽히면 URISyntaxException,
+            // 절대가 아니면 toURL() 이 IllegalArgumentException 이다. 셋 다 SDK 예외로 바꾼다(§4 · 실측: URISyntaxException 이 샜다).
             val jwksUrl =
                 try {
                     URI(endpoints.jwks).toURL()
                 } catch (e: MalformedURLException) {
+                    throw TokenValidationException("Invalid JWKS URI", e)
+                } catch (e: URISyntaxException) {
+                    throw TokenValidationException("Invalid JWKS URI", e)
+                } catch (e: IllegalArgumentException) {
                     throw TokenValidationException("Invalid JWKS URI", e)
                 }
             // rateLimited 간격은 config로 설정 가능하게 한다(기본 30초 = Nimbus DEFAULT_RATE_LIMIT_MIN_INTERVAL 동형) —

@@ -1133,6 +1133,32 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   })
 })
 
+// 경계 변환(등록부 boundary-exception-conversion-incomplete) — `forJwksUri` 는 공개 생성 경로라 URI 가 무엇이든 올 수 있다.
+// URL 로 안 읽히는 값에서 `new URL` 의 TypeError(ERR_INVALID_URL)가 공개 API 로 새면 안 된다(§4) — JVM 둘과 같은 SDK 오류다.
+describe('경계 변환 — 쓸 수 없는 JWKS URI', () => {
+  it('forJwksUri 는 URL 로 안 읽히는 값을 SDK 오류로 바꾼다', () => {
+    // WHATWG 파서가 실제로 거부하는 값들이다(공백 · 잘못된 퍼센트는 관대하게 받는다 — 실측).
+    for (const uri of ['relative/certs', '', 'http://kc:99999/certs']) {
+      let thrown: unknown
+      try {
+        JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
+      } catch (e) {
+        thrown = e
+      }
+      expect(thrown, uri).toBeInstanceOf(KeycloakTokenValidationError)
+      expect((thrown as Error).message, uri).toBe('invalid JWKS URI')
+    }
+  })
+
+  // URL 로는 읽히지만 쓸 수 없는 스킴은 생성 때 거부되지 않는다 — 첫 검증이 SDK 오류로 끝나야 한다(Grok 레그).
+  it('http 아닌 스킴의 JWKS URI 는 첫 검증에서 SDK 오류다', async () => {
+    const v = JwtValidator.forJwksUri('nope://kc/certs', { ...baseOpts, jwksMinRefetchSeconds: 30 })
+    await expect(v.validate(await forgedToken())).rejects.toBeInstanceOf(
+      KeycloakTokenValidationError,
+    )
+  })
+})
+
 /**
  * 받는 토큰의 길이 상한 — **콜드** 원격 검증기에서 상한 밖 토큰은 JWKS 를 부르지 않는다(`src/jwt.ts` 의
  * `JWT_MAX_BYTES`, export 하지 않는다). ⚠️ 토큰은 **진짜 서명**이다 — 쓰레기는 상한이 없어도 jose 가 헤더에서

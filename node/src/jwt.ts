@@ -189,7 +189,15 @@ function remoteJwksWithRefetchWindow(
   const now = seams.now ?? (() => Date.now())
   const windowMs = minRefetchSeconds * 1000
   let lastAttempt = Number.NEGATIVE_INFINITY
-  const remote = createRemoteJWKSet(new URL(jwksUri), {
+  // ⚠️ `forJwksUri` 는 공개 생성 경로라 URI 가 무엇이든 온다 — `new URL` 의 TypeError(ERR_INVALID_URL)를 SDK 오류로 바꾼다
+  // (§4 · JVM 둘의 「Invalid JWKS URI」와 같다).
+  let url: URL
+  try {
+    url = new URL(jwksUri)
+  } catch (e) {
+    throw new KeycloakTokenValidationError('invalid JWKS URI', { cause: e })
+  }
+  const remote = createRemoteJWKSet(url, {
     cooldownDuration: 0,
     cacheMaxAge: JWKS_MAX_AGE_SECONDS * 1000,
     // 보낸 때부터 응답 전체의 기한 — jose 가 이 signal 로 fetch 를 끊고, `fetchJwksBounded` 는 본문도 같은
