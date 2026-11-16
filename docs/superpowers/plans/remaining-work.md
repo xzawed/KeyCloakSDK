@@ -1,6 +1,6 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=136524 max-raw-bytes=146726 -->
-<!-- max-raw-bytes 147036 → 146726: facade-wiring-close-contract-unasserted 마감(#1119) — 그 항목의 소유 주석(통합 미실행 목록의
+<!-- doc-budget: max-bytes=136022 max-raw-bytes=146726 -->
+<!-- max-bytes 136524 → 136022(먼저 들어간 #1120 이 줄인 몫 포함) · max-raw-bytes 147036 → 146726: facade-wiring-close-contract-unasserted 마감(#1119) — 그 항목의 소유 주석(통합 미실행 목록의
      소유자를 옮기라는)이 할 일을 다 해 지웠고, 새 항목 하나를 더하며 닫힌 긴 줄 둘(node · .NET JWKS 응답 상한)을 판정 방법만
      남기고 줄였다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 137146 → 136524 · max-raw-bytes 147273 → 147036: guards-outside-their-own-pr-signal 마감(#1109) — 마감 · 새 항목을
