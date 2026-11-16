@@ -488,6 +488,11 @@ assert_contains "$(cat "$FIX/net.log")" "--repo o/r --signer-workflow o/r/" "[CI
 _r="$(pf_ci "$FIX/db-miss.json")"
 assert_eq "1" "${_r%%|*}" "[CI 호출] 증명이 빠진 jar 에서 실패한다(대조군)"
 assert_contains "$_r" "attestation-failed" "[CI 호출] 실패 이름이 attestation-failed 다"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+WF_PF="$DIR/../../.github/workflows/published-floor.yml"
+assert_eq 'node scripts/check-published-jvm-floor.mjs --attest' "$(ci_call "$WF_PF" check-published-jvm-floor.mjs)" \
+  "[CI 호출] published-floor.yml 이 이 절과 같은 argv(--attest 하나)로 부른다"
+assert_eq '' "$(ci_job_wd "$WF_PF" check-published-jvm-floor.mjs)" "[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)"
 
 # 봉인 이전 판 — **경계 상수 하나로 얼린다**(1.0.2 미만은 증명이 없다, 실측). 1.0.1 은 건너뛰고 1.0.2 는 반드시 잰다.
 RB="$FIX/repo-seal"; BB="$FIX/base-seal"

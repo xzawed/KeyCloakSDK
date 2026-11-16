@@ -222,6 +222,11 @@ assert_eq 0 "$rc" "CI 와 같은 호출이 빈 목록에 exit 0 이 아니다 �
 # 대조군 — 경보 조회가 실패하면 「경보 없음」이 아니라 「모른다」(2)다.
 da_ci ''
 assert_eq 2 "$rc" "gh 경보 조회가 실패했는데 exit 2 가 아니다 — 출력: $_o"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+assert_eq 'node scripts/check-dependabot-alerts.mjs' "$(ci_call "$ROOT/.github/workflows/security-audit.yml" check-dependabot-alerts.mjs)" \
+  '[CI 호출] security-audit.yml 이 이 절과 같은 argv(인자 없음)로 부른다'
+assert_eq '' "$(ci_job_wd "$ROOT/.github/workflows/security-audit.yml" check-dependabot-alerts.mjs)" \
+  '[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)'
 
 # ── 8. 워크플로가 그 권한을 실제로 선언하고 있는가 ───────────────────────────
 # 실측(run 33079374320): 같은 요청을 보낸 두 잡 중 `vulnerability-alerts: read` 를 선언한

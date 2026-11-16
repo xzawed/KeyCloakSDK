@@ -1425,6 +1425,34 @@ OLD:const NOW = Number(opt('--now', String(Math.floor(Date.now() / 1000))))
 NEW:const NOW = Number(opt('--now', String(Math.floor(Date.now() / 1000) + 200 * 3600))) // PROBE-REC
 SITE:+ 200 * 3600))) // PROBE-REC
 
+### callshape-wf-alerts
+FILE:.github/workflows/security-audit.yml
+TEST:scripts/test/test-dependabot-alerts.sh
+OLD:        run: node scripts/check-dependabot-alerts.mjs
+NEW:        run: node scripts/check-dependabot-alerts.mjs --repo o/r # PROBE-REC
+SITE:--repo o/r # PROBE-REC
+
+### callshape-wf-updates
+FILE:.github/workflows/dependabot-health.yml
+TEST:scripts/test/test-dependabot-updates.sh
+OLD:        run: node scripts/check-dependabot-updates.mjs
+NEW:        run: node scripts/check-dependabot-updates.mjs --repo o/r # PROBE-REC
+SITE:--repo o/r # PROBE-REC
+
+### callshape-wf-floor
+FILE:.github/workflows/published-floor.yml
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:        run: node scripts/check-published-jvm-floor.mjs --attest
+NEW:        run: node scripts/check-published-jvm-floor.mjs --attest --lang java # PROBE-REC
+SITE:--attest --lang java # PROBE-REC
+
+### callshape-wf-truth
+FILE:.github/workflows/published-floor.yml
+TEST:scripts/test/test-check-registry-truth.sh
+OLD:        run: node scripts/check-registry-truth.mjs
+NEW:        run: node scripts/check-registry-truth.mjs --lang java # PROBE-REC
+SITE:registry-truth.mjs --lang java # PROBE-REC
+
 ### callshape-truth-retry
 FILE:scripts/check-registry-truth.mjs
 TEST:scripts/test/test-check-registry-truth.sh

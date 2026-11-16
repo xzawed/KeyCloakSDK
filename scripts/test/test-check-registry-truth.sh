@@ -140,6 +140,11 @@ run_ci ci-pending python 1.1.0 100 2  py_live; expect ci-pending 0 PENDING
 # 판정 불가도 기본 경로(재시도 끝)에서 — 5xx 를 「없다」로 읽지 않는다.
 run_ci ci-503     python 1.0.0 100 90 py_503;  expect ci-503 2 INCONCLUSIVE
 assert_eq "3" "$(grep -c 'fetch https://pypi.org/pypi/keycloak-sdk/json' "$FIX/ci-503.net.log")" "[ci-503] 5xx 를 재시도한다(RETRIES 2 → 세 번)"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+WF_PF="$DIR/../../.github/workflows/published-floor.yml"
+assert_eq 'node scripts/check-registry-truth.mjs' "$(ci_call "$WF_PF" check-registry-truth.mjs)" \
+  "[CI 호출] published-floor.yml 이 이 절과 같은 argv(인자 없음)로 부른다"
+assert_eq '' "$(ci_job_wd "$WF_PF" check-registry-truth.mjs)" "[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)"
 
 # 공허 방지 — 언어 목록이 비면 0 개를 훑고 통과하지 않는다.
 mkdir -p "$FIX/empty/scripts/lib"

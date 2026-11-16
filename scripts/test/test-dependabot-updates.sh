@@ -184,5 +184,10 @@ assert_eq '2' "$RC" 'CI 와 같은 호출이 목록 아닌 응답에 exit 2 가 
 # 대조군 — gh 조회가 실패하면 「모른다」(2)다(가짜 gh 는 모르는 호출에 64 로 죽는다 — 저장소가 다르면 인자가 다르다).
 du_ci x/y "$FX/red.json"
 assert_eq '2' "$RC" "gh 조회가 실패했는데 exit 2 가 아니다 — 출력: $OUT"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+WF_DH="$DIR/../../.github/workflows/dependabot-health.yml"
+assert_eq 'node scripts/check-dependabot-updates.mjs' "$(ci_call "$WF_DH" check-dependabot-updates.mjs)" \
+  '[CI 호출] dependabot-health.yml 이 이 절과 같은 argv(인자 없음)로 부른다'
+assert_eq '' "$(ci_job_wd "$WF_DH" check-dependabot-updates.mjs)" '[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)'
 
 assert_report
