@@ -984,6 +984,34 @@ def test_forced_jwks_refetch_is_rate_limited(jwks):
     assert jwks.call_count == 2
 
 
+def test_a_forced_refetch_that_fails_is_a_transport_error_and_still_spends_the_window(jwks):
+    """웜 캐시의 강제 재조회가 IdP 장애로 실패하면 전송 실패다(「kid 가 없다」가
+    아니다) — 그리고 창은 쓰였다.
+
+    aio 의 `test_a_refetch_that_fails_still_uses_the_window` 와 짝이다. ⚠️ 이 시험이
+    없던 동안 실패한 강제 재조회를 `TokenKeyError` 로 보고하는 변이에 동기 단위
+    스위트가 전부 초록이었다(probes-that-discard-the-result).
+    """
+    cached_key = RSAKey.generate_key(2048, {"kid": "cached", "use": "sig"})
+    jwks.side_effect = [
+        {"keys": [cached_key.as_dict(private=False)]},  # 콜드 적재
+        KeycloakTransportError("JWKS endpoint returned HTTP 503"),  # x1 의 강제 재조회
+    ]
+    config = _config()
+    endpoints = OidcEndpoints.for_realm(config)
+    client = _client(MagicMock(spec=KeycloakOpenID), config=config)
+
+    def unresolved(kid: str) -> str:
+        key = RSAKey.generate_key(2048, {"kid": kid, "use": "sig"})
+        return _signed_token(key, issuer=endpoints.issuer, audience=config.client_id)
+
+    with pytest.raises(KeycloakTransportError, match="503"):
+        client.validate(unresolved("x1"))
+    with pytest.raises(TokenKeyError):  # 창 안 — IdP 없이 거부한다
+        client.validate(unresolved("x2"))
+    assert jwks.call_count == 2
+
+
 def test_close_closes_underlying_requests_session():
     """close()는 python-keycloak 내부 requests 세션을 닫아 커넥션 풀 누수를 막는다."""
     openid = MagicMock()
