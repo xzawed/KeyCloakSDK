@@ -147,6 +147,11 @@ jobs:
         # 이 자가테스트는 커밋된 픽스처만 읽는다 — 실제 트리 대조는 아래 `coverage-boundary` 잡이다.
         run: sh scripts/test/test-coverage-boundary.sh
 
+      - name: rules 명령 참조 실재 가드 자가테스트(픽스처만 — 실제 트리는 아래 rules-commands 잡)
+        # rules 파일이 부르는 npm 스크립트 · Gradle 태스크 · `-m` 모듈 …이 매니페스트에서 사라져도 아무도 몰랐다 — #423 이
+        # 사람 눈으로 잡은 `"$PY" -m build` 가 그 꼴이다. 판정의 음성(참조 하나씩 지우기)과 공허(대조할 것 0)를 본다.
+        run: sh scripts/test/test-check-rules-commands.sh
+
       - name: 통합 전용 커버리지 리포트 자가테스트(파생 ↔ 핀 · 데이터 누락 · 공허 실행 · 소유자 — 픽스처만)
         # 레인 통합 잡의 리포트(`scripts/integration-coverage.mjs` — 언어 목록은 그 머리가 소유한다)가 무결성을 지키는지 —
         # 파생이 좁아지면(%가 오른다) · 데이터에서 경계 파일이 빠지면 · 아무것도 안 돈 실행이면 exit 2 인지,
@@ -578,6 +583,22 @@ jobs:
         run: |
           sh scripts/test/test-revive-watch.sh
           node scripts/revive-watch.mjs --tree
+
+  rules-commands:
+    # `.claude/rules/*.md` 의 펜스 블록이 부르는 대상(npm 스크립트 · Gradle 태스크 · `-m` 모듈 · Maven 모듈 · cargo
+    # 시험 대상 · bundle 실행 파일 · 경로 …)이 매니페스트에 있는가 — **실제 트리**(등록부
+    # rules-command-reference-existence-guard). 자가테스트는 doc-facts 잡에서 픽스처로 돈다.
+    # ⚠️ **비-required 다, 그리고 그렇게 두는 것이 의도다** — 아홉 문법의 명령을 읽는 파서라 오탐 하나가 required 에
+    # 있으면 모든 PR 이 멈춘다(등록부의 보류 사유 · PRIMARY 는 `bypass_actors: []`). `paths:` 가 없어 체크가 모든
+    # PR 에서 생성된다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+      - name: rules 명령의 참조 ↔ 매니페스트(실제 트리)
+        run: node scripts/check-rules-commands.mjs
 
   repo-config:
     # 저장소 설정(브랜치 룰셋) 대조기의 자가테스트.
