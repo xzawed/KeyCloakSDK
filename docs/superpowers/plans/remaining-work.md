@@ -1,5 +1,9 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=136022 max-raw-bytes=146726 -->
+<!-- doc-budget: max-bytes=131601 max-raw-bytes=142667 -->
+<!-- max-bytes 136022 → 131601 · max-raw-bytes 146726 → 142667: 묶음 마감 — integration-coverage-drift-is-warning-only(#1123) ·
+     rules-command-reference-existence-guard(#1124) 닫음 · masking-type-enumeration-has-no-oracle 재판정 닫음 ·
+     coverage-exclusion-hides-untested-branches 재측정(#1125) · 새 항목 하나. 긴 두 항목의 서사는 8787f429 의 이 파일로 보내고
+     판정 방법만 남겼다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 136524 → 136022(먼저 들어간 #1120 이 줄인 몫 포함) · max-raw-bytes 147036 → 146726: facade-wiring-close-contract-unasserted 마감(#1119) — 그 항목의 소유 주석(통합 미실행 목록의
      소유자를 옮기라는)이 할 일을 다 해 지웠고, 새 항목 하나를 더하며 닫힌 긴 줄 둘(node · .NET JWKS 응답 상한)을 판정 방법만
      남기고 줄였다. 검사 8e 가 이 인하를 강제했다. -->
@@ -69,7 +73,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `312`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `313`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -175,7 +179,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 52건 (열림 4)
+## B. 재검증 대상 — 52건 (열림 2)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -206,22 +210,8 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `doc-audit-batch1-remainder` **[H/L · 신규 2026-09-06 · 닫힘 2026-09-06 #416]** 소비자 문서 배치 1(10개) 감사의 **잔여 9건** — 인용 181건 전건 실재(계측기 5/5 자가검증), 반박 10건 중 2건 refuted · `docs/guides/` · `docs/reference/`
 - [x] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06 · 닫힘 2026-09-07]** 문서 41개 중 20개가 미검증이었다 — 배치 2(언어별 README 9 + `language-support.md`) #421 · **배치 3 의 10문서도 감사·수정이 끝났다**. ⚠️ **재측정(2026-09-07)에서 이 항목이 낡은 채 열려 있는 것이 드러났다** — 하위 `doc-audit-batch3-fixes-outstanding` 은 이미 `[x]`(50/50, #433)인데 상위가 열려 있어 진입점이 **이미 끝난 일**로 다음 세션을 보내고 있었다. 남은 범위 **0**
 - [x] `doc-audit-batch3-fixes-outstanding` **[M/M · 신규 2026-09-06 · 닫힘 2026-09-06 #433]** 배치 3 발견 **50건 전부 처리**. rules 10(#423) · 계수 3(#425) · 플레이북 11(#426, 재스캔 1 포함) · 지도 7 + 하네스 9(#429) · 계약 2(#431) · `process.md` 3(#432) · `rejected.md` 8(#433). 방법·전제·기각 판정은 `git show b273f67:docs/superpowers/plans/2026-09-06-doc-fact-oracles.md`
-- [ ] `masking-type-enumeration-has-no-oracle` **[M/M · 신규 2026-09-06]** 언어 README 가 **마스킹하는 타입을 손으로 열거**하는데 소스와 대조하는 가드가 없다 — 넷이 동시에 하나씩 모자랐다 · `scripts/test/test-security-defaults.sh:322`
-  - **선행 실측 완료(2026-09-06) — 부모는 `guard-detection-surface-hand-narrowed` 이고 그 주장은 아직 참이다.** `test-security-defaults.sh` 의 마스킹 축(1c)은 **`sd_mask_src` 에 `TokenSet` 경로 아홉을 손으로** 적는다. 그 파일 전체에서 **리터럴 11 : 파생 2**(파생은 `SD_DOCS`·`SD_SRC` 의 `git ls-files` 둘뿐이고, `DEPLOY_LANGS` 언급은 **0**).
-  - **구멍의 실증**: `php/src/Token/AuthorizationRequest.php` 는 `TokenSet` 과 **같은 바닥 계약**(`__toString` 으로 PKCE 검증자를 `***`)인데 `sd_mask_src` 에 없다(`git grep` 그 경로 → 0건). go 는 `AuthorizationRequest.String()` 이 있는데 `sd_mask_hook` 은 `func (t TokenSet) String() string` 만 안다. **그 훅을 지워도 `_mask_seen` 은 9 라 초록이다.**
-  - **변이 프로브로 판정했다 — 구멍은 둘이 아니라 전부다(2026-09-06, `scripts/probe.sh` 8회).** 형제 타입의 마스킹을 **원문 노출로 되돌리는** 변이를 여덟 언어에 넣었더니 **8/8 이 `SILENT`**(kotlin·go·php·rust·ruby·python·node·dotnet). 소스 경로가 이미 목록 안인 다섯(kotlin·go·dotnet·rust·ruby)도 못 잡는다 — 훅 앵커가 `TokenSet` 전용(go·rust)이거나 **generic**(`override fun toString()`·`def inspect`·`public override string ToString()`)이라 **`TokenSet` 의 훅 하나가 그 grep 을 만족시키기 때문**이다. 「파일이 목록에 있으니 덮인다」는 이 축에서 거짓이다.
-  - java 는 변이 대상이 아니다 — `AuthorizationUrlRequest` 는 `record` 가 아닌 **plain final class** 라 `Object.toString()` 이 애초에 필드를 안 찍는다(훅이 없어서 위험한 게 아니라 **없어도 안전**). 그래서 java 의 겨눌 불변식은 훅의 존재가 아니라 **「`record` 로 바뀌지 않았다」**다(.NET 이 positional record 라 `ToString` 을 손으로 덮어야 했던 것의 뒷면).
-  - ⚠️ **하한이 방향을 하나만 본다** — `assert_eq "9" "$_mask_seen"` 은 **목록이 줄면** 잡지만 **새 타입·새 파일이 늘어야 할 때는 침묵**한다. 다른 축의 `9`·`7`·`2`·`-ge 8` 도 같다.
-  - ⚠️ **손으로 짠 프로브가 또 틀렸다(2026-09-06)** — 「가드가 그 파일을 아는가」를 파일 경로 문자열로 물었더니 **다른 축**(nonce 의 `auth.ts` · config 의 `config.go`)에 걸려 12개 중 11개를 「가드가 안다」로 보고했다. **축을 지정하지 않은 포함검사는 이 가드에서 무효다** — `sd_mask_src` 의 `case` 표만 물어야 한다.
-- [ ] `rules-command-reference-existence-guard` **[M/M · 신규 2026-09-06 · 계획서에서 이관]** `.claude/rules/*.md` 의 펜스 블록이 부르는 대상(`npm run X` · `./gradlew X` · `"$PY" -m X` · `mvn -pl M` · `cargo test --test T` · `bundle exec X`)이 매니페스트에 **실재하는지** 보는 가드가 없다
-  - **채택 근거**: 실행하지 않고도 참조 실재성은 툴체인 없이 판정된다. `-m build` 가 그 부류였고 #423 은 그것을 **사람이** 잡았다(그 셋은 이미 고쳐졌으므로 이 가드가 사는 것은 **예방**이다).
-  - ⚠️ **보류 사유(독립 레그, 두 번 같은 판정)**: 아홉 rules 파일의 **펜스-명령 파서**는 저장소의 **유일한 required 체크 안**에서 돌고 그 룰셋은 `bypass_actors: []` 다 — **오탐 하나가 모든 PR 을 막는다.** 이번 세션에 상수 하나로 픽스처 75건을 깨 그 직전까지 간 실측이 있다.
-  - **되살릴 조건**: required 체크 **밖**에서 먼저 돌려 오탐 0 을 실측하거나(nightly 등), 파서가 여섯 문법에서 수렴함을 알려진 정답으로 증명할 때. 탐지 표면은 `scripts/probe.sh` 로 잰다.
-  - `[mask]` 축은 **`TokenSet` 하나만** 겨눈다(`sd_mask_src` 가 언어당 파일 하나). `AuthorizationRequest` 는 어느 축도 안 본다 — 그래서 go·dotnet·php·kotlin 넷의 README 가 PKCE 검증자를 마스킹하는 타입을 빠뜨린 채 CI 초록이었다(#421 에서 문서만 고쳤다).
-  - ⚠️ **가드를 손으로 짜지 말 것 — 이번에 두 번 실패했다.** `***` 리터럴 grep 은 마스킹 헬퍼·상수를 쓰는 언어(java·python·node·dotnet·php)를 전부 놓치고, 타입 선언 grep 은 node 의 `MaskedAuthorizationRequest` 같은 별칭에 걸린다. **탐지 표면을 검증하지 못한 가드는 `guard-detection-surface-hand-narrowed` 를 하나 더 만드는 것**이므로, 먼저 9언어의 마스킹 훅 표를 실측으로 세우고 그 위에 얹는다.
-  - ✅ **형제 타입(인가요청)은 #437 이 닫았다** — 축 1d 신설. 앵커는 훅 이름이 아니라 **마스킹 자체**(`***` 이거나 그 필드의 mask 호출)이고, java 는 훅이 **없어서 안전**하므로 「`record` 로 바뀌지 않았다」는 **음성 앵커**다. 같은 변이가 옛 스크립트에서 8/8 `SILENT` → 새 스크립트에서 9/9 `CAUGHT`. 세우자 rust 만 빨개졌고 그것이 진짜 결함이라 테스트를 썼다(`fn debug_masks_code_verifier`).
-  - ⏸ **남은 것은 「파생 열거」다 — 보류(2026-09-06).** 표는 여전히 손으로 적혀 있고, **세 번째** 비밀 보유 값 타입이 생기면 침묵한다. 파생을 이 자리에 넣지 않은 이유는 `rules-command-reference-existence-guard` 와 같다 — 이 자가테스트는 required 체크 **`doc-facts`** 안에서 `paths:` 필터 없이 돌고 룰셋 `PRIMARY` 는 `bypass_actors: []` 라, **오탐 하나가 모든 PR 을 막는다**(실측: `git grep -n 'test-security-defaults' .github/` → `repo-hygiene.yml` 의 `doc-facts` 잡 한 곳).
-  - **되살릴 조건**: 비밀 필드를 쥔 값 타입을 소스에서 파생하는 열거를 **required 밖**(nightly 등)에서 먼저 돌려 오탐 0 을 실측할 때. 후보 신호의 노이즈는 이미 쟀다 — 9언어 비테스트 소스에서 비밀 이름을 언급하는 파일은 **83개**(java 12·kotlin 9·python 12·node 8·go 7·dotnet 9·php 9·rust 9·ruby 8)이고 대부분 클라이언트·프로바이더라 **그대로는 쓸 수 없다**. 값 타입으로 좁히는 축이 먼저다.
+- [x] `masking-type-enumeration-has-no-oracle` **[M/M · 신규 2026-09-06 · 재판정 닫힘 2026-11-17]** 파생 열거는 아홉 언어 facade dump 시험(#592–#603 · 레인 CI = required 밖)이 한다 — 소스의 선언 전수가 걷기에 닿거나 이유 있는 면제여야 하고, 닿은 객체는 카나리아로 렌더한다 · 재판정: 비밀 필드를 쥔 새 타입을 심으면 그 언어의 facade dump 가 빨갛다(go · python 실측) · 남은 갭은 `facade-dump-reached-empty-secret-field` · 서사: `git show 8787f429:docs/superpowers/plans/remaining-work.md` 의 이 항목
+- [x] `rules-command-reference-existence-guard` **[M/M · 신규 2026-09-06 · 닫힘 2026-11-17 #1124]** 되살릴 조건대로 required 밖 — `scripts/check-rules-commands.mjs`(비-required 잡 `rules-commands`)가 펜스 명령의 참조를 체크아웃과 대조하고 읽지 못한 꼴도 실패다 · 실측: rules 커밋 148 재실행 오탐 0(걸린 것은 `-m build` · 맨 gradle · 기계 경로뿐) · 재판정: `node scripts/check-rules-commands.mjs <트리>` · 서사: `git show 8787f429:docs/superpowers/plans/remaining-work.md` 의 이 항목
 - [x] `php-upgrade-note-omits-isexpired-flip` **[L/S · 신규 2026-09-06 · 닫힘 2026-11-04]** `php/README.md` 에 「Upgrading from `1.0.0`」 — `php-v1.0.0..php-v1.5.2` 의 소비자 가시 변경을 태그 스냅샷·구조화 인용으로 셌다(CHANGELOG 밖 다섯 포함). 세면서 게시 문서의 거짓 둘(1.5.2 「메시지 그대로」 · 1.5.0 「`exchangeCode()` 가 `TokenValidationError`」)이 나와 `[Unreleased]` 로 바로잡았다
 - [x] `openid-scope-fallback-empty-only` **[M/S · 닫힘 2026-09-11]** `Scope.isEmpty()` 는 **원소 수**를 세므로 공백 원소 하나가 폴백을 건너뛰고 `IllegalArgumentException("The value must not be null or empty string")` 이 §4 경계를 넘었다. 도달 가능: `KeycloakConfig` 에 scope 값 검증이 **0건**이다. 생성 전에 공백 원소를 거르도록 Java·Kotlin 을 함께 고쳤다. 변이 3/3 `CAUGHT`(명명된 테스트 실패로 확인). ⚠️ **`scope = scope` 변이는 컴파일이 안 돼 `INVALID` 였다** — 「BUILD FAILED」를 「가드가 잡았다」로 읽으면 안 된다.
 - [x] `boundary-exception-conversion-incomplete` **[M/M · 닫힘 2026-11-16 #1117]** 소비자가 주는 JWKS 주소 — kotlin `JwtValidator.forRealm`(공개 `OidcEndpoints`)은 URISyntaxException, node `forJwksUri` 는 TypeError 를 흘렸다 → SDK 예외 · .NET 은 IsValid 변환이 막는다(시험으로 고정) · java(생성자 private) · ruby(jwt 3.3.0 도 JWKError < DecodeError)는 닿지 않는다 · 재판정: 공개 생성 경로마다 쓸 수 없는 주소를 넣는 시험 — kotlin `JwtValidatorTest` · node `jwt-jwks`「경계 변환」 · .NET `An_unusable_issuer_address`
@@ -232,7 +222,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `python-sync-authorization-url-unencoded` **[M/S · 닫힘 2026-09-07 #442]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립했다 — async 미러는 `urlencode`를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
 - [x] `php-sensitiveparameter-methods-missing` **[M/S · 닫힘 2026-09-11 · 계수 정정]** PHP `#[\SensitiveParameter]` 가 생성자에만 붙어 있었다. ⚠️ **「여섯 메서드」가 아니라 아홉 파라미터였다** — 손 목록 대신 반사 가드를 세우자 `TokenSet::__construct($idToken)` 이 드러났다(생성자인데도 빠져 있었다). 가드 `tests/Unit/SensitiveParameterTest.php` 는 `php/src` 를 반사해 **문자열 타입 + 비밀 이름** 파라미터를 스스로 찾으므로 새 자리가 생겨도 목록을 고칠 필요가 없다. 변이 5/5 `CAUGHT`(공허 대조군 포함). 실측: 속성 없는 인자는 스택트레이스에 원문(`refresh('SUPER-SECRET-RE...')`), 있으면 `Object(SensitiveParameterValue)`.
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
-- [ ] `coverage-exclusion-hides-untested-branches` **[M/M]** 네트워크 경계 커버리지 제외가 손으로 쓴 실패 분기와 미호출 공개 메서드를 숨긴다 (Kotlin·PHP) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Users.kt:47`
+- [ ] `coverage-exclusion-hides-untested-branches` **[M/M · 재측정 2026-11-17 #1125]** (Kotlin·PHP) 실행되는 함수 안의 손으로 쓴 실패 갈래는 어느 게이트에도 없다 — 단위는 경계 파일을 빼고 통합 장부는 함수 단위다(미호출 공개 메서드는 그 장부가 소유 · 닿는데 시험 없던 셋은 #1125 가 시험) · 재측정: 버린 워크트리에서 제외를 풀고 단위 커버리지로 경계 파일의 미도달 갈래를 센다(kotlin 가지 11 · php 문장 6 — 나머지는 못 닿거나 방어, PR 표) · 후보: 미도달 갈래 장부(통합 장부의 소유자처럼) · `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:104`
 - [x] `redirect-uri-signature-parity` **[L/M · 닫힘 2026-09-12 · 중복이었다]** ⚠️ **이 항목은 `authz-redirect-uri-not-per-call` 과 같은 것을 다른 이름으로 적은 것이다** — 등록부에 한 부류가 두 행으로 있었고(이름·심각도·지목줄이 달라 서로를 못 알아봤다: 여기는 `rust/src/auth.rs:96` · 저기는 `:106`), 그래서 **한쪽만 보면 범위를 절반으로 읽는다**. 실제로 그렇게 됐다 — 「다음 대상」에 오른 쪽은 인가요청만 적었고 `exchangeCode` 비대칭은 이 행에만 있었다. 같은 PR 이 둘을 닫는다. ⚠️ **교훈**: 새 항목을 적기 전에 **부류로** 검색할 것(이름으로만 찾으면 중복이 남는다).
 - [x] `python-config-comment-says-60` **[L/S]** python config 주석이 JWKS 재조회 기본값을 60초라고 적었다 — 두 줄 아래 실제 값은 30.0 · `python/src/keycloak_sdk/config.py:23`
 
@@ -254,7 +244,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 149건 (열림 39)
+## C. 품질 부채 — 150건 (열림 40)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -378,7 +368,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27 · 닫힘 2026-11-13 #1059]** 풀이 닫힌 연결을 본문 있는 POST 에 재사용했다(재시도 없음) — keep-alive 로 고침 · `Raw_server_answers_every_request_on_one_kept_alive_connection`
 - [x] `rust-integration-floor-toolchain-drift` **[H/S · 신규 · 닫힘 2026-11-13 #1056]** rustc 1.100.0 이 줄 귀속만 바꿨다(실행 판정 불변) — 하한 88.5 → 86.9 · 판정 방법은 `scripts/integration-coverage.mjs` 머리
 
-### 가드·CI — 21
+### 가드·CI — 22
 
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
@@ -410,6 +400,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `sonarcloud-dependabot-skip-keys-on-actor` **[M/S · 신규 2026-10-22 · 닫힘 2026-10-23 #801]** 건너뛰기가 PR 작성자도 본다 — actor 로만 거를 때 사람이 커밋을 얹은 Dependabot PR 실행 일곱(2026-10-08~21)이 미검토 범프와 `SONAR_TOKEN` 을 한 잡에서 돌렸다. 가드는 `check-ci-permissions.mjs` 규칙 11
 - [x] `java-release-bundle-never-built-before-tag` **[H/S · 신규·닫힘 2026-10-23 #825]** 릴리스 번들을 태그 전에 만드는 잡이 없어 러너 Maven 3.10.0 × central-publishing 0.11.0 의 장부 번들을 v1.2.0·v1.2.1 두 번호를 태운 뒤에야 알았다 — `ci.yml` release-bundle + `scripts/check-central-bundle.mjs`
 - [x] `sonarcloud-human-pr-carries-unreviewed-bump` **[M/M · 신규·닫힘 2026-10-23 · 사람 판정 「잡 분리」]** 사람이 연 PR 이 bump 를 실으면 미검토 패키지가 `SONAR_TOKEN` 과 한 잡에서 돌았다 — `sonarcloud.yml` 을 `coverage`(시크릿 없음)·`scan`(산출물만)으로 나눴고 규칙 12 가 고정한다(#832).
+- [ ] `facade-dump-reached-empty-secret-field` **[L/M · 신규 2026-11-17]** 아홉 facade dump 는 뿌리가 카나리아로 채운 인스턴스만 렌더한다 — 새 비밀 필드가 빈 값으로만 닿으면 통과한다(Grok 레그 · 시험 머리의 「한계」) · 후보: 걷기에서 비밀 이름 필드가 빈 값으로만 보이면 실패 · `python/tests/unit/test_facade_dump.py:1`
 
 
 ### 문서·규칙 — 15
@@ -452,7 +443,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 99건 (열림 33)
+## D. 원장 밖 — 99건 (열림 32)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -507,7 +498,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ci-lane-trigger-branch-filter` **[L/S · 닫힘 2026-11-04 · 중복이었다]** `push-trigger-branches-asymmetry` 와 같은 것(지목줄도 같다) — 「언어 CI 6개」는 틀렸다: `paths` 만 있는 push 는 2026-09-03 트리(d25a6fe7)에서도 언어 CI 다섯 + `harness.yml`
 - [x] `orphan-active-workflows` **[L/S · 닫힘 2026-10-28]** 파일 없는 둘을 껐다 — `repo-config.mjs check` 가 워크플로 상태를 대조한다
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
-- [ ] `integration-coverage-drift-is-warning-only` **[M/S · 신규 2026-11-16]** 통합 커버리지의 소유 DRIFT(소유자 없는 미실행 함수 · 낡은 소유자)는 레인에서 경고뿐이라 main 이 DRIFT 인 채 초록이다 — 8d3e24a7 이 들인 go 함수 둘이 소유자 없이 이틀 갔다(#1119 가 붙임) · `.github/workflows/ci.yml:86`
+- [x] `integration-coverage-drift-is-warning-only` **[M/S · 신규 2026-11-16 · 닫힘 2026-11-17 #1123]** 레인 아홉이 리포트의 종료코드를 그대로 받는다 — DRIFT 도 빨강, 실패 주석은 리포트가 낸다 · 배선은 `test-integration-coverage-gate.sh`(doc-facts · 변이 ic-gate-* 일곱) · 재판정: 레인당 최근 실행의 미실행 집합이 같은 코드에서 흔들리지 않는다(135 실행 실측)
 - [x] `php-mirror-check-pretag-ssot` **[M/S · 신규·닫힘 2026-11-14 #1081]** 미러 확인이 태그 전에 움직이는 SSOT 를 봤다 — readiness 는 정상에 ⚠️ · 번 버전에 ✅, `php-mirror` 잡은 릴리스 PR 마다 빨강(#937). 기준선으로
 
 ### 테스트 실행 갭 — 13
