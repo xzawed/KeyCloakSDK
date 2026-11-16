@@ -451,14 +451,14 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 97건 (열림 33)
+## D. 원장 밖 — 97건 (열림 32)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
 ### 유예·되살릴 조건 — 10
 
 - [x] `go-release-persist-credentials` **[M/S · 닫힘 2026-09-11 · 계수 정정]** `contents: write` 이면서 체크아웃하는 잡은 셋이었다(ruby-release 의 두 히트는 헤더 산문) — `check-ci-permissions.mjs` 규칙 1b(write 토큰 + 체크아웃 조인만 · 전 워크플로 강제는 기각 유지) + 공허 하한 `--min-write-checkout` · 변이 3/3 CAUGHT
-- [ ] `revive-conditions-unmeasured` **[M/M]** 되살릴 조건을 「돌아가는 명령」으로 적어 두고, 그 명령을 아무도 돌리지 않는다 — 기각 22건이 전부 수동 감시다 · `docs/governance/rejected.md:44`
+- [x] `revive-conditions-unmeasured` **[M/M · 닫힘 2026-11-16 #1116]** `revive-watch.mjs` — 기각 행마다 탐침(10) 또는 수동 사유(15), 분류 밖 행은 PR 이 빨갛고 주간이 `--require-all` 로 돈다 · 처음 돌리니 셋이 글자 그대로 와 있었다(재판정: 유지, 조건을 그 부류로 좁힘)
 - [x] `sonar-tests-revive-instrument` **[M/M · 닫힘 2026-11-14 #1089]** `index-count` 잡이 그 실행과 main 직전 스캔의 색인 수를 요약에 남기고 크게 바뀌면 빨갛다 · `scripts/check-sonar-index.mjs`
 - [ ] `dependabot-ignore-joins` **[M/M]** 조건부 `ignore` 셋의 해제 조건이 다른 파일의 사실에 묶여 있는데 조인이 없다 — kotlin 하나만 기계가 본다 · `.github/dependabot.yml:79`
 - [ ] `gate-substitutes-unasserted` **[M/L]** 기계 게이트가 없는 자리마다 「대신 이것이 본다」가 적혀 있는데, 그 대체물의 존재는 아무도 검사하지 않는다 · `sonar-project.properties:30`

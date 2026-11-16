@@ -1,0 +1,39 @@
+name: revive-watch
+# 기각 레지스트리(docs/governance/rejected.md)의 되살릴 조건을 주간으로 돌린다 — 행마다 탐침 또는 수동 사유를 두고
+# (scripts/revive-watch.mjs), 조건이 오면 빨강이고 nightly-alert 가 이슈로 연다. 못 잰 탐침도 빨강이다(--require-all —
+# 조용히 건너뛰지 않는다). 분할과 트리 탐침은 PR 마다 repo-hygiene 가 본다(네트워크 없음 · 등록부 revive-conditions-unmeasured).
+on:
+  schedule:
+    - cron: '30 5 * * 5' # 매주 금요일 05:30 UTC — harness 매일 03:00 · security-audit 월 04:00 · 레인 월 05:07~07:47 · published-floor 화 05:30 · mutation-sweep 수 05:30 · public-install 목 05:30 · dependabot-health 매일 06:45 과 겹치지 않게
+  workflow_dispatch:
+  # 감시 장치나 기각 문서를 고친 PR 에서는 실제 데이터로 한 번 돈다(mutation-sweep 과 같은 관용 — 이 체크는 required 가 아니다).
+  # 기각 행을 더하는 PR 이 그 행의 탐침을 실물로 재고, 조건이 이미 와 있으면 그 PR 에서 재판정한다.
+  pull_request:
+    branches: [main]
+    paths: ['docs/governance/rejected.md', 'scripts/revive-watch.mjs', 'scripts/check-known-gaps.mjs', 'scripts/lib/deploy-facts.sh', '.github/workflows/revive-watch.yml']
+permissions:
+  contents: read
+  actions: read # gh run list · gh run view --log-failed (gh 탐침)
+jobs:
+  watch:
+    name: 되살릴 조건
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+      - name: mypy 탐침 준비(python SDK 와 dev 의존성)
+        # --only-binary :all: — 휠 없는 전이를 조용히 sdist 로 빌드(설치 스크립트 실행)하지 않는다(python-ci.yml 과 같다 · sonar S8541).
+        run: 'cd python && python -m pip install --quiet --only-binary :all: -e ".[dev]"'
+      - name: 되살릴 조건(오면 빨강 · 못 잰 탐침도 빨강)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIVE_PY: python
+        run: node scripts/revive-watch.mjs --require-all
