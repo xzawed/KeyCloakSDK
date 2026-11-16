@@ -139,6 +139,24 @@ _canary="HFE-CANARY-$$"
 printf '%s\n' "$_canary --- FAIL: TestCanary" '___TESTEXIT=1' > "$_tmp/fail.out"
 # 통과 출력 — 아홉이 각자 보는 통과 마커를 다 담는다(surefire 요약 · 설치 0 · 테스트 0). 음성 대조군이다.
 printf '%s\n' "$_canary ok" 'Tests run: 3, Failures: 0, Errors: 0, Skipped: 0' '___INSTALLEXIT=0' '___TESTEXIT=0' > "$_tmp/pass.out"
+# 돈 시험 수(unit)는 각 러너의 요약 줄에서 읽는다 — 그 아홉 파서는 야간 score-all 에서만 돌았다. 언어마다 **자기 러너의
+# 요약만** 담는다(한 출력에 다 담으면 `N passed` 가 섞이고 rust 는 그것을 합산한다). run-suite.sh 의 하한이 「0 개」를 막고,
+# 이것은 상수 · 엉뚱한 줄의 수를 막는다. 열 번째 언어는 여기에 그 러너의 요약 한 줄을 더해야 지나간다.
+hfe_count_lines() {
+  case "$1" in
+    go) printf '%s\n' '--- PASS: TestA (0.00s)' '--- PASS: TestB (0.00s)' '--- PASS: TestC (0.00s)' '--- PASS: TestD (0.00s)' \
+      '--- PASS: TestE (0.00s)' '--- PASS: TestF (0.00s)' '--- PASS: TestG (0.00s)' ;;
+    java) echo 'Tests run: 7, Failures: 0, Errors: 0, Skipped: 0' ;;
+    kotlin) echo '___UNIT=7' ;;
+    node) echo '      Tests  7 passed (7)' ;;
+    php) echo 'OK (7 tests, 19 assertions)' ;;
+    python) echo '7 passed in 0.31s' ;;
+    ruby) echo '7 examples, 0 failures' ;;
+    rust) echo 'test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out' ;;
+    dotnet) echo 'Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7' ;;
+    *) return 1 ;;
+  esac
+}
 _nl=0
 for _l in $(df_tree_langs "$ROOT"); do
   _nl=$((_nl + 1))
@@ -155,6 +173,14 @@ $_canary --- FAIL: TestCanary" "[하네스 증거] $_l.sh 가 깨진 테스트�
   assert_contains "$_fo" "___SUITE_LOG_END" "[하네스 증거] $_l.sh 의 실패 단서 블록이 닫히지 않는다"
   assert_contains "$_po" '"testsPassed":true' "[하네스 증거] $_l.sh 가 통과 출력을 통과로 판정하지 않는다 — 음성 대조가 공허하다"
   assert_not_contains "$_po" "___SUITE_LOG_BEGIN" "[하네스 증거] $_l.sh 가 통과한 런에도 블록을 낸다 — 단서가 소음이 된다"
+  if _cl="$(hfe_count_lines "$_l")"; then
+    printf '%s\n' "$_canary ok" '___INSTALLEXIT=0' '___TESTEXIT=0' "$_cl" > "$_tmp/count.out"
+    _co="$(PATH="$_tmp/bin:$PATH" HFE_FAKE_OUT="$_tmp/count.out" bash "$_s" 2>&1 || true)"
+    assert_contains "$_co" '"unit":7' "[하네스 증거] $_l.sh 가 러너 요약의 시험 수(7)를 읽지 않는다 — 신호의 unit 이 돈 시험 수가 아니다"
+    assert_contains "$_co" '"testsPassed":true' "[하네스 증거] $_l.sh 가 요약만 있는 통과 출력을 통과로 보지 않는다 — 위 unit 단언이 공허하다"
+  else
+    assert_eq "있음" "없음" "[하네스 증거] $_l 러너의 요약 고정 출력이 없다 — hfe_count_lines 에 그 러너의 요약 한 줄을 더하라"
+  fi
 done
 # 공허 하한 — 파생이 깨져 언어가 줄면 위 루프가 「대상이 없어서」 초록이 된다. ⚠️ 세어서 박는다: 실측 9(2026-11-09).
 assert_eq "ok" "$(ok_if "$([ "$_nl" -ge 9 ] && echo 0 || echo 1)" "$_nl")" \

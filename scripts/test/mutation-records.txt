@@ -1487,3 +1487,24 @@ TEST:scripts/test/test-harness-failure-evidence.sh
 OLD:        echo "   !! [$L] 통과라는데 돈 시험이 0 개다(unit) — 공허한 통과는 통과가 아니다 · 원문: report/signals/$L.suite.raw"
 NEW:        : # PROBE-REC
 SITE:: # PROBE-REC
+
+### suite-count-go
+FILE:harness/suites/go.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:UNIT=$(printf '%s\n' "$OUT" | grep -c '^--- PASS:')
+NEW:UNIT=1 # PROBE-REC
+SITE:UNIT=1 # PROBE-REC
+
+### suite-count-python
+FILE:harness/suites/python.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+')
+NEW:UNIT=1 # PROBE-REC
+SITE:UNIT=1 # PROBE-REC
+
+### suite-count-rust
+FILE:harness/suites/rust.sh
+TEST:scripts/test/test-harness-failure-evidence.sh
+OLD:UNIT=$(printf '%s\n' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+NEW:UNIT=1 # PROBE-REC
+SITE:UNIT=1 # PROBE-REC
