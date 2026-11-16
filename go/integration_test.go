@@ -205,6 +205,19 @@ func TestE2E(t *testing.T) {
 	if r, err := admin.Realms.Get(ctx, "it-realm"); err != nil || r.Realm == nil || *r.Realm != "it-realm" {
 		t.Fatalf("realms.Get: %+v %v", r, err)
 	}
+
+	// 4c) The consumer wiring path — NewAdminClient with a caller-supplied provider (here the SDK's caching provider over
+	// the auth lane's grant) reads the realm against the real server like the default path does.
+	viaProvider, err := NewAdminClient(ctx, Config{
+		ServerURL: serverURL, Realm: "it-realm", ClientID: "it-client", ClientSecret: "it-secret",
+	}, NewClientCredentialsTokenProvider(client.Auth.ClientCredentialsToken, 30))
+	if err != nil {
+		t.Fatalf("NewAdminClient: %v", err)
+	}
+	defer func() { _ = viaProvider.Close() }()
+	if r, err := viaProvider.Realms.Get(ctx, "it-realm"); err != nil || r.Realm == nil || *r.Realm != "it-realm" {
+		t.Fatalf("NewAdminClient realms.Get: %+v %v", r, err)
+	}
 	clientName := "e2e-client-" + randomHex(t, 4)
 	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP(clientName)})
 	if err != nil {

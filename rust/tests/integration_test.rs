@@ -432,8 +432,15 @@ async fn full_flow() {
         Some("updated by e2e")
     );
 
-    // ── 9) raw() 스모크 — 내부 KeycloakAdmin 노출(탈출구, 문서화된 은닉성 예외) ──
-    let _raw = client.admin().raw();
+    // ── 9) raw() — 내부 KeycloakAdmin 노출(탈출구, 문서화된 은닉성 예외). 값을 받기만 하면 SDK 토큰 공급자
+    //    (`SdkTokenSupplier`)가 한 번도 불리지 않는다 — 실제 호출로 그 배선이 실서버에 토큰을 싣는지 본다.
+    let raw_realm = client.admin().raw().realm_get("it-realm").await.unwrap();
+    assert_eq!(raw_realm.realm.as_deref(), Some("it-realm"));
+
+    // ── 9b) AuthClient 를 TokenProvider 로 — 소비자가 쓸 수 있는 공개 구현(무캐시 · 매 호출 새 부여). 그 토큰이 실서버에서
+    //    활성이다.
+    let via_trait = TokenProvider::access_token(client.auth()).await.unwrap();
+    assert!(client.auth().introspect(&via_trait).await.unwrap().active);
 
     // ── 10) it-client 서비스계정으로 realm 생성 시도 → 403(master 전용, 문서화된 실서버 동작) ──
     let denied = client

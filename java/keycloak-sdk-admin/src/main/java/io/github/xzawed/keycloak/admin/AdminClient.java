@@ -54,7 +54,11 @@ public final class AdminClient implements AutoCloseable {
   private final KeycloakConfig config;
   private final Keycloak keycloak;
 
-  private AdminClient(KeycloakConfig config, Keycloak keycloak) {
+  /**
+   * 패키지 전용 — 테스트가 {@link Keycloak} 을 주입하는 시임이자, 공개 생성자가 조립한 것도 지나는 운영 경로다(시임이 운영과
+   * 갈리지 않는다).
+   */
+  AdminClient(KeycloakConfig config, Keycloak keycloak) {
     this.config = config;
     this.keycloak = keycloak;
   }
@@ -184,11 +188,6 @@ public final class AdminClient implements AutoCloseable {
   private static ClassLoader providerLoader() {
     ClassLoader loader = Thread.currentThread().getContextClassLoader();
     return loader != null ? loader : ClientConfigProvider.class.getClassLoader();
-  }
-
-  /** 패키지 전용 팩토리 — 주입된 {@link Keycloak}을 보관한다(테스트 주입 경로). */
-  static AdminClient withKeycloak(KeycloakConfig config, Keycloak injected) {
-    return new AdminClient(config, injected);
   }
 
   /** Escape hatch for reaching endpoints the facade does not wrap (WBS 4.8). */

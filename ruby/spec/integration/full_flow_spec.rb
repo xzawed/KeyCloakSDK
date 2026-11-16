@@ -35,6 +35,9 @@ RSpec.describe "Keycloak full flow", :integration do
     intro = client.auth.introspect(token.access_token)
     expect(intro.active?).to be(true)
 
+    # 2b) AuthClient 를 TokenProvider 로 — 소비자가 쓸 수 있는 공개 구현(무캐시 · 매 호출 새 부여). 그 토큰이 실서버에서 활성이다.
+    expect(client.auth.introspect(client.auth.access_token).active?).to be(true)
+
     # 3) user CRUD (realm fixture에 이미 "alice"가 시딩되어 있으므로 충돌을 피해 고유 사용자명 사용)
     admin = client.admin
     username = "ruby-it-user-#{SecureRandom.hex(4)}"

@@ -24,7 +24,7 @@ public class KeycloakClient internal constructor(
     /** Admin API facade. Created lazily on first access (`kotlin.Lazy`, thread-safe by default). */
     public val admin: AdminClient get() = adminLazy.value
 
-    /** 테스트 전용 관측 시임 — admin lazy가 이미 실현됐는지 여부. 운영 코드 경로에서는 사용하지 않는다. */
+    /** admin lazy가 이미 실현됐는지 — close()가 쓰는 판단 그대로다(시험이 관측하는 것이 운영의 판단과 갈리지 않는다). */
     internal fun isAdminInitialized(): Boolean = adminLazy.isInitialized()
 
     /**
@@ -34,7 +34,7 @@ public class KeycloakClient internal constructor(
      */
     override fun close() {
         auth.close()
-        if (adminLazy.isInitialized()) {
+        if (isAdminInitialized()) {
             adminLazy.value.close()
         }
     }
