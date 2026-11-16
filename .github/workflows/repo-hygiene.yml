@@ -207,11 +207,11 @@ jobs:
       - name: 워크플로 paths — PR 에서 쓰는 공유 파일을 그 paths 가 받는가(FAIL 1 · 못 읽으면 2)
         # `paths:` 로 거르는 워크플로가 PR 에서 쓰는 `scripts/` · `harness/` 파일(run 이 대는 것 · 그 스크립트가 대는 것)을 그
         # `paths:` 가 안 받으면, 그 파일만 고친 PR 에서 그것을 실제 호출로 돌리는 체크가 생기지 않는다(등록부
-        # guards-outside-their-own-pr-signal). 하한은 2026-11-16 실측(대상 12 · 쓰는 공유 파일 108 — .mjs 상대 가져오기 포함 ·
-        # 하네스의 무거운 레그가 PR 에서도 돌며 105 → 108).
+        # guards-outside-their-own-pr-signal). 하한은 2026-11-16 실측(대상 12 · 쓰는 공유 파일 111 — .mjs 상대 가져오기 포함 ·
+        # 하네스의 무거운 레그가 PR 에서도 돌며 105 → 111).
         run: |
           sh scripts/test/test-check-workflow-paths.sh
-          node scripts/check-workflow-paths.mjs --min-workflows=12 --min-files=108
+          node scripts/check-workflow-paths.mjs --min-workflows=12 --min-files=111
 
       - name: 하네스의 무거운 레그 — PR 이 그것이 읽는 것을 바꿨을 때만 깨우고, 야간 · 수동에서도 그대로 도는가
         # score-all · install-all 이 야간 · 수동에만 돌아 하네스를 고친 PR 의 신호가 mvp-go 와 자가테스트뿐이었다(등록부

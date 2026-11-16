@@ -5,7 +5,7 @@ on:
     paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
   pull_request:
     # ⚠️ 이 목록이 PR 에서 무거운 레그를 깨우는 변경도 정한다(scripts/harness-pr-legs.mjs — go/** · 문서는 뺀다).
-    paths: ['harness/**', 'go/**', '.github/workflows/harness.yml', 'scripts/check-versions.mjs', 'scripts/harness-pr-legs.mjs', 'scripts/check-hp-attest-wiring.mjs']
+    paths: ['harness/**', 'go/**', '.github/workflows/harness.yml', 'scripts/check-versions.mjs', 'scripts/harness-pr-legs.mjs', 'scripts/check-hp-attest-wiring.mjs', 'scripts/check-workflow-paths.mjs']
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * *'   # 매일 03:00 UTC — 잡 if 가 schedule 을 받는 셋이 돈다(all-langs · score-all · install-all)
