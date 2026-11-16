@@ -108,7 +108,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 **역할**: 오케스트레이터가 **PM**이다 — 단계 확인·WBS 소유·작업 분배·에이전트와 Grok 중재·결과 **재검증**. 구현/리뷰/검증은 서로 다른 주체가 맡고(자기 승인 금지), 실질 작업에는 **Grok 독립 레그**를 준다. 어느 에이전트의 결과도 액면가로 받지 않는다.
 
-전체 절차·WBS 규약·기각 체크리스트·게이트: **[작업 프로세스](docs/governance/process.md)**.
+전체 절차·WBS 규약·기각 체크리스트·게이트: **[작업 프로세스](docs/governance/process.md)**. 제안 전에 **[기각 레지스트리](docs/governance/rejected.md)**를 본다 — 되살릴 조건이 온 것만 다시 꺼낸다(`node scripts/revive-watch.mjs --tree`).
 
 ### 이 저장소에서의 구체 진입점
 
@@ -184,7 +184,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 - ⚠️ **보안 기본선**: 토큰/시크릿 로깅 금지 · 완전 마스킹(`***`, 접두 노출 없음) · TLS 검증 기본 on · 인메모리 토큰저장.
 - ⚠️ **시크릿 메모리 위생은 end-to-end 보장이 아니다 — 과대광고 금지.** 상세: `.claude/rules/security.md`.
 - ⚠️ **admin-client와 Keycloak 서버는 독립 버전 트랙이다** — 서버 라인과 같은 번호의 admin-client는 없다. `representation` 필드는 실서버로 검증한다.
-- ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — Publish 후에도 전파 지연이 있으니 **404로 실패를 결론내지 않는다**(Java·Kotlin 공통).
+- ⚠️ **Maven Central은 Central Portal 경로만**(구 OSSRH 종료). 워크플로 초록 ≠ 게시 — `release.yml` 뒤는 Portal **스테이징**(사람이 Publish)이고 그 뒤에도 전파 지연이 있다(실측: 404 → 3분 뒤 200). **404로 실패를 결론내지 않는다** — 판정은 Portal 상태, repo1은 폴링(Java·Kotlin 공통).
 - ⚠️ **배포 시크릿 미설정은 스킵이 아니라 실패다** — 아무것도 게시하지 않고 green으로 끝난 실행은 성공한 실행과 구분되지 않는다.
 <!-- min 8 → 6 (2026-09-10): vitest·@vitest/coverage-v8 의 **일시적** 이관 보류 두 항목을 지웠다.
      그것은 「종류」가 아니라 보류였고, v4 이관이 끝나 해제했다(GHSA 패치가 4.1.11 뿐이라 3.x 에는
@@ -360,8 +360,6 @@ dev(테스트 csproj — **앵커 있음**):
 ## 현재 상태
 
 9개 언어 SDK 모두 `main` 병합 완료. **9개 언어 전부 정식 릴리스를 냈고, 번호는 갈렸다** — 언어별 번호는 아래 표다. ⚠️ **함대 번호로 말하지 말 것**(근거: 1.0 기준(`git show d4e8958:docs/superpowers/plans/release-1.0.md`)). 배포는 전부 사람 승인 게이트다(사람이 태그를 민다).
-
-⚠️ **Maven Central은 "워크플로 초록"과 "게시" 사이에 사람 클릭과 전파 지연이 둘 다 있다.** `release.yml`이 끝나도 Portal **스테이징**일 뿐이고, Publish 후에도 시차가 있다(실측: 첫 확인 404 → 3분 뒤 200, 검색 색인은 한참 뒤). **404로 "실패"를 결론내지 말 것** — 판정은 Portal 상태로 하고 repo1은 폴링한다. Kotlin도 같다.
 
 | 언어 | 배포명 | 태그 접두 | 배포 |
 |---|---|---|---|

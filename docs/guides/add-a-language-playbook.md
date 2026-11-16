@@ -134,18 +134,18 @@ The new language must verify the **same scenarios** as Java and Python. Counts m
 
 ---
 
-### Stage 6 — Governance G1–G6 + Codex dual verification + loop
+### Stage 6 — Governance G1–G6 + independent-model verification + loop
 
-Every task follows the [work process](../governance/process.md) — six phases (plan → WBS → review → schedule → build → verify) with a WBS as the backbone. **Separation of duties**: implementer ≠ reviewer ≠ verifier, and the verifier uses a **different model (Codex/GPT-5)** to offset correlated blind spots. Substantive work additionally gets a **Grok independent leg** — the same input, with neither side shown the other's answer — which is a separate axis from the Codex cross-verification; the role table in the [work process](../governance/process.md) owns both.
+Every task follows the [work process](../governance/process.md) — six phases (plan → WBS → review → schedule → build → verify) with a WBS as the backbone. **Separation of duties**: implementer ≠ reviewer ≠ verifier, and the verifier is a **different model** to offset correlated blind spots — here the **Grok independent leg**: the same evidence, never the other side's conclusions, disagreements settled by experiment. The role table in the [work process](../governance/process.md) owns it.
 
 - [ ] **G1–G6 gates** — all must pass per task to be considered done:
-  - **G1 Build** (0 compile errors) · **G2 Unit tests** (100%) · **G3 Coverage** (threshold) · **G4 Spec conformance** (0 unresolved Critical/Important, reviewer approval) · **G5 Codex cross-verification** (0 discrepancies, verdict "confirmed") · **G6 Security** (0 token/secret · internal-type leakage).
-- [ ] **Codex dual verification (G5)** — Codex independently reviews every task diff. No self-approving your own code.
-- [ ] **Loop engineering** — on a gate miss, RCA (joint Claude+Codex diagnosis) → remediation (minimal change) → re-verification (G1–G6) → re-measurement. **Up to 3 iterations per gate**; escalate to a human if exceeded. Record every iteration in the PR as "prior metric → action → post metric → RCA".
+  - **G1 Build** (0 compile errors) · **G2 Unit tests** (100%) · **G3 Coverage** (threshold) · **G4 Spec conformance** (0 unresolved Critical/Important, reviewer approval) · **G5 independent-model cross-verification** (0 unresolved discrepancies) · **G6 Security** (0 token/secret · internal-type leakage).
+- [ ] **Independent-model verification (G5)** — every substantive task gets the Grok leg. No self-approving your own code.
+- [ ] **Loop engineering** — on a gate miss, RCA (joint Claude + Grok diagnosis) → remediation (minimal change) → re-verification (G1–G6) → re-measurement. **Up to 3 iterations per gate**; escalate to a human if exceeded. Record every iteration in the PR as "prior metric → action → post metric → RCA".
 - [ ] **Governance guardrails** — `feature/<lang>-sdk` branch isolation, main via PR (human approval), publishing on human approval, secret handling (masking + review), reproducibility (pinned dependency BOM/lockfile, pinned Keycloak container tag, pinned toolchain versions).
 
-**Deliverable:** A PR that records the gate-pass history and a Codex "confirmed" verdict.
-**Gate:** All gates GREEN + a whole-branch final review including Codex → PR (human-approved merge).
+**Deliverable:** A PR that records the gate-pass history and the independent leg's findings, each with how it was settled.
+**Gate:** All gates GREEN + a whole-branch final review including the independent leg → PR (human-approved merge).
 
 ---
 
@@ -158,7 +158,7 @@ Every task follows the [work process](../governance/process.md) — six phases (
 | 3. Security invariants + CI enforcement | Security tests + strict/security lint jobs | **G6** | masking · JWKS DoS · timeout tests, mandatory CI steps (Stage 3 note) |
 | 4. Test parity matrix | Unit + Testcontainers integration | G2·G3 + integration GREEN | coverage gate, scenario-parity table |
 | 5. CI · publishing · docs | CI + tag-driven release (not executed) + docs | CI GREEN + docs match | matrix build, local-install verification, docs comparison |
-| 6. Governance | Codex verdict, PR | **All of G1–G6** + Codex confirmed | gate measurement + loop + human approval |
+| 6. Governance | Independent-leg findings, PR | **All of G1–G6** | gate measurement + loop + human approval |
 
 ---
 
