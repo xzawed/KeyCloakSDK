@@ -49,9 +49,10 @@ done
 
 # 어떤 언어의 단위테스트라도 실패했거나 suite가 아예 돌지 못했으면 0이 아닌 코드로 끝낸다.
 # verify.sh가 이 코드를 받아 전체 실행의 종료코드에 반영한다.
-# ⚠️ 통과에는 돈 시험 수(`unit`, 0 보다 큰 정수)도 든다 — 테스트 명령이 아무것도 못 찾고 0 으로 끝나거나(러너 대부분이
-# 그렇다) 스크립트가 요약 줄을 못 읽으면 「통과 · 0 개」가 되는데, 그것은 돌지 않은 스위트와 구분되지 않는다(PR 0 에서
-# dotnet · php 스위트가 실제로 0 개로 돌았다). 가드: scripts/test/test-harness-failure-evidence.sh.
+# ⚠️ 통과에는 돈 시험 수(`unit`, 0 보다 큰 정수)도 든다 — 테스트 명령이 아무것도 못 찾고 0 으로 끝나거나(실측:
+# `go test` 의 [no test files] · `cargo test` 의 running 0 tests 둘 다 종료 0) 스크립트가 요약 줄을 못 읽으면 「통과 ·
+# 0 개」가 되는데, 그것은 돌지 않은 스위트와 구분되지 않는다(PR 0 에서 dotnet · php 스위트가 실제로 0 개로 돌았다).
+# 가드: scripts/test/test-harness-failure-evidence.sh.
 FAILED_SUITES=""
 VACUOUS_SUITES=""
 for L in "$@"; do
