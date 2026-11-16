@@ -1550,3 +1550,24 @@ TEST:scripts/test/test-revive-watch.sh
 OLD:      return { revive: noToken.length > 0, detail: `판정 뒤 main 실패 스캔 ${runs.length} · Dependabot 커밋 ${bot.length} · 그중 토큰 없음 ${noToken.length}` }
 NEW:      return { revive: bot.length > 0, detail: `판정 뒤 main 실패 스캔 ${runs.length} · Dependabot 커밋 ${bot.length} · 그중 토큰 없음 ${noToken.length}` } // PROBE-REC
 SITE:revive: bot.length > 0
+
+### pr-legs-go
+FILE:scripts/harness-pr-legs.mjs
+TEST:scripts/test/test-harness-pr-legs.sh
+OLD:  return changed.filter((f) => covers(paths, f) && !f.startsWith('go/') && !/\.md$/i.test(f))
+NEW:  return changed.filter((f) => covers(paths, f) && !/\.md$/i.test(f)) // PROBE-REC
+SITE:!/\.md$/i.test(f)) // PROBE-REC
+
+### pr-legs-md
+FILE:scripts/harness-pr-legs.mjs
+TEST:scripts/test/test-harness-pr-legs.sh
+OLD:  return changed.filter((f) => covers(paths, f) && !f.startsWith('go/') && !/\.md$/i.test(f))
+NEW:  return changed.filter((f) => covers(paths, f) && !f.startsWith('go/')) // PROBE-REC
+SITE:!f.startsWith('go/')) // PROBE-REC
+
+### pr-legs-covers
+FILE:scripts/harness-pr-legs.mjs
+TEST:scripts/test/test-harness-pr-legs.sh
+OLD:  return changed.filter((f) => covers(paths, f) && !f.startsWith('go/') && !/\.md$/i.test(f))
+NEW:  return changed.filter((f) => !f.startsWith('go/') && !/\.md$/i.test(f)) // PROBE-REC
+SITE:filter((f) => !f.startsWith('go/') && !/\.md$/i.test(f)) // PROBE-REC
