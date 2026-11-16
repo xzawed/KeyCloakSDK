@@ -58,6 +58,27 @@ RSpec.describe KeycloakSdk::ClientCredentialsTokenProvider do
     expect(stub).to have_been_requested.once
   end
 
+  # 실패를 캐시하지 않는다 — 실패한 부여 뒤의 호출은 다시 묻는다(Grok 레그).
+  it "does not cache a failed grant — the next call asks again" do
+    stub = stub_request(:post, token_url)
+           .to_return({ status: 500, body: "down" },
+                      { status: 200, body: { access_token: "AT2", expires_in: 300, token_type: "Bearer" }.to_json,
+                        headers: { "Content-Type" => "application/json" } })
+    expect { provider.access_token }.to raise_error(KeycloakSdk::Error)
+    expect(provider.access_token).to eq("AT2")
+    expect(stub).to have_been_requested.twice
+  end
+
+  # 만료 시각을 모르는 토큰(expires_in 없음)은 만료로 친다 — 매 호출이 다시 받는다(TokenSet#expired? 의 규칙).
+  # 이전엔 60 초를 짐작해 붙들었다.
+  it "fetches a token without expires_in again on every call" do
+    stub = stub_request(:post, token_url)
+           .to_return(status: 200, body: { access_token: "AT1", token_type: "Bearer" }.to_json,
+                      headers: { "Content-Type" => "application/json" })
+    2.times { provider.access_token }
+    expect(stub).to have_been_requested.twice
+  end
+
   it "raises AuthError with oauth_error on 401" do
     stub_request(:post, token_url)
       .to_return(status: 401, body: { error: "invalid_client" }.to_json,

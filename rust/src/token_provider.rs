@@ -246,6 +246,49 @@ mod tests {
         }
     }
 
+    /// 실패를 캐시하지 않는다 — 실패한 부여 뒤의 호출은 다시 묻는다(Grok 레그). 첫 응답만 500(우선순위 1 · 한 번),
+    /// 그 뒤는 200. 거부한 토큰을 캐시하지 않는 것은 `tests/bearer_grammar.rs` 가 이미 고정한다.
+    #[tokio::test]
+    async fn a_failed_grant_is_not_cached() {
+        let server = MockServer::start().await;
+        let token = || path("/realms/it-realm/protocol/openid-connect/token");
+        Mock::given(method("POST"))
+            .and(token())
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(token())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT2", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert!(p.access_token().await.is_err());
+        assert_eq!(p.access_token().await.unwrap(), "AT2");
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    /// expires_in 이 없으면 만료를 모르는 토큰이라 매 호출이 다시 받는다(`TokenSet::is_expired` 의 규칙).
+    #[tokio::test]
+    async fn a_token_without_expires_in_is_fetched_again_on_every_call() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer"
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+    }
+
     #[tokio::test]
     async fn fetches_with_custom_scopes() {
         // config.scopes가 form body의 scope 파라미터로 실제 전달되는지 검증(no-op 아님을 증명).
