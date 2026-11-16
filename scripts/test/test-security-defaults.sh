@@ -1327,9 +1327,10 @@ assert_eq "9" "$_mask_seen" "[mask] 훑은 언어 수가 9가 아니다 — 추�
 # 훅이 남은 채 본문이 원문을 찍어도 통과한다. 그래서 아래 앵커는 전부 `***` 이거나
 # **그 필드에 대한 mask 호출**이다. 각 앵커는 위 프로브로 `SILENT → CAUGHT` 를 확인했다.
 #
-# ⚠️ **손으로 적힌 표다 — 파생으로 바꾸지 말 것(지금은).** 이 자가테스트는 저장소의 required
+# ⚠️ **손으로 적힌 표다 — 파생으로 바꾸지 말 것.** 이 자가테스트는 저장소의 required
 # 체크 `doc-facts` 안에서 `paths:` 필터 없이 돌고 룰셋 `PRIMARY` 는 `bypass_actors: []` 다.
-# 오탐 하나가 **모든 PR** 을 막는다. 파생 열거의 되살릴 조건은 등록부가 소유한다.
+# 오탐 하나가 **모든 PR** 을 막는다. 파생 열거는 아홉 언어의 facade dump 시험이 required 밖(레인 CI)에서
+# 한다 — 소스의 선언 전수 ↔ 공개 API 에서 닿는 객체(재판정 2026-11-17: 비밀 필드를 쥔 새 타입을 심으면 빨강).
 sd_mask2_src() {
   case "$1" in
     java)   printf '%s' 'java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthorizationUrlRequest.java' ;;
