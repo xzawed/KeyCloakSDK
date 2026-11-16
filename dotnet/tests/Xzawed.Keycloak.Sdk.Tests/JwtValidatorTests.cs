@@ -45,6 +45,7 @@ public class JwtValidatorTests
     [InlineData("not a url")]
     [InlineData("relative/realms/r")]
     [InlineData("http://kc:99999/realms/r")]
+    [InlineData("http://kc/a b/realms/r")]
     public async Task An_unusable_issuer_address_fails_validation_with_the_sdk_exception(string issuer)
     {
         using var http = new HttpClient();
