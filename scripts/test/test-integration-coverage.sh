@@ -560,12 +560,19 @@ assert_contains "$(sed -n '3p' "$T/node/src/auth.ts")" 'const TICK = /`/' "(변�
 run report node "$T" --out "$D"
 assert_eq 2 "$RC" "[node] 끝나지 않는 템플릿은 exit 2 — 출력: $OUT"
 assert_contains "$OUT" 'FAIL [node] node/src/auth.ts: a template literal or ${…} runs to the end of the file' "[node] 이름 범위를 못 읽는다고 댄다"
-# 소유자 없는 미실행 함수(exit 1 — 경고).
+# 소유자 없는 미실행 함수(exit 1 — 레인은 이 종료코드를 그대로 받아 실패한다).
 fresh
 sed -i '/"node\/src\/auth.ts:Client.cb"/d' "$T/scripts/integration-coverage.json"
 run report node "$T" --out "$D"
 assert_eq 1 "$RC" "[node] 소유자 없는 미실행 함수는 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [node] unowned never-executed function node/src/auth.ts:Client.cb" "[node] 소유자 없음"
+# 레인(GitHub Actions)에서는 실패 주석도 리포트가 낸다 — 레인 YAML 은 종료코드를 해석하지 않는다(등록부
+# integration-coverage-drift-is-warning-only). 이 시험 자신이 CI 에서 돌므로 환경을 양쪽으로 명시한다.
+OUT="$(GITHUB_ACTIONS=true node "$TOOL" report node "$T" --out "$D" 2>&1)" && RC=0 || RC=$?
+assert_eq 1 "$RC" "[node] 레인에서도 종료코드는 같다 — 출력: $OUT"
+assert_line "$OUT" "::error::integration-coverage [node]: DRIFT — ownership problem — the lines above say what to change" "[node] 레인에서는 소유 문제가 실패 주석이다"
+OUT="$(GITHUB_ACTIONS= node "$TOOL" report node "$T" --out "$D" 2>&1)" && RC=0 || RC=$?
+assert_not_contains "$OUT" "::error::" "[node] 레인 밖에서는 주석을 내지 않는다"
 # 데이터가 없다.
 fresh
 rm "$D/node/coverage-final.json"

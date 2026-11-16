@@ -64,6 +64,21 @@ TEST:test-lang-universe.sh
 JUDGE:integration-coverage.mjs
 WHY:언어 집합을 내보낸 출력(`langs`)만 읽는다 — 실패 종료가 없는 경로라 M1 이 바꾸는 것이 없다. 판정은 test-integration-coverage.sh 가 본다(M1 CAUGHT)
 
+### exclude-ic-gate-ledger
+TEST:test-integration-coverage-gate.sh
+JUDGE:integration-coverage.mjs
+WHY:언어 집합을 내보낸 출력(`langs`)만 읽는다 — 실패 종료가 없는 경로라 M1 이 바꾸는 것이 없다. 이 시험의 판정(레인 배선)은 시험 자신이고, 그 음성 대조는 아래 ic-gate-* 줄 변이다
+
+### exclude-rules-commands-coverage
+TEST:test-check-rules-commands.sh
+JUDGE:check-coverage.mjs
+WHY:픽스처 rules 파일(heredoc)의 dotnet 커버리지 줄 속 명령 글자다 — 이 시험은 그 스크립트를 실행하지 않고 경로의 실재만 본다(판정기는 check-rules-commands.mjs — 그 쌍은 CAUGHT)
+
+### exclude-rules-commands-doctor
+TEST:test-check-rules-commands.sh
+JUDGE:doctor.mjs
+WHY:픽스처 rules 파일(heredoc)의 java JAVA_HOME 오류 문구 속 글자다 — 실행하지 않는다
+
 ### exclude-lang-universe-boundary
 TEST:test-lang-universe.sh
 JUDGE:coverage-boundary.mjs
@@ -1576,3 +1591,52 @@ TEST:scripts/test/test-harness-pr-legs.sh
 OLD:  return changed.filter((f) => covers(paths, f) && !f.startsWith('go/') && !/\.md$/i.test(f))
 NEW:  return changed.filter((f) => !f.startsWith('go/') && !/\.md$/i.test(f)) // PROBE-REC
 SITE:filter((f) => !f.startsWith('go/') && !/\.md$/i.test(f)) // PROBE-REC
+
+### ic-gate-or-true
+FILE:.github/workflows/go-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:        run: node scripts/integration-coverage.mjs report go --out "$RUNNER_TEMP/integration-coverage"
+NEW:        run: node scripts/integration-coverage.mjs report go --out "$RUNNER_TEMP/integration-coverage" || true # PROBE-REC
+SITE:|| true # PROBE-REC
+
+### ic-gate-warn-again
+FILE:.github/workflows/php-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:        run: node scripts/integration-coverage.mjs report php --out "$RUNNER_TEMP/integration-coverage"
+NEW:        run: node scripts/integration-coverage.mjs report php --out "$RUNNER_TEMP/integration-coverage" || [ $? -le 1 ] # PROBE-REC
+SITE:|| [ $? -le 1 ] # PROBE-REC
+
+### ic-gate-wrong-lang
+FILE:.github/workflows/rust-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:        run: node scripts/integration-coverage.mjs report rust --out "$RUNNER_TEMP/integration-coverage"
+NEW:        run: node scripts/integration-coverage.mjs report go --out "$RUNNER_TEMP/integration-coverage" # PROBE-REC
+SITE:report go --out "$RUNNER_TEMP/integration-coverage" # PROBE-REC
+
+### ic-gate-step-continue
+FILE:.github/workflows/ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:      - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
+NEW:      - continue-on-error: true # PROBE-REC
+SITE:continue-on-error: true # PROBE-REC
+
+### ic-gate-step-if
+FILE:.github/workflows/kotlin-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:      - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
+NEW:      - if: false # PROBE-REC
+SITE:if: false # PROBE-REC
+
+### ic-gate-job-continue
+FILE:.github/workflows/node-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:    name: Integration tests (testcontainers, 실제 Keycloak)
+NEW:    continue-on-error: true # PROBE-REC
+SITE:continue-on-error: true # PROBE-REC
+
+### ic-gate-shell
+FILE:.github/workflows/dotnet-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:      - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
+NEW:      - shell: bash -c "bash {0} || true" # PROBE-REC
+SITE:bash {0} || true" # PROBE-REC

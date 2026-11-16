@@ -162,6 +162,10 @@ jobs:
         # `harness:install` 소유를 트리에서 확인하는 판정(`scripts/integration-coverage.mjs` 의 「하네스 소유」)만 — 변이 레코드가
         # 이 파일을 겨누도록 위 시험에서 떼어 냈다(까닭은 그 머리). 준비 함수는 둘이 `scripts/test/ic-fixture.sh` 를 함께 쓴다.
         run: sh scripts/test/test-integration-coverage-harness.sh
+      - name: 통합 전용 커버리지의 레인 게이트 배선(아홉 레인이 리포트의 종료코드를 그대로 받는다 — 실제 트리)
+        # 레인이 `[ "$rc" -le 1 ]` 로 소유 문제를 경고로 받던 동안 main 이 DRIFT 인 채 초록이었다(등록부
+        # integration-coverage-drift-is-warning-only). 레인 워크플로는 `paths:` 뒤라 그것을 고친 PR 에서만 돈다 — 배선은 여기서 본다.
+        run: sh scripts/test/test-integration-coverage-gate.sh
 
       - name: .NET 취약 패키지 감사 판정 자가테스트(JSON — 한 대상만 취약 · 전이 · problems · 비-JSON · 픽스처만)
         # dotnet-ci · security-audit 의 감사 단계가 쓰는 판정기(`scripts/check-dotnet-vulnerable.mjs`)다. 옛 텍스트 grep 은

@@ -81,7 +81,9 @@
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
 //   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡거나 핀 밖을 가리키는 항목 · 트리에서 확인되지 않는 하네스 연결) —
-//            수치는 유효하다. CI 는 경고로만 본다
+//            수치는 유효하다. CI 는 실패로 본다 — 레인은 이 종료코드를 그대로 받는다(0 만 통과 · 배선은
+//            `scripts/test/test-integration-coverage-gate.sh`). 경고였던 동안 main 이 DRIFT 인 채 초록이었다(등록부
+//            `integration-coverage-drift-is-warning-only` — 소유자 없는 go 함수 둘이 이틀 갔다)
 //   2 FAIL   무결성 실패 — 수치를 믿을 수 없게 하는 것 전부. 넷으로 묶인다:
 //            입력 — 핀 · 등록부 · 트리(소스의 이름 범위 · go.mod · 통합 스위트 정의) · 데이터가 없거나, 못 읽거나, 이
 //              리더가 모르는 꼴이다(잘못 적은 하한 포함).
@@ -95,7 +97,7 @@
 //            가리킨다 — 다섯 레인의 사본이 다 그 리더의 fail() 보다 좁았다(실측 2026-11-06).
 //   3 BELOW  하한 아래 — 수치는 유효하다. CI 는 실패로 본다. 비교는 정수식(covered × 100 < percent × 분모)이고 같으면 통과다.
 //   4 UNEXERCISED  admin 표면(`integration-coverage.json` 의 `surface`)의 함수가 통합 실행에서 한 번도 안 돌았고 소유자도 없다 —
-//            수치는 유효하다. CI 는 실패로 본다(레인의 `[ "$rc" -le 1 ]`). 25 연산 하나를 스위트에서 지우면 여기로 온다
+//            수치는 유효하다. CI 는 실패로 본다. 25 연산 하나를 스위트에서 지우면 여기로 온다
 //            (등록부 `integration-admin-surface-regression-unguarded`). 하한 아래이기도 하면 둘 다 말하고 4 다.
 //
 // 사용(LANG = go · python · node · rust · php · ruby · dotnet · java · kotlin):
@@ -1549,7 +1551,7 @@ function phpReport(d) {
   // Xdebug 는 실린 파일의 안 돈 줄도 넘긴다(`XDEBUG_CC_UNUSED` — 독립 레그 2차 실측: `class_exists` 만 한 테스트도 실린다).
   // 실측: 경계 파일을 안 싣는 ZeroIT 는 안 실린다. 단위 테스트가 섞였거나(통합 전용이 아니다) 실린 테스트가 실패했으면 FAIL —
   // 독립 레그 1차 실측: 생성 설정에 `--testsuite unit --filter …`(단위 26 개)로 돌린 데이터를 이 리더가 수치로 냈다(소유 문제
-  // exit 1 — CI 의 `[ "$rc" -le 1 ]` 를 지난다). 경계에 닿기 전에 실패한 테스트 · 일부 클래스만 거른 실행은 이 목록으로 못
+  // exit 1 — 그때 레인은 1 을 경고로 지났다). 경계에 닿기 전에 실패한 테스트 · 일부 클래스만 거른 실행은 이 목록으로 못
   // 가른다 — 그것은 끝의 run 기록(종료코드 · index.xml 해시)이 막는다.
   const suite = phpIntegrationClasses(d)
   if (!suite) return null
@@ -3156,7 +3158,7 @@ function report(l) {
     return 3
   }
   if (nd) {
-    console.log(`integration-coverage [${l}]: DRIFT — ${head}${fl} · ${fns}${problems} (ownership is a warning, not a gate)`)
+    console.log(`integration-coverage [${l}]: DRIFT — ${head}${fl} · ${fns}${problems} (the lane fails on it — each DRIFT line says what to change in ${PINS})`)
     return 1
   }
   console.log(`integration-coverage [${l}]: OK — ${head}${fl} · ${fns}${owned}`)
@@ -3687,10 +3689,15 @@ function run(l) {
   return j === 0 ? 0 : 2
 }
 
+// 레인은 report 의 종료코드를 그대로 받는다 — 그것을 해석하던 레인 사본(`[ "$rc" -le 1 ]` — 소유 문제를 경고로 넘겼다)을
+// 지웠으니 실패 주석도 여기서 낸다. 무엇을 고칠지는 위에 찍힌 판정 줄이 말한다.
+const VERDICTS = { 1: 'DRIFT — ownership problem', 2: 'FAIL — integrity failure', 3: 'BELOW — under the floor', 4: 'UNEXERCISED — an admin surface function never ran' }
 let code
 if (cmd === 'check') code = check()
-else if (cmd === 'report') code = report(lang)
-else if (cmd === 'run') code = run(lang)
+else if (cmd === 'report') {
+  code = report(lang)
+  if (code && process.env.GITHUB_ACTIONS === 'true') console.log(`::error::integration-coverage [${lang}]: ${VERDICTS[code] ?? `exit ${code}`} — the lines above say what to change`)
+} else if (cmd === 'run') code = run(lang)
 else {
   code = run(lang)
   if (code === 0) code = report(lang)
