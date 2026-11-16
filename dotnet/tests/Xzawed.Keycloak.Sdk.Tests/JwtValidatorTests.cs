@@ -38,6 +38,21 @@ public class JwtValidatorTests
     private static string PayloadJson(string aud, long expOffset = 300, string iss = Issuer)
         => $$"""{"iss":"{{iss}}","sub":"user-1","aud":{{aud}},"exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expOffset}},"iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}}""";
 
+    // 경계 변환(등록부 boundary-exception-conversion-incomplete) — 공개 생성자는 issuer 문자열을 받고 디스커버리 주소를 그 뒤에
+    // 붙인다. 쓸 수 없는 주소의 예외(UriFormatException · 상대 주소의 InvalidOperationException)는 첫 검증 때 나고, 검증 경계가
+    // SDK 예외로 바꾼다(§4) — 그 변환을 고정한다(Kotlin · Node 는 같은 자리에서 샜다).
+    [Theory]
+    [InlineData("not a url")]
+    [InlineData("relative/realms/r")]
+    [InlineData("http://kc:99999/realms/r")]
+    public async Task An_unusable_issuer_address_fails_validation_with_the_sdk_exception(string issuer)
+    {
+        using var http = new HttpClient();
+        var v = new JwtValidator(issuer, new JwtValidatorOptions { Issuer = issuer, Audiences = new[] { "it-client" } }, http);
+        await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", iss: issuer), Key)));
+    }
+
     [Fact]
     public async Task Valid_RS256_returns_claims()
     {

@@ -742,6 +742,19 @@ internal class JwtValidatorTest {
         return token
     }
 
+    // 경계 변환(등록부 boundary-exception-conversion-incomplete) — OidcEndpoints 는 공개 data class 라 소비자가 아무 문자열이나
+    // jwks 로 줄 수 있다. URI 로 안 읽히거나(URISyntaxException) 절대가 아니면(IllegalArgumentException) 그 예외가 공개 API 로
+    // 새면 안 된다(§4) — 잘못된 URL(MalformedURLException)과 같은 SDK 예외여야 한다.
+    @Test
+    fun `forRealm turns any unusable JWKS URI into the SDK exception`() {
+        val config = KeycloakConfig(serverUrl = "http://localhost:8080", realm = "r", clientId = "app")
+        for (jwks in listOf("http://kc/a b/certs", "relative/certs", "nope://kc/certs")) {
+            val endpoints = OidcEndpoints.forRealm(config).copy(jwks = jwks)
+            val e = assertFailsWith<TokenValidationException>(jwks) { JwtValidator.forRealm(endpoints, config, "app") }
+            assertEquals("Invalid JWKS URI", e.message, jwks)
+        }
+    }
+
     private companion object {
         const val JWKS_PATH = "/realms/r/protocol/openid-connect/certs"
         const val TOKEN_PATH = "/realms/r/protocol/openid-connect/token"
