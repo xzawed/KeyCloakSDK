@@ -1623,3 +1623,10 @@ TEST:scripts/test/test-integration-coverage-gate.sh
 OLD:    name: Integration tests (testcontainers, 실제 Keycloak)
 NEW:    continue-on-error: true # PROBE-REC
 SITE:continue-on-error: true # PROBE-REC
+
+### ic-gate-shell
+FILE:.github/workflows/dotnet-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:      - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
+NEW:      - shell: bash -c "bash {0} || true" # PROBE-REC
+SITE:bash {0} || true" # PROBE-REC

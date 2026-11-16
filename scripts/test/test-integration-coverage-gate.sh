@@ -11,7 +11,9 @@
 #       `run: node scripts/integration-coverage.mjs report <L> --out "$RUNNER_TEMP/integration-coverage"` 다 — `|| …` 를
 #       붙이거나 여러 줄 `run: |` 안에 두면(종료코드를 다시 해석할 자리) 그 줄이 아니다.
 #   (3) 그 스텝과 그 잡의 머리에 `if:` · `continue-on-error:` 가 없다 — 스텝을 건너뛰거나 실패를 초록으로 두는 손잡이다.
-#   (4) 리포트를 부르는 주석 밖 줄은 워크플로 전체에서 언어 수만큼이다 — 언어 인자를 변수로 감싼 사본도 센다.
+#   (4) 그 워크플로에 `shell:` 키가 없다(스텝 · 잡 `defaults` · 최상위 `defaults` · 인라인 맵 어디든) — 사용자 셸
+#       `bash -c "bash {0} || true"` 가 (1)–(3) 을 지나며 종료코드를 삼켰다(Grok 레그).
+#   (5) 리포트를 부르는 주석 밖 줄은 워크플로 전체에서 언어 수만큼이다 — 언어 인자를 변수로 감싼 사본도 센다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -52,6 +54,8 @@ for L in $LANGS; do
   assert_eq "$want" "$run" "[$L] $f:$at 은 리포트를 맨 \`run:\` 명령으로 부른다(종료코드를 그대로 받는다) — 줄: $line"
   [ -n "$f" ] || continue
   assert_eq '' "$(gate_knobs "$WF/$f" "$at")" "[$L] $f:$at 의 스텝과 잡 머리에 if · continue-on-error 가 없다"
+  assert_eq 0 "$(grep -cE '^[^#]*(^|[^A-Za-z0-9_-])shell[[:space:]]*:' "$WF/$f" || true)" \
+    "[$L] $f 에 shell: 키가 없다(사용자 셸이 종료코드를 삼킬 수 있다)"
 done
 assert_eq "$n" "$(cd "$WF" && grep -hcE '^[^#]*integration-coverage\.mjs report' -- *.yml | awk '{ s += $1 } END { print s + 0 }')" \
   "리포트를 부르는 주석 밖 워크플로 줄의 수 = 언어 수($n)"
