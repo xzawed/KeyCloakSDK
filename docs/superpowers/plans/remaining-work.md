@@ -1,5 +1,8 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=137146 max-raw-bytes=147273 -->
+<!-- doc-budget: max-bytes=136524 max-raw-bytes=147036 -->
+<!-- max-bytes 137146 → 136524 · max-raw-bytes 147273 → 147036: guards-outside-their-own-pr-signal 마감(#1109) — 마감 · 새 항목을
+     더하며 닫힌 긴 줄 둘(go-release-persist-credentials · node-error-cause-carries-response-tokens)을 판정 방법만 남기고
+     줄였다(경위는 2026-09-11 커밋 · #603). 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 138277 → 137146 · max-raw-bytes 148096 → 147273: H6 · harness-consume-pin-unsupported 마감(#1101) — H6 의
      재판정 하위 불릿 둘(「야간이 아니라 주간」 · 「Central 에 실재해야」)이 닫힌 한 줄이 됐다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 138738 → 138277 · max-raw-bytes 148265 → 148096: readme-quickstarts-ungated 마감(#1099) — 후속
