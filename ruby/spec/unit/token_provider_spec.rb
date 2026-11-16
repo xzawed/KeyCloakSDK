@@ -35,6 +35,50 @@ RSpec.describe KeycloakSdk::ClientCredentialsTokenProvider do
     expect(stub).to have_been_requested.once
   end
 
+  # 캐시 계약(등록부 tokenprovider-cache-contract-untested) — 위 예제는 「다시 받는다」를 보지 않는다(만료를 안 보는 변이에도
+  # 초록이었다). expires_in 이 clock_skew(30)보다 짧으면 받자마자 만료다 — 둘째 호출이 새로 받는다. 스큐를 빼지 않으면 1 번이다.
+  it "refetches once the cached token is within the clock skew of expiry" do
+    stub = stub_request(:post, token_url)
+           .to_return(status: 200, body: { access_token: "AT1", expires_in: 20, token_type: "Bearer" }.to_json,
+                      headers: { "Content-Type" => "application/json" })
+    2.times { provider.access_token }
+    expect(stub).to have_been_requested.twice
+  end
+
+  # 동시 호출은 한 번의 부여로 합쳐진다(single-flight — 잠금을 쥔 채 받는다). 느린 IdP 앞에서 여덟 스레드가 함께 물어도 부여는
+  # 1 번이다 — 잠금이 없으면 각자 받는다(뮤텍스를 뺀 변이에도 이 파일은 초록이었다).
+  it "shares one grant among concurrent callers (single-flight)" do
+    stub = stub_request(:post, token_url).to_return do
+      sleep 0.2
+      { status: 200, body: { access_token: "AT1", expires_in: 300, token_type: "Bearer" }.to_json,
+        headers: { "Content-Type" => "application/json" } }
+    end
+    threads = Array.new(8) { Thread.new { provider.access_token } }
+    expect(threads.map(&:value)).to all(eq("AT1"))
+    expect(stub).to have_been_requested.once
+  end
+
+  # 실패를 캐시하지 않는다 — 실패한 부여 뒤의 호출은 다시 묻는다(Grok 레그).
+  it "does not cache a failed grant — the next call asks again" do
+    stub = stub_request(:post, token_url)
+           .to_return({ status: 500, body: "down" },
+                      { status: 200, body: { access_token: "AT2", expires_in: 300, token_type: "Bearer" }.to_json,
+                        headers: { "Content-Type" => "application/json" } })
+    expect { provider.access_token }.to raise_error(KeycloakSdk::Error)
+    expect(provider.access_token).to eq("AT2")
+    expect(stub).to have_been_requested.twice
+  end
+
+  # 만료 시각을 모르는 토큰(expires_in 없음)은 만료로 친다 — 매 호출이 다시 받는다(TokenSet#expired? 의 규칙).
+  # 이전엔 60 초를 짐작해 붙들었다.
+  it "fetches a token without expires_in again on every call" do
+    stub = stub_request(:post, token_url)
+           .to_return(status: 200, body: { access_token: "AT1", token_type: "Bearer" }.to_json,
+                      headers: { "Content-Type" => "application/json" })
+    2.times { provider.access_token }
+    expect(stub).to have_been_requested.twice
+  end
+
   it "raises AuthError with oauth_error on 401" do
     stub_request(:post, token_url)
       .to_return(status: 401, body: { error: "invalid_client" }.to_json,

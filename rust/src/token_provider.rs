@@ -196,6 +196,99 @@ mod tests {
         assert_eq!(p.access_token().await.unwrap(), "AT");
     }
 
+    /// 캐시 계약(등록부 tokenprovider-cache-contract-untested) — 위 시험은 「다시 받는다」를 보지 않는다(만료를 안 보는 변이에도
+    /// 초록이었다). expires_in 이 clock_skew(30)보다 짧으면 받자마자 만료다 — 둘째 호출이 새로 받는다. 스큐를 안 쓰면 1 번이다.
+    #[tokio::test]
+    async fn refetches_once_the_cached_token_is_within_the_skew_of_expiry() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 20
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+    }
+
+    /// 동시 호출은 한 번의 부여로 합쳐진다(single-flight — 잠금을 쥔 채 받는다). 느린 IdP(200ms) 앞에서 여덟이 함께 물어도
+    /// 부여는 1 번이다 — 받는 동안 잠금을 풀면 각자 받는다(그 변이에도 시험 바이너리 15 개가 전부 초록이었다).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_callers_share_one_grant() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+                    }))
+                    .set_delay(std::time::Duration::from_millis(200)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let p = std::sync::Arc::new(ClientCredentialsTokenProvider::new(
+            cfg(&server.uri()),
+            reqwest::Client::new(),
+        ));
+        let calls: Vec<_> = (0..8)
+            .map(|_| {
+                let p = p.clone();
+                tokio::spawn(async move { p.access_token().await })
+            })
+            .collect();
+        for c in calls {
+            assert_eq!(c.await.unwrap().unwrap(), "AT");
+        }
+    }
+
+    /// 실패를 캐시하지 않는다 — 실패한 부여 뒤의 호출은 다시 묻는다(Grok 레그). 첫 응답만 500(우선순위 1 · 한 번),
+    /// 그 뒤는 200. 거부한 토큰을 캐시하지 않는 것은 `tests/bearer_grammar.rs` 가 이미 고정한다.
+    #[tokio::test]
+    async fn a_failed_grant_is_not_cached() {
+        let server = MockServer::start().await;
+        let token = || path("/realms/it-realm/protocol/openid-connect/token");
+        Mock::given(method("POST"))
+            .and(token())
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(token())
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT2", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert!(p.access_token().await.is_err());
+        assert_eq!(p.access_token().await.unwrap(), "AT2");
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    /// expires_in 이 없으면 만료를 모르는 토큰이라 매 호출이 다시 받는다(`TokenSet::is_expired` 의 규칙).
+    #[tokio::test]
+    async fn a_token_without_expires_in_is_fetched_again_on_every_call() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer"
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let p = ClientCredentialsTokenProvider::new(cfg(&server.uri()), reqwest::Client::new());
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+        assert_eq!(p.access_token().await.unwrap(), "AT");
+    }
+
     #[tokio::test]
     async fn fetches_with_custom_scopes() {
         // config.scopes가 form body의 scope 파라미터로 실제 전달되는지 검증(no-op 아님을 증명).

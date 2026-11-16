@@ -66,7 +66,9 @@ module KeycloakSdk
         end
 
         @cached = token
-        @expires_at = ts.expires_at ? (ts.expires_at - @config.clock_skew) : (now + 60)
+        # Unknown expiry (no `expires_in`) counts as expired — the next call asks again, as `TokenSet#expired?` says. A
+        # guessed lifetime (this was `now + 60`) serves a token the IdP may already have retired.
+        @expires_at = ts.expires_at ? (ts.expires_at - @config.clock_skew) : now
         @cached
       end
     end
