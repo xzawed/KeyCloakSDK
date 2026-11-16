@@ -253,7 +253,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 149건 (열림 43)
+## C. 품질 부채 — 149건 (열림 42)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -397,7 +397,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
   - ⚠️ **「node update 프로브」를 찾지 못했다 — 그래서 닫지 않는다.** 다음 검색이 전부 0건이다: `grep -rn "npm update\|node update" scripts/test/*.sh` · `grep -rn "grep -q \"" scripts/test/*.sh`(자가테스트 2건은 무관: LICENSE 문자열·주석). 원장의 그 절반이 **다른 파일을 가리키거나 서술이 부정확**하다 — 착수 전 기계용 원장(`ledger-dedup.json`)에서 이 항목의 원문을 먼저 볼 것.
 - [x] `guards-outside-their-own-pr-signal` **[M/M · 닫힘 2026-11-16 #1109]** `check-workflow-paths.mjs` — paths 로 거르는 PR 워크플로가 쓰는 공유 파일(2단까지)을 그 paths 가 받는다, 빠진 37 을 채움 · 하네스 쪽은 아래 항목
 - [ ] `harness-legs-skip-pull-request` **[M/M]** install-all · score-all 은 잡 `if` 가 dispatch · schedule 이라 PR 에서 안 돈다 — `harness/install/**` 를 고친 PR 의 신호는 mvp-go 와 자가테스트뿐 · `.github/workflows/harness.yml:31`
-- [ ] `selftests-miss-the-real-callsite` **[M/M]** 자가테스트가 CI의 실제 호출 형태를 타지 않는다 — 무인자 경로·다중 리포트·호출부 seam · 사례 php-mirror 무인자는 #1081
+- [x] `selftests-miss-the-real-callsite` **[M/M · 닫힘 2026-11-16 #1110]** 기록한 argv 1337 건 — 실제 호출이 어느 PR 에서도 안 도는 일정 가드 넷이 `net-stub.mjs`(gh · fetch · 시계)로 CI 그대로의 argv 를 탄다 · 같은 변이 main 8/8 SILENT
 - [ ] `stale-comments-nobody-collates` **[M/S · 2026-11-14 stale-prose-contradicts-source 흡수]** 주석 · 산문이 서술하는 값 · 전제 · 경로 · 실측 · 게이트가 원본보다 낡았고 대조가 없다 — 정규식 오라클은 수렴하지 않는다(§3-5), 기계 대조는 축 단위로(JWKS 기본값 2b · KCSDK 표 test-doctor 9절) · 사례는 만나는 대로 고친다
 - [x] `symmetry-guards-cover-a-subset` **[M/M · 닫힘 2026-11-16 #1108]** `zig/package.json` 을 심으니 실제 트리 가드 76 중 10 만 울었다 — 손 목록 다섯이 집합을 내보내고 `test-lang-universe.sh` 가 트리와 분할로 대조한다
 - [x] `check-versions-java-child-pom-blind-spot` **[M/S · 닫힘 2026-11-13 #1060]** 자식의 parent 참조 판과 자신의 판을 따로 대조 — 자가테스트 변이 1b · 오탐 대조 다섯
@@ -484,7 +484,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `node-auth-error-no-oauth-code` **[L/S · 신규 2026-09-27]** node `KeycloakAuthError` 에만 OAuth `error` 코드가 없다. python 은 `.error`, go 는 `OAuthError`, rust 는 `oauth_error` 로 공개한다. `scrubCause` 가 name·message·code 만 남겨, `invalid_grant` 를 공개 API 로 가를 수 없다. 코드 교환 이식 테스트는 그래서 `OAUTH_RESPONSE_BODY_ERROR` 까지만 단언한다 · `node/src/errors.ts`
 - [x] `node-admin-error-no-status` **[L/S · 신규 2026-11-13 · 닫힘 2026-11-14 #1070]** `KeycloakAdminError.status` — 404 · 409 · 403 하위 클래스는 늘 제 상태, 3xx 가드도 필드로 단언
 - [x] `nonce-failure-leaves-session-alive` **[L/S · 신규·닫힘 2026-09-27 · 판정 (b) 기각]** 검증에 실패한 교환의 토큰을 revoke 하지 않는다 — 버리고 원래 오류를 던지는 지금 동작이 계약이다(사용자가 권장안으로 결정). 실서버 실측: 거부된 교환은 로그인 때 생긴 세션을 끝내지 않는다(idle 1800s · max 36000s). revoke 는 SDK 가 버린 refresh token 이 있어야만 가능하다. 근거: OIDC Core 는 revoke 를 요구하지 않고, RFC 7009 §2.2 는 무효 토큰에도 200 이며, 주입된 코드면 남의 grant 에 손댄다(Grok 독립 판정도 (b)). **되살릴 조건**: 검증 통과 뒤의 실패에 한정한 제품 요구 + 잔존 수명 실측 + Keycloak `/revoke` 범위 실측. ⚠️ 이 실측이 `python-traceback-locals-carry-tokens` 를 찾았다.
-- [x] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #666]** python 에서 거부된 교환의 토큰이 예외 traceback 의 **프레임 로컬**에 남았다 — `TracebackException(capture_locals=True)` 와 Sentry Python(기본값)이 찍고, `str`·`repr`·`format_exception` 에는 없어 누출 테스트가 못 봤다. 원인 사슬 스크럽(#617–#624)은 `__cause__` 만 보았다. 비밀을 다루는 공개 진입점을 `@scrub_frames`(`_internal/frames.py`)로 감싸, 실패하면 안쪽 프레임·사슬 traceback·인자를 떼고 **같은 예외**를 던진다(sync·aio · `authorization_url` · 생성자 포함). 다른 언어는 예외가 로컬을 들고 다니지 않는다(php 호출 인자는 `php-exception-trace-third-party-args`).
+- [x] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #666]** 거부된 교환의 토큰이 traceback **프레임 로컬**에 남았다(`capture_locals` · Sentry 가 찍는다, `str` · `repr` 에는 없어 누출 테스트가 못 봤다) — 비밀을 다루는 공개 진입점을 `@scrub_frames`(`_internal/frames.py`)로 감싸 실패하면 안쪽 프레임 · 사슬 traceback · 인자를 떼고 같은 예외를 던진다(sync · aio · 생성자). 다른 언어는 예외가 로컬을 안 들고 다닌다(php 인자는 `php-exception-trace-third-party-args`)
 
 - [ ] `admin-relations-role-mapping-group-membership` **[H/L]** 역할 부여·그룹 가입이 9개 언어 어디에도 없다 — CRUD만 있고 리소스 간 연결이 없다 · `docs/reference/admin-capability.md:18`
 - [ ] `admin-client-roles-and-user-subresources` **[H/L]** roles 파사드는 realm role 전용 — client role·client secret·user credential/session이 0/9 · `node/src/admin/roles.ts:5`
