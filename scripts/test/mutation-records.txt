@@ -1375,3 +1375,87 @@ TEST:scripts/test/test-check-workflow-paths.sh
 OLD:  if (nWf < MIN_WORKFLOWS) fails.push(`paths 로 거르는 PR 워크플로가 ${nWf}개뿐이다(기대 ${MIN_WORKFLOWS}개 이상) — 트리거 표기가 바뀌어 대조가 조용히 비었을 수 있다`)
 NEW:  if (nWf < MIN_WORKFLOWS && false /* PROBE-REC */) fails.push(`paths 로 거르는 PR 워크플로가 ${nWf}개뿐이다(기대 ${MIN_WORKFLOWS}개 이상) — 트리거 표기가 바뀌어 대조가 조용히 비었을 수 있다`)
 SITE:MIN_WORKFLOWS && false /* PROBE-REC */
+
+### callshape-alerts-api
+FILE:scripts/check-dependabot-alerts.mjs
+TEST:scripts/test/test-dependabot-alerts.sh
+OLD:    res = gh(['api', '-H', 'X-GitHub-Api-Version: 2022-11-28', `repos/${repo}/dependabot/alerts?state=open&per_page=100`])
+NEW:    res = gh(['api', '-H', 'X-GitHub-Api-Version: 2022-11-28', `repos/${repo}/dependabot/alerts?state=fixed&per_page=100`]) // PROBE-REC
+SITE:state=fixed&per_page=100`]) // PROBE-REC
+
+### callshape-alerts-repo
+FILE:scripts/check-dependabot-alerts.mjs
+TEST:scripts/test/test-dependabot-alerts.sh
+OLD:  const r = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+NEW:  const r = gh(['repo', 'view', '--json', 'name', '--jq', '.name']) // PROBE-REC
+SITE:'--jq', '.name']) // PROBE-REC
+
+### callshape-updates-env-repo
+FILE:scripts/check-dependabot-updates.mjs
+TEST:scripts/test/test-dependabot-updates.sh
+OLD:  if (process.env.GITHUB_REPOSITORY) return process.env.GITHUB_REPOSITORY
+NEW:  if (false /* PROBE-REC */) return process.env.GITHUB_REPOSITORY
+SITE:if (false /* PROBE-REC */) return
+
+### callshape-updates-run-list
+FILE:scripts/check-dependabot-updates.mjs
+TEST:scripts/test/test-dependabot-updates.sh
+OLD:    res = gh(['run', 'list', '-R', repo, '--workflow', WORKFLOW, '--limit', '200',
+NEW:    res = gh(['run', 'list', '-R', repo, '--workflow', WORKFLOW, '--limit', '20', // PROBE-REC
+SITE:'--limit', '20', // PROBE-REC
+
+### callshape-floor-base
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:const BASE = opt('--base', 'https://repo1.maven.org/maven2')
+NEW:const BASE = opt('--base', 'https://repo.maven.apache.org/maven2') // PROBE-REC
+SITE:repo.maven.apache.org/maven2') // PROBE-REC
+
+### callshape-floor-repo-env
+FILE:scripts/check-published-jvm-floor.mjs
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:const REPO = opt('--repo', process.env.GITHUB_REPOSITORY ?? '')
+NEW:const REPO = opt('--repo', '') // PROBE-REC
+SITE:const REPO = opt('--repo', '') // PROBE-REC
+
+### callshape-truth-now
+FILE:scripts/check-registry-truth.mjs
+TEST:scripts/test/test-check-registry-truth.sh
+OLD:const NOW = Number(opt('--now', String(Math.floor(Date.now() / 1000))))
+NEW:const NOW = Number(opt('--now', String(Math.floor(Date.now() / 1000) + 200 * 3600))) // PROBE-REC
+SITE:+ 200 * 3600))) // PROBE-REC
+
+### callshape-wf-alerts
+FILE:.github/workflows/security-audit.yml
+TEST:scripts/test/test-dependabot-alerts.sh
+OLD:        run: node scripts/check-dependabot-alerts.mjs
+NEW:        run: node scripts/check-dependabot-alerts.mjs --repo o/r # PROBE-REC
+SITE:--repo o/r # PROBE-REC
+
+### callshape-wf-updates
+FILE:.github/workflows/dependabot-health.yml
+TEST:scripts/test/test-dependabot-updates.sh
+OLD:        run: node scripts/check-dependabot-updates.mjs
+NEW:        run: node scripts/check-dependabot-updates.mjs --repo o/r # PROBE-REC
+SITE:--repo o/r # PROBE-REC
+
+### callshape-wf-floor
+FILE:.github/workflows/published-floor.yml
+TEST:scripts/test/test-check-published-jvm-floor.sh
+OLD:        run: node scripts/check-published-jvm-floor.mjs --attest
+NEW:        run: node scripts/check-published-jvm-floor.mjs --attest --lang java # PROBE-REC
+SITE:--attest --lang java # PROBE-REC
+
+### callshape-wf-truth
+FILE:.github/workflows/published-floor.yml
+TEST:scripts/test/test-check-registry-truth.sh
+OLD:        run: node scripts/check-registry-truth.mjs
+NEW:        run: node scripts/check-registry-truth.mjs --lang java # PROBE-REC
+SITE:registry-truth.mjs --lang java # PROBE-REC
+
+### callshape-truth-retry
+FILE:scripts/check-registry-truth.mjs
+TEST:scripts/test/test-check-registry-truth.sh
+OLD:      if (r.status < 500 && r.status !== 429) return last
+NEW:      return last // PROBE-REC
+SITE:return last // PROBE-REC

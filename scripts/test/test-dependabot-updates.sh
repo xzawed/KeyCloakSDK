@@ -155,4 +155,39 @@ assert_eq '2' "$_rc" '읽을 수 없는 파일이면 exit 2'
 _rc=0; node "$SH" --runs >/dev/null 2>&1 || _rc=$?
 assert_eq '2' "$_rc" '--runs 뒤에 파일이 없으면 exit 2'
 
+# ── 11. CI 와 같은 호출(무인자) — 기본 경로의 gh 호출 인자까지 ─────────────────────────────────────
+# dependabot-health.yml 은 이 가드를 **인자 없이** 부른다 — 저장소는 러너가 주는 GITHUB_REPOSITORY 에서, 실행 목록은
+# `gh run list` 로 받는다. 위 10 의 `--runs` 는 그 길을 안 지난다 — 그 길은 매일 도는 일정 잡만 탔다(등록부
+# selftests-miss-the-real-callsite). net-stub.mjs 로 gh 만 가짜로 바꾸고 argv 는 CI 그대로 둔다.
+. "$DIR/net-stub.sh"
+cat > "$FX/gh.mjs" <<'EOF'
+import { readFileSync } from 'node:fs'
+const a = process.argv.slice(2).join(' ')
+if (a === 'run list -R o/r --workflow Dependabot Updates --limit 200 --json databaseId,status,conclusion,createdAt,displayTitle') {
+  process.stdout.write(readFileSync(process.env.GH_ANSWER, 'utf8'))
+  process.exit(0)
+}
+console.error(`가짜 gh: 모르는 호출 — ${a}`)
+process.exit(64)
+EOF
+du_ci() { # <GITHUB_REPOSITORY> <가짜 gh 의 답 파일> → OUT · RC (argv 는 CI 그대로 — 인자 없음)
+  : > "$FX/log"
+  OUT="$(GITHUB_REPOSITORY="$1" GH_ANSWER="$2" STUB_GH="$FX/gh.mjs" STUB_LOG="$FX/log" NODE_OPTIONS="$NET_STUB_IMPORT" node "$SH" 2>&1)" && RC=0 || RC=$?
+}
+du_ci o/r "$FX/red.json"
+assert_eq '1' "$RC" "CI 와 같은 호출이 실패한 대상에 exit 1 이 아니다 — 출력: $OUT"
+assert_contains "$OUT" '::error::bundler in /ruby — 마지막 실행이 failure' 'CI 와 같은 호출이 실패한 대상을 이름으로 말한다'
+assert_contains "$(cat "$FX/log")" 'gh run list -R o/r --workflow Dependabot Updates --limit 200 --json databaseId,status,conclusion,createdAt,displayTitle' \
+  '기본 경로가 GITHUB_REPOSITORY 의 저장소로 그 실행 목록을 묻는다'
+du_ci o/r "$FX/bad.json"
+assert_eq '2' "$RC" 'CI 와 같은 호출이 목록 아닌 응답에 exit 2 가 아니다'
+# 대조군 — gh 조회가 실패하면 「모른다」(2)다(가짜 gh 는 모르는 호출에 64 로 죽는다 — 저장소가 다르면 인자가 다르다).
+du_ci x/y "$FX/red.json"
+assert_eq '2' "$RC" "gh 조회가 실패했는데 exit 2 가 아니다 — 출력: $OUT"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+WF_DH="$DIR/../../.github/workflows/dependabot-health.yml"
+assert_eq 'node scripts/check-dependabot-updates.mjs' "$(ci_call "$WF_DH" check-dependabot-updates.mjs)" \
+  '[CI 호출] dependabot-health.yml 이 이 절과 같은 argv(인자 없음)로 부른다'
+assert_eq '' "$(ci_job_wd "$WF_DH" check-dependabot-updates.mjs)" '[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)'
+
 assert_report

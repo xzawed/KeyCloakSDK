@@ -186,6 +186,48 @@ node "$CFG" --alerts >/dev/null 2>&1; rc=$?
 set -e
 assert_eq 2 "$rc" '--alerts 뒤에 파일이 없으면 exit 2'
 
+# ── 7c. CI 와 같은 호출(무인자) — 기본 경로의 gh 호출 인자까지 ─────────────────────────────────────
+# security-audit.yml 은 이 가드를 **인자 없이** 부른다 — 저장소는 `gh repo view` 로, 경보는 `gh api` 로 받는다. 위 7b 의
+# `--alerts` 는 그 길을 안 지난다 — 그 길은 주간 일정 잡만 탔다(등록부 selftests-miss-the-real-callsite). net-stub.mjs 로
+# gh 만 가짜로 바꾸고 argv 는 CI 그대로 둔다.
+. "$DIR/net-stub.sh"
+cat > "$FX/gh.mjs" <<'EOF'
+import { readFileSync } from 'node:fs'
+const a = process.argv.slice(2).join(' ')
+if (a === 'repo view --json nameWithOwner --jq .nameWithOwner') {
+  console.log('o/r')
+  process.exit(0)
+}
+if (a === 'api -H X-GitHub-Api-Version: 2022-11-28 repos/o/r/dependabot/alerts?state=open&per_page=100' && process.env.GH_ANSWER) {
+  process.stdout.write(readFileSync(process.env.GH_ANSWER, 'utf8'))
+  process.exit(0)
+}
+console.error(`가짜 gh: 모르는 호출 — ${a}`)
+process.exit(64)
+EOF
+da_ci() { # <가짜 gh 의 경보 답 파일 — 비면 api 가 실패한다> → _o · rc (argv 는 CI 그대로 — 인자 없음)
+  : > "$FX/log"
+  set +e
+  _o="$(GH_ANSWER="$1" STUB_GH="$FX/gh.mjs" STUB_LOG="$FX/log" NODE_OPTIONS="$NET_STUB_IMPORT" node "$CFG" 2>&1)"; rc=$?
+  set -e
+}
+da_ci "$FX/open.json"
+assert_eq 1 "$rc" "CI 와 같은 호출이 열린 경보에 exit 1 이 아니다 — 출력: $_o"
+assert_contains "$_o" 'o/r: 열린 Dependabot 경보 1건' 'CI 와 같은 호출이 gh repo view 의 저장소로 건수를 말한다'
+assert_contains "$(cat "$FX/log")" 'gh repo view --json nameWithOwner --jq .nameWithOwner' '기본 경로가 저장소를 gh 로 묻는다'
+assert_contains "$(cat "$FX/log")" 'gh api -H X-GitHub-Api-Version: 2022-11-28 repos/o/r/dependabot/alerts?state=open&per_page=100' \
+  '기본 경로가 그 저장소의 열린 경보를 묻는다'
+da_ci "$FX/none.json"
+assert_eq 0 "$rc" "CI 와 같은 호출이 빈 목록에 exit 0 이 아니다 — 출력: $_o"
+# 대조군 — 경보 조회가 실패하면 「경보 없음」이 아니라 「모른다」(2)다.
+da_ci ''
+assert_eq 2 "$rc" "gh 경보 조회가 실패했는데 exit 2 가 아니다 — 출력: $_o"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+assert_eq 'node scripts/check-dependabot-alerts.mjs' "$(ci_call "$ROOT/.github/workflows/security-audit.yml" check-dependabot-alerts.mjs)" \
+  '[CI 호출] security-audit.yml 이 이 절과 같은 argv(인자 없음)로 부른다'
+assert_eq '' "$(ci_job_wd "$ROOT/.github/workflows/security-audit.yml" check-dependabot-alerts.mjs)" \
+  '[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)'
+
 # ── 8. 워크플로가 그 권한을 실제로 선언하고 있는가 ───────────────────────────
 # 실측(run 33079374320): 같은 요청을 보낸 두 잡 중 `vulnerability-alerts: read` 를 선언한
 # 쪽은 200, 선언하지 않은 대조군은 403 "Resource not accessible by integration" 이었다.

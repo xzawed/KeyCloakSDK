@@ -466,6 +466,34 @@ _o="$(env -u GITHUB_REPOSITORY node "$GUARD" "--root=$R" "--base=$BA" --attest -
 assert_eq "1" "$_c" "[증명] 검증기를 실행하지 못하면 실패한다"
 assert_contains "$_o" "attest-tool-unavailable" "[증명] 실패 이름이 attest-tool-unavailable 다 — 「증명 불일치」 와 가른다"
 
+# CI 와 같은 호출 — published-floor.yml 은 `--attest` **하나만** 준다: 루트는 작업 디렉터리, 기준은 repo1, 저장소는 러너의
+# GITHUB_REPOSITORY, 검증기는 PATH 의 gh 다. 위 사례들의 `--root` · `--base` · `--repo` · `--gh` 는 그 기본값을 안 지난다 —
+# 그 길은 주간 일정 잡만 탔다(등록부 selftests-miss-the-real-callsite). net-stub.mjs 로 fetch · gh 만 바꾸고 argv 는 CI 그대로.
+. "$DIR/net-stub.sh"
+NET="$FIX/net"
+mkdir -p "$NET/repo1.maven.org"
+cp -r "$BA" "$NET/repo1.maven.org/maven2"
+pf_ci() { # <db 파일> → "<종료 코드>|<출력>" (argv 는 CI 그대로 — --attest 하나)
+  cp "$1" "$FIX/db.json"
+  : > "$FIX/net.log"
+  _o="$(cd "$R" && GITHUB_REPOSITORY=o/r STUB_FETCH="$NET" STUB_GH="$FAKE" STUB_LOG="$FIX/net.log" NODE_OPTIONS="$NET_STUB_IMPORT" node "$GUARD" --attest 2>&1)" && _c=0 || _c=$?
+  printf '%s|%s' "$_c" "$_o"
+}
+_r="$(pf_ci "$FIX/db-ok.json")"
+assert_eq "0" "${_r%%|*}" "[CI 호출] --attest 하나로(기본 루트 · repo1 · GITHUB_REPOSITORY · gh) 통과한다 — 출력: ${_r#*|}"
+assert_contains "$_r" "증명 일치" "[CI 호출] 기본 경로가 증명까지 간다"
+assert_contains "$(cat "$FIX/net.log")" "fetch https://repo1.maven.org/maven2/" "[CI 호출] 기본 기준이 repo1 이다"
+assert_contains "$(cat "$FIX/net.log")" "gh attestation verify" "[CI 호출] 기본 검증기가 PATH 의 gh 다"
+assert_contains "$(cat "$FIX/net.log")" "--repo o/r --signer-workflow o/r/" "[CI 호출] 저장소를 GITHUB_REPOSITORY 에서 읽는다"
+_r="$(pf_ci "$FIX/db-miss.json")"
+assert_eq "1" "${_r%%|*}" "[CI 호출] 증명이 빠진 jar 에서 실패한다(대조군)"
+assert_contains "$_r" "attestation-failed" "[CI 호출] 실패 이름이 attestation-failed 다"
+# 묶음 — 이 절의 argv 가 워크플로의 실제 호출과 같은가(플래그를 더하면 이 절도 바꿀 것) · 그 잡에 작업 디렉터리가 없는가.
+WF_PF="$DIR/../../.github/workflows/published-floor.yml"
+assert_eq 'node scripts/check-published-jvm-floor.mjs --attest' "$(ci_call "$WF_PF" check-published-jvm-floor.mjs)" \
+  "[CI 호출] published-floor.yml 이 이 절과 같은 argv(--attest 하나)로 부른다"
+assert_eq '' "$(ci_job_wd "$WF_PF" check-published-jvm-floor.mjs)" "[CI 호출] 그 잡에 working-directory 가 없다(기본 루트 = 저장소 루트)"
+
 # 봉인 이전 판 — **경계 상수 하나로 얼린다**(1.0.2 미만은 증명이 없다, 실측). 1.0.1 은 건너뛰고 1.0.2 는 반드시 잰다.
 RB="$FIX/repo-seal"; BB="$FIX/base-seal"
 mkrepo "$RB" 17 "$K17" keycloak-sdk
