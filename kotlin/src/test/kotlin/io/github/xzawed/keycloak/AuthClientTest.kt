@@ -294,6 +294,23 @@ internal class AuthClientTest {
             auth.close()
         }
 
+    @Test
+    fun `logout maps connection failure to KeycloakTransportException`() =
+        runTest {
+            // 응답이 없는 실패(연결 거부)의 갈래 — 단위 커버리지 밖(AuthClient*)의 손으로 쓴 변환이라 아무 시험도 밟지
+            // 않았다(등록부 coverage-exclusion-hides-untested-branches). 원시 IOException 이 공개 API 로 새면 §4 위반이다.
+            val transientServer = WireMockServer(wireMockConfig().dynamicPort())
+            transientServer.start()
+            val cfg = config(serverUrl = transientServer.baseUrl())
+            transientServer.stop() // nothing listens on this port anymore -> connection refused
+            val auth = AuthClient(cfg)
+
+            val refused = assertFailsWith<KeycloakTransportException> { auth.logout("rt") }
+
+            assertEquals("Logout request failed", refused.message)
+            auth.close()
+        }
+
     // exchangeCode + nonce threading (Node SDK HIGH 결함의 회귀 방지) ------------------------------------
 
     // Nimbus CodeVerifier는 RFC 7636을 강제해 43~128자를 요구한다 — 짧은 임의 문자열은 구성 단계에서

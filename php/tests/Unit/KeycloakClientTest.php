@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Xzawed\Keycloak\{KeycloakClient, KeycloakConfig, AuthClient};
 use Xzawed\Keycloak\Admin\AdminClient;
+use Xzawed\Keycloak\Exception\KeycloakConfigError;
 
 final class KeycloakClientTest extends TestCase
 {
@@ -39,5 +41,21 @@ final class KeycloakClientTest extends TestCase
         $client->close();
         $after = $client->admin();
         self::assertNotSame($before, $after);
+    }
+
+    /**
+     * 시크릿 없는(공개 클라이언트) 설정의 admin 은 client-credentials 를 받을 수 없다 — 네트워크 전에 SDK 설정 오류다.
+     * `src/Admin/AdminClient.php` 는 단위 커버리지 밖이라 이 손으로 쓴 거부를 아무 시험도 밟지 않았다(등록부
+     * coverage-exclusion-hides-untested-branches — 제외를 풀고 잰 단위 미도달 줄).
+     */
+    #[TestWith([null])]
+    #[TestWith([''])]
+    public function testAdminOfAConfigWithoutAClientSecretRefusesWithAConfigError(?string $secret): void
+    {
+        $client = KeycloakClient::create(new KeycloakConfig(serverUrl: 'http://kc:8080', realm: 'r', clientId: 'c', clientSecret: $secret));
+
+        $this->expectException(KeycloakConfigError::class);
+        $this->expectExceptionMessage('admin requires clientSecret (client-credentials)');
+        $client->admin();
     }
 }

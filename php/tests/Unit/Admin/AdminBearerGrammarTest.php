@@ -504,6 +504,8 @@ final class AdminBearerGrammarTest extends TestCase
     /**
      * 거부 오류가 토큰을 찍지 않는다 — 전체 토큰·`abc`·주입한 헤더 이름. `$dumps` 면 `(string)`(트레이스 인자 포함)도 본다(SDK 오류).
      * ⚠️ `print_r` 은 보지 않는다 — 트레이스 인자를 따라 PHPUnit 의 객체 그래프를 걸어, 실패가 쌓인 실행에서 메모리 상한을 넘었다(실측).
+     * ⚠️ `(string)` 의 파일 경로는 체크아웃 자리라 바늘에서 뺀다 — 경로에 `abc` 가 든 체크아웃(실측: 임시 디렉터리
+     * `…\00edb2abcfe618f5\…`)에서 이 시험의 42 칸이 토큰과 무관하게 빨갰다.
      */
     private static function assertQuotesNoToken(string $id, \Throwable $e, bool $dumps): void
     {
@@ -514,7 +516,7 @@ final class AdminBearerGrammarTest extends TestCase
             $texts[$x::class . ' message'] = $x->getMessage();
         }
         if ($dumps) {
-            $texts['(string)'] = (string) $e;
+            $texts['(string)'] = str_replace(\dirname(__DIR__, 3), '<php>', (string) $e);
         }
         foreach ($texts as $how => $text) {
             foreach ($needles as $needle) {

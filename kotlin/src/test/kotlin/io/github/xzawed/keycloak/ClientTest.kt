@@ -4,6 +4,8 @@ import io.github.xzawed.keycloak.admin.AdminClient
 import io.mockk.mockk
 import io.mockk.verify
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
@@ -82,6 +84,20 @@ internal class ClientTest {
 
         verify(exactly = 1) { auth.close() }
         verify(exactly = 1) { adminMock.close() }
+    }
+
+    @Test
+    fun `admin of a config without a client secret refuses with a config exception`() {
+        // 시크릿 없는(공개 클라이언트) 설정의 admin 은 client-credentials 를 받을 수 없다 — 네트워크 전에 SDK 설정
+        // 예외다(§4). admin.* 는 단위 커버리지 밖이라 이 손으로 쓴 거부를 아무 시험도 밟지 않았다(등록부
+        // coverage-exclusion-hides-untested-branches — 제외를 풀고 잰 단위 미도달 줄).
+        val client = KeycloakClient.create(KeycloakConfig(serverUrl = "http://localhost:8080", realm = "r", clientId = "app"))
+
+        val refused = assertFailsWith<KeycloakConfigException> { client.admin }
+
+        assertEquals("clientSecret is required for admin client-credentials", refused.message)
+        assertFalse(client.isAdminInitialized())
+        client.close()
     }
 
     @Test
