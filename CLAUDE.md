@@ -108,7 +108,7 @@ Keycloak **폴리글랏 SDK** — 9개 언어(Java·Python·Node·Go·C#/.NET·P
 
 **역할**: 오케스트레이터가 **PM**이다 — 단계 확인·WBS 소유·작업 분배·에이전트와 Grok 중재·결과 **재검증**. 구현/리뷰/검증은 서로 다른 주체가 맡고(자기 승인 금지), 실질 작업에는 **Grok 독립 레그**를 준다. 어느 에이전트의 결과도 액면가로 받지 않는다.
 
-전체 절차·WBS 규약·기각 체크리스트·게이트: **[작업 프로세스](docs/governance/process.md)**. 제안 전에 **[기각 레지스트리](docs/governance/rejected.md)**를 본다 — 되살릴 조건이 온 것만 다시 꺼낸다(`node scripts/revive-watch.mjs --tree`).
+전체 절차·WBS 규약·기각 체크리스트·게이트: **[작업 프로세스](docs/governance/process.md)**. 제안 전에 **[기각 레지스트리](docs/governance/rejected.md)**를 읽는다 — `revive-watch.mjs --tree` 의 초록은 읽기를 대신하지 않는다(되살릴 조건이 온 행만 알린다).
 
 ### 이 저장소에서의 구체 진입점
 
