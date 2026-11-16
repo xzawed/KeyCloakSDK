@@ -1153,7 +1153,9 @@ describe('경계 변환 — 쓸 수 없는 JWKS URI', () => {
   // URL 로는 읽히지만 쓸 수 없는 스킴은 생성 때 거부되지 않는다 — 첫 검증이 SDK 오류로 끝나야 한다(Grok 레그).
   it('http 아닌 스킴의 JWKS URI 는 첫 검증에서 SDK 오류다', async () => {
     const v = JwtValidator.forJwksUri('nope://kc/certs', { ...baseOpts, jwksMinRefetchSeconds: 30 })
-    await expect(v.validate(await forgedToken())).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+    await expect(v.validate(await forgedToken())).rejects.toBeInstanceOf(
+      KeycloakTokenValidationError,
+    )
   })
 })
 
