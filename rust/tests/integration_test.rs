@@ -441,6 +441,11 @@ async fn full_flow() {
     //    활성이다.
     let via_trait = TokenProvider::access_token(client.auth()).await.unwrap();
     assert!(client.auth().introspect(&via_trait).await.unwrap().active);
+    // 무캐시 — 둘째 호출은 새 부여다(그래서 admin 에는 캐싱 공급자를 배선한다).
+    assert_ne!(
+        TokenProvider::access_token(client.auth()).await.unwrap(),
+        via_trait
+    );
 
     // ── 10) it-client 서비스계정으로 realm 생성 시도 → 403(master 전용, 문서화된 실서버 동작) ──
     let denied = client

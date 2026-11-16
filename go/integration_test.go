@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,6 +37,17 @@ const (
 	masterAdminClientID     = "go-it-master-admin"
 	masterAdminClientSecret = "go-it-master-secret"
 )
+
+// itCountingProvider counts what the admin facade asks of a consumer-supplied provider (TestE2E 4c).
+type itCountingProvider struct {
+	inner TokenProvider
+	calls atomic.Int32
+}
+
+func (c *itCountingProvider) Token(ctx context.Context) (string, error) {
+	c.calls.Add(1)
+	return c.inner.Token(ctx)
+}
 
 // One Keycloak for the whole run — TestE2E and TestE2ECodeExchange share it (both match `-run TestE2E`),
 // so the code-exchange tests cost no second container start. TestMain terminates it after every test.
@@ -207,16 +219,21 @@ func TestE2E(t *testing.T) {
 	}
 
 	// 4c) The consumer wiring path — NewAdminClient with a caller-supplied provider (here the SDK's caching provider over
-	// the auth lane's grant) reads the realm against the real server like the default path does.
+	// the auth lane's grant) reads the realm against the real server like the default path does, and every token it
+	// sends came from that provider: the eager token at construction and the Get each asked it.
+	tp := &itCountingProvider{inner: NewClientCredentialsTokenProvider(client.Auth.ClientCredentialsToken, 30)}
 	viaProvider, err := NewAdminClient(ctx, Config{
 		ServerURL: serverURL, Realm: "it-realm", ClientID: "it-client", ClientSecret: "it-secret",
-	}, NewClientCredentialsTokenProvider(client.Auth.ClientCredentialsToken, 30))
+	}, tp)
 	if err != nil {
 		t.Fatalf("NewAdminClient: %v", err)
 	}
 	defer func() { _ = viaProvider.Close() }()
 	if r, err := viaProvider.Realms.Get(ctx, "it-realm"); err != nil || r.Realm == nil || *r.Realm != "it-realm" {
 		t.Fatalf("NewAdminClient realms.Get: %+v %v", r, err)
+	}
+	if n := tp.calls.Load(); n < 2 {
+		t.Fatalf("NewAdminClient must take its tokens from the supplied provider: %d calls, want ≥ 2", n)
 	}
 	clientName := "e2e-client-" + randomHex(t, 4)
 	cid, err := admin.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP(clientName)})
