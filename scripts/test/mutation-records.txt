@@ -1320,6 +1320,13 @@ OLD:          for (const h2 of namedInScript(ctx, h1)) if (!seen.has(h2)) seen.s
 NEW:          void h1 // PROBE-REC
 SITE:void h1 // PROBE-REC
 
+### workflow-paths-relative-import
+FILE:scripts/check-workflow-paths.mjs
+TEST:scripts/test/test-check-workflow-paths.sh
+OLD:  if (/\.(mjs|js)$/.test(f))
+NEW:  if (false /* PROBE-REC */ && f)
+SITE:if (false /* PROBE-REC */ && f)
+
 ### workflow-paths-cd
 FILE:scripts/check-workflow-paths.mjs
 TEST:scripts/test/test-check-workflow-paths.sh

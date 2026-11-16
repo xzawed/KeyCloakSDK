@@ -207,10 +207,10 @@ jobs:
       - name: 워크플로 paths — PR 에서 쓰는 공유 파일을 그 paths 가 받는가(FAIL 1 · 못 읽으면 2)
         # `paths:` 로 거르는 워크플로가 PR 에서 쓰는 `scripts/` · `harness/` 파일(run 이 대는 것 · 그 스크립트가 대는 것)을 그
         # `paths:` 가 안 받으면, 그 파일만 고친 PR 에서 그것을 실제 호출로 돌리는 체크가 생기지 않는다(등록부
-        # guards-outside-their-own-pr-signal). 하한은 2026-11-16 실측(대상 12 · 쓰는 공유 파일 87).
+        # guards-outside-their-own-pr-signal). 하한은 2026-11-16 실측(대상 12 · 쓰는 공유 파일 105 — .mjs 상대 가져오기 포함).
         run: |
           sh scripts/test/test-check-workflow-paths.sh
-          node scripts/check-workflow-paths.mjs --min-workflows=12 --min-files=87
+          node scripts/check-workflow-paths.mjs --min-workflows=12 --min-files=105
 
       - name: JVM 바이트코드 하한 가드 자가테스트(위반을 실제로 잡는지 · 0개를 훑고 통과하지 않는지)
         # 두 JVM 레인은 JDK 21 로 빌드하고 17 을 방출한다. 그 설정 한 줄이 빠지면 빌드는 성공하고

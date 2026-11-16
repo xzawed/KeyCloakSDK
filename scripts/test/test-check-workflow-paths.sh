@@ -98,6 +98,12 @@ assert_contains "$OUT" "잡 \`build\` 가 scripts/run-me.mjs 를 쓰는데 \`pul
 fresh; drop_path scripts/lib/dep.mjs; run
 assert_eq 1 "$RC" "스크립트가 쓰는 파일을 paths 가 안 받으면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "→ scripts/run-me.mjs 가 scripts/lib/dep.mjs 를 쓰는데" "2단을 그 경유와 함께 지목한다"
+# .mjs 의 상대 가져오기만으로도 — 저장소 경로 글자를 지워도 `import './lib/dep.mjs'` 가 그 파일을 쓴다(Grok 적대 레그).
+fresh; printf '%s\n' "import './lib/dep.mjs'" > "$T/scripts/run-me.mjs"; drop_path scripts/lib/dep.mjs; run
+assert_eq 1 "$RC" ".mjs 의 상대 가져오기를 2단으로 안 본다 — 출력: $OUT"
+assert_contains "$OUT" "→ scripts/run-me.mjs 가 scripts/lib/dep.mjs 를 쓰는데" "상대 가져오기를 그 스크립트 자리에서 푼다"
+fresh; printf '%s\n' "const u = new URL('./lib/dep.mjs', import.meta.url)" > "$T/scripts/run-me.mjs"; drop_path scripts/lib/dep.mjs; run
+assert_eq 1 "$RC" "new URL(…, import.meta.url) 을 2단으로 안 본다 — 출력: $OUT"
 
 # ── 작업 디렉터리 · cd ───────────────────────────────────────────────────────────────────────
 # 두 길이 같은 파일을 대므로 한 길씩 남긴다 — 각 길만으로도 harness/h.sh 를 찾아야 한다.
@@ -138,7 +144,7 @@ assert_eq 2 "$RC" "모르는 옵션을 받아들였다"
 # ── 실제 트리 — CI 와 같은 호출(인자 없는 루트 · CI 의 하한) ─────────────────────────────────
 # 루트를 주지 않으면 이 가드 자리(`scripts/` 의 부모)다. CI 는 그 꼴로 부른다 — 자가테스트도 그 꼴을 탄다
 # (등록부 selftests-miss-the-real-callsite).
-OUT="$(node "$GUARD" --min-workflows=12 --min-files=87 2>&1)" && RC=0 || RC=$?
+OUT="$(node "$GUARD" --min-workflows=12 --min-files=105 2>&1)" && RC=0 || RC=$?
 assert_eq 0 "$RC" "실제 트리 — 출력: $OUT"
 
 assert_report

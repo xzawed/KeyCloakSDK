@@ -13,14 +13,15 @@
 // 모델:
 //  · 대상 — `pull_request` 트리거가 `paths:` 로 거르는 워크플로. `paths:` 가 없으면 모든 PR 에서 돈다(대상 아님).
 //  · 실행되는 파일 — PR 에서 도는 잡의 `run:` 이 이름을 대는 저장소 파일(1단 — 스텝 · 잡 · 워크플로의 working-directory 와 `cd` 를
-//    푼다), 그리고 그 파일이 스크립트면 그 안에서 저장소 경로로 대는 파일(2단 — 주석은 걷는다). `scripts/` · `harness/` 아래만
-//    본다 — 언어 디렉터리는 레인의 `<언어>/**` 가 받는다.
+//    푼다), 그리고 그 파일이 스크립트면 그 안에서 저장소 경로로 대는 파일 · .mjs 의 상대 가져오기(2단 — 주석은 걷는다).
+//    `scripts/` · `harness/` 아래만 본다 — 언어 디렉터리는 레인의 `<언어>/**` 가 받는다.
 //  · PR 에서 건너뛰는 잡 — 잡의 `if:` 가 `github.event_name == '<이벤트>'` 들의 `||` 이고 pull_request 가 없으면 그 잡은 대조에서
 //    뺀다(PR 에서 돌지 않는다). 그 잡 수를 인벤토리에 찍는다.
 //  · 판정 — 실행되는 파일마다 그 워크플로의 `pull_request.paths` 가 받아야 한다. 트리거를 이해 못 하면 판정 불가(exit 2 —
 //    `check-hp-attest-wiring.mjs` 의 triggerSpec 을 쓴다, 사본을 두지 않는다).
-// ⚠️ 못 보는 것: 2단 안의 상대 경로(`suites/$L.sh` · `./apps/…`)와 변수로 조립한 경로, 3단 이상. 그리고 잡 `if:` 가 위 꼴이 아닌
-// 조건이면 PR 에서 돈다고 본다(보수적 — 받지 않으면 실패다).
+// ⚠️ 못 보는 것: 셸 스크립트 안의 상대 경로(`suites/$L.sh` · `./apps/…`)와 변수로 조립한 경로 · 변수 `cd` · 식으로 쓴
+// working-directory, 3단 이상, 재사용 워크플로(`uses: ./.github/workflows/…` — 지금은 태그 트리거 릴리스만 부른다). 그리고 잡
+// `if:` 가 위 꼴이 아닌 조건이면 PR 에서 돈다고 본다(보수적 — 받지 않으면 실패다).
 //
 // 사용: node scripts/check-workflow-paths.mjs [ROOT] [--min-workflows=<n>] [--min-files=<n>]
 import { execFileSync } from 'node:child_process'
@@ -69,7 +70,8 @@ export function namedInRun(ctx, text, wd0) {
   }
   return out
 }
-// 2단 — 스크립트 안의 저장소 경로(루트 기준 글자 그대로). 주석 줄은 걷는다.
+// 2단 — 스크립트 안의 저장소 경로(루트 기준 글자 그대로), 그리고 .mjs · .js 면 그 파일 기준 상대 가져오기(`from './lib/x.mjs'` ·
+// `import('./x.mjs')` · `new URL('./x.mjs', import.meta.url)` — Grok 적대 레그: 레인 paths 에서 lib 를 빼도 초록이었다). 주석 줄은 걷는다.
 export function namedInScript(ctx, f) {
   if (!/\.(sh|mjs|js)$/.test(f)) return new Set()
   const text = ctx
@@ -78,10 +80,13 @@ export function namedInScript(ctx, f) {
     .filter((l) => !/^\s*(#|\/\/|\*)/.test(l))
     .join('\n')
   const out = new Set()
-  for (const m of text.matchAll(/(?:^|[^A-Za-z0-9_.-])((?:scripts|harness)\/[A-Za-z0-9_.\/-]+)/g)) {
-    const p = posix.normalize(m[1])
-    if (p !== f && ctx.tracked.has(p)) out.add(p)
+  const add = (p) => {
+    if (p !== f && ctx.tracked.has(p) && SHARED.test(p)) out.add(p)
   }
+  for (const m of text.matchAll(/(?:^|[^A-Za-z0-9_.-])((?:scripts|harness)\/[A-Za-z0-9_.\/-]+)/g)) add(posix.normalize(m[1]))
+  if (/\.(mjs|js)$/.test(f))
+    for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\bnew URL\(\s*)['"](\.{1,2}\/[^'"]+)['"]/g))
+      add(posix.normalize(posix.join(posix.dirname(f), m[1])))
   return out
 }
 
