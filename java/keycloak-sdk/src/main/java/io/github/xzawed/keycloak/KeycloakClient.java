@@ -27,7 +27,7 @@ public final class KeycloakClient implements AutoCloseable {
     return new KeycloakClient(auth, config, null); // admin은 admin() 최초 호출 시 지연 생성
   }
 
-  /** 패키지 전용 팩토리 — 주입된 AuthClient/AdminClient를 보관한다(테스트 주입 경로, AdminClient.withKeycloak과 동일 패턴). */
+  /** 패키지 전용 팩토리 — 주입된 AuthClient/AdminClient를 보관한다(테스트 주입 경로). */
   static KeycloakClient of(AuthClient auth, AdminClient admin) { return new KeycloakClient(auth, null, admin); }
 
   public AuthClient auth() { return auth; }

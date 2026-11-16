@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Keycloak.AuthServices.Sdk.Admin.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Xzawed.Keycloak;
 using Xzawed.Keycloak.Admin;
@@ -22,6 +23,29 @@ public class E2ETests
         ClientId = KeycloakFixture.ClientId,
         ClientSecret = KeycloakFixture.ClientSecret,
     });
+
+    // The sync Dispose exists for a DI container: ServiceProvider.Dispose cannot sync-dispose an async-only disposable
+    // singleton. Registered with AddKeycloak and used against the real server, the container's sync dispose must not
+    // throw and must release the admin the client built (its calls then fail with ObjectDisposedException — measured).
+    [Fact]
+    public async Task A_container_sync_disposes_the_client_and_releases_its_admin()
+    {
+        var services = new ServiceCollection();
+        services.AddKeycloak(new KeycloakConfig
+        {
+            ServerUrl = _kc.BaseUrl,
+            Realm = KeycloakFixture.Realm,
+            ClientId = KeycloakFixture.ClientId,
+            ClientSecret = KeycloakFixture.ClientSecret,
+        });
+        var provider = services.BuildServiceProvider();
+        var admin = await provider.GetRequiredService<KeycloakClient>().AdminAsync();
+        Assert.Equal(KeycloakFixture.Realm, (await admin.Realms.GetAsync(KeycloakFixture.Realm)).Realm);
+
+        provider.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => admin.Realms.GetAsync(KeycloakFixture.Realm));
+    }
 
     [Fact]
     public async Task Full_flow()

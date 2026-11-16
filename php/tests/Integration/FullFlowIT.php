@@ -222,6 +222,25 @@ final class FullFlowIT extends TestCase
         }
     }
 
+    public function testCloseDropsTheAdminFacadeAndTheNextOneStillWorks(): void
+    {
+        // close() 는 지연 생성한 admin 을 놓는다(PHP 는 닫을 풀이 없다) — 그 뒤의 admin() 은 새 파사드를 만들고, 그 파사드가
+        // 실서버에서 자기 토큰을 다시 얻어 일한다. 공유 $client 를 닫지 않으려고 따로 만든다.
+        $client = KeycloakClient::create(new KeycloakConfig(
+            serverUrl: self::$baseUrl,
+            realm: 'it-realm',
+            clientId: 'it-client',
+            clientSecret: 'it-secret',
+        ));
+        $before = $client->admin();
+        self::assertSame('it-realm', $before->realms()->get('it-realm')->getRealm());
+
+        $client->close();
+        $after = $client->admin();
+        self::assertNotSame($before, $after);
+        self::assertSame('it-realm', $after->realms()->get('it-realm')->getRealm());
+    }
+
     public function testRawEscapeHatch(): void
     {
         // raw() 탈출구 스모크 — 하위 fschmtt 클라이언트가 실제로 살아있는지 확인

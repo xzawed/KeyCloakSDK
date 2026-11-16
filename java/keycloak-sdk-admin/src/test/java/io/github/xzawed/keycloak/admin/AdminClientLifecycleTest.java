@@ -13,7 +13,7 @@ class AdminClientLifecycleTest {
     KeycloakConfig c = KeycloakConfig.builder()
         .serverUrl("https://kc.example.com").realm("r").clientId("app").build();
     Keycloak kc = mock(Keycloak.class);
-    AdminClient admin = AdminClient.withKeycloak(c, kc);   // 패키지 전용 팩토리(테스트 주입)
+    AdminClient admin = new AdminClient(c, kc);   // 패키지 전용 생성자 — 공개 생성자도 지나는 길(테스트 주입)
     assertSame(kc, admin.raw());
     assertInstanceOf(AutoCloseable.class, admin);
     admin.close();

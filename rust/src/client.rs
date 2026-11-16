@@ -59,18 +59,55 @@ impl KeycloakClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[test]
-    fn builds_client() {
-        let cfg = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+    /// §4 배선 — 파사드의 admin 은 캐싱 공급자를 받는다. admin 호출 둘이 부여 하나를 나누고 둘 다 그 토큰을 싣는다.
+    /// `AuthClient` 를 그대로 주입하면(무캐시) 호출마다 부여가 나가 빨갛다(등록부 facade-wiring-close-contract-unasserted —
+    /// 이전 시험은 접근자를 부르기만 했다).
+    #[tokio::test]
+    async fn admin_calls_share_one_cached_grant() {
+        let server = MockServer::start().await;
+        let grant = path("/realms/it-realm/protocol/openid-connect/token");
+        Mock::given(method("POST"))
+            .and(grant)
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/admin/realms/it-realm"))
+            .and(header("authorization", "Bearer AT"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "realm": "it-realm" })),
+            )
+            .mount(&server)
+            .await;
+        let cfg = KeycloakConfig::new(server.uri().as_str(), "it-realm", "it-client")
             .unwrap()
             .with_client_secret("s");
         let client = KeycloakClient::new(cfg).unwrap();
-        // auth/admin 접근자가 동작(네트워크 없음 — 조립만 검증)
-        let _ = client.auth();
-        let _ = client.admin();
+        for _ in 0..2 {
+            let realm = client.admin().get_realm().await.unwrap();
+            assert_eq!(realm.realm.as_deref(), Some("it-realm"));
+        }
+        let paths: Vec<String> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.url.path().to_string())
+            .collect();
+        let grants = paths
+            .iter()
+            .filter(|p| p.ends_with("/openid-connect/token"))
+            .count();
+        assert_eq!(
+            grants, 1,
+            "admin calls must share one cached grant: {paths:?}"
+        );
     }
 
     /// 공유 HTTP 클라이언트가 3xx를 따라가지 않는다(SSRF 하드닝 회귀).

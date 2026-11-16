@@ -1,5 +1,8 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=136524 max-raw-bytes=147036 -->
+<!-- doc-budget: max-bytes=136022 max-raw-bytes=146726 -->
+<!-- max-bytes 136524 → 136022(먼저 들어간 #1120 이 줄인 몫 포함) · max-raw-bytes 147036 → 146726: facade-wiring-close-contract-unasserted 마감(#1119) — 그 항목의 소유 주석(통합 미실행 목록의
+     소유자를 옮기라는)이 할 일을 다 해 지웠고, 새 항목 하나를 더하며 닫힌 긴 줄 둘(node · .NET JWKS 응답 상한)을 판정 방법만
+     남기고 줄였다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 137146 → 136524 · max-raw-bytes 147273 → 147036: guards-outside-their-own-pr-signal 마감(#1109) — 마감 · 새 항목을
      더하며 닫힌 긴 줄 둘(go-release-persist-credentials · node-error-cause-carries-response-tokens)을 판정 방법만 남기고
      줄였다(경위는 2026-09-11 커밋 · #603). 검사 8e 가 이 인하를 강제했다. -->
@@ -66,7 +69,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `310`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `311`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -172,7 +175,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
-## B. 재검증 대상 — 52건 (열림 5)
+## B. 재검증 대상 — 52건 (열림 4)
 
 3렌즈 통과, 원장은 개별 재실행을 하지 않았다. 이번 인벤토리에서 전량 파일 확인 — 기각 권고 0건.
 
@@ -239,17 +242,16 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 손 목록 셋 닫힘 2026-09-23 · 닫힘 2026-11-12 · #1031–#1034]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과했다 — 손 목록은 파생 · 분할로(#542 · #1015), 행위 카나리아는 레인 보고서 대조로(#996–#1018 · #1031 · 덤프 걷기 · bearer 표는 가드 밖 표 #1033), 1g 는 주석 밖(#1032), 기존 언어의 새 자리는 덤프 걷기 · 적대 경로 행렬이 파생으로 찾는다(재측정 #1034). 처방은 가드 머리 주석 · 서사는 `git show a4a8575d:docs/superpowers/plans/remaining-work.md` 의 이 항목
 
 - [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **미측정으로 남겼던 셋을 그 다음에 쟀고, 둘이 실제 구멍이었다** — node 는 닫혔고(아래) python 은 열려 있다: `jwks-response-size-unbounded-python` 참조. **「측정되지 않았다」를 「아마 괜찮다」로 읽지 말 것 — 재 보니 2/2 가 구멍이었다.**
-- [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 에는 상한이 **없다**(6.2.12 실측 · `dist/webapi/jwks/remote.js:10-26`: `GET` → status 200 → `response.json()` 이 전부. `Content-Length` 검사도 최대 바이트 옵션도 없고 유일한 중단은 `AbortSignal.timeout` 5초). `createRemoteJWKSet` 의 `[customFetch]` 이음매로 우리가 상한을 건다 — **JWKS 전용**이라 토큰·introspect 경로는 그대로다. 변이 4/4 `CAUGHT`. ⚠️ **첫 판 테스트가 거짓 초록이었다** — 거대 본문을 쓰레기 바이트로 만들었더니 상한이 없어도 JSON 파싱이 실패해 「거부됐다」가 통과했다. 본문을 **유효한 JWKS + 패딩**으로 바꿔야 상한 없이는 검증이 성공하고, 그때 비로소 거부가 증거가 된다.
+- [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 6.2.12 에는 상한이 없다(`remote.js:10-26` — `response.json()` 뿐) → `createRemoteJWKSet` 의 `[customFetch]` 로 JWKS 만 묶는다 · 변이 4/4 `CAUGHT` · ⚠️ 시험 본문은 **유효한 JWKS + 패딩**이어야 한다(쓰레기 바이트면 상한 없이도 파싱이 실패해 거짓 초록).
 - [x] `jwks-response-size-unbounded-python` **[M/M · 닫힘 2026-09-12 · 부류 완결]** ⚠️ **9언어 JWKS 크기상한 부류의 마지막 이음매**였다(축 6 → **7**). 구현 `_internal/jwks_fetch.py`(sync·aio 공용) — 상류를 우회해 JWKS **요청 하나만** 스트리밍 GET 한다.
-- [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `IDocumentRetriever` 를 직접 구현해(`BoundedDocumentRetriever`) discovery·JWKS 만 51200B 로 묶었다. ⚠️ **`MaxResponseContentBufferSize` 를 쓰지 않은 이유**: 그 `HttpClient` 은 `AuthClient` 와 **공유**라(`KeycloakClient.cs:10`) 토큰·introspect 응답까지 함께 묶인다 — 역할이 많은 액세스 토큰은 정당하게 크다. 라이브러리 내부 상한 여부는 **여전히 미측정**이나(컴파일된 패키지) 우리가 거는 상한은 그것과 무관하다. 대체한 `HttpDocumentRetriever` 에서 이 SDK 가 쓰던 유일한 옵션 `RequireHttps` 는 테스트로 고정했다. 변이 4/4 `CAUGHT`(상한 상향 · 상태검사를 상한보다 앞으로 · RequireHttps 제거 · 교차언어 축).
+- [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `BoundedDocumentRetriever`(직접 구현한 `IDocumentRetriever`)로 discovery·JWKS 만 51200B — `MaxResponseContentBufferSize` 는 공유 `HttpClient` 라 토큰 응답까지 묶어 쓰지 않는다 · 대체 전 유일 옵션 `RequireHttps` 는 시험으로 고정 · 변이 4/4 `CAUGHT`.
 - [x] `kotlin-osv-audit-fail-open` **[H/S · 닫힘 2026-09-07 #438]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 됐다 · `.github/workflows/kotlin-ci.yml:72-83` · `security-audit.yml:80-89`
 - [x] `docs-commands-that-do-not-work` **[M/S · 닫힘 2026-11-14 #1080]** 가이드 · README 열하나의 셸 명령 75 를 전수로 — 실패 1 · 틀림 5 · tokio 누락 고침(KCSDK_PY 값은 #1078), 레지스트리 34 확인 · 일반형은 `rules-command-reference-existence-guard`
 - [x] `deploy-md-omits-release-request` **[M/S · 재판정으로 닫힘 2026-09-11]** **이미 참이 아니었다** — #416(`aab1d67`)이 닫았는데 체크박스만 남아 있었다. §4 는 `DEPLOY.md:415–451` 이고 그 안 `:433`·`:440` 이 `.github/release-request.json` 을 트리거로 명시하며 「머지가 트리거가 아니다」까지 경고한다. 재현: `git log -S'Merging is not the trigger' -- DEPLOY.md`.
 - [x] `stale-prose-contradicts-source` **[M/S · 닫힘 2026-11-14 #1079 · 합침]** 부류는 남는다(산문 ↔ 원본에 오라클 없음) — `stale-comments-nobody-collates` 가 넓혀 소유한다 · 인용 셋은 #398
 - [x] `compat-table-library-cells-drift` **[M/M · 닫힘 2026-11-15 #1098]** 굵은 값 · 하한을 그 행 판의 태그와 대조(Python 두 칸) · `check-docs.mjs` `kind=compat`
 - [x] `tokenprovider-cache-contract-untested` **[M/M · 닫힘 2026-11-16 #1118]** rust · ruby 시험 넷(스큐 안 만료 · 동시 호출은 부여 하나 · 실패 기억 안 함 · 만료 모름은 매번 — ruby 의 60 초 붙듦 고침) · 변이 10/10 CAUGHT(전 4/4 SILENT) · 재판정: `cargo test --lib token_provider` · `rspec spec/unit/token_provider_spec.rb`
-- [ ] `facade-wiring-close-contract-unasserted` **[M/S]** 파사드의 §4 계약(provider 배선·close)이 무단언 테스트 뒤에 있고 커버리지 게이트에서도 빠져 있다 · `rust/src/client.rs:65`
-<!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
+- [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
 ## C. 품질 부채 — 149건 (열림 39)
@@ -450,7 +452,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `H8-root-config-never-rederived` **[L/M · 닫힘 2026-09-15]** 리포 루트 설정 둘이 언어·락파일이 늘 때 한 번도 다시 도출되지 않았다 · `.dockerignore:2`
 - [x] `dotnet-net10-consumer-unmeasured` **[M/S · 신규·닫힘 2026-11-13 #1058]** 같은 `dotnet-run.sh` 를 SDK 10 · `TFM=net10.0` 으로 한 번 더 — `targets` 가 고른 `lib/<TFM>` 을 단언(대조: 1.0.7 은 `lib/net8.0`) · `quickstartOk` 는 두 소비자 모두 · `harness/install/consume/dotnet10.Dockerfile`
 
-## D. 원장 밖 — 97건 (열림 32)
+## D. 원장 밖 — 98건 (열림 33)
 
 감사가 보지 않은 축 — 유예·미완 마커·로드맵 갭·CI/릴리스·테스트 실행·1.0 이후 운영·완전성 비평.
 
@@ -494,7 +496,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `cross-cutting-http-capabilities` **[L/M]** User-Agent·프록시·재시도·로깅 훅이 9개 언어 전부 없다 — 횡단 HTTP 능력이 축에서 빠졌다 · `node/src/config.ts:7`
 - [x] `dotnet-multi-target-net10` **[H/M · 신규 · 닫힘 2026-11-13 #1052–#1055]** .NET 이 net8.0 · net10.0 을 함께 대상으로(사용자 결정 — .NET 8 · 9 EOL 2026-11-10). 하한 net8.0(admin 의존성이 net8.0 전용) · CI 레그는 props 에서 · 통합 커버리지는 가장 낮은 대상 · harness 빌드 SDK 10, 소비자 SDK 8
 
-### CI·릴리스 미결 — 8
+### CI·릴리스 미결 — 9
 
 - [x] `go-consumer-floor-1-26-decision` **[M/S · 신규 2026-09-11 · 판정 2026-09-21]** 상류(`x/oauth2` v0.37 · `x/sync` v0.23)가 `go 1.26.0` 을 선언해 소비자 하한이 1.25 → 1.26 으로 올랐다 — 판정: 1.26 으로 올린다(#511, Go 지원창이 1.25 를 이미 제외). 옮겨 간 하한은 `.claude/rules/go.md` 와 `getting-started.md` 앵커가 소유한다 · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `dependabot-updater-failure-blind` **[M/M · 닫힘 2026-11-14 #1084]** dependabot-health 가 매일 대상별 마지막 실행을 본다(빨강 → nightly-alert) — 실측: ruby 가 09-17 부터 매주 실패(simplecov ≥ 1.3) · 고쳤다
@@ -505,6 +507,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ci-lane-trigger-branch-filter` **[L/S · 닫힘 2026-11-04 · 중복이었다]** `push-trigger-branches-asymmetry` 와 같은 것(지목줄도 같다) — 「언어 CI 6개」는 틀렸다: `paths` 만 있는 push 는 2026-09-03 트리(d25a6fe7)에서도 언어 CI 다섯 + `harness.yml`
 - [x] `orphan-active-workflows` **[L/S · 닫힘 2026-10-28]** 파일 없는 둘을 껐다 — `repo-config.mjs check` 가 워크플로 상태를 대조한다
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
+- [ ] `integration-coverage-drift-is-warning-only` **[M/S · 신규 2026-11-16]** 통합 커버리지의 소유 DRIFT(소유자 없는 미실행 함수 · 낡은 소유자)는 레인에서 경고뿐이라 main 이 DRIFT 인 채 초록이다 — 8d3e24a7 이 들인 go 함수 둘이 소유자 없이 이틀 갔다(#1119 가 붙임) · `.github/workflows/ci.yml:86`
 - [x] `php-mirror-check-pretag-ssot` **[M/S · 신규·닫힘 2026-11-14 #1081]** 미러 확인이 태그 전에 움직이는 SSOT 를 봤다 — readiness 는 정상에 ⚠️ · 번 버전에 ✅, `php-mirror` 잡은 릴리스 PR 마다 빨강(#937). 기준선으로
 
 ### 테스트 실행 갭 — 12
