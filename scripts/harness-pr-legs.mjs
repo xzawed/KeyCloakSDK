@@ -26,22 +26,43 @@ export const LEG_IF =
   "${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || needs.changes.outputs.heavy == 'true') }}"
 const DIFF_TO_FILE = 'git diff --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/changed.txt"'
 const DECIDE = 'node scripts/harness-pr-legs.mjs < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"'
+// 비PR 이벤트는 실행마다 제 그룹(겹친 야간이 서로를 취소하지 않는다), 취소는 PR 에만.
+export const CONCURRENCY = [
+  "group: harness-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}",
+  "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+]
+const indent = (l) => l.length - l.trimStart().length
 
-/** 워크플로 글의 배선 어긋남 목록(빈 목록 = 맞다). */
+/** 워크플로 글의 배선 어긋남 목록(빈 목록 = 맞다). ⚠️ 조용히 망가지는 편집을 먼저 본다(Grok 레그 — 시끄러운 것은 changes 가 빨갛다). */
 export function wiringProblems(text) {
   const lines = text.split(/\r?\n/)
+  const out0 = []
+  // 야간 · 수동이 아예 시작하지 않으면 잡 if 가 맞아도 레그는 영영 안 돈다.
+  if (triggerSpec(lines, 'schedule') === null) out0.push('schedule 트리거가 없다 — 야간이 아예 안 돈다')
+  if (triggerSpec(lines, 'workflow_dispatch') === null) out0.push('workflow_dispatch 트리거가 없다')
+  const top = lines.map(stripComment)
+  const c0 = top.findIndex((l) => /^concurrency\s*:\s*$/.test(l))
+  const cBody = []
+  for (let k = c0 + 1; c0 >= 0 && k < top.length && (top[k].trim() === '' || indent(top[k]) > 0); k++) if (top[k].trim()) cBody.push(top[k].trim())
+  if (cBody.join('\n') !== CONCURRENCY.join('\n')) out0.push(`concurrency 가 고정한 글자와 다르다 — 비PR 이벤트가 그룹을 나누면 겹친 야간이 서로를 취소한다: ${cBody.join(' · ') || '(없음)'}`)
   const jobs = jobsOf(lines)
   const block = (name) => {
     const i = jobs.findIndex((j) => j.name === name)
     if (i < 0) return null
     return { job: jobs[i], body: lines.slice(jobs[i].line, i + 1 < jobs.length ? jobs[i + 1].line - 1 : lines.length).map(stripComment) }
   }
-  const out = []
+  const out = out0
   const ch = block('changes')
   if (!ch) out.push('changes 잡이 없다')
   else {
     if (ch.job.if !== "github.event_name == 'pull_request'") out.push(`changes 잡의 if 가 PR 전용이 아니다: ${ch.job.if}`)
     if (!ch.body.some((l) => /^\s+heavy\s*:\s*\$\{\{\s*steps\.legs\.outputs\.heavy\s*\}\}\s*$/.test(l))) out.push('changes 잡이 outputs.heavy 를 steps.legs 에서 내지 않는다')
+    // 출력이 가리키는 스텝 — 이름을 바꾸면 heavy 가 빈 값이 되어 PR 레그가 조용히 안 돈다.
+    if (!ch.body.some((l) => /^\s+(?:-\s+)?id\s*:\s*legs\s*$/.test(l))) out.push('changes 잡에 id: legs 스텝이 없다 — outputs.heavy 가 빈 값이 된다')
+    // 잡 if 하나 말고는 없어야 한다 — 스텝 if 가 판정을 건너뛰면 heavy 가 빈 값이다.
+    if (ch.body.filter((l) => /^\s+(?:-\s+)?if\s*:/.test(l)).length !== 1) out.push('changes 잡에 잡 if 말고 if 가 있다 — 판정 스텝이 건너뛰어질 수 있다')
+    if (ch.body.some((l) => /^\s+GITHUB_OUTPUT\s*:/.test(l))) out.push('changes 잡이 GITHUB_OUTPUT 을 덮는다')
+    if (!ch.body.some((l) => /fetch-depth\s*:\s*0\b/.test(l))) out.push('changes 잡의 체크아웃에 fetch-depth: 0 이 없다 — 기준 브랜치가 없어 diff 가 실패한다')
     const run = ch.job.runs.map((r) => r.text.split('\n').map((s) => s.trim())).flat()
     if (!run.includes(DIFF_TO_FILE) || !run.includes(DECIDE)) out.push('changes 잡이 diff 를 파일로 받아 판정하지 않는다(파이프면 git 실패가 「깨울 것 없음」이 된다)')
   }

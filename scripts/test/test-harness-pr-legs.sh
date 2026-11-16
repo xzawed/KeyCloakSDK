@@ -57,5 +57,14 @@ twist no-output 's/heavy: ${{ steps.legs.outputs.heavy }}/heavy: true/' "outputs
 twist changes-always "s/^    if: github.event_name == 'pull_request'$/    if: always()/" "changes 잡의 if 가 PR 전용이 아니다"
 # 주석 속 사본은 배선이 아니다 — 진짜 if 를 지우고 주석에만 남기면 실패해야 한다.
 twist commented-if "s/^    if: \${{ !cancelled()/    # if: \${{ !cancelled()/" "잡의 if 가 고정한 글자와 다르다"
+# 조용히 망가지는 편집(Grok 레그) — 잡 if 의 글자는 그대로인데 레그가 안 돈다.
+twist rename-id 's/^        id: legs$/        id: decide/' "id: legs 스텝이 없다"
+twist step-if 's/^        id: legs$/        id: legs\n        if: false/' "잡 if 말고 if 가 있다"
+twist output-env 's/^          BASE_REF: \${{ github.base_ref }}$/          BASE_REF: ${{ github.base_ref }}\n          GITHUB_OUTPUT: \/dev\/null/' "GITHUB_OUTPUT 을 덮는다"
+twist no-schedule '/^  schedule:$/,+1d' "schedule 트리거가 없다"
+twist no-dispatch '/^  workflow_dispatch:$/d' "workflow_dispatch 트리거가 없다"
+twist shared-group "s/^  group: harness-.*$/  group: harness/" "concurrency 가 고정한 글자와 다르다"
+twist cancel-all "s/^  cancel-in-progress: .*$/  cancel-in-progress: true/" "concurrency 가 고정한 글자와 다르다"
+twist no-fetch-depth 's/with: { fetch-depth: 0 }/with: { persist-credentials: false }/' "fetch-depth: 0 이 없다"
 
 assert_report
