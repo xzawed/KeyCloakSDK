@@ -21,6 +21,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { AuthClient } from '../../src/auth.js'
 import { defineConfig } from '../../src/config.js'
+import { KeycloakError } from '../../src/errors.js'
 
 const REALM = 'it'
 
@@ -88,8 +89,9 @@ describe('SSRF 고정 — openid-client 기본값이 유일한 방어라 버전 
         }),
       )
 
-      // 302를 성공으로 오인하면 여기서 'attacker-controlled' 토큰이 반환된다.
-      await expect(auth.clientCredentialsToken()).rejects.toThrow()
+      // 302를 성공으로 오인하면 여기서 'attacker-controlled' 토큰이 반환된다. 거부는 SDK 오류여야 한다(§4) — 형 없는
+      // `toThrow()` 는 하위 라이브러리 오류가 그대로 새도 통과한다.
+      await expect(auth.clientCredentialsToken()).rejects.toBeInstanceOf(KeycloakError)
 
       // ⚠️ 비공허성 단언 — 이게 없으면 discovery 단계에서 먼저 죽어도 아래 not.toContain이
       // 통과해버려, 실제로는 토큰 요청이 일어난 적조차 없는데 "리다이렉트를 안 따라갔다"고

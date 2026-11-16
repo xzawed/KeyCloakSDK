@@ -17,7 +17,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
-import { KeycloakAuthError, KeycloakClient } from '../../src/index.js'
+import { KeycloakAuthError, KeycloakClient, KeycloakTokenValidationError } from '../../src/index.js'
 
 const NONCE = 'server-nonce'
 const CLIENT_ID = 'c'
@@ -257,7 +257,9 @@ describe('exchangeCode — expectedAudience 재정의(진짜 openid-client)', ()
     await expect(kc.auth.validate(await accessToken(API))).resolves.toMatchObject({
       audience: [API],
     })
-    await expect(kc.auth.validate(await accessToken(CLIENT_ID))).rejects.toThrow()
+    await expect(kc.auth.validate(await accessToken(CLIENT_ID))).rejects.toThrow(
+      KeycloakTokenValidationError,
+    )
     await exchange(kc)
     // id_token 검증기와 액세스 토큰 검증기가 한 저장소를 쓴다 — 둘째 저장소면 여기가 2 다.
     expect(idp.certsHits).toBe(1)

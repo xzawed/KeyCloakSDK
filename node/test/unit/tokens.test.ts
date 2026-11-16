@@ -57,7 +57,9 @@ describe('TokenSet', () => {
   })
 
   it('access_token 없으면 throw', () => {
-    expect(() => tokenSetFromResponse({ token_type: 'Bearer' })).toThrow()
+    expect(() => tokenSetFromResponse({ token_type: 'Bearer' })).toThrow(
+      'token response missing access_token',
+    )
   })
 
   // `at === undefined || at === null` 로 약화해도 키 부재만 보면 오늘 스위트가 통과한다.
