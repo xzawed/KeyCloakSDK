@@ -253,7 +253,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 149건 (열림 42)
+## C. 품질 부채 — 149건 (열림 41)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -370,7 +370,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `selftest-assert-counter-subshell` **[M/M · 닫힘 2026-09-23 #540]** 어서션 카운터가 서브셸에서 증발한다 — 자가테스트 프레임워크의 구조적 맹점 · `scripts/test/assert.sh:10`
 - [x] `guard-paths-never-exercised` **[M/M · 닫힘 2026-11-14 #1085]** check-coverage 변이 아홉이 main 에서 SILENT 9 → CAUGHT 9(합산 · 브랜치 없음 · 형식 · 경계 …) · 부류는 `selftests-with-no-negative-case`
 - [x] `selftests-with-no-negative-case` **[M/L · 닫힘 2026-11-15 #1090–#1093]** 판정기 실패 종료(M1)와 인라인 판정 변이 레코드를 주간 `mutation-sweep` 이 잰다 · 자기 비교 변이는 잔여
-- [ ] `probes-that-discard-the-result` **[M/M]** 프로브가 결과를 버린다 — 예외 타입 미단언·반환값 미단언 · `php/tests/Unit/Jwks/JwksStoreTest.php:188`
+- [x] `probes-that-discard-the-result` **[M/M · 닫힘 2026-11-16 #1111]** 변이 「실패한 강제 재조회를 unknown kid 로」에 php 단위 1082 · python 동기가 초록이었다 — 위조 kid 프로브가 거부의 종류 · 원인을 단언한다(아홉 언어 표는 PR)
 - [x] `wall-clock-ordering-in-tests` **[M/M · 닫힘 2026-11-14 #1088]** 붕괴 시험을 멈춘 시계로 · 창 크기는 결정적 시험(변이 CAUGHT) · W3c 는 도달 확인 · go 비행은 `token-provider-cache-invariants`
 - [x] `ruby-framing-spec-server-written-flaky` **[M/S · 닫힘 2026-10-22 #797]** 원인은 리눅스가 받은 소켓의 송신 버퍼를 자동으로 키운 것 — `FramingServer` 가 SO_SNDBUF 를 64 KiB 로 고정한다(Go 의 같은 오라클과 같다) · `ruby/spec/support/framing_server.rb`
 - [x] `dotnet-allocation-test-process-wide-counter-flaky` **[L/S · 신규 2026-10-23 · 닫힘 2026-11-13 #1061]** 다섯 창의 최솟값(`Allocation.SmallestOfAsync`) — 호출 비용 ≈ 58 KB(300 회 실측), 잡음은 더하기만 한다 · 그 규칙을 고정하는 시험
