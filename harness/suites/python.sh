@@ -3,11 +3,9 @@
 # 컨테이너에서 실행한다(CLAUDE.md Python 툴체인: `pytest -m "not integration" --cov=keycloak_sdk`
 # + `ruff check`). 마지막 줄에 JSON 신호 1줄을 출력한다.
 #
-# ⚠️ 미실행 검증(untested-here) — node/go 2개 언어로 이 스위트 메커니즘을 검증했고, 이 스크립트는
-# CLAUDE.md 커맨드로 작성했으나 실제 컨테이너 실행으로 확인하지 않았다(8언어 전체 실행은 CI 야간/수동
-# 범위). Alpine(musl)에는 manylinux(glibc) 휠이 없는 네이티브 확장(예: joserfc의 cryptography 백엔드)이
-# 있을 수 있어 빌드툴체인(gcc/musl-dev/libffi-dev/openssl-dev/rust)을 선제 설치한다 — 실행 시 pip 빌드가
-# 느리거나 실패하면 python:3.12-slim(Debian) 대체를 검토할 것.
+# 실행 확인은 야간 harness.yml score-all 이 한다 — 판정은 run-suite.sh(ran · testsPassed · 돈 시험 수 unit>0),
+# 신호는 아티팩트 signals/python.suite.json. Alpine(musl)에는 manylinux(glibc) 휠이 없는 네이티브 확장(예: joserfc의
+# cryptography 백엔드)이 있을 수 있어 빌드툴체인(build-base/libffi-dev/openssl-dev/cargo)을 선제 설치한다.
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (python/ 는 $ROOT/python)

@@ -3,10 +3,8 @@
 # 컨테이너에서 실행한다(`bundle exec rspec`[spec_helper.rb의 SimpleCov가 line 90/branch 85 게이트]
 # + `bundle exec rubocop`). 마지막 줄에 JSON 신호 1줄을 출력한다.
 #
-# ⚠️ 미실행 검증(untested-here) — node/go 2개 언어로 이 스위트 메커니즘을 검증했고, 이 스크립트는
-# ruby/Rakefile·ruby/spec/spec_helper.rb의 실제 커맨드로 작성했으나(CLAUDE.md에는 아직 Ruby 툴체인
-# 섹션이 없음 — Ruby SDK가 이 시점 작업 중이라) 실제 컨테이너 실행으로 확인하지 않았다(8언어 전체
-# 실행은 CI 야간/수동 범위).
+# 실행 확인은 야간 harness.yml score-all 이 한다 — 판정은 run-suite.sh(ran · testsPassed · 돈 시험 수 unit>0).
+# 명령은 ruby/Rakefile · ruby/spec/spec_helper.rb 의 것이다.
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (ruby/ 는 $ROOT/ruby)

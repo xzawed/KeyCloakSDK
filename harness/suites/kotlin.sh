@@ -3,8 +3,8 @@
 # 컨테이너에서 gradle wrapper(kotlin/gradlew, 9.5.0)로 실행한다(`.claude/rules/kotlin.md` 툴체인:
 # `cd kotlin && ./gradlew test koverVerify ktlintCheck` — 게이트 라인90/브랜치85). 마지막 줄에 JSON 신호 1줄 출력.
 #
-# ⚠️ 미실행 검증(untested-here) — java.sh 등과 동일하게 이 스위트는 8언어 전체 CI 야간/수동 범위에서
-# 실행하며, 첫 실행은 gradle 9.5.0 배포 다운로드 + 의존성 해석으로 느리다(코루틴/Nimbus/keycloak-admin).
+# 실행 확인은 야간 harness.yml score-all 이 한다 — 판정은 run-suite.sh(ran · testsPassed · 돈 시험 수 unit>0).
+# 첫 실행은 gradle 배포 다운로드 + 의존성 해석으로 느리다(코루틴/Nimbus/keycloak-admin).
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (kotlin/ 는 $ROOT/kotlin)

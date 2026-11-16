@@ -4,10 +4,9 @@
 # warnings` + `cargo fmt --all --check` + `cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$'`).
 # 마지막 줄에 JSON 신호 1줄을 출력한다.
 #
-# ⚠️ 미실행 검증(untested-here) — node/go 2개 언어로 이 스위트 메커니즘을 검증했고, 이 스크립트는
-# CLAUDE.md 커맨드로 작성했으나 실제 컨테이너 실행으로 확인하지 않았다(8언어 전체 실행은 CI 야간/수동
-# 범위). cargo-llvm-cov 설치+ring/rsa 등 네이티브 의존성 컴파일이 무거워 첫 실행은 특히 느리다 —
-# 설치/컴파일 실패 시 커버리지는 0으로 폴백(단위테스트 수 파싱은 영향 없음).
+# 실행 확인은 야간 harness.yml score-all 이 한다 — 판정은 run-suite.sh(ran · testsPassed · 돈 시험 수 unit>0).
+# cargo-llvm-cov 설치+ring/rsa 등 네이티브 의존성 컴파일이 무거워 느리다 — 설치/컴파일 실패 시 커버리지는 0으로
+# 폴백(단위테스트 수 파싱은 영향 없음).
 set -uo pipefail
 cd "$(dirname "$0")/.."          # -> harness/
 ROOT="$(cd .. && pwd)"           # 리포 루트 (rust/ 는 $ROOT/rust)

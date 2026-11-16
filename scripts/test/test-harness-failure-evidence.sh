@@ -166,7 +166,11 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '{ echo ___SUITE_LOG_BEGIN; echo "=== RUN   TestQuiet"; echo "--- FAIL: TestLoud"; echo ___SUITE_LOG_END; } >&2' \
   'echo "{\"lang\":\"broke\",\"ran\":true,\"testsPassed\":false}"' > "$_tmp/h/suites/broke.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"bare\",\"ran\":true,\"testsPassed\":false}"' > "$_tmp/h/suites/bare.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"fine\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/fine.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"fine\",\"unit\":3,\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/fine.sh"
+# 통과했다는데 돈 시험이 0 개 — 공허한 통과다(dotnet · php 스위트가 실제로 그렇게 돌았다, PR 0). 단위 수를 못 읽은 것도 같다.
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"empty\",\"unit\":0,\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/empty.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"nocount\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/nocount.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "{\"lang\":\"strcount\",\"unit\":\"7\",\"ran\":true,\"testsPassed\":true}"' > "$_tmp/h/suites/strcount.sh"
 chmod +x "$_tmp/h/suites/"*.sh
 _rrc=0
 _ro="$(bash "$_tmp/h/suites/run-suite.sh" broke bare fine 2>&1)" || _rrc=$?
@@ -175,5 +179,15 @@ assert_contains "$_ro" "--- FAIL: TestLoud" "[하네스 증거] run-suite.sh 가
 assert_not_contains "$_ro" "TestQuiet" "[하네스 증거] run-suite.sh 가 블록 전체를 잡 로그에 쏟는다 — 실패 표지 줄만이어야 한다"
 assert_contains "$_ro" "[bare] 실패 단서 블록이 없다" "[하네스 증거] run-suite.sh 가 블록 없는 실패를 말하지 않는다 — 빈칸이 「단서 없음」으로 안 읽힌다"
 assert_not_contains "$_ro" "[fine]" "[하네스 증거] run-suite.sh 가 통과한 스위트에 실패 단서를 찍는다"
+# 공허 하한 — 하나씩 돌려 실패의 원인이 그 스위트 자신임을 가른다. 대조군(fine 하나)은 0 이어야 위 둘이 무언가를 잰다.
+for _v in empty nocount strcount; do
+  _vrc=0
+  _vo="$(bash "$_tmp/h/suites/run-suite.sh" "$_v" 2>&1)" || _vrc=$?
+  assert_eq "1" "$_vrc" "[하네스 증거] run-suite.sh 가 시험 0 개인 통과($_v)를 통과로 센다 — 돌지 않은 스위트가 초록이 된다"
+  assert_contains "$_vo" "[$_v] 통과라는데 돈 시험이 0 개다" "[하네스 증거] run-suite.sh 가 공허한 통과($_v)를 그 이름으로 말하지 않는다"
+done
+_frc=0
+_fo2="$(bash "$_tmp/h/suites/run-suite.sh" fine 2>&1)" || _frc=$?
+assert_eq "0" "$_frc" "[하네스 증거] run-suite.sh 가 시험이 돈 통과(fine)도 실패로 센다 — 위 공허 단언이 공허하다: $_fo2"
 
 assert_report
