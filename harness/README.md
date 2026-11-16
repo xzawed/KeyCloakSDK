@@ -120,7 +120,7 @@ Generated artifacts (not committed, `report/.gitignore`) that `verify.sh`/`suite
 
 ### Execution scope — CI first, local for smoke
 
-Running the full `verify.sh` across 9 languages is heavy (tens of minutes), since it includes pulling each language's toolchain image + installing dependencies + running the tests. **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 9 languages nightly (`schedule` 03:00 UTC) and on demand (`workflow_dispatch`) and uploads `SCORECARD.md` + `report/signals/` as artifacts (`timeout-minutes: 60`). **Locally (especially on Windows Docker Desktop) it is recommended to limit to a 1–2 language smoke** — the Alpine (musl) base (see the warning above) solves the DNS gotcha, but a full 9-language build + test is inefficiently heavy for the local iterative development loop.
+Running the full `verify.sh` across 9 languages is heavy (tens of minutes), since it includes pulling each language's toolchain image + installing dependencies + running the tests. **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 9 languages nightly, on demand and on a PR changing what it reads (rule: [install/README.md](install/README.md)), and uploads `SCORECARD.md` + `report/signals/` as artifacts. **Locally (especially on Windows Docker Desktop) it is recommended to limit to a 1–2 language smoke** — the Alpine (musl) base (see the warning above) solves the DNS gotcha, but a full 9-language build + test is inefficiently heavy for the local iterative development loop.
 
 ## Contract
 

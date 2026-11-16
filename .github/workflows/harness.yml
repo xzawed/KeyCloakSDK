@@ -4,13 +4,39 @@ on:
     branches: [main]
     paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
   pull_request:
-    paths: ['harness/**', 'go/**', '.github/workflows/harness.yml']
+    # ⚠️ 이 목록이 PR 에서 무거운 레그를 깨우는 변경도 정한다(scripts/harness-pr-legs.mjs — go/** · 문서는 뺀다).
+    paths: ['harness/**', 'go/**', '.github/workflows/harness.yml', 'scripts/check-versions.mjs', 'scripts/harness-pr-legs.mjs', 'scripts/check-hp-attest-wiring.mjs', 'scripts/check-workflow-paths.mjs']
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * *'   # 매일 03:00 UTC — 잡 if 가 schedule 을 받는 셋이 돈다(all-langs · score-all · install-all)
 permissions:
   contents: read
+concurrency:
+  # PR 은 새 푸시가 앞 실행을 취소한다 — 무거운 레그가 푸시마다 겹치지 않게. 그 밖의 이벤트는 실행마다 제 그룹이다.
+  group: harness-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  changes:
+    # PR 이 무거운 레그(score-all · install-all)가 읽는 것을 바꿨는가 — 바꿨을 때만 PR 에서도 돈다. 야간 · 수동은 이 잡
+    # 없이 돈다. 레그를 안 돌린 PR 은 그 레그가 「건너뜀」(성공으로 센다)이고, 이 잡이 깨지면 이 잡이 빨갛다.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      heavy: ${{ steps.legs.outputs.heavy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with: { node-version: '22' }
+      - name: 무거운 레그를 깨우는 변경
+        id: legs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        # ⚠️ diff 를 파일로 먼저 받는다 — 파이프면 git 이 실패해도 빈 입력이 「깨울 것 없음」으로 끝난다.
+        run: |
+          git diff --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/changed.txt"
+          node scripts/harness-pr-legs.mjs < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
+
   mvp-go:
     # 빠른 PR 게이트(Go 스모크) — push/PR 트리거에만
     if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -47,8 +73,10 @@ jobs:
           path: harness/report/RESULTS.md
 
   score-all:
-    # 9언어 종합 검증·스코어링(conformance+security+suites+score → SCORECARD.md) — 수동+야간에만
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    # 9언어 종합 검증·스코어링(conformance+security+suites+score → SCORECARD.md) — 수동 · 야간, 그리고 레그가 읽는 것을
+    # 바꾼 PR(changes 잡). ⚠️ `!cancelled()` 가 있어야 changes 가 건너뛰어진 야간 · 수동에서도 이 잡이 판정된다.
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || needs.changes.outputs.heavy == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -75,11 +103,12 @@ jobs:
 
   install-all:
     # 9언어 설치·동작 검증(로컬 레지스트리에서 게시 패키지 설치 → quickstart+conformance+security)
-    # → INSTALL-MATRIX.md. 수동(workflow_dispatch)+야간(schedule)에만. Docker 빌드 무거워 타임아웃 넉넉히.
+    # → INSTALL-MATRIX.md. 수동 · 야간, 그리고 레그가 읽는 것을 바꾼 PR(score-all 과 같은 조건). Docker 빌드 무거워 타임아웃 넉넉히.
     # 부분실패 격리 — 한 언어가 실패해도 나머지 언어는 계속 검증하지만(격리, 매트릭스가 결과 담체),
     # install-verify.sh --strict가 실패 언어가 있으면 exit 1을 내므로 잡은 RED가 된다(PR 0 Task 8 —
     # 이전엔 무조건 exit 0이라 java/php가 publish에서 죽어도 조용한 초록이었다).
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || needs.changes.outputs.heavy == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
