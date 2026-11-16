@@ -496,7 +496,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `cross-cutting-http-capabilities` **[L/M]** User-Agent·프록시·재시도·로깅 훅이 9개 언어 전부 없다 — 횡단 HTTP 능력이 축에서 빠졌다 · `node/src/config.ts:7`
 - [x] `dotnet-multi-target-net10` **[H/M · 신규 · 닫힘 2026-11-13 #1052–#1055]** .NET 이 net8.0 · net10.0 을 함께 대상으로(사용자 결정 — .NET 8 · 9 EOL 2026-11-10). 하한 net8.0(admin 의존성이 net8.0 전용) · CI 레그는 props 에서 · 통합 커버리지는 가장 낮은 대상 · harness 빌드 SDK 10, 소비자 SDK 8
 
-### CI·릴리스 미결 — 8
+### CI·릴리스 미결 — 9
 
 - [x] `go-consumer-floor-1-26-decision` **[M/S · 신규 2026-09-11 · 판정 2026-09-21]** 상류(`x/oauth2` v0.37 · `x/sync` v0.23)가 `go 1.26.0` 을 선언해 소비자 하한이 1.25 → 1.26 으로 올랐다 — 판정: 1.26 으로 올린다(#511, Go 지원창이 1.25 를 이미 제외). 옮겨 간 하한은 `.claude/rules/go.md` 와 `getting-started.md` 앵커가 소유한다 · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `dependabot-updater-failure-blind` **[M/M · 닫힘 2026-11-14 #1084]** dependabot-health 가 매일 대상별 마지막 실행을 본다(빨강 → nightly-alert) — 실측: ruby 가 09-17 부터 매주 실패(simplecov ≥ 1.3) · 고쳤다
@@ -507,6 +507,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ci-lane-trigger-branch-filter` **[L/S · 닫힘 2026-11-04 · 중복이었다]** `push-trigger-branches-asymmetry` 와 같은 것(지목줄도 같다) — 「언어 CI 6개」는 틀렸다: `paths` 만 있는 push 는 2026-09-03 트리(d25a6fe7)에서도 언어 CI 다섯 + `harness.yml`
 - [x] `orphan-active-workflows` **[L/S · 닫힘 2026-10-28]** 파일 없는 둘을 껐다 — `repo-config.mjs check` 가 워크플로 상태를 대조한다
 - [ ] `repo-settings-ssot-gap` **[L/S]** 브랜치 자동삭제 등 저장소 설정이 SSOT 밖 — 원격이 깨끗한 이유가 어디에도 안 적혀 있다 · `.github/security-config.json:2`
+- [ ] `integration-coverage-drift-is-warning-only` **[M/S · 신규 2026-11-16]** 통합 커버리지의 소유 DRIFT(소유자 없는 미실행 함수 · 낡은 소유자)는 레인에서 경고뿐이라 main 이 DRIFT 인 채 초록이다 — 8d3e24a7 이 들인 go 함수 둘이 소유자 없이 이틀 갔다(#1119 가 붙임) · `.github/workflows/ci.yml:86`
 - [x] `php-mirror-check-pretag-ssot` **[M/S · 신규·닫힘 2026-11-14 #1081]** 미러 확인이 태그 전에 움직이는 SSOT 를 봤다 — readiness 는 정상에 ⚠️ · 번 버전에 ✅, `php-mirror` 잡은 릴리스 PR 마다 빨강(#937). 기준선으로
 
 ### 테스트 실행 갭 — 12
@@ -574,7 +575,6 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `release-artifact-verification-undocumented` **[M/M · 닫힘 2026-11-15 #1095]** 아홉 레지스트리의 검증 명령을 최신 게시본으로 재어 적었다 · `docs/guides/verifying-releases.md`
 - [x] `release-provenance-four-lanes` **[M/M · 신규 2026-11-15 · 닫힘 2026-11-16 #1105]** 네 레인이 게시한 바이트를 증명한다 — .NET 은 nupkg · snupkg 와 그 DLL(nuget.org 가 nupkg 를 저장소 서명으로 바꾼다 — 실측), PHP 는 미러로 보낸 파일 · 가드가 태그 트리거 아홉을 분류하고 npm · PyPI 의 스위치도 본다 · `scripts/test/test-release-attestation.sh`
 - [ ] `four-lanes-provenance-unproven-on-published-bytes` **[M/S · 신규 2026-11-16]** 네 레인의 증명 단계는 다음 릴리스에서 처음 돈다 — 그 게시 바이트에 `gh attestation verify` 를 돌리기 전까지 검증 안내는 「증명 없음」 그대로이고 주간 `--attest` 도 JVM 만 · `docs/guides/verifying-releases.md:25`
-- [ ] `integration-coverage-drift-is-warning-only` **[M/S · 신규 2026-11-16]** 통합 커버리지의 소유 DRIFT(소유자 없는 미실행 함수 · 낡은 소유자)는 레인에서 경고뿐이라 main 이 DRIFT 인 채 초록이다 — 8d3e24a7 이 들인 go 함수 둘이 소유자 없이 이틀 갔다(#1119 가 붙임) · `.github/workflows/ci.yml:86`
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
 - [x] `java-short-code-verifier-leaks-iae` **[M/S · 신규·닫힘 2026-09-25 #585]** 아홉을 쟀다 — 잘못된 verifier 를 로컬에서 거부하는 것은 JVM 짝(Nimbus)뿐이고 자매 일곱은 전송 → 400 → SDK 인증 오류다. 부류 재스캔이 verifier 밖으로 넓혔다: 빈 code·refresh·introspect 토큰, client_credentials 공백 scope(전례가 인가 요청만 고쳤다), kotlin 문자열 redirectUri, Nimbus `build()` 의 redirect_uri 검사(Grok 레그가 찾음), java null 셋 — 전부 SDK 타입으로, 변이 22/22 CAUGHT · `java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientInputBoundaryTest.java`
