@@ -46,6 +46,7 @@ from keycloak_sdk.exceptions import (
     KeycloakNotFoundError,
     KeycloakTransportError,
 )
+from tests.unit.conftest import collector_paused
 
 from .test_admin_3xx_response import _REPS, OPS, _client
 from .test_admin_grant import LANES, _attempt, _chain
@@ -164,7 +165,9 @@ async def _run(
     _, act = OPS[op]
     with _fake_idp(*answers, grants=grants) as idp:
         async with _client(lane, idp.url) as kc:
-            result, err = await _attempt(lane, kc, lambda c: act(c.admin))
+            # `deep` 이 파서를 재귀 한도까지 몬다 — 수집기를 멈춘 채 부른다.
+            with collector_paused():
+                result, err = await _attempt(lane, kc, lambda c: act(c.admin))
         seen, grants = idp.seen()
     return result, err, seen, grants
 

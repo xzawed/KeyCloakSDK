@@ -34,6 +34,7 @@ import pytest
 from keycloak_sdk import KeycloakClient, KeycloakConfig
 from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.exceptions import KeycloakAuthError, KeycloakNotFoundError
+from tests.unit.conftest import collector_paused
 
 #: 칸마다 새 클라이언트(httpx.AsyncClient 셋)를 만든다 — TLS 문맥만 재사용한다(conftest).
 pytestmark = pytest.mark.usefixtures("fast_tls")
@@ -372,11 +373,13 @@ async def _client(lane: str, idp: _Idp) -> AsyncIterator[Any]:
 
 
 async def _attempt(lane: str, client: Any, act: Callable[[Any], Any]) -> tuple[Any, Any]:
-    try:
-        result = act(client)
-        return (await result if lane == "aio" else result), None
-    except Exception as exc:
-        return None, exc
+    # 표의 r18d 가 파서를 재귀 한도까지 몬다 — 수집기를 멈춘 채 부른다.
+    with collector_paused():
+        try:
+            result = act(client)
+            return (await result if lane == "aio" else result), None
+        except Exception as exc:
+            return None, exc
 
 
 def _verdict(err: BaseException | None) -> _Verdict:
