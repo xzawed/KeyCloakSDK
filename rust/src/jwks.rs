@@ -377,8 +377,18 @@ mod tests {
             60,
         );
         store.get_key("k1").await.unwrap(); // fetch #1(초기)
-        let _ = store.get_key("k2").await; // 미해결 → refetch #2
-        let _ = store.get_key("k3").await; // rate-limit → refetch 없음
+        // ⚠️ 프로브의 결과도 단언한다 — 요청 수만 보면 창 안의 kid 가 아무 키나 받아도 2 는 그대로다
+        // (probes-that-discard-the-result).
+        let after_refetch = store.get_key("k2").await.unwrap_err(); // 미해결 → refetch #2
+        assert!(
+            matches!(&after_refetch, KeycloakError::TokenValidation(m) if m == "unknown kid"),
+            "{after_refetch:?}"
+        );
+        let limited = store.get_key("k3").await.unwrap_err(); // rate-limit → refetch 없음
+        assert!(
+            matches!(&limited, KeycloakError::TokenValidation(m) if m == "unknown kid (refetch rate-limited)"),
+            "{limited:?}"
+        );
     }
 
     /// 모르는 kid 의 오류가 그 kid 를 인용하지 않는다 — 두 갈래(재조회 뒤 · rate-limit) 다. kid 는 검증

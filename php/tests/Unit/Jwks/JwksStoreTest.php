@@ -72,17 +72,28 @@ final class JwksStoreTest extends TestCase
         $f = new HttpFactory();
         $store = new JwksStore('http://kc/certs', $this->http([['kid' => 'k1', 'kty' => 'RSA']], $calls), $f, minRefetchIntervalSeconds: 60);
         $store->getKeyByKid('k1');            // fetch #1
-        try {
-            $store->getKeyByKid('k2');
-        } catch (TokenValidationError) {
-            // unresolved → refetch #2
-        }
-        try {
-            $store->getKeyByKid('k3');
-        } catch (TokenValidationError) {
-            // rate-limited → NO refetch
-        }
+        // ⚠️ 프로브의 결과도 단언한다 — 세는 것만 보면 창 안의 kid 가 아무 키나 받아도(kid 혼동) 2 는 그대로다
+        // (실측: 그 변이에 이 파일은 초록이었다 · probes-that-discard-the-result).
+        self::assertSame('unknown kid "k2"', self::refusal(TokenValidationError::class, $store, 'k2'));   // refetch #2
+        self::assertSame('unknown kid "k3" (refetch rate-limited)', self::refusal(TokenValidationError::class, $store, 'k3'));
         self::assertSame(2, $calls);          // 위조 kid 스팸이 IdP를 때리지 않음
+    }
+
+    /**
+     * 조회가 `$class` 로 거부되는지 보고 그 메시지를 돌려준다 — 다른 오류는 그대로 올라가 시험을 깨고, 성공은 실패다.
+     *
+     * @param class-string<\Throwable> $class
+     */
+    private static function refusal(string $class, JwksStore $store, string $kid): string
+    {
+        try {
+            $store->getKeyByKid($kid);
+        } catch (\Throwable $e) {
+            self::assertInstanceOf($class, $e, sprintf('kid "%s": %s', $kid, $e::class));
+
+            return $e->getMessage();
+        }
+        self::fail(sprintf('kid "%s" must be refused', $kid));
     }
 
     public function testNetworkFailureMappedToTransportError(): void
@@ -472,16 +483,11 @@ final class JwksStoreTest extends TestCase
         };
         $store = new JwksStore('http://kc/certs', $http, $f, minRefetchIntervalSeconds: 60);
         $store->getKeyByKid('k1'); // fetch #1 (성공)
-        // forged-1: 미해결 kid → 재조회 #2가 IdP 장애로 실패(transport error).
-        try {
-            $store->getKeyByKid('forged-1');
-        } catch (\Throwable) {
-        }
+        // forged-1: 미해결 kid → 재조회 #2가 IdP 장애로 실패 — 전송 실패다, 「unknown kid」가 아니다. ⚠️ 이 분류를 단언하지
+        // 않던 동안 실패한 재조회를 「unknown kid」로 보고하는 변이에 단위 스위트 1082 개가 전부 초록이었다(실측).
+        self::assertSame('JWKS fetch failed', self::refusal(KeycloakTransportError::class, $store, 'forged-1'));
         // forged-2: 창 내 → rate-limited여야 한다(재조회 #3 없음). stamp-after-fetch면 재조회한다.
-        try {
-            $store->getKeyByKid('forged-2');
-        } catch (\Throwable) {
-        }
+        self::assertSame('unknown kid "forged-2" (refetch rate-limited)', self::refusal(TokenValidationError::class, $store, 'forged-2'));
         self::assertSame(2, $calls, '실패한 fetch도 게이트를 소모 — forged-2는 재조회 없이 rate-limited');
     }
 

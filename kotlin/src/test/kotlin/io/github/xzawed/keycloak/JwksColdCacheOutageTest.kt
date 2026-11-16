@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import java.time.Duration
 import java.util.Date
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 // 콜드 캐시 + IdP 장애에서 JWKS 조회가 유계인가 — Java `JwksColdCacheOutageTest` 와 동형.
@@ -83,8 +84,11 @@ internal class JwksColdCacheOutageTest {
         val endpoints = OidcEndpoints.forRealm(config)
         val validator = JwtValidator.forRealm(endpoints, config, "app")
         repeat(attempts) { i ->
-            // 미해결 kid 는 항상 거부된다 — 세는 것은 거부 여부가 아니라 IdP 요청 수다.
-            runCatching { validator.validate(signed(signing, endpoints.issuer, "unknown-$i")) }
+            // 미해결 kid 는 항상 거부된다 — 세는 것은 IdP 요청 수지만, 거부도 단언한다(자매 Java 와 같다). `runCatching` 으로
+            // 버리면 장애 중의 조회가 SDK 밖 예외로 새거나 통과해도 이 시험은 요청 수만 본다.
+            assertFailsWith<TokenValidationException>("미해결 kid 토큰은 항상 거부되어야 한다") {
+                validator.validate(signed(signing, endpoints.issuer, "unknown-$i"))
+            }
         }
         return server.findAll(getRequestedFor(urlPathEqualTo(certsPath))).size
     }
