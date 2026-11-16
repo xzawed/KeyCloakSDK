@@ -30,7 +30,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: mypy 탐침 준비(python SDK 와 dev 의존성)
-        run: cd python && python -m pip install --quiet -e ".[dev]"
+        # --only-binary :all: — 휠 없는 전이를 조용히 sdist 로 빌드(설치 스크립트 실행)하지 않는다(python-ci.yml 과 같다 · sonar S8541).
+        run: 'cd python && python -m pip install --quiet --only-binary :all: -e ".[dev]"'
       - name: 되살릴 조건(오면 빨강 · 못 잰 탐침도 빨강)
         env:
           GH_TOKEN: ${{ github.token }}
