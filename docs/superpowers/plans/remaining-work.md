@@ -252,7 +252,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 <!-- facade-wiring-close-contract-unasserted: #774 의 통합 미실행 목록이 go NewAdminClient(소비자 provider 배선 — 단위 omit 경계 파일 admin.go)의 소유자로 이 항목을 쓴다(PM 수용 — 제목이 파사드 provider 배선 일반이다). 이 항목을 닫으면 scripts/integration-coverage.json 의 소유자도 옮겨야 한다(check 가 닫힌 소유자를 잡는다). -->
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 149건 (열림 40)
+## C. 품질 부채 — 149건 (열림 39)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -418,7 +418,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `deploy-narrative-stale` **[M/M · 닫힘 2026-11-14 #1083]** 다시 재니 아홉 — 룰셋 여섯 · PHP 게이트는 test-deploy-md 가 대조, 나머지 산문은 `stale-comments-nobody-collates`
 - [x] `deploy-php-mirror-gap` **[M/S · 닫힘 2026-11-14 #1081 · #1083]** §9 가 `check-php-mirror.sh <X.Y.Z>` 를 부른다 · 미러 룰셋은 #1083 — test-deploy-md 가 대조
 - [x] `deploy-readiness-verdict` **[M/S · 닫힘 2026-11-14 #1081]** §5 거짓 셋을 스크립트대로 — 판정은 test-release-readiness 가 고정
-- [ ] `governance-dead-actor` **[M/M]** 품질 게이트 G5가 저장소에 존재하지 않는 주체를 지목하고, 기각 레지스트리는 상주 진입점이 없다 · `docs/governance/process.md:204`
+- [x] `governance-dead-actor` **[M/M · 닫힘 2026-11-16 #1120]** G5 를 성질로(다른 제공자의 모델 — 지금 Grok, 못 쓰면 바꾸고 PR 에 적는다) · 기각 레지스트리는 CLAUDE.md 가 가리킨다 · 재판정: `git grep -i -w -l codex -- docs/governance docs/guides CLAUDE.md` 0(main 은 2)
 - [x] `readme-mirror-contract` **[M/S · 닫힘 2026-11-14 #1082]** nonce 생략(node 는 교환 실패) · 은닉 예외 넷 — test-readme-contract 가 lib.rs 재노출 · node 시험과 대조
 - [ ] `hand-counted-enumerations` **[L/S]** 설정 파일을 손으로 센 열거 넷이 실제와 어긋나고, 그중 하나는 내부 문서끼리 모순이다 · `.claude/rules/ci.md:82`
 - [ ] `doc-rule-self-violation` **[L/M]** 문서가 선언한 세 규약을 그 문서 자신이 어긴다 — 선언은 있고 계측기가 없다 · `CLAUDE.md:333`
@@ -430,7 +430,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### harness 사각지대 — 14
 
-- [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** ⚠️ **공허가 하나가 아니라 셋이었다.** 요청↔응답 미대조 외에 `/code_challenge=/` 가 **빈 값**을 통과시켰고, URL 의 `state` 와 돌려준 `state` 를 **존재만 따로** 보고 대조하지 않았다. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 **Docker 없이** 픽스처로 재게 했다(그 판정이 오래 공허했던 이유가 「시험할 수 없다」였다). 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts` 배선). 변이 6/6 `CAUGHT` + OFF 짝 3/3. ⚠️ **프로브가 구멍 하나를 실제로 찾았다** — 모듈을 부르되 `v.ok` 를 버리면 침묵했다(같은 PR 에서 닫음). ⚠️ 파생 신규: `authz-redirect-uri-not-per-call`(php·rust).
+- [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** 공허가 셋이었다 — 요청↔응답 미대조 · 빈 `code_challenge` 통과 · `state` 를 존재만 보고 대조 안 함. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 Docker 없이 픽스처로 잰다 · 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts`) · 변이 6/6 `CAUGHT` + OFF 짝 3/3(`v.ok` 를 버리는 구멍도 그 PR 이 닫음) · 파생: `authz-redirect-uri-not-per-call`.
 - [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** 한 파일의 두 결함 — 야간 감사가 보는 rust 하네스 락을 Dockerfile 이 COPY 하지 않았고(1.0 이전 그래프를 6주 감사한 거짓 초록) · `FROM rust:alpine` 무버전. ⚠️ 락 재생성은 MSRV 인지 해석이 필요하다 — `scripts/regen-harness-rust-lock.sh` 가 소유 · 재스캔 · 변이는 `git log -S'H3-harness-image-and-lock-pins' -- docs/superpowers/plans/remaining-work.md`
 - [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** ⚠️ **가드 부재가 아니라 실제 노출이었다.** `ClientCredentialsTokenProvider` 의 기본 `inspect` 가 캐시된 **액세스 토큰을 원문으로** 찍었다 — `@cached` 가 원시 String 이라 `TokenSet#inspect` 의 마스킹이 닿지 않았다(형제 `Config`·`TokenSet` 만 재정의). `p provider` 로 재현 → 고친 뒤 `cached="***"`, 캐시 **유무는 남긴다**(빈 캐시의 `***` 는 거짓 신호 — 대조군 spec). 아홉 전수도 실행으로 갈랐다 — 나머지 여덟은 노출 없음. 수치 · 언어별 근거: `git show e4e7c63f:docs/superpowers/plans/remaining-work.md`
 - [x] `php-var-dump-bypasses-all-masking` **[M/M · 닫힘 2026-09-12 · 범위 재정의]** 덤프 경로 마스킹은 아홉 언어 균일 계약으로 불가능했다 — 훅이 있는 셋(php `__debugInfo` · go `GoStringer` · ruby `pretty_print`)만 구현하고 나머지는 경계로 적었다(왕복 직렬화 훅은 일부러 안 넣었다). 계약은 `SECURITY.md` 가 소유한다 · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
