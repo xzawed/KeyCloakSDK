@@ -68,6 +68,8 @@ public sealed class ValidationCancellationTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Validator().ValidateAsync(Token(), cts.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Auth().ValidateAsync(Token(), cts.Token));
+        // The public id_token check takes the token too.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Auth().ValidateIdTokenAsync(Token(""","typ":"ID" """), cts.Token));
 
         Assert.Equal(0, _idp.Requests);
     }

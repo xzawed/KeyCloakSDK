@@ -46,7 +46,7 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <c>JWKS_FETCH</c> 가 각각 비어 있지 않다 · (W1) 손으로 고른 테스트가 겨누는 메서드가 전부 기대 계급의 행이고 그 축의 파생
 /// 대상이다 — 표는 앵커 본문·보안 기본값 가드의 dotnet 앵커와 대조해 썩지 않게 한다 · (W3a) 토큰 부여·코드 교환 행마다 형식이
 /// 틀린 토큰 응답 변형(기존 테스트에서 가져온다) · (W3b) 서명에 nonce 파라미터가 있는 코드 교환 행마다 id_token 변형 — 서명한
-/// 다섯과 「nonce 가 다른 인자의 값」, 그리고 기존 테스트가 nonce 교환에만 실패를 단언한 형식 변형 · 거부 오류는 카나리아를 찍지 않는다 ·
+/// 다섯과 「nonce 가 다른 인자의 값」 · 「typ≠ID」, 그리고 기존 테스트가 nonce 교환에만 실패를 단언한 형식 변형 · 거부 오류는 카나리아를 찍지 않는다 ·
 /// (W3c) 분류 실행에서 <c>/certs</c> 를 조회한 행마다 콜드 캐시 + 503 에서 k 회. 실패한 칸은 <see cref="KnownGaps"/> 에
 /// 이유와 함께 있으면 GAP, 관측되지 않는 항목은 낡은 것이라 실패한다.</para>
 /// <para>⚠️ .NET 이 Go 와 다른 자리 넷. (i) 정적 메서드·생성자도 공개 호출 경로다 — <c>AdminClient.CreateAsync</c> 는 정적이고
@@ -880,22 +880,24 @@ public sealed class HostilePathMatrixTests
     }
 
     /// <summary>
-    /// W3b 의 서명한 변형 — 대조(맞는 id_token)와 여섯. <c>Nonce</c>: <c>param</c> = 호출에 넘긴 nonce 값 · <c>other</c> = 다른 값 ·
+    /// W3b 의 서명한 변형 — 대조(맞는 id_token)와 일곱. <c>Nonce</c>: <c>param</c> = 호출에 넘긴 nonce 값 · <c>other</c> = 다른 값 ·
     /// <c>universal</c> = <b>나머지 문자열 인자 전부의 값</b>(code·redirect_uri·verifier) · <c>absent</c> = nonce 클레임 없음. 다른 키로
     /// 서명할 때 kid 가 k1 이면 캐시된 키로 서명 검증이 실패하고(.NET 은 이때 JWKS 를 한 번 더 조회한다 — .claude/rules/dotnet.md),
-    /// k2 면 키를 못 찾는다.
+    /// k2 면 키를 못 찾는다. <c>Typ</c> 은 id_token 의 typ — Keycloak 처럼 "ID" 라 변형마다 제 검사로 거부되고(id_token 검사는 그 밖의
+    /// typ 을 거부한다), 「typ≠ID」 가 그 종류 검사(공개 ValidateIdTokenAsync 와 같은 검사)를 교환 계급 전부에 붙인다.
     /// </summary>
     /// <remarks>⚠️ nonce 파라미터에는 나머지 문자열 인자와 <b>다른</b> 값을 준다 — 모든 문자열 인자가 같은 값이면 nonce 를
     /// <c>code</c> 와 비교하는 교환도 대조를 통과한다(Grok 레그 지목, 변이 실측 SILENT). <c>universal</c> 행은 그 반대쪽을 잰다.</remarks>
-    private static readonly (string Code, string? Kid, bool OtherKey, string Nonce, bool NoIdToken, string Want)[] NonceVariants =
+    private static readonly (string Code, string? Kid, bool OtherKey, string Nonce, bool NoIdToken, string Want, string Typ)[] NonceVariants =
     {
-        ("대조", "k1", false, "param", false, "ok"),
-        ("nonce≠", "k1", false, "other", false, "reject"),
-        ("nonce=다른인자", "k1", false, "universal", false, "reject"),
-        ("key≠·kid=k1", "k1", true, "param", false, "reject"),
-        ("key≠·kid=k2", "k2", true, "param", false, "reject"),
-        ("id_token없음", null, false, "param", true, "reject"),
-        ("nonce클레임없음", "k1", false, "absent", false, "reject"),
+        ("대조", "k1", false, "param", false, "ok", "ID"),
+        ("nonce≠", "k1", false, "other", false, "reject", "ID"),
+        ("nonce=다른인자", "k1", false, "universal", false, "reject", "ID"),
+        ("key≠·kid=k1", "k1", true, "param", false, "reject", "ID"),
+        ("key≠·kid=k2", "k2", true, "param", false, "reject", "ID"),
+        ("id_token없음", null, false, "param", true, "reject", "ID"),
+        ("nonce클레임없음", "k1", false, "absent", false, "reject", "ID"),
+        ("typ≠ID", "k1", false, "param", false, "reject", "Bearer"),
     };
 
     private const string BAccess = "HP-B-AT-canary-0001";
@@ -925,7 +927,7 @@ public sealed class HostilePathMatrixTests
                     if (!nv.NoIdToken)
                     {
                         SecurityKey signer = nv.OtherKey ? new RsaSecurityKey(otherRsa) { KeyId = nv.Kid } : new RsaSecurityKey(idp.Rsa) { KeyId = nv.Kid };
-                        var claims = new Dictionary<string, object>();
+                        var claims = new Dictionary<string, object> { ["typ"] = nv.Typ };
                         if (nv.Nonce != "absent")
                         {
                             claims["nonce"] = nv.Nonce switch
@@ -1382,7 +1384,8 @@ public sealed class HostilePathMatrixTests
             // ⚠️ 평문이면 토큰을 받는 메서드(ValidateAsync 둘)가 JWS 파싱에서 요청 없이 실패해 UNDETERMINED 가 되고 JWKS_FETCH 가 빈다
             // — 그래서 이 IdP 키로 서명한 **유효한 JWS** 다. URL·경로·폼에 안전한 문자만 쓴다.
             Universal = Sign(idp.Key, Issuer, null);
-            IdToken = Sign(idp.Key, Issuer, new Dictionary<string, object> { ["nonce"] = Universal });
+            // Keycloak 의 id_token 처럼 typ "ID" — id_token 검사는 그 밖의 typ 을 거부한다.
+            IdToken = Sign(idp.Key, Issuer, new Dictionary<string, object> { ["nonce"] = Universal, ["typ"] = "ID" });
         }
 
         public string Prefix { get; }

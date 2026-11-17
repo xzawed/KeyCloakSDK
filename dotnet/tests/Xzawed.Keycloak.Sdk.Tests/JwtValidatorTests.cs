@@ -138,7 +138,8 @@ public class JwtValidatorTests
 
     // The id_token path (ValidateForAudienceAsync) holds aud to the audience it is given and nothing else: an audience
     // policy on the base parameters — a delegate, or the check switched off — must not carry over through Clone().
-    // IdentityModel consults AudienceValidator INSTEAD of ValidAudiences when one is set (Grok leg; measured here).
+    // IdentityModel consults AudienceValidator INSTEAD of ValidAudiences when one is set (Grok leg; measured here). Both
+    // tokens are typed "ID", as an id_token is — the path refuses any other typ — so the refusal is the audience's.
     [Theory]
     [InlineData("audience delegate that admits only the access audience")]
     [InlineData("audience check switched off")]
@@ -153,12 +154,15 @@ public class JwtValidatorTests
             tvp.ValidateAudience = false;
         var v = new JwtValidator(tvp);
 
-        var forClient = await v.ValidateForAudienceAsync(Sign(PayloadJson("\"it-client\""), Key), "it-client");
+        var forClient = await v.ValidateForAudienceAsync(Sign(PayloadJson("\"it-client\"", extra: TypedId), Key), "it-client");
         Assert.Contains("it-client", forClient.Audience);
         var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
-            () => v.ValidateForAudienceAsync(Sign(PayloadJson("\"my-api\""), Key), "it-client"));
+            () => v.ValidateForAudienceAsync(Sign(PayloadJson("\"my-api\"", extra: TypedId), Key), "it-client"));
         Assert.IsType<SecurityTokenInvalidAudienceException>(refused.InnerException);
     }
+
+    // The kind an id_token carries (Keycloak's TokenUtil.TOKEN_TYPE_ID) — the id_token path refuses any other typ.
+    private const string TypedId = ",\"typ\":\"ID\"";
 
     // ── Token type — the access path only. Keycloak writes the kind of token into a payload `typ` claim
     // (org.keycloak.util.TokenUtil): "Bearer" or "DPoP" on an access token, "ID" on an id_token, "Refresh", "Offline",
@@ -212,9 +216,10 @@ public class JwtValidatorTests
         Assert.Equal("frontend", vt.Claims["azp"]);
     }
 
-    // ── The id_token path (ValidateForAudienceAsync, the code exchange's): no token-type check — an id_token is typed
-    // "ID" — and, after every other check, the authorized party (OIDC Core §3.1.3.7 steps 4–5): several audiences need an
-    // azp, and an azp must be the client id. ──
+    // ── The id_token path (ValidateForAudienceAsync — AuthClient.ValidateIdTokenAsync and the code exchange): not the
+    // access path's token-type deny-list — an id_token is typed "ID" — but, after every other check, the authorized party
+    // (OIDC Core §3.1.3.7 steps 4–5: several audiences need an azp, and an azp must be the client id) and then the kind,
+    // an allow-list: typ must be exactly "ID" (AuthClientTests.ValidateIdTokenAsync_*). The tokens below are typed "ID". ──
 
     [Fact]
     public async Task Id_token_path_accepts_a_token_typed_ID()
@@ -235,7 +240,7 @@ public class JwtValidatorTests
     public async Task Id_token_path_accepts_the_client_as_authorized_party(string aud, string azp)
     {
         var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
-        var vt = await v.ValidateForAudienceAsync(Sign(PayloadJson(aud, extra: azp), Key), "it-client");
+        var vt = await v.ValidateForAudienceAsync(Sign(PayloadJson(aud, extra: TypedId + azp), Key), "it-client");
         Assert.Contains("it-client", vt.Audience);
     }
 
@@ -249,7 +254,7 @@ public class JwtValidatorTests
     {
         var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
         var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
-            () => v.ValidateForAudienceAsync(Sign(PayloadJson(aud, extra: azp), Key), "it-client"));
+            () => v.ValidateForAudienceAsync(Sign(PayloadJson(aud, extra: TypedId + azp), Key), "it-client"));
         Assert.Equal(reason, refused.Message);
         Assert.Null(refused.InnerException);
     }

@@ -143,11 +143,17 @@ public sealed class JwtValidator
         => ValidateCoreAsync(token, _tvp, RequireAccessToken, ct);
 
     /// <summary>Validates with every check of <see cref="ValidateAsync"/> except the audience, which must contain
-    /// <paramref name="audience"/> instead of the configured one. The id_token path: its <c>aud</c> MUST contain the
-    /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to. The token type is not checked
-    /// (an id_token is typed <c>ID</c>); the authorized party is — see <see cref="RequireAuthorizedParty"/>.</summary>
+    /// <paramref name="audience"/> instead of the configured one, and the token type. The id_token path — its public entry is
+    /// <c>AuthClient.ValidateIdTokenAsync</c>, which the code exchange calls too: an id_token's <c>aud</c> MUST contain the
+    /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to. In place of the access path's
+    /// token-type deny-list it checks the authorized party (<see cref="RequireAuthorizedParty"/>) and then the kind: the
+    /// payload <c>typ</c> must be exactly <c>ID</c> (<see cref="RequireIdToken"/>).</summary>
     internal Task<ValidatedToken> ValidateForAudienceAsync(string token, string audience, CancellationToken ct = default)
-        => ValidateCoreAsync(token, ParametersForAudience(audience), jwt => RequireAuthorizedParty(jwt, audience), ct);
+        => ValidateCoreAsync(token, ParametersForAudience(audience), jwt =>
+        {
+            RequireAuthorizedParty(jwt, audience);
+            RequireIdToken(jwt);
+        }, ct);
 
     /// <summary>The access path's last check: the payload <c>typ</c>, when it is a string, must not be one of
     /// <see cref="NotAccessTokenTypes"/> (an exact, case-sensitive match). The value is quoted: it is one of those five.</summary>
@@ -177,6 +183,20 @@ public sealed class JwtValidator
         }
     }
 
+    /// <summary>The id_token path's last check, after <see cref="RequireAuthorizedParty"/> — an allow-list: the payload
+    /// <c>typ</c> must be exactly the string <c>ID</c> (ordinal). Keycloak types every id_token so; an access token
+    /// (<c>Bearer</c> — <c>bearer</c> under a client option) can name the client in both <c>aud</c> and <c>azp</c> and pass
+    /// every other check here, which a deny-list of <c>Bearer</c> would miss in lower case. Absent, not a JSON string, or any
+    /// other string is refused. The message is constant: the <c>typ</c> is the token's choice and is not echoed (nor is
+    /// <c>azp</c>).</summary>
+    private static void RequireIdToken(JsonWebToken jwt)
+    {
+        // The payload claim — JsonWebToken.Typ is the JOSE header's. Only a JSON string can match: a number, an array (even
+        // ["ID"]), an object or JSON null cannot.
+        if (!(jwt.TryGetPayloadValue<object>("typ", out var typ) && typ is string kind && string.Equals(kind, "ID", StringComparison.Ordinal)))
+            throw new KeycloakTokenValidationException("not an id_token (typ is not \"ID\")");
+    }
+
     /// <summary>A copy of the parameters that differs only in the audience.</summary>
     /// <remarks>⚠️ <c>Clone()</c> keeps the key source by reference, and that is what keeps ONE key store: the copy
     /// holds the same <c>ConfigurationManager</c> (JWKS cache and its lifetime, 30s refresh gate, cold-cache backoff) and
@@ -198,8 +218,8 @@ public sealed class JwtValidator
 
     /// <param name="token">The compact JWT.</param>
     /// <param name="tvp">The parameters of the path — access or id_token.</param>
-    /// <param name="lastCheck">The path's own check, run once every shared one has passed (<see cref="RequireAccessToken"/>
-    /// or <see cref="RequireAuthorizedParty"/>).</param>
+    /// <param name="lastCheck">The path's own checks, run once every shared one has passed (<see cref="RequireAccessToken"/>,
+    /// or <see cref="RequireAuthorizedParty"/> then <see cref="RequireIdToken"/>).</param>
     /// <param name="ct">See <see cref="ValidateAsync"/>.</param>
     private static async Task<ValidatedToken> ValidateCoreAsync(
         string token, TokenValidationParameters tvp, Action<JsonWebToken> lastCheck, CancellationToken ct)
