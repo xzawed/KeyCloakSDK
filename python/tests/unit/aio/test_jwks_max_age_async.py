@@ -57,7 +57,9 @@ def _client(server: Any, clock: _FakeClock) -> tuple[AsyncAuthClient, str]:
 
 
 def _token(key: RSAKey, issuer: str) -> str:
+    """Keycloak 의 액세스 토큰 모양(typ `Bearer` — access 검증은 Bearer · DPoP 만 받는다)."""
     claims = {"iss": issuer, "aud": "app", "sub": key.kid, "exp": int(time.time()) + 600}
+    claims["typ"] = "Bearer"
     return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
 
 

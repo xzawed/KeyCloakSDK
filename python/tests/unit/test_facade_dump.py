@@ -241,8 +241,9 @@ def _sign_jwts(issuer: str) -> tuple[bytes, _Jwts]:
     rotated = RSAKey.generate_key(2048, {"kid": "k-rotated", "use": "sig", "alg": "RS256"})
     now = int(time.time())
 
+    # Keycloak 의 액세스 토큰 모양(typ `Bearer` — access 검증은 Bearer · DPoP 만 받는다).
     def claims(iss: str) -> dict[str, Any]:
-        return {"iss": iss, "sub": "u1", "aud": "c", "iat": now, "exp": now + 60}
+        return {"iss": iss, "sub": "u1", "aud": "c", "iat": now, "exp": now + 60, "typ": "Bearer"}
 
     jwks = json.dumps(KeySet([served]).as_dict(private=False)).encode()
     return jwks, _Jwts(

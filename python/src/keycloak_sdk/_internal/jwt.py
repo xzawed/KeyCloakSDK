@@ -3,8 +3,8 @@
 joserfc의 `jwt.decode(..., algorithms=[...])`는 서명·알고리즘 핀닝을 수행한다
 (`none`/미서명/미허용 알고리즘 토큰을 거부). 그러나 exp/nbf/iss/aud 클레임 검증은
 호출자 책임이므로, 이 모듈이 issuer 정확일치·audience 포함검사·exp/nbf(+클록 스큐)를
-수동으로 강제한다. 그 뒤에 토큰 종류별 검사(access 의 typ 거부 목록 · id_token 의 typ 허용
-목록과 azp)가 붙는다.
+수동으로 강제한다. 그 뒤에 토큰 종류별 검사(access 의 typ 허용 목록 Bearer · DPoP · id_token 의
+typ 허용 목록 ID 와 azp)가 붙는다.
 """
 
 from __future__ import annotations
@@ -27,12 +27,17 @@ from ..tokens import ValidatedToken
 #: Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
 JWT_MAX_BYTES = 256_000
 
-#: Keycloak 이 access 토큰이 **아닌** 토큰에 싣는 `typ` 클레임 값 — `org.keycloak.util.TokenUtil`
-#: (keycloak-client-common-synced 26.0.12)의 상수 일곱 중 access 토큰의 둘(Bearer · DPoP)을 뺀 다섯.
-#: 대소문자까지 정확 일치로만 본다.
+#: access 토큰의 `typ` — `org.keycloak.util.TokenUtil`(keycloak-client-common-synced 26.0.12)의
+#: `TOKEN_TYPE_BEARER` · `TOKEN_TYPE_DPOP` 를 ASCII 소문자로 접은 값. access 경로는 이 둘만 받는다
+#: (허용 목록 — Keycloak 자신의 `TokenVerifier.TokenTypeCheck` 가 `equalsIgnoreCase` 로 견준다).
+_ACCESS_TOKEN_TYPES = frozenset({"bearer", "dpop"})
+
+#: Keycloak 이 access 토큰이 **아닌** 토큰에 싣는 `typ` 클레임 값 — 같은 상수 일곱 중 access 토큰의
+#: 둘(Bearer · DPoP)을 뺀 다섯. 허용 목록 밖이라 거부되고, 대소문자까지 정확히 이 다섯 중 하나일
+#: 때만 거부 문구가 그 값을 말한다.
 _NOT_ACCESS_TOKEN_TYPES = frozenset({"ID", "Refresh", "Offline", "Logout", "Serialized-ID"})
 
-#: id_token 경로가 받는 유일한 `typ` — **허용 목록**이다(access 경로는 거부 목록이다).
+#: id_token 경로가 받는 유일한 `typ` — access 경로처럼 **허용 목록**이다.
 #: Keycloak 26.6.9 는 id_token 을 한 곳
 #: (`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만 만들고 거기서 늘 `ID` 를
 #: 싣는다(실서버 통합 시험도 `ID` 를 쟀다). 그래서 부재 · 문자열이 아닌 값 · 그 밖의 문자열은
@@ -41,7 +46,7 @@ _NOT_ACCESS_TOKEN_TYPES = frozenset({"ID", "Refresh", "Offline", "Logout", "Seri
 _ID_TYP = "ID"
 
 #: 검증하는 토큰의 종류 — 공통 검사(서명 · iss · aud · exp · nbf) 뒤에 붙는 검사가 종류마다 갈린다.
-#: `access` 는 typ 거부 목록을(`_NOT_ACCESS_TOKEN_TYPES`), `id_token` 은 typ 허용 목록
+#: `access` 는 typ 허용 목록(`_ACCESS_TOKEN_TYPES`)을, `id_token` 은 typ 허용 목록
 #: (`_ID_TYP`)과 azp 를(OIDC Core §3.1.3.7 ④⑤) 본다.
 TokenKind = Literal["access", "id_token"]
 
@@ -101,9 +106,11 @@ class JwtValidator:
     - exp: 필수 클레임. `now - clock_skew >= exp`이면 만료로 간주.
     - nbf: 선택 클레임. `now + clock_skew < nbf`이면 아직 유효하지 않음으로 간주.
     - 종류(`kind`)별 검사 — 위 검사가 다 통과한 **뒤**다.
-      - `access`(기본): `typ` 클레임이 Keycloak 의 access 아닌 종류
-        (`_NOT_ACCESS_TOKEN_TYPES` — id_token · refresh · 백채널 로그아웃 토큰 …)인
-        문자열이면 거부한다. 다른 값 · 없음은 지금처럼 통과한다.
+      - `access`(기본): `typ` 클레임이 ASCII 대소문자를 무시하고 `Bearer` · `DPoP` 와 같은
+        문자열일 때만 받는다(허용 목록 — `_ACCESS_TOKEN_TYPES`). 부재 · 문자열이 아닌 값 · 그 밖의
+        문자열은 거부다 — typ 없는 realm 서명 JWT(JARM 인가 응답, aud = client_id)가 통과했다.
+        정확히 Keycloak 의 access 아닌 종류(`_NOT_ACCESS_TOKEN_TYPES`)면 문구가 그 값을 말하고,
+        나머지는 상수 문구다(토큰이 고른 typ 를 싣지 않는다).
       - `id_token`: typ 가 정확히 문자열 `ID` 여야 한다(허용 목록 — `_ID_TYP`, 문구는
         상수라 토큰이 고른 값을 싣지 않는다). 그다음 OIDC Core §3.1.3.7 ④⑤ — aud 가 둘
         이상이면 azp 가 있어야 하고, 있는 azp 는 `audience` 와 같은 문자열이어야 한다. 이
@@ -210,13 +217,19 @@ class JwtValidator:
             self._check_access_type(claims)
 
     def _check_access_type(self, claims: dict[str, Any]) -> None:
-        """(access) Keycloak 의 다른 종류 토큰을 거부한다 — 서명 · iss · aud · exp 만으로는
-        id_token 과 백채널 로그아웃 토큰이 access 검증을 통과했다(aud 가 client_id 라 기대
-        audience 의 기본값과 같다)."""
+        """(access) 허용 목록 — typ 가 ASCII 대소문자를 무시하고 `Bearer` · `DPoP` 와 같은 문자열일
+        때만 받는다. 서명 · iss · aud · exp 만으로는 id_token · 백채널 로그아웃 토큰 · typ 없는 JARM
+        인가 응답이 access 검증을 통과했다(aud 가 client_id 라 기대 audience 의 기본값과 같다)."""
         typ = claims.get("typ")
-        if isinstance(typ, str) and typ in _NOT_ACCESS_TOKEN_TYPES:
-            # typ 는 다섯 상수 중 하나라 그대로 실어도 토큰 내용이 새지 않는다.
-            raise TokenValidationError(f"Token is not an access token (typ {typ})")
+        if isinstance(typ, str):
+            # ASCII 만 접는다 — `isascii()` 뒤의 `lower()` 는 A 부터 Z 까지만 바꾼다.
+            if typ.isascii() and typ.lower() in _ACCESS_TOKEN_TYPES:
+                return
+            if typ in _NOT_ACCESS_TOKEN_TYPES:
+                # typ 는 다섯 상수 중 하나라 그대로 실어도 토큰 내용이 새지 않는다.
+                raise TokenValidationError(f"Token is not an access token (typ {typ})")
+        # 그 밖은 상수 문구 — 토큰이 고른 typ 를 싣지 않는다.
+        raise TokenValidationError("Token is not an access token (typ is not Bearer or DPoP)")
 
     def _check_id_token_type(self, claims: dict[str, Any]) -> None:
         """(id_token) 종류 — typ 가 정확히(대소문자까지) 문자열 `ID` 가 아니면 거부한다."""
