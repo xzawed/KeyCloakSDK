@@ -36,7 +36,12 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
 3. **보내는 순간의 bearer 검사.** REST 세션의 `send` 는 나갈 요청의 헤더 — 세션 기본값과 요청
    헤더를 합친 것 — 에서 `Authorization` 을 이름도 scheme 도 대소문자 없이 찾아(RFC 9110 §5.1 ·
    RFC 7235 §2.1) bearer 규칙대로 둔다(`bearer.py` — 빈 것·맞지 않는 것은 거부, 다듬을 것은
-   다듬어 싣는다). 401 재시도도, 다른 호출자가 그 사이 실은 것도 이 자리를 지난다. 세션 안의
+   다듬어 싣는다). 401 재시도도, 다른 호출자가 그 사이 실은 것도 이 자리를 지난다. 규칙을 지난
+   bearer 의 토큰이 요청 URL 에 — 그대로든 퍼센트 디코딩한 꼴(`unquote_plus`)로든 — 나타나면 그
+   요청도 보내지 않는다(`KeycloakTransportError(IN_URL)` — 등록부
+   `python-raw-upload-certificate-bearer-in-url`): python-keycloak 의 `raw_*` 는 남은 키워드 인자를
+   전부 쿼리로 보내고, `a_upload_certificate` 는 그 자리에 bearer 를 실은 헤더 사전을 넘겨 httpx 가
+   그 글을 URL 에 실었다(7.1.1 실측 — 서버·프록시의 접근 로그에 토큰이 남는다). 세션 안의
    거부는 python-keycloak 의 `raw_*` 가 `KeycloakConnectionError` 로 감싸므로 파사드 경계가 같은
    타입·메시지로 새로 만든다(`admin/_translate.refused_send`) — 탈출구 `raw` 는 감싼 채 받는다
    (§4(b)). 갱신 자리 뒤의 검사(2)는 남긴다 — 연결의 헤더에서 거부되는 것은 `raw` 로도 오늘의
@@ -78,15 +83,16 @@ from __future__ import annotations
 import inspect
 import threading
 import weakref
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from types import FunctionType
 from typing import Any, cast
+from urllib.parse import unquote_plus
 
 import httpx
 import requests
 from keycloak import KeycloakAdmin, KeycloakOpenID
 
-from ..exceptions import KeycloakAuthError, KeycloakConfigError
+from ..exceptions import KeycloakAuthError, KeycloakConfigError, KeycloakTransportError
 from ..tokens import _usable_access_token
 from .admin_body import abounded_send, bounded_send
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
@@ -130,6 +136,8 @@ _GRANTED = "connection.keycloak_openid.connection"
 _SCHEME = "bearer"
 #: RFC 9110 §5.1 — 헤더 이름도 대소문자를 가리지 않는다.
 _AUTHORIZATION = "authorization"
+#: 보내는 순간의 URL 거부 — 나갈 bearer 의 토큰이 요청 URL 에 나타난다(머리 주석 3).
+IN_URL = "admin request refused: the request URL would carry the access token"
 _SUPPORT = (
     "Pin python-keycloak to a supported version (>=7.1,<8) and report this at "
     "https://github.com/xzawed/KeyCloakSDK/issues."
@@ -259,6 +267,21 @@ def _aunsendable(request: httpx.Request) -> bool:
     return False
 
 
+def _in_url(url: object, values: Iterable[object]) -> bool:
+    """나갈 Authorization 값(`values`) 가운데 bearer 의 토큰이 요청 URL 에 나타나는가 — 그대로든
+    퍼센트 디코딩한 꼴(`unquote_plus` — 쿼리의 `+` 는 공백이다)로든(머리 주석 3). 규칙
+    (`_unsendable`·`_aunsendable`)을 지난 뒤에 부른다 — bearer 값의 토큰 자리는 다듬어진, 비어 있지
+    않은 b64token 이다."""
+    shown = str(url)
+    decoded = unquote_plus(shown)
+    for value in values:
+        text = _text(value)
+        parts = None if text is None else _bearer_parts(text)
+        if parts is not None and (parts[1] in shown or parts[1] in decoded):
+            return True
+    return False
+
+
 def _bearer_sent(send: Callable[..., requests.Response]) -> Callable[..., requests.Response]:
     """REST 세션의 `send` — 보내는 순간의 bearer 검사(머리 주석 3). 거부는 헤더 값을 쥐지 않은
     프레임에서 던진다."""
@@ -266,6 +289,8 @@ def _bearer_sent(send: Callable[..., requests.Response]) -> Callable[..., reques
     def sent(request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         if _unsendable(request):
             raise KeycloakAuthError(SENDING)
+        if _in_url(request.url, [request.headers.get("Authorization")]):
+            raise KeycloakTransportError(IN_URL)
         return send(request, **kwargs)
 
     return sent
@@ -279,6 +304,8 @@ def _abearer_sent(
     async def sent(request: httpx.Request, **kwargs: Any) -> httpx.Response:
         if _aunsendable(request):
             raise KeycloakAuthError(SENDING)
+        if _in_url(request.url, request.headers.get_list(_AUTHORIZATION)):
+            raise KeycloakTransportError(IN_URL)
         return await send(request, **kwargs)
 
     return sent
