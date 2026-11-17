@@ -140,8 +140,10 @@ internal class IdTokenAudienceJwksTest {
                     val tokens = auth.exchange()
                     // A3 — 운영 경로의 validate() 는 재정의를 본다(교환이 그 검증기를 바꿔 두지 않았다).
                     assertEquals(listOf(apiAudience), auth.validate(tokens.accessToken).audience)
-                    // 교환이 받은 id_token(aud = client id)은 액세스 검증을 지나지 못한다.
-                    assertFailsWith<TokenValidationException> { auth.validate(assertNotNull(tokens.idToken)) }
+                    // 교환이 받은 id_token(aud = client id)은 액세스 검증을 지나지 못한다 — aud 검사의 거부다(이 토큰엔 typ 이 없다:
+                    // 「not an access token」이 이 자리를 대신 채우지 못하게 메시지까지 본다).
+                    val refused = assertFailsWith<TokenValidationException> { auth.validate(assertNotNull(tokens.idToken)) }
+                    assertEquals("JWT validation failed", refused.message)
                     jwksHits()
                 }
 
