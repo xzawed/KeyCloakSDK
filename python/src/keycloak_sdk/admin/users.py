@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, write_call
+from ._translate import call, encodable, write_call
 
 
 class UsersResource:
@@ -17,6 +17,7 @@ class UsersResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
+        encodable(rep)
         return write_call(lambda: self._admin.create_user(rep))
 
     def get(self, user_id: str) -> dict[str, Any] | None:
@@ -33,6 +34,7 @@ class UsersResource:
         return call(lambda: self._admin.get_users(query))
 
     def update(self, user_id: str, rep: dict[str, Any]) -> None:
+        encodable(rep)
         write_call(lambda: self._admin.update_user(user_id, rep))
 
     def delete(self, user_id: str) -> None:

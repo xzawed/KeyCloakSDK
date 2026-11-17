@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, write_call
+from ._translate import call, encodable, write_call
 
 
 class RolesResource:
@@ -17,6 +17,7 @@ class RolesResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> None:
+        encodable(rep)
         write_call(lambda: self._admin.create_realm_role(rep))
 
     def get(self, name: str) -> dict[str, Any] | None:
@@ -33,6 +34,7 @@ class RolesResource:
 
         Do not merge the path (`name`) and the body (`rep`).
         """
+        encodable(rep)
         write_call(lambda: self._admin.update_realm_role(name, rep))
 
     def delete(self, name: str) -> None:

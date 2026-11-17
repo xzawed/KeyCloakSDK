@@ -12,7 +12,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, write_call
+from ._translate import call, encodable, write_call
 
 
 class ClientsResource:
@@ -22,6 +22,7 @@ class ClientsResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
+        encodable(rep)
         return write_call(lambda: self._admin.create_client(rep))
 
     def get(self, id: str) -> dict[str, Any] | None:
@@ -34,6 +35,7 @@ class ClientsResource:
         return call(lambda: self._admin.get_client_id(client_id))
 
     def update(self, id: str, rep: dict[str, Any]) -> None:
+        encodable(rep)
         write_call(lambda: self._admin.update_client(id, rep))
 
     def delete(self, id: str) -> None:

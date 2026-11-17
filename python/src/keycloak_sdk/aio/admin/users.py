@@ -8,6 +8,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
+from ...admin._translate import encodable
 from ._translate import acall, awrite_call
 
 
@@ -19,6 +20,7 @@ class AsyncUsersResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> str:
+        encodable(rep)
         return await awrite_call(self._admin.a_create_user(rep))
 
     async def get(self, user_id: str) -> dict[str, Any] | None:
@@ -35,6 +37,7 @@ class AsyncUsersResource:
         return await acall(self._admin.a_get_users(query))
 
     async def update(self, user_id: str, rep: dict[str, Any]) -> None:
+        encodable(rep)
         await awrite_call(self._admin.a_update_user(user_id, rep))
 
     async def delete(self, user_id: str) -> None:

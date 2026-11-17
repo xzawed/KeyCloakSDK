@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from keycloak import KeycloakAdmin
 
+from ...admin._translate import encodable
 from ._translate import acall, awrite_call
 
 
@@ -23,6 +24,7 @@ class AsyncGroupsResource:
         # skip_exists=True and the group already exists; we call with the
         # default skip_exists=False, which raises instead — so this always
         # yields the new group's id in practice).
+        encodable(rep)
         return cast(str, await awrite_call(self._admin.a_create_group(rep)))
 
     async def get(self, group_id: str) -> dict[str, Any] | None:
@@ -35,6 +37,7 @@ class AsyncGroupsResource:
 
     async def update(self, group_id: str, rep: dict[str, Any]) -> None:
         """Updates the group, addressed by id (path/body kept separate — rename possible)."""
+        encodable(rep)
         await awrite_call(self._admin.a_update_group(group_id, rep))
 
     async def delete(self, group_id: str) -> None:

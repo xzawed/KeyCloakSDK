@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -30,6 +31,36 @@ from ..exceptions import (
 )
 
 T = TypeVar("T")
+
+#: 보낼 representation 을 JSON 으로 쓸 수 없을 때의 문구 — node 의
+#: `UNENCODABLE_BODY`(`node/src/admin/http.ts`)와 같다.
+UNENCODABLE_BODY = "admin request failed: the request body could not be encoded as JSON"
+
+
+def encodable(rep: object) -> None:
+    """보낼 representation 을 python-keycloak 과 **같은 인코더**로 먼저 써 본다 —
+    쓰기 열 메서드가 모두 `data=json.dumps(payload)`(기본 설정)다. 못 쓰면(set ·
+    bytes · 문자열이 아닌 키 · 순환 · 지나친 중첩, 사용자 정의 컨테이너의 실패까지)
+    토큰 그랜트도 요청도 없이 `KeycloakTransportError(UNENCODABLE_BODY)` 다.
+
+    예전에는 python-keycloak 안에서 난 그 `TypeError` 를 경계가 「쓸 수 없는 응답」
+    으로 분류해, 나가지도 않은 요청을 「Keycloak admin API returned an unusable
+    response (TypeError)」라고 했다(등록부
+    `python-admin-unencodable-body-message-false`). 원본은 `call` 과 같이 `except`
+    **밖에서** 버린다 — 사슬로 닿지 않는다. 쓰기 파사드는 `write_call` 전에, aio 는
+    코루틴을 만들기 전에 이것을 부른다.
+
+    ⚠️ 본문은 두 번 인코딩된다(여기와 python-keycloak). 순회에 부작용이 있는 사용자 정의
+    컨테이너는 그것을 두 번 겪는다(Grok 레그 — 정상 dict · list 에는 부작용이 없다). 넓은
+    `except` 는 일부러다: 사용자 정의 컨테이너의 임의 예외도 SDK 오류로 남긴다."""
+    try:
+        json.dumps(rep)
+    except Exception:
+        unencodable = True
+    else:
+        unencodable = False
+    if unencodable:
+        raise KeycloakTransportError(UNENCODABLE_BODY)
 
 
 def translate(exc: KeycloakError) -> KeycloakAdminError | KeycloakTransportError:
