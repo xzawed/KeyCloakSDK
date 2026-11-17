@@ -213,9 +213,10 @@ final class AuthorizationRedirectUriTest extends TestCase
     private static function utf8(int $cp): string
     {
         return match (true) {
-            $cp < 0x80 => \chr($cp),
-            $cp < 0x800 => \chr(0xC0 | $cp >> 6) . \chr(0x80 | $cp & 0x3F),
-            default => \chr(0xE0 | $cp >> 12) . \chr(0x80 | $cp >> 6 & 0x3F) . \chr(0x80 | $cp & 0x3F),
+            // 앞 바이트의 마스크는 PHP 8.5 의 `chr(int<0, 255>)` 를 위해서다 — BMP 코드 포인트에서는 값이 같다.
+            $cp < 0x80 => \chr($cp & 0x7F),
+            $cp < 0x800 => \chr((0xC0 | $cp >> 6) & 0xFF) . \chr(0x80 | $cp & 0x3F),
+            default => \chr((0xE0 | $cp >> 12) & 0xFF) . \chr(0x80 | $cp >> 6 & 0x3F) . \chr(0x80 | $cp & 0x3F),
         };
     }
 
