@@ -64,10 +64,12 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -75,6 +77,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.CredentialRepresentation;
@@ -103,6 +107,10 @@ import org.keycloak.representations.idm.UserRepresentation;
  * JDK 객체는 공개 API(컬렉션·Map·Optional·Atomic*·Reference·Map.Entry·원인 사슬)로만 건넌다 — {@code ThreadLocal}·
  * {@code CompletableFuture}·JDK 가 만든 람다 속에만 든 SDK 객체와 정적 필드는 걷지 않는다(독립 레그 지목). 그런
  * 자리에만 사는 **새 타입**은 대조에서 「닿지 않음」으로 걸리고, 이미 닿는 타입의 다른 인스턴스만 거기 살 때가 빈틈이다.
+ *
+ * <p>⚠️ SDK 타입이 선언한 비밀 이름 필드({@link #words} · {@link #SECRET_WORDS})가 닿은 인스턴스마다 빈 값이면 실패한다 — 그
+ * 렌더링은 아무것도 증명하지 않는다(등록부 facade-dump-reached-empty-secret-field, 면제 {@link #EMPTY_SECRET_EXEMPT}). 남은 빈틈
+ * (구현하지 않는다): 비밀 이름 필드가 빈 값 아닌 자리표시자만 쥐는 것 · 평범한 이름의 필드에 든 비밀 · 인코딩된(base64 등) 비밀.
  */
 class FacadeDumpTest {
   private static final String SECRET = "CANARY-DUMP-CLIENT-SECRET";
@@ -133,6 +141,18 @@ class FacadeDumpTest {
    * 알려진 누출 — {@code "뿌리|카나리아"} 와 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**(낡은 항목 검사).
    */
   private static final Map<String, String> KNOWN_LEAKS = Map.of();
+
+  /**
+   * 비밀 이름 필드가 빈 값으로만 닿아도 되는 「선언 타입 이름.필드」와 그 이유(등록부 facade-dump-reached-empty-secret-field).
+   * ⚠️ 이유 없는 면제는 넣지 않는다. 더는 「닿았고 빈 값뿐」이 아니면(채워졌거나 · 안 닿거나 · 선언이 없어지면) 낡은 면제로
+   * 실패한다.
+   */
+  private static final Map<String, String> EMPTY_SECRET_EXEMPT = Map.of();
+
+  /** 비밀 낱말 — 낱말 단위로만 맞춘다({@code keycloak} 은 {@code key} 가 아니다). 아홉 언어가 같은 집합이다. */
+  static final Set<String> SECRET_WORDS = Set.of("secret", "password", "passwd", "passphrase", "token", "credential",
+      "verifier", "private", "key", "bearer");
+  private static final Pattern BACKING_FIELD = Pattern.compile("<(.+)>k__BackingField");
 
   @Test
   void reachableObjectsDoNotRenderSecrets() throws Exception {
@@ -177,14 +197,83 @@ class FacadeDumpTest {
       for (String name : EXEMPT.keySet()) {
         if (!declared.contains(name)) problems.add(name + ": 면제 표에 있지만 선언이 없다 — 낡은 면제다");
       }
+      // 비밀 이름 필드가 닿은 인스턴스마다 빈 값이면 그 렌더링은 아무것도 증명하지 않는다(등록부
+      // facade-dump-reached-empty-secret-field) — 같은 실패 메시지에 싣는다.
+      problems.addAll(emptySecretFields(w.ownFields));
       System.out.printf("[FacadeDumpTest] roots=%d walked=%d rendered=%d reached=%d/%d declared (stateless %d,"
-              + " exempt %d, known leaks %d)%n", roots.size(), w.seen.size(), w.rendered,
-          declared.stream().filter(w.reached::contains).count(), declared.size(), stateless, EXEMPT.size(),
-          KNOWN_LEAKS.size());
+              + " exempt %d, known leaks %d) secret-named fields=%d (empty-only exempt %d)%n", roots.size(),
+          w.seen.size(), w.rendered, declared.stream().filter(w.reached::contains).count(), declared.size(), stateless,
+          EXEMPT.size(), KNOWN_LEAKS.size(),
+          w.ownFields.keySet().stream().filter(k -> secretNamed(k.substring(k.lastIndexOf('.') + 1))).count(),
+          EMPTY_SECRET_EXEMPT.size());
       assertTrue(problems.isEmpty(), () -> String.join("\n", problems));
     } finally {
       for (AutoCloseable c : closers) c.close();
     }
+  }
+
+  /** 비밀 이름 판정의 경계 — 낱말 단위다({@code keycloak} 은 {@code key} 가 아니다). */
+  @Test
+  void secretNameRule_matchesWholeWordsOnly() {
+    assertEquals(List.of("id", "token"), words("IDToken"));
+    assertEquals(List.of("client", "secret"), words("<ClientSecret>k__BackingField"));
+    assertEquals(List.of("refresh", "token"), words("refreshToken$delegate"));
+    for (String yes : List.of("clientSecret", "accessToken", "IDToken", "password", "passwd", "passphrase", "credentials",
+        "codeVerifier", "privateKey", "keys", "bearer", "api_secret", "x-token", "a.token", "@token", "#token", "SECRETS")) {
+      assertTrue(secretNamed(yes), yes);
+    }
+    for (String no : List.of("keycloak", "keycloakUrl", "monkey", "tokenizer", "secretary", "keystore", "scope",
+        "expiresAt", "this$0")) {
+      assertFalse(secretNamed(no), no);
+    }
+  }
+
+  /**
+   * 필드 이름 → 낱말: camel·Pascal 경계(대문자 연속은 다음 대문자 낱말 앞에서 끝난다 — {@code IDToken} → id · token) ·
+   * {@code _ - $ .} · 앞의 {@code @}·{@code #}. .NET {@code <X>k__BackingField} → X · Kotlin {@code x$delegate} → x. 낱말마다
+   * 소문자로 바꾸고 끝의 s 하나를 뗀다.
+   */
+  static List<String> words(String field) {
+    String n = field;
+    Matcher backing = BACKING_FIELD.matcher(n);
+    if (backing.matches()) n = backing.group(1);
+    if (n.endsWith("$delegate")) n = n.substring(0, n.length() - "$delegate".length());
+    if (n.startsWith("@") || n.startsWith("#")) n = n.substring(1);
+    List<String> out = new ArrayList<>();
+    for (String part : n.split("[_\\-$.]+")) {
+      for (String w : part.split("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")) {
+        if (w.isEmpty()) continue;
+        String lower = w.toLowerCase(Locale.ROOT);
+        out.add(lower.endsWith("s") ? lower.substring(0, lower.length() - 1) : lower);
+      }
+    }
+    return out;
+  }
+
+  static boolean secretNamed(String field) {
+    return words(field).stream().anyMatch(SECRET_WORDS::contains);
+  }
+
+  /**
+   * 비밀 이름 필드(「선언 타입 이름.필드」 → 하나라도 빈 값이 아니었는가)마다 — 닿은 인스턴스 전부가 빈 값이면 실패, 면제는
+   * {@link #EMPTY_SECRET_EXEMPT} 에 이유와 함께. 면제가 더는 「닿았고 빈 값뿐」이 아니면 낡은 것으로 실패한다.
+   */
+  static List<String> emptySecretFields(Map<String, Boolean> fields) {
+    List<String> out = new ArrayList<>();
+    fields.forEach((key, anyNonEmpty) -> {
+      if (anyNonEmpty || EMPTY_SECRET_EXEMPT.containsKey(key) || !secretNamed(key.substring(key.lastIndexOf('.') + 1))) {
+        return;
+      }
+      out.add(key + ": secret-named but every reached instance holds an empty value — fill it from a root with a canary,"
+          + " or exempt it with a reason");
+    });
+    EMPTY_SECRET_EXEMPT.forEach((key, reason) -> {
+      if (!Boolean.FALSE.equals(fields.get(key))) {
+        out.add(key + ": 면제 표에 있지만 더는 「닿았고 빈 값뿐」이 아니다(채워졌거나 · 안 닿거나 · 선언이 없다) — 낡은 면제다("
+            + reason + ")");
+      }
+    });
+    return out;
   }
 
   /**
@@ -537,6 +626,13 @@ class FacadeDumpTest {
     final List<String> leaks = new ArrayList<>();
     final List<String> problems = new ArrayList<>();
     final Set<String> knownSeen = new TreeSet<>();
+    /**
+     * SDK 타입이 선언한 (원시값 아닌) 필드마다 — 「선언 타입 이름.필드」 → 닿은 인스턴스 가운데 하나라도 빈 값이 아니었는가.
+     * 비밀 이름 필드가 빈 값으로만 닿았는지를 {@link FacadeDumpTest#emptySecretFields} 가 가른다(등록부
+     * facade-dump-reached-empty-secret-field).
+     * 기록만 한다 — 걷기 자체와 적대 경로 행렬의 결과는 바뀌지 않는다.
+     */
+    final Map<String, Boolean> ownFields = new TreeMap<>();
     int rendered;
     private final Map<String, String> canaries;
     private final Set<Path> sdk;
@@ -645,12 +741,27 @@ class FacadeDumpTest {
             continue;
           }
           try {
-            push(f.get(v), root, path + "." + f.getName());
+            Object x = f.get(v);
+            if (ownK) ownFields.merge(k.getName() + "." + f.getName(), !empty(x), Boolean::logicalOr);
+            push(x, root, path + "." + f.getName());
           } catch (IllegalAccessException e) {
             if (ownK) problems.add(path + "." + f.getName() + ": " + e);
           }
         }
       }
+    }
+
+    /**
+     * 빈 값 — null · 길이 0 문자열 · 길이 0 배열({@code char[]}·{@code byte[]} 포함) · 빈 컬렉션 · 빈 Map. 그 밖의 null 아닌 값
+     * (참·거짓 · 수 · 열거값 · 객체)은 비지 않았다.
+     */
+    static boolean empty(Object x) {
+      if (x == null) return true;
+      if (x instanceof CharSequence s) return s.length() == 0;
+      if (x.getClass().isArray()) return java.lang.reflect.Array.getLength(x) == 0;
+      if (x instanceof Collection<?> c) return c.isEmpty();
+      if (x instanceof Map<?, ?> m) return m.isEmpty();
+      return false;
     }
 
     private void render(Object v, String root, String path, Class<?> c) {
