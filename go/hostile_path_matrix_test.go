@@ -37,7 +37,10 @@ import (
 //   - 선언 집합: facade_dump_test.go 의 뿌리(dumpRoots)·걷기(dumpWalker)가 닿는 이 패키지 타입마다
 //     공개 메서드 전부(값·포인터 메서드 집합의 합 — 값 리시버 메서드는 둘 다에 있으니 한 번만 센다).
 //   - 호출: 메서드마다 **새** 가짜 IdP 와 **새** 클라이언트를 만들어 리플렉션으로 부른다(캐시가 옆 행으로
-//     새지 않게). 인자는 타입만 보고 합성한다.
+//     새지 않게). 인자는 타입만 보고 합성한다 — 하나만 빼고: **URL 이름(…URI·…URL)의 string 파라미터는 절대
+//     URL(hpURLArg)이다**(node 행렬과 같은 규칙). BuildAuthorizationRequest 는 redirectURI 를 RFC 6749 §3.1.2 로
+//     먼저 검사해(redirect_uri.go) 보편 인자(스킴 없는 JWS)를 요청 없이 거부하므로, 이 규칙이 없으면 UNDETERMINED
+//     로 빠진다. 다른 이름의 URL 파라미터를 받아 오류로 끝나는 새 메서드는 규칙 밖이라 여전히 UNDETERMINED 로 운다.
 //   - 분류: 그 호출이 IdP 에 실제로 보낸 요청으로 가른다(hpClassify).
 //
 // 단언:
@@ -285,7 +288,8 @@ func hpWalk(t *testing.T, roots map[string]any) map[string]reflect.Value {
 type hpMethod struct {
 	typ     reflect.Type // 이름 있는 기저 타입(포인터 아님)
 	name    string
-	byValue bool // 값 리시버 — 값·포인터 메서드 집합 둘 다에 있다
+	byValue bool         // 값 리시버 — 값·포인터 메서드 집합 둘 다에 있다
+	urls    map[int]bool // URL 이름의 파라미터 위치(hpURLParams) — string 이면 보편 인자 대신 hpURLArg 를 받는다
 }
 
 func (m hpMethod) label() string {
@@ -303,6 +307,7 @@ func hpDeclared(t *testing.T) []hpMethod {
 	for i, r := range roots {
 		byName[fmt.Sprintf("%02d-%s", i, r.name)] = r.v
 	}
+	urls := hpURLParams(t)
 	var out []hpMethod
 	for _, v := range hpWalk(t, byName) {
 		typ := v.Type()
@@ -313,7 +318,12 @@ func hpDeclared(t *testing.T) []hpMethod {
 		for i := 0; i < pt.NumMethod(); i++ {
 			name := pt.Method(i).Name
 			_, byValue := typ.MethodByName(name)
-			out = append(out, hpMethod{typ: typ, name: name, byValue: byValue})
+			m := hpMethod{typ: typ, name: name, byValue: byValue}
+			m.urls = map[int]bool{}
+			for _, p := range urls[m.label()] {
+				m.urls[p] = true
+			}
+			out = append(out, m)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -406,16 +416,23 @@ func hpArg(t reflect.Type, universal string) reflect.Value {
 	return reflect.Zero(t) // struct·slice·map·interface·func·chan
 }
 
-func hpCall(recv reflect.Value, name, universal string) (panicked any, callErr error) {
-	return hpInvoke(recv, name, hpArgs(universal, nil))
+func hpCall(recv reflect.Value, m hpMethod, universal string) (panicked any, callErr error) {
+	return hpInvoke(recv, m.name, hpArgs(universal, nil, m.urls))
 }
 
+// hpURLArg 는 URL 이름의 string 파라미터(hpURLParams)에 넣는 값이다 — 절대 URL 이고 RFC 6749 §3.1.2 · RFC 3986 §2 를
+// 지킨다(redirect_uri.go 의 검사를 통과한다).
+const hpURLArg = "https://app.example/cb"
+
 // hpArgs 는 hpArg 와 같되 blank 에 든 위치(0 부터, 수신자 제외)는 영값이다 — W3a 가 nonce 파라미터를 비워
-// id_token 검증을 끄는 데 쓴다(아래 hpTokenVariants 의 공허 함정).
-func hpArgs(universal string, blank map[int]bool) func(int, reflect.Type) reflect.Value {
+// id_token 검증을 끄는 데 쓴다(아래 hpTokenVariants 의 공허 함정). urls 에 든 string 위치는 hpURLArg 다.
+func hpArgs(universal string, blank, urls map[int]bool) func(int, reflect.Type) reflect.Value {
 	return func(i int, t reflect.Type) reflect.Value {
-		if blank[i] {
+		switch {
+		case blank[i]:
 			return reflect.Zero(t)
+		case urls[i] && t.Kind() == reflect.String:
+			return reflect.ValueOf(hpURLArg).Convert(t)
 		}
 		return hpArg(t, universal)
 	}
@@ -552,7 +569,7 @@ func hpRun(t *testing.T, key *rsa.PrivateKey, m hpMethod, builderOf map[string]i
 	idp := newHPIdP(t, key)
 	recv, src := hpReceiver(t, idp, m, builderOf)
 	idp.reset() // 뿌리를 만들며 나간 요청(admin 로그인 등)은 이 메서드의 몫이 아니다
-	panicked, callErr := hpCall(recv, m.name, idp.universal)
+	panicked, callErr := hpCall(recv, m, idp.universal)
 	reqs := idp.snapshot()
 	row := hpRow{label: m.label(), class: hpClassify(reqs, panicked != nil || callErr != nil),
 		reqs: hpFormat(reqs, idp.universal), recv: src, outcome: "ok", sent: reqs}
@@ -897,9 +914,25 @@ func hpCallsIn(fd *ast.FuncDecl) map[string]bool {
 // Grok 레그가 지목했고 실측이 맞다고 했다(그런 메서드를 심으니 SILENT). 오늘은 비어 있다.
 var hpNonceDropExempt = map[string]string{}
 
-// hpNonceParams 는 소스(비테스트)의 공개 메서드마다 이름에 "nonce" 가 든(대소문자 무시) 파라미터의 위치다
-// (0 부터, 수신자 제외 — 리플렉션으로 얻은 바운드 메서드의 In(i) 와 같은 번호). **이름 목록이 아니라 서명에서** 얻는다.
+// hpNonceParams 는 소스(비테스트)의 공개 메서드마다 이름에 "nonce" 가 든(대소문자 무시) 파라미터의 위치다.
 func hpNonceParams(t *testing.T) map[string][]int {
+	t.Helper()
+	return hpParamsNamed(t, func(name string) bool { return strings.Contains(strings.ToLower(name), "nonce") })
+}
+
+// hpURLParams 는 소스(비테스트)의 공개 메서드마다 이름이 URI·URL 로 끝나는(대소문자 무시) 파라미터의 위치다 — 그 자리의
+// string 은 보편 인자 대신 hpURLArg 를 받는다(머리 주석의 「호출」).
+func hpURLParams(t *testing.T) map[string][]int {
+	t.Helper()
+	return hpParamsNamed(t, func(name string) bool {
+		n := strings.ToLower(name)
+		return strings.HasSuffix(n, "uri") || strings.HasSuffix(n, "url")
+	})
+}
+
+// hpParamsNamed 는 소스(비테스트)의 공개 메서드마다 이름이 match 를 만족하는 파라미터의 위치다(0 부터, 수신자 제외 —
+// 리플렉션으로 얻은 바운드 메서드의 In(i) 와 같은 번호). **이름 목록이 아니라 서명에서** 얻는다.
+func hpParamsNamed(t *testing.T, match func(name string) bool) map[string][]int {
 	t.Helper()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -923,7 +956,7 @@ func hpNonceParams(t *testing.T) map[string][]int {
 					continue
 				}
 				for _, n := range field.Names {
-					if strings.Contains(strings.ToLower(n.Name), "nonce") {
+					if match(n.Name) {
 						out[label] = append(out[label], i)
 					}
 					i++
@@ -1071,7 +1104,7 @@ func hpCell0(t *testing.T, key *rsa.PrivateKey, m hpMethod, builderOf map[string
 	recv, _ := hpReceiver(t, idp, m, builderOf)
 	idp.reset()
 	idp.setTokenResp(resp(idp))
-	panicked, err = hpInvoke(recv, m.name, hpArgs(idp.universal, blank))
+	panicked, err = hpInvoke(recv, m.name, hpArgs(idp.universal, blank, m.urls))
 	return idp.snapshot(), panicked, err
 }
 
@@ -1283,7 +1316,7 @@ func hpRunColdJWKSC(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMeth
 			c.why = append(c.why, "게이트 시계를 얼릴 *Validator 에 닿지 못했다 — 실시간이면 이 칸의 요청 수가 정지에 갈린다")
 		}
 		for i := 0; i < hpColdK; i++ {
-			panicked, err := hpInvoke(recv, m.name, hpArgs(idp.universal, nil))
+			panicked, err := hpInvoke(recv, m.name, hpArgs(idp.universal, nil, m.urls))
 			switch {
 			case panicked != nil:
 				c.why = append(c.why, fmt.Sprintf("%d번째 호출이 패닉: %v", i+1, panicked))

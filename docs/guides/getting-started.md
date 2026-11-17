@@ -280,7 +280,7 @@ Go **`1.26`** is required by both the tree and every release since `go/v1.1.0` (
 
 ⚠️ **`go/v1.0.0` needed only Go 1.25.** A Go consumer resolves the *tag's* `go.mod`, so a module still on 1.25 stays on `v1.0.0`. The raise was not our choice: `golang.org/x/oauth2` v0.37 and `golang.org/x/sync` v0.23 both declare `go 1.26.0`, and taking either raises our directive (reproduce: `cd go && go get golang.org/x/oauth2@v0.37.0 && grep '^go ' go.mod`). Go's own support window already excludes 1.25 — current stable is 1.27.x — so the new floor is the oldest *supported* Go.
 
-The idiom is sync + `context.Context` (every network method takes `ctx` as its first argument, and only `CreateAuthorizationRequest` is synchronous). Docker is needed only for integration tests.
+The idiom is sync + `context.Context` (every network method takes `ctx` as its first argument, and only `BuildAuthorizationRequest` is synchronous). Docker is needed only for integration tests.
 
 ### 2) Local installation (development)
 

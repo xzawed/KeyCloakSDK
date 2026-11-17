@@ -93,6 +93,10 @@ public sealed class HostilePathMatrixTests
             "internal 설정 리트리버 — 위 BoundedDocumentRetriever 를 감싸 실패한 조회를 백오프한다. 주소는 ConfigurationManager 가 쥔 " +
             "디스커버리 URL 이고 합성 문자열(JWS)은 URI 가 아니라 요청 전에 실패한다. 이것이 내는 요청도 전부 그것을 모는 공개 메서드" +
             "(ValidateAsync → JWKS_FETCH)의 행에 이미 잡힌다",
+        ["AuthClient.CreateAuthorizationRequest(String)"] =
+            "합성 문자열(JWS)은 절대 URI 가 아니라 RedirectUri.Require(R1)가 아무것도 만들기 전에 KeycloakConfigException 으로 거부한다 — " +
+            "동기 메서드이고 요청을 내지 않는다. 받는 값에도 요청이 0 인지는 AuthClientRedirectUriTests 가 기록하는 IdP(WireMock) 위에서 " +
+            "값마다 잰다",
         ["TokenEndpointInvoker.SendAsync(HttpRequestMessage, CancellationToken)"] =
             "internal invoker — Duende 가 만든 요청(토큰 · introspection 엔드포인트의 절대 URI)만 보낸다. 합성 요청은 절대 URI 가 없어 " +
             "HttpClient 가 보내기 전에 거부한다. 이것이 내는 요청은 전부 그것을 모는 공개 메서드(세 그랜트 · IntrospectAsync · " +

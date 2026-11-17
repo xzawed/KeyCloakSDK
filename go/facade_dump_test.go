@@ -158,7 +158,10 @@ func dumpRoots(t *testing.T) ([]dumpRoot, []string) {
 	if err != nil {
 		t.Fatalf("client credentials: %v", err)
 	}
-	ar := c.Auth.CreateAuthorizationRequest("https://app/cb")
+	ar, err := c.Auth.BuildAuthorizationRequest("https://app/cb")
+	if err != nil {
+		t.Fatalf("authorization request: %v", err)
+	}
 	// ⚠️ 카나리아가 실제로 흘러 들어갔는가 — 안 흘렀으면 아래 누출 검사는 없는 것을 찾으며 통과한다.
 	if tok, _ := def.tp.Token(ctx); tok != dumpCanaryAccess ||
 		ts.AccessToken != dumpCanaryAccess || ts.RefreshToken != dumpCanaryRefresh || ts.IDToken != dumpCanaryID ||
@@ -218,7 +221,7 @@ func dumpRoots(t *testing.T) ([]dumpRoot, []string) {
 	}
 
 	roots := []dumpRoot{
-		{"New", c}, {"ClientCredentialsToken", ts}, {"CreateAuthorizationRequest", ar},
+		{"New", c}, {"ClientCredentialsToken", ts}, {"BuildAuthorizationRequest", ar},
 		{"Introspect", ir}, {"Validate", vt}, {"NewClientCredentialsTokenProvider", prov},
 		{"NewAdminClient", injected}, {"AuthError", authErr}, {"TokenValidationError", valErr},
 		{"AdminError", adminErr}, {"TransportError", transportErr}, {"ConfigError", cfgErr},

@@ -110,7 +110,14 @@ module HostilePathMatrixSpec
     "OidcEndpoints.from_config" => "엔드포인트 조립 — 네트워크가 없다(oidc_endpoints.rb 머리 주석)",
     "TokenSet.from_response" => "이미 받은 본문의 파서 — Hash 가 아니면 요청 없이 AuthError 다. 그 계약은 입구 " \
                                 "ClientCredentialsTokenProvider#access_token 의 W3a 칸이 잰다(W1 의 tokens_spec 앵커)",
-    "IntrospectionResult.from_response" => "이미 받은 본문의 파서 — 요청을 내지 않는다. 입구는 AuthClient#introspect(OTHER)다"
+    "IntrospectionResult.from_response" => "이미 받은 본문의 파서 — 요청을 내지 않는다. 입구는 AuthClient#introspect(OTHER)다",
+    "AuthClient#create_authorization_request" => "네트워크 없는 인가 URL 조립 — 합성 인자(JWS 문자열)는 절대 URI 가 아니라 " \
+                                                 "계약대로 무엇을 만들기 전에 ConfigError 다(RFC 6749 §3.1.2 · " \
+                                                 "redirect_uri.rb). 거부와 받은 값의 조립은 " \
+                                                 "authorization_redirect_uri_spec 이, 요청 없음은 host_http_config_spec 이 잰다",
+    "RedirectUri.check!" => "redirect_uri 검사 — 받은 값만 본다(요청을 낼 수 없다). 합성 인자(JWS 문자열)는 절대 URI 가 " \
+                            "아니라 계약대로 ConfigError 다. 입구는 AuthClient#create_authorization_request 다 " \
+                            "(authorization_redirect_uri_spec)"
   }.freeze
 
   # W3b 에서 빠져도 되는 CODE_EXCHANGE 행과 그 이유. nonce 파라미터를 **이름**으로 파생하므로 nonce 를 다른 이름으로

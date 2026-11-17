@@ -167,6 +167,17 @@ _UNDETERMINED_EXEMPT: dict[str, str] = {
         "합성 수신자의 issuer·allowed_algs 가 IdP 것이 아니라 거부한다. JWKS 를 치는 "
         "경로는 AuthClient.validate 행(JWKS_FETCH)이다"
     ),
+    "keycloak_sdk.auth.AuthClient.authorization_url": (
+        "네트워크 없는 URL 조립(auth.py) — 합성 인자(서명한 JWS)는 절대 URI 가 아니라 "
+        "계약대로 무엇을 만들기 전에 KeycloakConfigError 다(RFC 6749 §3.1.2, "
+        "_internal/redirect_uri.py). 거부와 받은 값의 조립은 "
+        "test_authorization_redirect_uri.py 가, 요청 없음은 test_auth.py 가 잰다"
+    ),
+    "keycloak_sdk.aio.auth.AsyncAuthClient.authorization_url": (
+        "sync 와 같은 이유 — 같은 검사(_internal/redirect_uri.py)가 합성 인자를 거부한다. "
+        "거부와 조립은 test_authorization_redirect_uri.py 가, 요청 없음은 "
+        "aio/test_auth.py 가 잰다"
+    ),
 }
 
 #: W3b 에서 빠져도 되는 CODE_EXCHANGE 행과 그 이유. **이유 없는 면제는 넣지 않는다.**

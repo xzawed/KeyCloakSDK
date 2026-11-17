@@ -67,10 +67,12 @@ public class AuthClient internal constructor(
      * Builds the start URL of a PKCE (S256) authorization-code flow (non-suspend, no network). Computing the S256
      * code_challenge is delegated to Nimbus `AuthenticationRequest.Builder.codeChallenge(CodeVerifier, S256)`
      * (isomorphic with Java `AuthClient` — no need to compute SHA-256 directly). When `config.scopes` is empty, it is
-     * replaced with `openid`, the same as Java.
+     * replaced with `openid`, the same as Java. A [redirectUri] that is not an absolute URI (RFC 6749 §3.1.2) is refused
+     * with [KeycloakConfigException] before anything is built.
      */
     public fun createAuthorizationRequest(redirectUri: String): AuthorizationRequest {
         val redirect = redirectUri(redirectUri)
+        requireAbsoluteRedirectUri(redirect) // 상대 참조는 Nimbus build() 가 통과시킨다 — 검사만 한다(redirectUri.kt)
         val codeVerifier = CodeVerifier()
         val state = State()
         val nonce = Nonce()
