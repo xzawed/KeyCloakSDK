@@ -91,11 +91,11 @@ final class AuthClient
      * isomorphic with the Node/Go/C# SDKs).
      *
      * When `$expectedNonce` is given (the nonce createAuthorizationRequest() returned), the response's id_token is
-     * validated with JwtValidator through signature · iss · aud · exp · azp, and then its nonce claim is compared — OIDC
-     * nonce replay protection. The id_token's aud and azp are checked against `clientId` (OIDC Core §3.1.3.7) —
-     * `expectedAudience` applies only to validate()'s access token. A mismatch, an absence and a validation failure are all rejected
-     * (fail-closed). With null, id_token validation is skipped (a pattern common to eight languages — it is not made
-     * mandatory).
+     * checked by validateIdToken() — signature · iss · an aud containing `clientId` · exp · typ "ID" · azp — and then its
+     * nonce claim is compared — OIDC nonce replay protection. `expectedAudience` applies only to validate()'s access token.
+     * A mismatch, an absence and a validation failure are all rejected (fail-closed); a validation failure is the
+     * `invalid id_token` KeycloakAuthError. With null, id_token validation is skipped (a pattern common to eight languages —
+     * it is not made mandatory).
      */
     public function exchangeCode(
         #[\SensitiveParameter] string $code,
@@ -119,9 +119,8 @@ final class AuthClient
     }
 
     /**
-     * id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp·azp까지 검증한다.
-     * aud·azp 는 토큰을 요청한 이 클라이언트의 id 다 — 액세스 토큰용 `expectedAudience` 가 아니다.
-     * 거부는 자매 언어와 같이 Auth 계급(KeycloakAuthError)이다 — TokenValidationError는
+     * id_token의 nonce 클레임을 대조하기 전에 공개 validateIdToken() 으로 검증한다 — id_token 검사는 하나라서 교환과
+     * 소비자의 직접 호출이 갈라질 수 없다. 거부는 자매 언어와 같이 Auth 계급(KeycloakAuthError)이다 — TokenValidationError는
      * validator가 던지고 여기서 감싼다(Ruby AuthError 동형).
      */
     private function requireValidNonce(#[\SensitiveParameter] ?string $idToken, string $expectedNonce): void
@@ -130,7 +129,7 @@ final class AuthClient
             throw new KeycloakAuthError('authorization code exchange failed: missing id_token for nonce validation');
         }
         try {
-            $validated = $this->validator->validateIdToken($idToken, $this->config->clientId);
+            $validated = $this->validateIdToken($idToken);
         } catch (TokenValidationError $e) {
             throw new KeycloakAuthError('authorization code exchange failed: invalid id_token: ' . $e->getMessage(), previous: $e);
         }
@@ -160,9 +159,30 @@ final class AuthClient
         return $this->toTokenSet($this->getAccessToken('refresh_token', ['refresh_token' => $refreshToken]));
     }
 
+    /**
+     * Validates an access token (JwtValidator::validate()). A Keycloak token of another kind — an id_token included — is
+     * refused; an id_token is validateIdToken()'s.
+     *
+     * @throws TokenValidationError on a validation failure
+     */
     public function validate(#[\SensitiveParameter] string $accessToken): ValidatedToken
     {
         return $this->validator->validate($accessToken);
+    }
+
+    /**
+     * Validates an id_token exactly as exchangeCode() does before it compares the nonce: the signature against the key
+     * store validate() uses (one JWKS cache, one set of refetch gates), the algorithm pin, the length cap, an exact iss,
+     * an aud that contains this client's `clientId` — whatever `expectedAudience` says, which names the access-token
+     * audience — exp with the clock skew, a payload `typ` that is exactly "ID" (what Keycloak puts on every id_token),
+     * and `azp` per OIDC Core §3.1.3.7 steps 4–5: required when aud has more than one value, and equal to `clientId`
+     * when present. It takes no nonce — comparing one is exchangeCode()'s.
+     *
+     * @throws TokenValidationError on a validation failure, as validate() does
+     */
+    public function validateIdToken(#[\SensitiveParameter] string $idToken): ValidatedToken
+    {
+        return $this->validator->validateIdToken($idToken, $this->config->clientId);
     }
 
     public function introspect(#[\SensitiveParameter] string $token): IntrospectionResult

@@ -4,20 +4,13 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Tests\Integration;
 
-use GuzzleHttp\Client as GuzzleClient;
-use GuzzleHttp\Psr7\HttpFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Xzawed\Keycloak\Exception\KeycloakAuthError;
 use Xzawed\Keycloak\Exception\TokenValidationError;
-use Xzawed\Keycloak\Http\HttpOptions;
-use Xzawed\Keycloak\Jwks\JwksStore;
-use Xzawed\Keycloak\JwtValidator;
 use Xzawed\Keycloak\KeycloakClient;
 use Xzawed\Keycloak\KeycloakConfig;
-use Xzawed\Keycloak\OidcEndpoints;
 use Xzawed\Keycloak\Token\AuthorizationRequest;
-use Xzawed\Keycloak\Token\ValidatedToken;
 
 /**
  * 인가 코드 교환 E2E — 실제 Keycloak 26.6 이 발급한 코드·id_token 으로.
@@ -47,6 +40,8 @@ final class CodeExchangeIT extends TestCase
     private const USERNAME = 'alice';
     private const PASSWORD = 'alice-password';
     private const UNEXPECTED_NONCE = 'authorization code exchange failed: unexpected nonce';
+    /** 공개 id_token 검사(validateIdToken())가 typ 가 정확히 "ID" 가 아닌 토큰을 거부하는 문구. */
+    private const NOT_AN_ID_TOKEN = 'not an id_token (typ is not "ID")';
     /** 리소스 서버로 재정의하는 audience — realm 의 다른 클라이언트다. */
     private const RESOURCE_SERVER = 'it-client';
     /** 이름을 모르는 토큰까지 — 거부 경로가 id_token 을 사슬에 달면 테스트는 그 값을 손에 넣지 못한다. */
@@ -91,9 +86,21 @@ final class CodeExchangeIT extends TestCase
         } catch (TokenValidationError $notAccess) {
         }
         self::assertSame('not an access token (typ "ID")', $notAccess->getMessage());
-        $id = self::validateIdToken($tokens->idToken);
+        // 클레임은 교환이 쓴 그 검사(공개 validateIdToken() — 이 클라이언트의 키 저장소)로 검증해 읽는다.
+        $id = $auth->validateIdToken($tokens->idToken);
         self::assertSame($request->nonce, $id->claims['nonce'] ?? null);
         self::assertSame($aliceId, $id->subject);
+        // 공개 id_token 검사는 서버의 액세스 토큰을 거부한다 — aud 가 이 클라이언트를 담으면 종류(typ "Bearer")로(나머지는 다
+        // 맞는다 — azp 도 이 클라이언트다), 아니면 aud 검사로.
+        try {
+            $auth->validateIdToken($tokens->accessToken);
+            self::fail('validateIdToken() must refuse the server\'s access token');
+        } catch (TokenValidationError $notId) {
+        }
+        self::assertSame(
+            \in_array('it-web', self::unverifiedAudience($tokens->accessToken), true) ? self::NOT_AN_ID_TOKEN : 'audience does not contain it-web',
+            $notId->getMessage(),
+        );
         // 교환이 돌려준 접근 토큰 자체가 그 사용자의 활성 토큰이다(가짜로 바꿔 끼워도 아래 refresh 는 초록이다).
         $issued = $auth->introspect($tokens->accessToken);
         self::assertTrue($issued->active);
@@ -136,6 +143,8 @@ final class CodeExchangeIT extends TestCase
         // 전제: 서버의 id_token aud 에 재정의 값이 없다(아니면 아래 통과는 옛 동작으로도 초록이다). realm 의
         // `it-web-audience` 매퍼는 access 에만 실린다(`id.token.claim=false`) — 실측: 두 토큰 다 aud 가 "it-web" 하나다.
         self::assertNotContains(self::RESOURCE_SERVER, self::unverifiedAudience($tokens->idToken));
+        // 같은 클라이언트의 공개 id_token 검사도 같다 — 재정의는 id_token 에 걸리지 않는다.
+        self::assertContains('it-web', $auth->validateIdToken($tokens->idToken)->audience);
         try {
             $auth->validate($tokens->accessToken);
             self::fail('validate() must keep checking access tokens against the override');
@@ -177,7 +186,7 @@ final class CodeExchangeIT extends TestCase
         $auth = self::web()->auth();
         $unchecked = $auth->exchangeCode($code, $request->codeVerifier, null, self::REDIRECT_URI);
         self::assertNotNull($unchecked->idToken);
-        self::assertArrayNotHasKey('nonce', self::validateIdToken($unchecked->idToken)->claims);
+        self::assertArrayNotHasKey('nonce', $auth->validateIdToken($unchecked->idToken)->claims);
 
         $code = BrowserLogin::login($request, self::REDIRECT_URI, self::USERNAME, self::PASSWORD);
         try {
@@ -333,24 +342,6 @@ final class CodeExchangeIT extends TestCase
             signatureAlgorithms: $algorithms,
             expectedAudience: $expectedAudience,
         ));
-    }
-
-    /**
-     * id_token 을 교환이 쓰는 경로(`JwtValidator::validateIdToken`)로 검증한다 — `validate()` 는 액세스 토큰 검증이라
-     * id_token 을 typ("ID")으로 거부한다. 배선은 `KeycloakClient::create()` 의 것과 같다.
-     */
-    private static function validateIdToken(string $idToken, string $clientId = 'it-web'): ValidatedToken
-    {
-        $config = new KeycloakConfig(
-            serverUrl: self::$baseUrl,
-            realm: 'it-realm',
-            clientId: $clientId,
-            clientSecret: self::WEB_CLIENT_SECRETS[$clientId],
-        );
-        $endpoints = new OidcEndpoints($config);
-        $jwks = new JwksStore($endpoints->jwks(), new GuzzleClient(HttpOptions::guzzle($config)), new HttpFactory(), $config->jwksMinRefetchSeconds);
-
-        return (new JwtValidator($config, $endpoints, $jwks))->validateIdToken($idToken, $clientId);
     }
 
     /**

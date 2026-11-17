@@ -126,6 +126,17 @@ final class JwtValidatorTest extends TestCase
         return ['sub' => 's1', 'iss' => $this->iss, 'aud' => ['it-client', 'account'], 'azp' => 'it-client', 'exp' => time() + 300, 'iat' => time()];
     }
 
+    /**
+     * goodClaims() 의 id_token 판 — typ "ID" 를 싣는다(Keycloak 이 모든 id_token 에 싣는 값이고, validateIdToken() 은 그 밖을
+     * 거부한다 — testValidateIdTokenAcceptsOnlyTypId).
+     *
+     * @return array<string,mixed>
+     */
+    private function idTokenClaims(): array
+    {
+        return ['typ' => 'ID'] + $this->goodClaims();
+    }
+
     public function testValidTokenPasses(): void
     {
         $vt = $this->validator()->validate($this->sign($this->goodClaims()));
@@ -188,10 +199,10 @@ final class JwtValidatorTest extends TestCase
     public function testValidateIdTokenChecksTheClientIdNotTheExpectedAudience(): void
     {
         $v = $this->validator('my-api');
-        $vt = $v->validateIdToken($this->sign($this->goodClaims()), 'it-client');   // aud [it-client, account]
+        $vt = $v->validateIdToken($this->sign($this->idTokenClaims()), 'it-client');   // aud [it-client, account]
         self::assertSame(['it-client', 'account'], $vt->audience);
 
-        $c = $this->goodClaims();
+        $c = $this->idTokenClaims();
         $c['aud'] = ['my-api'];   // 재정의 값만 — 액세스 토큰이라면 통과했을 aud
         $this->expectException(TokenValidationError::class);
         $this->expectExceptionMessage('audience does not contain it-client');
@@ -201,19 +212,19 @@ final class JwtValidatorTest extends TestCase
     /** 대조는 넘겨받은 client id 다 — 교환을 한 클라이언트(`AuthClient` 의 설정)가 그 값을 준다. */
     public function testValidateIdTokenChecksTheClientIdItIsGiven(): void
     {
-        $c = $this->goodClaims();
+        $c = $this->idTokenClaims();
         $c['aud'] = 'web-client';
         $c['azp'] = 'web-client';
         self::assertSame(['web-client'], $this->validator()->validateIdToken($this->sign($c), 'web-client')->audience);
 
         $this->expectException(TokenValidationError::class);
         $this->expectExceptionMessage('audience does not contain web-client');
-        $this->validator()->validateIdToken($this->sign($this->goodClaims()), 'web-client');
+        $this->validator()->validateIdToken($this->sign($this->idTokenClaims()), 'web-client');
     }
 
     public function testValidateIdTokenRefusesAnEmptyClientId(): void
     {
-        $c = $this->goodClaims();
+        $c = $this->idTokenClaims();
         $c['aud'] = [''];
         $this->expectException(KeycloakConfigError::class);
         $this->validator()->validateIdToken($this->sign($c), ' ');
@@ -240,7 +251,7 @@ final class JwtValidatorTest extends TestCase
     #[DataProvider('idTokenDefects')]
     public function testValidateIdTokenKeepsEveryOtherCheck(array $changes, string $signer, ?string $kid, string $message): void
     {
-        $claims = $this->goodClaims();
+        $claims = $this->idTokenClaims();
         foreach ($changes as $name => $value) {
             if ($value === null) {
                 unset($claims[$name]);
@@ -255,7 +266,7 @@ final class JwtValidatorTest extends TestCase
 
     public function testValidateIdTokenAllowsTheClockSkew(): void
     {
-        $within = $this->goodClaims();
+        $within = $this->idTokenClaims();
         $within['exp'] = time() - 10;   // 스큐 30초 안 — 위 「expired beyond the skew」와 쌍
         self::assertSame('s1', $this->validator('my-api')->validateIdToken($this->sign($within), 'it-client')->subject);
     }
@@ -286,7 +297,7 @@ final class JwtValidatorTest extends TestCase
         $access = $this->goodClaims();
         $access['aud'] = ['my-api'];
 
-        $v->validateIdToken($this->sign($this->goodClaims()), 'it-client');
+        $v->validateIdToken($this->sign($this->idTokenClaims()), 'it-client');
         self::assertSame(1, $http->hits);
         $v->validate($this->sign($access));
         self::assertSame(1, $http->hits, 'validate() must reuse the key store validateIdToken() warmed');
@@ -363,8 +374,73 @@ final class JwtValidatorTest extends TestCase
         self::assertSame(['it-client', 'account'], $this->validator()->validate($this->sign($c))->audience);
     }
 
-    // ── validateIdToken — 종류를 보지 않고(id_token 은 typ "ID" 다), 다른 검사를 모두 지난 뒤 권한 부여 당사자를 본다
+    // ── validateIdToken — 다른 검사를 모두 지난 뒤 종류(typ 가 정확히 "ID")를 보고, 그다음 권한 부여 당사자를 본다
     // (OIDC Core §3.1.3.7 4–5 단계): aud 가 여럿이면 azp 가 있어야 하고, azp 가 있으면 client id 여야 한다. ──
+
+    /** typ 를 싣지 않는 칸의 표지 — 데이터 공급자는 null(JSON null 인 typ)과 「typ 없음」을 갈라야 한다. */
+    private const NO_TYP = "\0no typ";
+
+    /**
+     * id_token 경로가 받는 typ 는 정확히 문자열 "ID" 하나다 — Keycloak 26.6 이 모든 id_token 에 싣는 값
+     * (`TokenManager.AccessTokenResponseBuilder.generateIDToken`). 액세스 경로의 거부 목록과 달리 허용 목록이다: 액세스 토큰은
+     * typ 가 소문자 "bearer" 일 수 있어(클라이언트 옵션 "use lower-case bearer type") 거부 목록이 놓친다.
+     *
+     * @return iterable<string, array{mixed}>
+     */
+    public static function typsOtherThanId(): iterable
+    {
+        yield 'no typ' => [self::NO_TYP];
+        yield 'Bearer' => ['Bearer'];
+        yield 'bearer in lower case' => ['bearer'];
+        yield 'DPoP' => ['DPoP'];
+        yield 'at+jwt' => ['at+jwt'];
+        yield 'Refresh' => ['Refresh'];
+        yield 'Offline' => ['Offline'];
+        yield 'Logout' => ['Logout'];
+        yield 'Serialized-ID' => ['Serialized-ID'];
+        yield 'a lower-case id' => ['id'];
+        yield 'ID and a space' => ['ID '];
+        yield 'an empty string' => [''];
+        yield 'null' => [null];
+        yield 'a number' => [42];
+        yield 'true' => [true];
+        yield 'a list holding ID' => [['ID']];
+        yield 'an object holding ID' => [['typ' => 'ID']];
+    }
+
+    /** 거부는 상수 문구 하나다 — typ 는 토큰을 만든 쪽이 고른 값이라 싣지 않는다. 클레임 실패라 원인을 달지 않는다. */
+    #[DataProvider('typsOtherThanId')]
+    public function testValidateIdTokenAcceptsOnlyTypId(mixed $typ): void
+    {
+        $c = $this->claimsWithoutAzp();
+        $c['aud'] = 'it-client';
+        unset($c['typ']);
+        if ($typ !== self::NO_TYP) {
+            $c['typ'] = $typ;
+        }
+        try {
+            $this->validator()->validateIdToken($this->sign($c), 'it-client');
+            self::fail('only typ "ID" is an id_token');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame('not an id_token (typ is not "ID")', $refused->getMessage());
+        self::assertNull($refused->getPrevious());
+    }
+
+    /** 종류는 다른 검사를 모두 지난 **뒤**다 — 그 실패는 typ 와 무관하게 지금의 문구 그대로 나온다. */
+    public function testValidateIdTokenJudgesTypAfterTheOtherChecks(): void
+    {
+        $foreign = ['aud' => 'other-client', 'typ' => 'Bearer'] + $this->claimsWithoutAzp();
+        $expired = ['aud' => 'it-client', 'typ' => 'Bearer', 'exp' => time() - 3600] + $this->claimsWithoutAzp();
+        foreach ([[$foreign, 'audience does not contain it-client'], [$expired, 'token verification failed: Expired token']] as [$claims, $message]) {
+            try {
+                $this->validator()->validateIdToken($this->sign($claims), 'it-client');
+                self::fail("{$message}: must be refused");
+            } catch (TokenValidationError $refused) {
+            }
+            self::assertSame($message, $refused->getMessage());
+        }
+    }
 
     public function testValidateIdTokenAcceptsATokenTypedId(): void
     {
@@ -379,10 +455,10 @@ final class JwtValidatorTest extends TestCase
         $this->validator()->validate($idToken);
     }
 
-    /** @return array<string,mixed> azp 를 뺀 goodClaims() */
+    /** @return array<string,mixed> azp 를 뺀 idTokenClaims() */
     private function claimsWithoutAzp(): array
     {
-        $c = $this->goodClaims();
+        $c = $this->idTokenClaims();
         unset($c['azp']);
 
         return $c;

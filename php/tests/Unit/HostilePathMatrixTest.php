@@ -411,7 +411,8 @@ final class HostilePathMatrixTest extends TestCase
         // 문자열 인자 자리에 들어갈 보편 인자 — ⚠️ 평문이면 토큰을 받는 메서드(validate 둘·getKeyByKid)가 요청 없이 실패해
         // JWKS_FETCH 가 빈다(Go 판 실측). 그래서 이 IdP 키로 서명한 **유효한 JWS** 다. URL·폼에 안전한 문자만 쓴다.
         self::$universal = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time()]);
-        self::$idToken = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time(), 'nonce' => self::$universal]);
+        // typ "ID" — Keycloak 이 모든 id_token 에 싣는 값이고, id_token 검사(validateIdToken · 교환)는 그 밖을 거부한다.
+        self::$idToken = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time(), 'nonce' => self::$universal, 'typ' => 'ID']);
         // fschmtt 는 access_token·refresh_token 을 **JWT 로 파싱**한다 — 평문이면 admin 이 요청 앞에서 실패한다. exp 를 짧게
         // 주어(30초 여유 안) fschmtt 의 토큰 캐시가 부여 경로를 가리지 않게 한다(expires_in 1 과 같은 이유).
         self::$access = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'svc', 'aud' => 'c', 'exp' => time() + 1, 'iat' => time()]);
@@ -1458,8 +1459,10 @@ final class HostilePathMatrixTest extends TestCase
         $body = ['access_token' => self::$access, 'token_type' => 'Bearer', 'expires_in' => 300, 'refresh_token' => self::$refresh];
         self::$lastIdToken = '';
         if (!$nv['noIdToken']) {
+            // typ "ID" 를 늘 싣는다 — 없으면 id_token 검사가 종류(typ)에서 먼저 거부해 대조는 실패하고, nonce 변형은 nonce 가
+            // 아닌 이유로 「거부」를 통과한다(실측: 대조 FAIL 의 원인이 typ).
             $claims = array_diff_key(
-                $nv['set'] + ['iss' => self::iss(), 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time(), 'nonce' => self::$universal],
+                $nv['set'] + ['iss' => self::iss(), 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time(), 'nonce' => self::$universal, 'typ' => 'ID'],
                 array_flip($nv['drop']),
             );
             $b64 = static fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
