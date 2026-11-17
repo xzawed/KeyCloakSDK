@@ -6,6 +6,17 @@ import (
 	"unicode/utf8"
 )
 
+// checkedAuthorizationRequest 는 BuildAuthorizationRequest 의 몸통이다 — 검사가 먼저이고(PKCE·state·nonce 를 만들기
+// 전), 통과한 값만 build(CreateAuthorizationRequest)에 그대로 넘긴다. 분기를 auth.go 가 아니라 여기 두는 까닭: auth.go 는
+// 단위 커버리지 경계이고 통합 커버리지 하한(scripts/integration-coverage.json)이 재는 파일인데, 통합 실행은 거부 분기를
+// 밟지 않는다 — 거기 두면 안 도는 문장이 하나 는다.
+func checkedAuthorizationRequest(redirectURI string, build func(string) AuthorizationRequest) (AuthorizationRequest, error) {
+	if err := checkRedirectURI(redirectURI); err != nil {
+		return AuthorizationRequest{}, err
+	}
+	return build(redirectURI), nil
+}
+
 // redirectScheme 는 RFC 3986 §3.1 의 scheme 과 뒤따르는 ":" 이다 — 이것으로 시작하는 값이 절대 URI 다(§4.3).
 var redirectScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
 

@@ -110,10 +110,7 @@ func (a *AuthClient) CreateAuthorizationRequest(redirectURI string) Authorizatio
 // never rewritten: the URL carries redirectURI exactly as given, and
 // ExchangeCode must be passed the same string.
 func (a *AuthClient) BuildAuthorizationRequest(redirectURI string) (AuthorizationRequest, error) {
-	if err := checkRedirectURI(redirectURI); err != nil {
-		return AuthorizationRequest{}, err
-	}
-	return a.CreateAuthorizationRequest(redirectURI), nil
+	return checkedAuthorizationRequest(redirectURI, a.CreateAuthorizationRequest)
 }
 
 // ClientCredentialsToken obtains a service-account token via the
