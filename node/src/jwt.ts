@@ -391,9 +391,9 @@ export interface JwtValidatorOptions {
  * Self-hardened JWT validator. It does not trust library defaults:
  * algorithm pinning (the header alg is not trusted, `none` is rejected) · exact issuer match · audience membership
  * check (multiple aud accepted) · exp/nbf ± clock skew · DoS-safe JWKS refetch (key set lifetime 300 seconds —
- * within it, a refetch only on an unresolved kid + cooldown rate-limit). After those checks pass, `validate` rejects a
- * Keycloak token that is not an access token — one whose `typ` claim is `ID`, `Refresh`, `Offline`, `Logout` or
- * `Serialized-ID`.
+ * within it, a refetch only on an unresolved kid + cooldown rate-limit). After those checks pass, `validate` accepts
+ * only an access token — the payload `typ` claim must be `Bearer` or `DPoP`, ASCII case ignored, as Keycloak's own
+ * verifier requires; an id, refresh, offline or logout token, or a token without `typ`, is refused.
  *
  * The key source is injected (a local JWKS in tests, the remote JWKS of `forJwksUri` in real use).
  */
