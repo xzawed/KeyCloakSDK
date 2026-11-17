@@ -36,7 +36,8 @@ public class AuthClient {
     this.config = config; this.metadata = metadata; this.jwtValidator = injectedValidator;
   }
 
-  // JWKS 기반 서명·issuer·audience·만료 검증. 실패 시 TokenValidationException.
+  // JWKS 기반 서명·issuer·audience·만료 검증 + 액세스 토큰이 아닌 Keycloak 토큰(typ 클레임 ID · Refresh · Offline · Logout ·
+  // Serialized-ID) 거부. 실패 시 TokenValidationException.
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1) — Nimbus 타입을 공개 API에 노출하지 않는다.
   public ValidatedToken validate(String accessToken) {
     return validator().validate(accessToken);
@@ -130,7 +131,7 @@ public class AuthClient {
   }
 
   // OIDC nonce 재생 방지: expectedNonce가 주어지면(createAuthorizationRequest의 getNonce()) 응답
-  // id_token을 강화 JwtValidator로 서명·iss·aud(= clientId)·exp까지 검증한 뒤 nonce 클레임을 대조한다 —
+  // id_token을 강화 JwtValidator로 서명·iss·aud(= clientId)·exp·azp까지 검증한 뒤 nonce 클레임을 대조한다 —
   // 불일치·부재·검증실패는 모두 거부(fail-closed). null이면 id_token 검증을 건너뛴다(무-nonce 흐름).
   public TokenSet exchangeCode(String code, URI redirectUri, String codeVerifier, String expectedNonce) {
     TokenSet tokenSet;
@@ -161,7 +162,8 @@ public class AuthClient {
   // aud 는 expectedAudience 가 아니라 **clientId** 다 — id_token 의 aud 는 client id 를 담고(OIDC Core §2·§3.1.3.7),
   // expectedAudience 는 액세스 토큰이 향하는 리소스 서버의 값이다. 키 원천·iss·alg 핀·skew 는 validate() 의 검증기
   // 것을 그대로 쓴다(withAudience — 두 번째 키 저장소를 만들지 않는다). forRealm 의 TokenValidationException 도
-  // 「invalid id_token」으로 가도록 파생은 try 안에 둔다.
+  // 「invalid id_token」으로 가도록 파생은 try 안에 둔다. 파생은 id_token 검증기다 — validate() 의 typ 거부(Keycloak 의
+  // id_token 은 typ "ID")를 걸지 않고 azp 를 본다(aud 가 둘 이상이면 있어야 하고, 있으면 clientId — OIDC Core §3.1.3.7).
   // 패키지 가시성: 토큰 엔드포인트 send() 없이 nonce 로직을 단위 테스트로 검증하기 위함
   // (buildExchangeCodeRequest/buildLogoutRequest와 동일 패턴).
   void requireValidNonce(String idToken, String expectedNonce) {

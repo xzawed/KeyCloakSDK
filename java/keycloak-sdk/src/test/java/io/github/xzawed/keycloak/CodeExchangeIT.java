@@ -94,9 +94,16 @@ class CodeExchangeIT {
       assertNotBlank(tokens.getAccessToken());
       assertNotBlank(tokens.getRefreshToken());
       assertNotBlank(tokens.getIdToken());
-      Map<String, Object> idClaims = auth.validate(tokens.getIdToken()).getClaims();
+      // id_token 의 클레임은 교환이 이미 검증했다(서명·iss·aud·exp·azp·nonce) — 여기서는 읽기만 한다.
+      Map<String, Object> idClaims = claimsOf(tokens.getIdToken()).getClaims();
       assertEquals(request.getNonce(), idClaims.get("nonce"));
       assertEquals(aliceId, idClaims.get("sub"));
+      // 서버가 서명한 id_token 은 typ "ID" 다 — validate() 는 그것을 액세스 토큰 자리에서 거부한다. 이 클라이언트의 기대
+      // audience 는 client id(it-web)라 aud 검사는 지나고, typ 만이 가른다.
+      assertEquals("ID", idClaims.get("typ"));
+      TokenValidationException notAccess =
+          assertThrows(TokenValidationException.class, () -> auth.validate(tokens.getIdToken()));
+      assertEquals("not an access token (typ \"ID\")", notAccess.getMessage());
       // 교환이 돌려준 접근 토큰 자체도 서버가 alice 에게 발급한 활성 토큰이다 — 대리값이면 여기서 걸린다(Grok 1:
       // 이 두 줄이 없을 때 exchangeCode 가 접근 토큰만 가짜로 바꿔 내도 이 파일 전부가 초록이었다).
       assertEquals(aliceId, auth.validate(tokens.getAccessToken()).getSubject());
@@ -172,7 +179,7 @@ class CodeExchangeIT {
       String first = BrowserLogin.login(withoutNonce, request.getState(), REDIRECT_URI, USERNAME, PASSWORD);
       TokenSet unchecked = auth.exchangeCode(first, REDIRECT_URI, request.getCodeVerifier());
       assertNotBlank(unchecked.getIdToken());
-      assertFalse(auth.validate(unchecked.getIdToken()).getClaims().containsKey("nonce"));
+      assertFalse(claimsOf(unchecked.getIdToken()).getClaims().containsKey("nonce"));
 
       String second = BrowserLogin.login(withoutNonce, request.getState(), REDIRECT_URI, USERNAME, PASSWORD);
       KeycloakAuthException refused = assertThrows(KeycloakAuthException.class,
@@ -287,15 +294,31 @@ class CodeExchangeIT {
 
       TokenSet tokens = auth.exchangeCode(code, REDIRECT_URI, request.getCodeVerifier(), request.getNonce());
       assertNotBlank(tokens.getIdToken());
-      // 교환이 받아들인 것은 서버가 client id 에게 낸 id_token 이다 — 재정의 값은 aud 에 없다.
-      Map<String, Object> idClaims = plain.auth().validate(tokens.getIdToken()).getClaims();
-      assertEquals(request.getNonce(), idClaims.get("nonce"));
-      assertEquals(aliceId, idClaims.get("sub"));
-      assertTrue(plain.auth().validate(tokens.getIdToken()).getAudience().contains("it-web"));
-      assertFalse(plain.auth().validate(tokens.getIdToken()).getAudience().contains("not-it-web"));
+      // 교환이 받아들인 것은 서버가 client id 에게 낸 id_token 이다 — 재정의 값은 aud 에 없다(클레임은 교환이 이미 검증했다).
+      com.nimbusds.jwt.JWTClaimsSet idClaims = claimsOf(tokens.getIdToken());
+      assertEquals(request.getNonce(), idClaims.getClaims().get("nonce"));
+      assertEquals(aliceId, idClaims.getSubject());
+      assertTrue(idClaims.getAudience().contains("it-web"));
+      assertFalse(idClaims.getAudience().contains("not-it-web"));
       // 같은 클라이언트의 validate 는 재정의를 계속 쓴다 — 두 토큰 다 "not-it-web" 을 담지 않는다.
       assertThrows(TokenValidationException.class, () -> auth.validate(tokens.getAccessToken()));
       assertThrows(TokenValidationException.class, () -> auth.validate(tokens.getIdToken()));
+      // 대조군: 기본 설정(aud = it-web)은 같은 id_token 의 aud 검사를 지나 typ 으로만 거부한다 — 위 거부는 audience 다.
+      TokenValidationException notAccess =
+          assertThrows(TokenValidationException.class, () -> plain.auth().validate(tokens.getIdToken()));
+      assertEquals("not an access token (typ \"ID\")", notAccess.getMessage());
+    }
+  }
+
+  /**
+   * 토큰의 클레임을 서명 검증 없이 읽는다 — 교환이 이미 검증한(또는 이 테스트가 서버에서 직접 받은) 토큰에만 쓴다.
+   * {@code validate()} 는 액세스 토큰만 받는다: 서버의 id_token 은 typ "ID" 라 거부된다.
+   */
+  private static com.nimbusds.jwt.JWTClaimsSet claimsOf(String jwt) {
+    try {
+      return com.nimbusds.jwt.SignedJWT.parse(jwt).getJWTClaimsSet();
+    } catch (java.text.ParseException e) {
+      throw new AssertionError("not a signed JWT", e);
     }
   }
 
