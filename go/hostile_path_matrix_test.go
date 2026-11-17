@@ -366,14 +366,26 @@ func hpRecvLabel(e ast.Expr) string {
 }
 
 var (
-	hpCtxType = reflect.TypeOf((*context.Context)(nil)).Elem()
-	hpErrType = reflect.TypeOf((*error)(nil)).Elem()
+	hpCtxType      = reflect.TypeOf((*context.Context)(nil)).Elem()
+	hpErrType      = reflect.TypeOf((*error)(nil)).Elem()
+	hpFmtStateType = reflect.TypeOf((*fmt.State)(nil)).Elem()
 )
+
+// hpFmtState 는 fmt.State 의 대역이다 — fmt 훅(`Format(fmt.State, rune)`)을 fmt 밖에서 불러, 요청을 내지 않음을
+// 그대로 잰다(nil 인터페이스를 넘기면 훅이 패닉해 UNDETERMINED 로 빠진다).
+type hpFmtState struct{ strings.Builder }
+
+func (*hpFmtState) Width() (int, bool)     { return 0, false }
+func (*hpFmtState) Precision() (int, bool) { return 0, false }
+func (*hpFmtState) Flag(int) bool          { return false }
 
 // 인자 합성 — 타입만 본다. 포인터는 nil 이 아니라 영값을 가리키는 포인터다(nil 은 거의 항상 패닉이다).
 func hpArg(t reflect.Type, universal string) reflect.Value {
 	if t == hpCtxType {
 		return reflect.ValueOf(context.Background())
+	}
+	if t == hpFmtStateType {
+		return reflect.ValueOf(&hpFmtState{})
 	}
 	switch t.Kind() {
 	case reflect.String:

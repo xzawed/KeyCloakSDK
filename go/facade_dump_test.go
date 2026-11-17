@@ -54,6 +54,17 @@ const (
 	dumpCanaryGarbage = "CANARY-DUMP-GARBAGE-TOKEN"
 )
 
+// fmt 가 받는 동사 전부 — 바닥(%v %+v %#v %s %q)만 재면 `%d` 류가 String() 을 건너뛰고 필드를 찍는 것을 못 본다
+// (실측 2026-11-17: 값·포인터 Config · TokenSet · AuthorizationRequest 가 b c d e g o t U 에서 85건 — 등록부
+// `go-nonstring-verb-bypasses-stringer`). 너비·플래그 둘은 fmt 가 그 꼴을 메서드에 그대로 넘기는지 본다.
+// ⚠️ 뺀 둘: `%T` 는 타입 이름만 찍는다. `%p` 는 fmt 가 메서드(Format·String)보다 **먼저** 처리하고, 값 타입이면
+// 메서드를 끈 오류 꼴(`%!p(…)`)로 필드를 그대로 찍는다 — 어떤 메서드로도 못 막는다(go vet printf 가 그 호출을 경고한다).
+var dumpVerbs = []string{
+	"%v", "%+v", "%#v", "%s", "%q", "%x", "%X",
+	"%d", "%b", "%o", "%O", "%c", "%U", "%e", "%E", "%f", "%F", "%g", "%G", "%t",
+	"%-40d", "%+#v",
+}
+
 // 걷기에 안 닿아도 되는 구조체 타입과 그 이유. **이유 없는 면제는 넣지 않는다.**
 var dumpWalkExempt = map[string]string{
 	"wireScrubTransport": "*http.Client.Transport·resty 안에만 산다 — 걷기는 외부 타입(http.Client) 안으로 내려가지 않는다. " +
@@ -316,7 +327,7 @@ func (w *dumpWalker) render(v reflect.Value, path string) {
 	}
 	x := v.Interface()
 	outs := map[string]string{}
-	for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
+	for _, verb := range dumpVerbs {
 		outs[verb] = fmt.Sprintf(verb, x)
 	}
 	var text, js bytes.Buffer

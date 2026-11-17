@@ -43,6 +43,9 @@ func (a AdminClient) String() string { return fmt.Sprintf("AdminClient{Realm:%q}
 // GoString is the `%#v` hook — `%#v` does not use Stringer.
 func (a AdminClient) GoString() string { return a.String() }
 
+// Format keeps the non-string verbs (%d %b %e …) off the cached token — see formatMasked.
+func (a AdminClient) Format(f fmt.State, verb rune) { formatMasked(f, verb, a, a.String()) }
+
 // newAdminClient builds the gocloak client, injects the read timeout, and
 // authenticates via client-credentials (single-flight cached). clientSecret is
 // required; without it the call fails before any network access.

@@ -186,6 +186,9 @@ func (c Config) String() string {
 // blocked here (it round-trips, so storing `***` is worse).
 func (c Config) GoString() string { return c.String() }
 
+// Format keeps the non-string verbs (%d %b %e …) off the fields — see formatMasked.
+func (c Config) Format(f fmt.State, verb rune) { formatMasked(f, verb, c, c.String()) }
+
 // LogValue is the `log/slog` masking hook — JSONHandler serialises fields by reflection and
 // never reaches String(), so without this a structured log writes the client secret verbatim.
 func (c Config) LogValue() slog.Value { return slog.StringValue(c.String()) }

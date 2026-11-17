@@ -38,6 +38,9 @@ func (a AuthClient) String() string { return "AuthClient{" + a.cfg.String() + "}
 // GoString is the `%#v` hook — `%#v` does not use Stringer.
 func (a AuthClient) GoString() string { return a.String() }
 
+// Format keeps the non-string verbs (%d %b %e …) off the client secret — see formatMasked.
+func (a AuthClient) Format(f fmt.State, verb rune) { formatMasked(f, verb, a, a.String()) }
+
 func newAuthClient(cfg Config, v *Validator) *AuthClient {
 	return &AuthClient{
 		cfg: cfg, ep: oidcEndpoints(cfg), val: v,
