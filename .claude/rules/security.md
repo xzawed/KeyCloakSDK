@@ -125,10 +125,13 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## Token kind
 
-⚠️ **All nine: the access `validate` refuses payload `typ` `ID`·`Refresh`·`Offline`·`Logout`·`Serialized-ID`; the exchange's id_token checks `azp` (OIDC Core §3.1.3.7).** A deny-list — registry `access-token-typ-deny-list`.
+⚠️ **All nine: the access `validate` refuses payload `typ` `ID`·`Refresh`·`Offline`·`Logout`·`Serialized-ID`; id_tokens need `typ` `ID`, then `azp` (OIDC Core §3.1.3.7).** A deny-list — registry `access-token-typ-deny-list`.
 <!-- 왜: 그 전에는 id_token(aud = client id = 기본 expected audience)이 액세스 토큰으로 통과했다. 거부 목록인 이유: RFC 9068 ·
      경량 토큰 · DPoP · 백채널 logout 의 클레임 typ 을 실서버로 재지 못했다. 다시 재는 명령(아홉 검증기 파일이 나온다):
-     git grep -c Serialized-ID -- ':!*test*' ':!*Test*' ':!*spec*' ':!*.md' -->
+     git grep -c Serialized-ID -- ':!*test*' ':!*Test*' ':!*spec*' ':!*.md'
+     id_token 경로는 코드 교환과 공개 `validateIdToken`(언어별 이름) 둘이 함께 쓰는 한 함수다.
+     id 쪽이 허용 목록인 이유: Keycloak 26.6.9 의 IDToken 생성 자리는 TokenManager.generateIDToken 하나(늘 "ID")이고, 액세스
+     토큰은 클라이언트 옵션으로 소문자 "bearer" 가 된다(formatTokenType) — 거부 목록이면 aud 에 client id 가 든 그 토큰을 놓친다. -->
 
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
