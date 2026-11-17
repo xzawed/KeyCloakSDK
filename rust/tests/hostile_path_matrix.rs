@@ -192,7 +192,9 @@ impl Keys {
         let mut m = self.signed.lock().expect("signed");
         m.entry(iss.to_string())
             .or_insert_with(|| {
-                let u = sign(&self.main, "k1", iss, json!({}));
+                // typ "Bearer" — 접근 토큰의 종류다(validate 는 Bearer · DPoP 만 받는다). 없으면 validate 행의 분류 실행이
+                // 종류에서 거부된다.
+                let u = sign(&self.main, "k1", iss, json!({"typ": "Bearer"}));
                 // typ "ID" — Keycloak 이 모든 id_token 에 싣는 값이고, id_token 검사(validate_id_token · 교환)는 그 밖을 거부한다.
                 let id = sign(&self.main, "k1", iss, json!({"nonce": u, "typ": "ID"}));
                 (u, id)

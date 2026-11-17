@@ -18,27 +18,42 @@ pub(crate) const JWT_MAX_BYTES: usize = 256_000;
 
 /// Keycloak 이 access 토큰이 **아닌** 토큰에 싣는 `typ` 클레임 값 — `org.keycloak.util.TokenUtil`
 /// (keycloak-client-common-synced 26.0.12)의 상수 일곱 중 access 토큰의 둘(Bearer · DPoP)을 뺀 다섯. 대소문자까지
-/// 정확 일치로만 본다.
+/// 정확 일치로만 본다 — 거부 문구에 종류를 이름 붙이는 데만 쓴다(검사 자체는 아래 허용 목록이다).
 const NOT_ACCESS_TOKEN_TYPES: [&str; 5] = ["ID", "Refresh", "Offline", "Logout", "Serialized-ID"];
+
+/// access 토큰의 `typ` — Keycloak 자신의 자원 쪽 검사(`TokenVerifier.TokenTypeCheck` · `DPoPUtil`)처럼 ASCII 대소문자를
+/// 무시하고 견준다(클라이언트 옵션 「use lower-case bearer type」이면 Keycloak 은 `bearer` 를 쓴다).
+const ACCESS_TOKEN_TYPES: [&str; 2] = ["Bearer", "DPoP"];
 
 type Claims = std::collections::BTreeMap<String, serde_json::Value>;
 
-/// (access) Keycloak 의 다른 종류 토큰을 거부한다 — 서명 · iss · aud · exp 만으로는 id_token 과 백채널 로그아웃 토큰이
-/// `validate()` 를 통과했다(aud 가 client id 라 `expected_audience` 의 기본값과 같다). typ 는 다섯 상수 중 하나일 때만
-/// 문구에 실리므로 토큰 내용이 새지 않는다. 문자열이 아닌 typ · 다섯 밖의 값은 판정하지 않는다.
-fn refuse_non_access_type(claims: &Claims) -> Result<()> {
+/// (access) Keycloak 자신의 허용 목록 — payload `typ` 가 ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같은 문자열일 때만
+/// 받는다. 서명 · iss · aud · exp 만으로는 id_token 과 백채널 로그아웃 토큰이 `validate()` 를 통과했고(aud 가 client id 라
+/// `expected_audience` 의 기본값과 같다), 다섯만 거부하던 동안에는 typ 가 없는 realm 서명 토큰 — JARM 인가 응답 JWT — 이
+/// 통과했다. 다섯 종류는 이름을 단 문구로(다섯 상수 중 하나라 토큰 내용이 새지 않는다), 그 밖(없음 · 문자열 아님 · 다른 값)은
+/// typ 를 싣지 않는 상수 문구 하나로 거부한다.
+fn require_access_token_type(claims: &Claims) -> Result<()> {
     match claims.get("typ").and_then(serde_json::Value::as_str) {
         Some(typ) if NOT_ACCESS_TOKEN_TYPES.contains(&typ) => Err(KeycloakError::TokenValidation(
             format!("not an access token (typ {typ})"),
         )),
-        _ => Ok(()),
+        Some(typ)
+            if ACCESS_TOKEN_TYPES
+                .iter()
+                .any(|t| typ.eq_ignore_ascii_case(t)) =>
+        {
+            Ok(())
+        }
+        _ => Err(KeycloakError::TokenValidation(
+            "not an access token (typ is not Bearer or DPoP)".into(),
+        )),
     }
 }
 
-/// (id_token) payload `typ` 는 정확히 문자열 `"ID"` 여야 한다 — Keycloak 이 내는 모든 id_token 의 값이다. access 경로의
-/// 거부 목록과 달리 허용 목록인 이유: aud 와 azp 가 이 클라이언트인 access 토큰은 다른 id_token 검사를 전부 지나고, 그
-/// typ 는 소문자 `bearer` 일 수도 있어(클라이언트 옵션) 거부 목록이 놓친다. 문구는 상수다 — typ 는 토큰을 만든 쪽이 고른
-/// 값이라 싣지 않는다.
+/// (id_token) payload `typ` 는 정확히 문자열 `"ID"` 여야 한다 — Keycloak 이 내는 모든 id_token 의 값이다. 정확 일치하는
+/// 허용 목록(하나)인 이유: aud 와 azp 가 이 클라이언트인 access 토큰은 다른 id_token 검사를 전부 지나고, 그 typ 는 소문자
+/// `bearer` 일 수도 있어(클라이언트 옵션) 거부 목록이 놓친다. 문구는 상수다 — typ 는 토큰을 만든 쪽이 고른 값이라 싣지
+/// 않는다.
 fn require_id_token_type(claims: &Claims) -> Result<()> {
     match claims.get("typ").and_then(serde_json::Value::as_str) {
         Some("ID") => Ok(()),
@@ -119,17 +134,19 @@ impl JwtValidator {
         })
     }
 
-    /// Validates an access token — the expected aud is `expected_audience` (`client_id` when unset). A Keycloak token
-    /// that is not an access token (`typ` claim `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`) is refused.
+    /// Validates an access token — the expected aud is `expected_audience` (`client_id` when unset). It is accepted only
+    /// when its payload `typ` is `Bearer` or `DPoP`, ignoring ASCII case — the access-token types Keycloak writes.
+    /// Another Keycloak kind (`typ` `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`) is refused by name;
+    /// anything else, a missing `typ` included, is refused without quoting it.
     pub async fn validate(&self, token: &str) -> Result<ValidatedToken> {
         let vt = self.validate_for_audience(token, &self.audience).await?;
-        refuse_non_access_type(&vt.claims)?;
+        require_access_token_type(&vt.claims)?;
         Ok(vt)
     }
 
     /// id_token 검증 — `AuthClient::validate_id_token`(그리고 그것을 부르는 코드 교환)의 본체다. 공통 검증을 **코드를
     /// 교환한 client id** 를 aud 로 한 뒤, typ 가 정확히 `"ID"` 인지 보고 azp 를 본다(OIDC Core §3.1.3.7 ④⑤).
-    /// `validate()` 의 typ 거부 목록은 걸지 않는다 — 이 경로는 허용 목록(`"ID"` 하나)이다.
+    /// `validate()` 의 typ 허용 목록(Bearer · DPoP)은 걸지 않는다 — 이 경로의 허용 목록은 `"ID"` 하나다.
     ///
     /// ⚠️ id_token 의 `aud` 는 client id 를 담아야 한다(OIDC Core §2 · §3.1.3.7). `expected_audience`
     /// 재정의는 access 토큰의 리소스 서버 제한이라 id_token 에 걸면 진짜 id_token 이 거부된다.
@@ -148,7 +165,7 @@ impl JwtValidator {
 
     /// 두 경로의 공통 강화 검증을 **호출자가 준 aud** 로 한다 — 길이 · alg 핀 · 서명 · iss · aud · exp · nbf · 스큐.
     ///
-    /// ⚠️ 종류별 검사(access 의 typ 거부 · id_token 의 typ `"ID"` 와 azp)는 여기 없다 — 두 진입점(`validate` · `validate_id_token`)이
+    /// ⚠️ 종류별 검사(access 의 typ Bearer · DPoP · id_token 의 typ `"ID"` 와 azp)는 여기 없다 — 두 진입점(`validate` · `validate_id_token`)이
     /// 각자 더한다. 그래서 이 모듈 밖에서는 부를 수 없게 둔다(비공개) — 밖에서 이것을 부르면 종류별 검사를 건너뛴다.
     async fn validate_for_audience(&self, token: &str, audience: &str) -> Result<ValidatedToken> {
         // (0) 길이 상한 — 아래 어느 단계든 토큰을 쪼개거나 디코드하기 전에(`JWT_MAX_BYTES`). `len()` 은 바이트다 — 진짜
@@ -344,9 +361,11 @@ mod tests {
         encode(&h, &claims, &ek).unwrap()
     }
 
+    /// access 토큰의 클레임 — typ 는 Keycloak 이 쓰는 `Bearer` 다(`validate()` 는 Bearer · DPoP 만 받는다). 다른 종류는
+    /// 시험이 typ 를 덮어쓴다.
     fn good_claims() -> serde_json::Value {
         json!({ "sub":"s1", "iss":"http://kc:8080/realms/it-realm",
-                "aud":["it-client","account"], "exp": now()+300, "iat": now() })
+                "aud":["it-client","account"], "exp": now()+300, "iat": now(), "typ": "Bearer" })
     }
 
     // config.signature_algorithms가 검증기 alg 핀으로 배선되는지(하드코딩 RS256 제거) — 빈/미지원 거부.
@@ -1340,13 +1359,15 @@ mod tests {
         }
     }
 
-    // ── 토큰 종류 — access 검증은 typ 다섯을 거부하고, id_token 검증은 typ `ID` 만 받은 뒤 azp 를 본다(검증기 칸) ──
+    // ── 토큰 종류 — access 검증은 typ 가 Bearer · DPoP(ASCII 대소문자 무시)일 때만 받고(다섯 종류는 이름으로 거부),
+    // id_token 검증은 typ `ID` 만 받은 뒤 azp 를 본다(검증기 칸) ──
     //
     // Keycloak 26 이 토큰마다 싣는 `typ` 클레임(`org.keycloak.util.TokenUtil` — keycloak-client-common-synced 26.0.12):
     // Bearer · DPoP 는 access 토큰이고 ID · Refresh · Offline · Logout · Serialized-ID 는 아니다. 수정 전에는 검증기가
     // typ 도 azp 도 읽지 않아 id_token(`ID`)·백채널 로그아웃 토큰(`Logout`)이 `validate()` 를 통과했고, aud 가 여럿이고
     // azp 가 남인 id_token 도 통과했다(실측). 그 뒤에도 id_token 경로는 typ 를 보지 않아, aud 와 azp 가 이 클라이언트인
-    // access 토큰이 통과했다. 어느 경로가 어느 검사를 거는지(파사드 배선)는 `auth.rs` 의 시험이 잰다.
+    // access 토큰이 통과했다. access 경로가 다섯만 거부하던 동안에는 typ 가 아예 없는 realm 서명 토큰 — JARM 인가 응답
+    // JWT(aud 가 client id) — 이 통과했다. 어느 경로가 어느 검사를 거는지(파사드 배선)는 `auth.rs` 의 시험이 잰다.
 
     const NOT_ACCESS_TYPES: [&str; 5] = ["ID", "Refresh", "Offline", "Logout", "Serialized-ID"];
 
@@ -1377,33 +1398,77 @@ mod tests {
         );
     }
 
-    /// (A) 대조 — access 토큰의 typ(없음 · Bearer · DPoP · RFC 9068 의 at+jwt)와 다섯 밖의 값은 지금처럼 통과한다. 비교는
-    /// 대소문자까지 정확 일치이고, 문자열이 아닌 typ 는 판정하지 않는다.
+    /// access 경로가 다섯 밖의 typ 를 거부하는 문구 — 상수다. 다섯 밖의 typ 는 토큰을 만든 쪽이 고른 값이라 싣지 않는다.
+    const NOT_BEARER_OR_DPOP: &str = "not an access token (typ is not Bearer or DPoP)";
+
+    /// (A) 는 Keycloak 자신의 허용 목록이다(`TokenVerifier.TokenTypeCheck` 는 equalsIgnoreCase · `DPoPUtil` 은 Bearer 와
+    /// DPoP) — typ 가 ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같은 문자열일 때만 통과한다(클라이언트 옵션 「use lower-case
+    /// bearer type」이면 Keycloak 은 `bearer` 를 쓴다). 그 밖 — 없음(JARM 인가 응답 JWT 는 typ 가 없다) · 문자열 아님 ·
+    /// RFC 9068 의 at+jwt · 다섯의 다른 대소문자 · 정확 일치가 아닌 값 · 비ASCII 닮은꼴 — 은 상수 문구 하나로 거부하고, 클레임
+    /// 실패라 JWKS 를 다시 부르지 않는다.
     #[tokio::test]
-    async fn validate_passes_any_other_typ() {
+    async fn validate_accepts_only_bearer_or_dpop() {
         let fx = make_key();
-        let v = validator_for(&fx).await;
-        for typ in [
-            None,
-            Some(json!("Bearer")),
-            Some(json!("DPoP")),
-            Some(json!("at+jwt")),
-            Some(json!("id")),
-            Some(json!("Logout ")),
-            Some(json!(null)),
-            Some(json!(["ID"])),
-            Some(json!(1)),
-        ] {
+        let (v, server) = validator_and_idp(&fx).await;
+        // typ 는 늘 이 시험이 정한다 — `None` 이면 싣지 않는다(픽스처의 기본값과 무관하게).
+        let with = |typ: Option<serde_json::Value>, extra: serde_json::Value| {
             let mut c = good_claims();
-            if let Some(t) = &typ {
-                c["typ"] = t.clone();
+            let m = c.as_object_mut().unwrap();
+            m.remove("typ");
+            m.extend(extra.as_object().unwrap().clone());
+            if let Some(t) = typ {
+                m.insert("typ".into(), t);
             }
+            sign(&fx, c, "test-kid")
+        };
+        for typ in ["Bearer", "bearer", "BEARER", "DPoP", "dpop", "DPOP"] {
             let vt = v
-                .validate(&sign(&fx, c, "test-kid"))
+                .validate(&with(Some(json!(typ)), json!({})))
                 .await
-                .unwrap_or_else(|e| panic!("typ {typ:?}: an access token must pass, got {e:?}"));
+                .unwrap_or_else(|e| panic!("typ {typ}: an access token must pass, got {e:?}"));
             assert_eq!(vt.subject, "s1");
         }
+        let canary = "x-canary-typ-3J7K";
+        for (name, typ, extra) in [
+            ("absent", None, json!({})),
+            ("at+jwt", Some(json!("at+jwt")), json!({})),
+            ("arbitrary string", Some(json!(canary)), json!({})),
+            ("empty", Some(json!("")), json!({})),
+            ("trailing space", Some(json!("Bearer ")), json!({})),
+            ("another case of ID", Some(json!("id")), json!({})),
+            ("exact-match miss", Some(json!("Logout ")), json!({})),
+            (
+                "fullwidth look-alike",
+                Some(json!("Ｂｅａｒｅｒ")),
+                json!({}),
+            ),
+            ("null", Some(json!(null)), json!({})),
+            ("array", Some(json!(["Bearer"])), json!({})),
+            ("number", Some(json!(1)), json!({})),
+            ("boolean", Some(json!(true)), json!({})),
+            ("object", Some(json!({"typ": "Bearer"})), json!({})),
+            (
+                "JARM response, no typ",
+                None,
+                json!({"code": "c0de", "state": "st4te"}),
+            ),
+        ] {
+            match v.validate(&with(typ, extra)).await {
+                Err(KeycloakError::TokenValidation(m)) => {
+                    assert_eq!(m, NOT_BEARER_OR_DPOP, "{name}");
+                    assert!(
+                        !m.contains(canary),
+                        "{name}: the refusal quotes the token's typ"
+                    );
+                }
+                other => panic!("{name}: expected the not-Bearer-or-DPoP refusal, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            certs_requests(server).await,
+            1,
+            "a claims failure must not refetch the JWKS"
+        );
     }
 
     /// (A) 는 기존 검사가 다 통과한 **뒤**다 — 기존 실패는 지금의 문구 그대로 나온다.
@@ -1448,7 +1513,7 @@ mod tests {
     }
 
     /// id_token 경로의 종류 규칙 — payload `typ` 는 정확히 문자열 `"ID"` 여야 한다. Keycloak 26.6 은 모든 id_token 에 그것을
-    /// 싣는다(`TokenManager.AccessTokenResponseBuilder.generateIDToken`). access 경로의 거부 목록과 달리 허용 목록이다 — access
+    /// 싣는다(`TokenManager.AccessTokenResponseBuilder.generateIDToken`). 정확 일치하는 허용 목록(하나)이다 — access
     /// 토큰은 typ 가 소문자 `bearer` 일 수 있어(클라이언트 옵션 "use lower-case bearer type") 거부 목록이 놓친다. 그 밖의 값
     /// (다른 문자열 · 대소문자 · 없음 · 문자열 아님)은 상수 문구 하나로 거부하고, 클레임 실패라 JWKS 를 다시 부르지 않는다.
     #[tokio::test]
@@ -1457,6 +1522,7 @@ mod tests {
         let (v, server) = validator_and_idp(&fx).await;
         let id_claims = |typ: Option<serde_json::Value>| {
             let mut c = good_claims();
+            c.as_object_mut().unwrap().remove("typ"); // `None` 칸은 정말 typ 가 없다(good_claims 의 Bearer 를 물려받지 않는다)
             c["aud"] = json!("it-client");
             c["azp"] = json!("it-client");
             if let Some(t) = typ {

@@ -370,8 +370,9 @@ impl AuthClient {
     }
 
     /// Delegates access_token validation to the hardened `JwtValidator` (RS256 pin · iss · aud · exp · nbf · skew ·
-    /// DoS-safe JWKS), which also refuses a Keycloak token that is not an access token (`typ` claim `ID`, `Refresh`,
-    /// `Offline`, `Logout` or `Serialized-ID`). An id_token is [`Self::validate_id_token`]'s.
+    /// DoS-safe JWKS), which accepts it only when its payload `typ` is `Bearer` or `DPoP`, ignoring ASCII case — another
+    /// Keycloak kind (`typ` claim `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`) is refused by name, anything
+    /// else (a missing `typ` included) without quoting it. An id_token is [`Self::validate_id_token`]'s.
     ///
     /// ⚠️ A forced JWKS refetch (unknown kid) runs to completion even if this call is cancelled, but it ends together with
     /// the tokio runtime that spawned it if that runtime shuts down first, and tokens signed with the new key are then
@@ -825,6 +826,14 @@ mod tests {
             encode(&h, claims, &ek).unwrap()
         }
 
+        /// access 토큰의 클레임 — typ 는 Keycloak 이 쓰는 `Bearer` 다(`validate()` 는 Bearer · DPoP 만 받는다). `claims` 는
+        /// id_token 도 만들므로 typ 를 싣지 않는다.
+        fn access_claims(&self, aud: serde_json::Value) -> serde_json::Value {
+            let mut c = self.claims(aud, None);
+            c["typ"] = json!("Bearer");
+            c
+        }
+
         /// Keycloak 이 내는 모양의 id_token — typ `ID`(id_token 검사가 그 밖을 거부한다). `claims` 는 typ 를 싣지 않는다
         /// (access 토큰도 그것으로 만든다).
         fn id_token(&self, aud: serde_json::Value, nonce: Option<&str>) -> String {
@@ -884,7 +893,7 @@ mod tests {
             issuer: endpoints.issuer(),
         };
         let mut body = json!({
-            "access_token": signer.sign(&signer.claims(spec.access_aud, None), "test-kid"),
+            "access_token": signer.sign(&signer.access_claims(spec.access_aud), "test-kid"),
             "token_type": "Bearer",
             "expires_in": 300,
         });
@@ -1148,7 +1157,7 @@ mod tests {
         // 캐시를 채운다(콜드 로드는 재조회 예산을 쓰지 않는다).
         let warm = fx
             .signer
-            .sign(&fx.signer.claims(json!("api://orders"), None), "test-kid");
+            .sign(&fx.signer.access_claims(json!("api://orders")), "test-kid");
         fx.auth.validate(&warm).await.unwrap();
         assert_eq!(fx.jwks_fetches().await, 1);
         // 교환: id_token 의 kid 가 캐시에 없다 → 강제 재조회 한 번(게이트를 찍는다).
@@ -1162,7 +1171,7 @@ mod tests {
         // 같은 창 안의 `validate()` 미해결 kid — 같은 게이트라 IdP 에 가지 않는다.
         let forged = fx
             .signer
-            .sign(&fx.signer.claims(json!("api://orders"), None), "other-kid");
+            .sign(&fx.signer.access_claims(json!("api://orders")), "other-kid");
         match fx.auth.validate(&forged).await {
             Err(KeycloakError::TokenValidation(m)) => {
                 assert_eq!(m, "unknown kid (refetch rate-limited)")
@@ -1204,7 +1213,7 @@ mod tests {
         assert_eq!(fx.jwks_fetches().await, 1);
         let access = fx
             .signer
-            .sign(&fx.signer.claims(json!("api://orders"), None), "test-kid");
+            .sign(&fx.signer.access_claims(json!("api://orders")), "test-kid");
         match fx.auth.validate(&access).await {
             Err(KeycloakError::Transport(m)) => assert!(m.contains("backing off"), "{m}"),
             other => panic!("expected the shared backoff to fail fast, got {other:?}"),
@@ -1229,7 +1238,7 @@ mod tests {
     async fn validate_judges_typ_and_leaves_azp_alone() {
         let fx = exchange_fixture_with(ExchangeSpec::default(), |_| None).await;
         let access = |extra: serde_json::Value| {
-            let mut c = fx.signer.claims(json!(["it-client", "account"]), None);
+            let mut c = fx.signer.access_claims(json!(["it-client", "account"]));
             c.as_object_mut()
                 .unwrap()
                 .extend(extra.as_object().unwrap().clone());
@@ -1246,10 +1255,10 @@ mod tests {
             }
         }
         for extra in [
-            json!({}),
             json!({ "typ": "Bearer" }),
+            json!({ "typ": "bearer" }),
             json!({ "typ": "DPoP" }),
-            json!({ "typ": "at+jwt" }),
+            json!({ "typ": "dpop" }),
             json!({ "azp": "frontend" }),
         ] {
             fx.auth
@@ -1257,6 +1266,65 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("{extra}: an access token must pass, got {e:?}"));
         }
+    }
+
+    /// access 경로의 허용 목록을 파사드에서 잰다 — `validate()` 는 payload typ 가 ASCII 대소문자를 무시하고 Bearer 나
+    /// DPoP 일 때만 받는다(Keycloak 자신의 `TokenVerifier.TokenTypeCheck`). 첫 거부 칸이 이 규칙이 닫는 구멍이다 —
+    /// Keycloak 의 JARM 인가 응답 JWT(response_mode=query.jwt): realm 이 서명하고 iss 가 realm · aud 가 client id(기대
+    /// audience 의 기본값) · exp 가 있고 typ 가 없다. 상수 문구는 토큰의 typ 를 싣지 않는다.
+    #[tokio::test]
+    async fn validate_accepts_only_bearer_or_dpop() {
+        let fx = exchange_fixture_with(ExchangeSpec::default(), |_| None).await; // 기대 aud = client id
+        let token = |typ: Option<serde_json::Value>, extra: serde_json::Value| {
+            let mut c = fx.signer.claims(json!("it-client"), None);
+            let m = c.as_object_mut().unwrap();
+            m.remove("typ");
+            m.extend(extra.as_object().unwrap().clone());
+            if let Some(t) = typ {
+                m.insert("typ".into(), t);
+            }
+            fx.signer.sign(&c, "test-kid")
+        };
+        let canary = "x-canary-typ-6N1P";
+        for (name, typ, extra) in [
+            (
+                "JARM response (no typ)",
+                None,
+                json!({"code": "c0de", "state": "st4te"}),
+            ),
+            ("no typ", None, json!({})),
+            ("typ a number", Some(json!(1)), json!({})),
+            ("typ null", Some(json!(null)), json!({})),
+            ("typ an array", Some(json!(["Bearer"])), json!({})),
+            ("typ at+jwt", Some(json!("at+jwt")), json!({})),
+            ("typ an arbitrary value", Some(json!(canary)), json!({})),
+        ] {
+            match fx.auth.validate(&token(typ, extra)).await {
+                Err(e @ KeycloakError::TokenValidation(_)) => {
+                    assert_eq!(
+                        e.to_string(),
+                        "token validation error: not an access token (typ is not Bearer or DPoP)",
+                        "{name}"
+                    );
+                    assert!(
+                        !format!("{e} {e:?} {e:#?}").contains(canary),
+                        "{name}: the refusal quotes the token's typ"
+                    );
+                }
+                other => panic!("{name}: expected the not-Bearer-or-DPoP refusal, got {other:?}"),
+            }
+        }
+        for typ in ["Bearer", "bearer", "DPoP", "dpop"] {
+            fx.auth
+                .validate(&token(Some(json!(typ)), json!({})))
+                .await
+                .unwrap_or_else(|e| panic!("typ {typ}: an access token must pass, got {e:?}"));
+        }
+        assert_eq!(
+            fx.jwks_fetches().await,
+            1,
+            "a claims refusal must not refetch the JWKS"
+        );
     }
 
     /// (A) 는 교환의 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 이고, 그것이 정확히 id_token 경로가
@@ -1479,7 +1547,7 @@ mod tests {
         };
         let access = |kid: &str| {
             fx.signer
-                .sign(&fx.signer.claims(json!("api://orders"), None), kid)
+                .sign(&fx.signer.access_claims(json!("api://orders")), kid)
         };
         fx.auth
             .validate_id_token(&id_token("test-kid"))
