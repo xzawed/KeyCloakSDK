@@ -18,8 +18,8 @@ import kotlin.test.assertNull
 
 // 공개 id_token 검증 `AuthClient.validateIdToken` — 코드 교환이 nonce 를 대조하기 **전에** 돌리는 바로 그 검사다(교환의
 // requireValidNonce 가 이 함수를 부른다): 서명(validate() 와 같은 키 원천) · alg 핀 · 길이 상한 · iss · aud 에 client id · exp ·
-// skew · azp(OIDC Core §3.1.3.7 4·5), 그리고 id_token 자리의 종류 — 페이로드 typ 이 정확히 문자열 "ID". nonce 는 보지 않는다
-// (교환의 몫). 등록부 `id-token-validator-not-public` · Java `AuthClientValidateIdTokenTest` 동형.
+// skew, 그리고 id_token 자리의 종류 — 페이로드 typ 이 정확히 문자열 "ID" — 와 그다음 azp(OIDC Core §3.1.3.7 4·5). nonce 는 보지
+// 않는다(교환의 몫). 등록부 `id-token-validator-not-public` · Java `AuthClientValidateIdTokenTest` 동형.
 //
 // 종류는 허용 목록이다(액세스 쪽 validate() 는 거부 목록): Keycloak 은 id_token 을 한 곳에서만 만들고 늘 typ "ID" 를 싣는다.
 // 액세스 토큰은 typ 이 "Bearer" 이고 aud 에 client id 를, azp 에 그 client 를 담을 수 있다 — 종류를 안 보면 그 토큰이 이 길의 다른
@@ -171,6 +171,18 @@ internal class AuthClientValidateIdTokenTest {
             assertNull(SignedJWT.parse(logoutToken).jwtClaimsSet.getClaim("azp"), "전제: azp 가 없다")
 
             val refused = assertFailsWith<TokenValidationException> { client().validateIdToken(logoutToken) }
+            assertEquals(notAnIdToken, refused.message)
+        }
+
+    // 종류가 azp 보다 먼저다 — id_token 이라는 것이 azp 규칙의 전제다(아홉 언어 같은 순서). 두 규칙에 다 걸리는 토큰(typ "Bearer" ·
+    // aud 둘 · azp 없음)은 종류의 상수 메시지로 거부된다 — azp 의 메시지가 아니다.
+    @Test
+    fun `validateIdToken checks the kind before the authorized party`() =
+        runTest {
+            val token = signed(listOf(clientId, "other")) { claim("typ", "Bearer") }
+            assertNull(SignedJWT.parse(token).jwtClaimsSet.getClaim("azp"), "전제: azp 가 없다")
+
+            val refused = assertFailsWith<TokenValidationException> { client().validateIdToken(token) }
             assertEquals(notAnIdToken, refused.message)
         }
 
