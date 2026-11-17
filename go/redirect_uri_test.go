@@ -80,13 +80,17 @@ func TestBuildAuthorizationRequestRefusesRedirectURIs(t *testing.T) {
 		{"bad-percent", "https://app/c%zz", wantRedirectR3},
 		{"nbsp", "https://app/c" + string(rune(0xa0)) + "b", wantRedirectR3},
 		{"invalid-utf8", "https://app/c\xffb", wantRedirectR3},
+		// R3 — U+00A0 위의 유니코드 공백 구분자(Amendment 3).
+		{"ideographic-space", "https://app/c" + string(rune(0x3000)) + "b", wantRedirectR3},
+		{"line-separator", "https://app/c" + string(rune(0x2028)) + "b", wantRedirectR3},
 	} {
 		t.Run(c.name, func(t *testing.T) { requireRedirectRefused(t, a, c.in, c.want) })
 	}
 }
 
-// R3 의 문자 집합 전수 — U+0000–U+0020 · U+007F–U+00A0 · ASCII 아홉(" < > \ ^ ` { | }) · 16진 두 자리가 따르지 않는 %.
-// 경계 바로 밖(U+0021 · U+007E · U+00A1)은 아래 수락 시험이 잰다.
+// R3 의 문자 집합 전수 — U+0000–U+0020 · U+007F–U+00A0 · 유니코드 공백 구분자(U+1680 · U+2000–U+200A · U+2028 ·
+// U+2029 · U+202F · U+205F · U+3000) · ASCII 아홉(" < > \ ^ ` { | }) · 16진 두 자리가 따르지 않는 %.
+// 경계 바로 밖(U+0021 · U+007E · U+00A1 · U+200B …)은 아래 수락 시험이 잰다.
 func TestBuildAuthorizationRequestR3CharacterSet(t *testing.T) {
 	a := newRedirectTestClient(t).Auth
 	var refused []string
@@ -94,6 +98,13 @@ func TestBuildAuthorizationRequestR3CharacterSet(t *testing.T) {
 		refused = append(refused, "https://app/c"+string(r)+"b")
 	}
 	for r := rune(0x7f); r <= 0xa0; r++ {
+		refused = append(refused, "https://app/c"+string(r)+"b")
+	}
+	separators := []rune{0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000}
+	for r := rune(0x2000); r <= 0x200a; r++ {
+		separators = append(separators, r)
+	}
+	for _, r := range separators {
 		refused = append(refused, "https://app/c"+string(r)+"b")
 	}
 	for _, r := range "\"<>\\^`{|}" {
@@ -152,6 +163,9 @@ func TestBuildAuthorizationRequestAcceptsAbsoluteURIs(t *testing.T) {
 		// R3 경계 바로 밖 — U+0021 · U+007E · U+00A1, 그리고 RFC 3986 의 나머지 구분자.
 		"https://app/c!b", "https://app/c~b", "https://app/c" + string(rune(0xa1)) + "b", "https://app/c'b",
 		"https://app/cb?x=$&y=(+*,;=)@:", "https://app/c%aFb", "https://app/cb%2F",
+		// 공백 구분자가 아닌 이웃 — URI.create 가 받는다(JDK 21.0.8 실측): U+00AD · U+200B · U+FEFF · U+1F600.
+		"https://app/c" + string(rune(0xad)) + "b", "https://app/c" + string(rune(0x200b)) + "b",
+		"https://app/c" + string(rune(0xfeff)) + "b", "https://app/c" + string(rune(0x1f600)) + "b",
 	} {
 		requireRedirectAccepted(t, a, in)
 	}
