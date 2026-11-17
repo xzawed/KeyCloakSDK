@@ -205,7 +205,10 @@ export class AuthClient {
     const currentUrl = redirectUrl(redirectUri)
     const config = await this.#discover()
     currentUrl.searchParams.set('code', code)
-    // RFC 9207: Keycloak은 인가 응답에 iss를 포함하며 openid-client가 이를 검증한다.
+    // ⚠️ RFC 9207 검증이 **아니다** — SDK 가 자기 issuer 를 넣는다. Keycloak 의 discovery 가
+    // `authorization_response_iss_parameter_supported` 를 알려 oauth4webapi(`validateAuthResponse`)는 콜백의 `iss` 가 없으면
+    // 거부하는데, exchangeCode 는 code 만 받아 인가 응답의 iss 가 없다(아홉 언어 다 그렇다). 그래서 이 대조는 늘 참이다 —
+    // 여러 발급자를 쓰는 앱의 mix-up 방어는 호출자가 콜백의 iss 를 직접 대조해야 한다(등록부 authcode-flow-verification-defeated).
     currentUrl.searchParams.set('iss', this.#endpoints.issuer)
     const checks: oidc.AuthorizationCodeGrantChecks = { pkceCodeVerifier: codeVerifier }
     if (nonce !== undefined) {
