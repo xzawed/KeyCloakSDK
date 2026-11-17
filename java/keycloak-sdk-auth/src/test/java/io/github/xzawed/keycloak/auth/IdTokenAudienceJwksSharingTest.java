@@ -228,7 +228,8 @@ class IdTokenAudienceJwksSharingTest {
     issuer = "http://127.0.0.1:" + server.getAddress().getPort() + "/realms/r";
     // id_token 은 Keycloak 처럼 typ "ID" 를 싣는다 — id_token 검증기는 그 밖의 typ 을 거부한다.
     idToken = sign(signing, new JWTClaimsSet.Builder().audience(CLIENT_ID).claim("nonce", NONCE).claim("typ", "ID"));
-    accessToken = sign(signing, new JWTClaimsSet.Builder().audience(OVERRIDE));
+    // 액세스 토큰은 Keycloak 처럼 typ "Bearer" 다 — 액세스 검증기는 Bearer · DPoP 만 받는다.
+    accessToken = sign(signing, new JWTClaimsSet.Builder().audience(OVERRIDE).claim("typ", "Bearer"));
   }
 
   private String sign(RSAKey key, JWTClaimsSet.Builder claims) throws Exception {

@@ -118,7 +118,7 @@ class JwksCancellationTest {
   private String token(RSAKey signer, String kid) throws Exception {
     String issuer = "http://127.0.0.1:" + server.getAddress().getPort() + "/realms/r";
     SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(kid).build(),
-        new JWTClaimsSet.Builder().issuer(issuer).subject("u-" + kid).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).subject("u-" + kid).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 300_000)).build());
     jwt.sign(new RSASSASigner(signer));
     return jwt.serialize();

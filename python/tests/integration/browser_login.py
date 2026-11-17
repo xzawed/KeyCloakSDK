@@ -45,8 +45,23 @@ def browser_login(
     request: AuthorizationUrl, redirect_uri: str, username: str, password: str
 ) -> str:
     """`request`(SDK 의 `authorization_url` 결과)로 로그인해 인가 코드를 돌려준다."""
+    location = login_callback(request.url, redirect_uri, username, password)
+    query = parse_qs(urlsplit(location).query)
+    # state 는 SDK 가 인가 URL 에 실은 CSRF 값이다 — 서버가 그대로 되돌려야 한다.
+    if query.get("state") != [request.state]:
+        pytest.fail(f"state mismatch: sent {request.state!r}, got {query.get('state')!r}")
+    codes = query.get("code")
+    if not codes or len(codes) != 1 or not codes[0]:
+        pytest.fail(f"no single authorization code in the callback: {location}")
+    return codes[0]
+
+
+def login_callback(url: str, redirect_uri: str, username: str, password: str) -> str:
+    """인가 URL `url` 로 로그인해 서버가 돌려보낸 콜백 URL(`Location`)을 그대로 돌려준다 — 그 콜백이
+    `redirect_uri` 로 가는지만 본다. JARM(`response_mode=query.jwt`)처럼 응답이 `code` · `state` 가
+    아니라 서명된 JWT 하나(`response`)로 오는 시험이 쓴다."""
     with httpx.Client(follow_redirects=False, timeout=30.0) as browser:
-        page = browser.get(request.url)
+        page = browser.get(url)
         if page.status_code != 200:
             pytest.fail(f"login page did not render:\n{_snippet(page)}")
         form = _LoginForm()
@@ -70,11 +85,4 @@ def browser_login(
     callback = urlsplit(location)
     if f"{callback.scheme}://{callback.netloc}{callback.path}" != redirect_uri:
         pytest.fail(f"login redirected somewhere else: {location}")
-    query = parse_qs(callback.query)
-    # state 는 SDK 가 인가 URL 에 실은 CSRF 값이다 — 서버가 그대로 되돌려야 한다.
-    if query.get("state") != [request.state]:
-        pytest.fail(f"state mismatch: sent {request.state!r}, got {query.get('state')!r}")
-    codes = query.get("code")
-    if not codes or len(codes) != 1 or not codes[0]:
-        pytest.fail(f"no single authorization code in the callback: {location}")
-    return codes[0]
+    return str(location)

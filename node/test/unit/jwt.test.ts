@@ -51,8 +51,15 @@ describe('JwtValidator (강화 검증)', () => {
       .setExpirationTime(expMinutes)
       .sign(priv)
 
+  /**
+   * Keycloak 의 액세스 토큰 모양 — typ "Bearer"(액세스 검증은 Bearer · DPoP 만 받는다 — 아래 (A) 묶음). typ 자체를 재는
+   * 칸은 `sign` 을 쓴다.
+   */
+  const access = (payload: Record<string, unknown>, iss = ISS, expMinutes = '5m') =>
+    sign({ typ: 'Bearer', ...payload }, iss, expMinutes)
+
   it('정상 RS256 토큰 통과 + subject/audience/issuer/expiresAt/issuedAt 반환', async () => {
-    const t = await sign({ sub: 'user1', aud: 'my-client' })
+    const t = await access({ sub: 'user1', aud: 'my-client' })
     const v = await JwtValidator.forKeySource(keys, OPTS).validate(t)
     expect(v.subject).toBe('user1')
     expect(v.audience).toEqual(['my-client'])
@@ -64,20 +71,20 @@ describe('JwtValidator (강화 검증)', () => {
   })
 
   it('다중 aud 배열 — 포함검사로 통과', async () => {
-    const t = await sign({ sub: 'u', aud: ['my-client', 'realm-management'] })
+    const t = await access({ sub: 'u', aud: ['my-client', 'realm-management'] })
     const v = await JwtValidator.forKeySource(keys, OPTS).validate(t)
     expect(v.audience).toEqual(['my-client', 'realm-management'])
   })
 
   it('기대 aud 미포함 → KeycloakTokenValidationError', async () => {
-    const t = await sign({ sub: 'u', aud: 'other-client' })
+    const t = await access({ sub: 'u', aud: 'other-client' })
     await expect(JwtValidator.forKeySource(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
   })
 
   it('잘못된 issuer → 거부', async () => {
-    const t = await sign({ sub: 'u', aud: 'my-client' }, 'https://evil.example.com/realms/test')
+    const t = await access({ sub: 'u', aud: 'my-client' }, 'https://evil.example.com/realms/test')
     await expect(JwtValidator.forKeySource(keys, OPTS).validate(t)).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
@@ -85,7 +92,7 @@ describe('JwtValidator (강화 검증)', () => {
 
   it('만료 토큰(스큐 밖) → 거부', async () => {
     const now = Math.floor(Date.now() / 1000)
-    const t = await new SignJWT({ sub: 'u', aud: 'my-client' })
+    const t = await new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuer(ISS)
       .setIssuedAt(now - 1000)
@@ -100,7 +107,7 @@ describe('JwtValidator (강화 검증)', () => {
     // setExpirationTime을 호출하지 않아 exp 클레임이 없는 토큰. jose는 exp가 존재할 때만
     // 만료를 검사하므로, exp 존재를 강제하지 않으면 무만료 토큰이 통과한다(Go/Rust/Python
     // 동형의 심층방어 — Keycloak은 항상 exp를 발급하므로 부재는 위조/오구성 신호다).
-    const t = await new SignJWT({ sub: 'u', aud: 'my-client' })
+    const t = await new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -111,7 +118,7 @@ describe('JwtValidator (강화 검증)', () => {
   })
 
   it('알고리즘 핀 위반(허용 목록 밖) → 거부', async () => {
-    const t = await sign({ sub: 'u', aud: 'my-client' })
+    const t = await access({ sub: 'u', aud: 'my-client' })
     const strict = JwtValidator.forKeySource(keys, { ...OPTS, allowedAlgs: ['ES256'] })
     await expect(strict.validate(t)).rejects.toBeInstanceOf(KeycloakTokenValidationError)
   })
@@ -127,6 +134,7 @@ describe('JwtValidator (강화 검증)', () => {
     const unsigned = `${b64u({ alg: 'none', kid: 'k1' })}.${b64u({
       sub: 'u',
       aud: 'my-client',
+      typ: 'Bearer',
       iss: ISS,
       iat: now,
       exp: now + 300,
@@ -143,7 +151,7 @@ describe('JwtValidator (강화 검증)', () => {
     // 고전 공격: 공격자는 공개된 RSA 공개키 텍스트를 HMAC 비밀로 삼아 HS256 토큰을 위조한다.
     // 검증기가 헤더의 alg를 믿고 키를 고르면 "공개키를 아는 사람 = 토큰을 발급할 수 있는 사람"이 된다.
     const pubPem = await exportSPKI(pub)
-    const forged = await new SignJWT({ sub: 'attacker', aud: 'my-client' })
+    const forged = await new SignJWT({ sub: 'attacker', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'HS256', kid: 'k1' })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -160,7 +168,7 @@ describe('JwtValidator (강화 검증)', () => {
   })
 
   // 파생 검증기에 주는 토큰은 Keycloak 의 id_token 처럼 typ "ID" 를 싣는다 — 종류 규칙(아래 묶음)이 이 묶음의 판정을 가로채지
-  // 않게. 원본(액세스 검증기)에 주는 토큰은 typ 이 없다.
+  // 않게. 원본(액세스 검증기)에 주는 토큰은 액세스 토큰처럼 typ "Bearer" 다(`access`).
   describe('withAudience — 코드 교환의 id_token 용(aud 만 바뀐다)', () => {
     it('기대 aud 만 바꾸고 원본 검증기는 그대로 둔다', async () => {
       const base = JwtValidator.forKeySource(keys, OPTS)
@@ -172,9 +180,11 @@ describe('JwtValidator (강화 검증)', () => {
         derived.validate(await sign({ sub: 'u', aud: 'my-client', typ: 'ID' })),
       ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
       // 원본은 파생 뒤에도 자기 audience 를 쓴다 — opts 를 공유 변이하지 않는다.
-      await expect(base.validate(await sign({ sub: 'u', aud: 'my-client' }))).resolves.toBeDefined()
       await expect(
-        base.validate(await sign({ sub: 'u', aud: 'the-client' })),
+        base.validate(await access({ sub: 'u', aud: 'my-client' })),
+      ).resolves.toBeDefined()
+      await expect(
+        base.validate(await access({ sub: 'u', aud: 'the-client' })),
       ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
     })
 
@@ -226,15 +236,28 @@ describe('JwtValidator (강화 검증)', () => {
   })
 
   /**
-   * (A) 액세스 토큰 자리에 온 다른 Keycloak 토큰 — 페이로드의 `typ` 클레임. Keycloak 은 거기에 토큰의 종류를 적는다
-   * (`org.keycloak.util.TokenUtil`, keycloak-client-common-synced 26.0.12: 액세스 토큰은 Bearer · DPoP, 그 밖은 ID ·
-   * Refresh · Offline · Logout · Serialized-ID). id_token 과 back-channel logout 토큰도 같은 realm 키로 서명되고 iss · exp
-   * 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(audience = clientId)의 aud 검사까지 지난다 — 그래서 `validate` 가
-   * 그것을 액세스 토큰으로 받아 줬다. 다섯을 거부하고 나머지는 지금처럼 받는다(Java `JwtValidatorTest` 동형).
+   * (A) 액세스 토큰의 종류 — 페이로드의 `typ` 클레임. Keycloak 은 거기에 토큰의 종류를 적는다(`org.keycloak.util.TokenUtil`,
+   * keycloak-client-common-synced 26.0.12: 액세스 토큰은 Bearer · DPoP, 그 밖은 ID · Refresh · Offline · Logout ·
+   * Serialized-ID). Keycloak 자신의 리소스 쪽 검사(`TokenVerifier.TokenTypeCheck` 의 `equalsIgnoreCase` ·
+   * `DPoPUtil.withDPoPVerifier`)처럼 **허용 목록**이다 — typ 이 ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같은 문자열일 때만
+   * 받는다(`TokenManager.formatTokenType` 은 클라이언트 옵션으로 소문자 "bearer" 를 쓴다). 부재 · 문자열이 아닌 값 · 그 밖의
+   * 문자열은 거부다 — typ 이 없는 realm 서명 JWT(JARM 인가 응답, aud = client id)가 기본 설정의 aud 검사까지 지나 액세스
+   * 토큰으로 받아들여졌다. 알려진 다섯 종류는 지금의 문구(그 값을 말한다), 나머지는 상수 문구다(토큰이 고른 typ 을 싣지 않는다).
    */
-  describe('typ — validate 는 액세스 토큰이 아닌 Keycloak 토큰을 거부한다', () => {
+  describe('typ — validate 는 Bearer · DPoP(ASCII 대소문자 무시)만 받는다', () => {
+    const NOT_ACCESS = 'not an access token (typ is not Bearer or DPoP)'
+
+    it.each(['Bearer', 'bearer', 'BEARER', 'DPoP', 'dpop', 'DPOP', 'dPoP'])(
+      'typ "%s" → 통과(토큰이 실은 값 그대로 돌려준다)',
+      async (typ) => {
+        const token = await sign({ sub: 'u', aud: 'my-client', typ })
+        const validated = await JwtValidator.forKeySource(keys, OPTS).validate(token)
+        expect(validated.claims['typ']).toBe(typ)
+      },
+    )
+
     it.each(['ID', 'Refresh', 'Offline', 'Logout', 'Serialized-ID'])(
-      'typ "%s" → KeycloakTokenValidationError(메시지가 그 값을 말한다)',
+      'typ "%s" → KeycloakTokenValidationError(지금의 문구 — 그 값을 말한다)',
       async (typ) => {
         const token = await sign({ sub: 'u', aud: 'my-client', typ })
         const refused = await refusal(JwtValidator.forKeySource(keys, OPTS).validate(token))
@@ -244,32 +267,42 @@ describe('JwtValidator (강화 검증)', () => {
       },
     )
 
-    // 다섯 값과 정확히(대소문자 · 공백까지) 같은 문자열만 거부된다 — 액세스 토큰의 값 · 그 밖의 문자열 · 문자열 아닌 값은 통과.
+    // 허용 목록 밖은 전부 상수 문구다 — 다섯 종류와 대소문자 · 공백만 다른 값도(정확히 같을 때만 지금의 문구다).
     it.each([
-      ['Bearer', 'Bearer'],
-      ['DPoP', 'DPoP'],
-      ['at+jwt', 'at+jwt'],
+      ['없음', undefined],
+      ['at+jwt(RFC 9068)', 'at+jwt'],
       ['소문자 id', 'id'],
       ['소문자 logout', 'logout'],
-      ['뒤에 공백이 붙은 ID', 'ID '],
+      ['뒤에 공백이 붙은 Bearer', 'Bearer '],
+      ['앞에 공백이 붙은 bearer', ' bearer'],
+      ['Bearer 접두', 'BearerX'],
       ['빈 문자열', ''],
-      ['ID 를 담은 배열', ['ID']],
+      ['토큰이 고른 문자열', 'CANARY-TYP-7c2e'],
+      ['Bearer 를 담은 배열', ['Bearer']],
       ['숫자', 1],
       ['참거짓', true],
-      ['객체', { typ: 'ID' }],
+      ['객체', { typ: 'Bearer' }],
       ['null', null],
-    ])('typ 이 %s 이면 지금처럼 통과한다', async (_name, typ) => {
-      const token = await sign({ sub: 'u', aud: 'my-client', typ })
-      const validated = await JwtValidator.forKeySource(keys, OPTS).validate(token)
-      // 토큰이 정말 그 값을 실었는지(되읽은 값) — 직렬화가 값을 바꿨다면 이 경우는 아무것도 재지 않는다.
-      expect(validated.claims['typ']).toEqual(typ)
+    ])('typ 이 %s 이면 상수 문구로 거부한다(typ 을 싣지 않는다)', async (_name, typ) => {
+      const claims = { sub: 'u', aud: 'my-client' }
+      const token = await sign(typ === undefined ? claims : { ...claims, typ })
+      const refused = await refusal(JwtValidator.forKeySource(keys, OPTS).validate(token))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(refused.message).toBe(NOT_ACCESS)
+      expect(refused.cause).toBeUndefined()
     })
 
-    it('typ 이 없으면 지금처럼 통과한다', async () => {
-      const validated = await JwtValidator.forKeySource(keys, OPTS).validate(
-        await sign({ sub: 'u', aud: 'my-client' }),
-      )
-      expect(validated.claims).not.toHaveProperty('typ')
+    // JARM 인가 응답(`AuthorizationResponseToken` — Keycloak 의 `OIDCRedirectUriBuilder`)의 모양: typ 이 없고, iss = realm ·
+    // aud = client id · exp 와 code · state 를 싣고, realm 키로 서명된다. 기본 설정(audience = clientId)의 aud 검사를 지난다.
+    it('JARM 인가 응답 모양(typ 없음 · code · state · aud = client id)을 상수 문구로 거부한다', async () => {
+      const jarm = await sign({
+        code: 'c0de-from-the-browser-url',
+        state: 'st-1',
+        aud: 'my-client',
+      })
+      const refused = await refusal(JwtValidator.forKeySource(keys, OPTS).validate(jarm))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(refused.message).toBe(NOT_ACCESS)
     })
 
     // typ 은 서명 · iss · aud · exp 가 통과한 **뒤에** 본다 — 검증 전 클레임으로 판정하지 않는다.
@@ -300,14 +333,14 @@ describe('JwtValidator (강화 검증)', () => {
     it('azp 규칙은 걸지 않는다 — 다중 aud 에 azp 가 없어도 · 다른 클라이언트여도 · 문자열이 아니어도 받는다', async () => {
       const v = JwtValidator.forKeySource(keys, OPTS)
       await expect(
-        v.validate(await sign({ sub: 'u', aud: ['my-client', 'other'] })),
+        v.validate(await access({ sub: 'u', aud: ['my-client', 'other'] })),
       ).resolves.toMatchObject({ audience: ['my-client', 'other'] })
       for (const [aud, azp] of [
         ['my-client', 'frontend'],
         [['my-client', 'other'], 'frontend'],
         [['my-client', 'other'], 42],
       ] as const) {
-        await expect(v.validate(await sign({ sub: 'u', aud, azp }))).resolves.toMatchObject({
+        await expect(v.validate(await access({ sub: 'u', aud, azp }))).resolves.toMatchObject({
           claims: { azp },
         })
       }
@@ -403,7 +436,7 @@ describe('JwtValidator (강화 검증)', () => {
 
     /** `pad` 클레임을 덧대 길이가 [length - 8, length] 인 진짜 서명 토큰(역할이 많은 사용자의 모양). */
     const padded = async (length: number): Promise<string> => {
-      const make = (n: number) => sign({ sub: 'u', aud: 'my-client', pad: 'a'.repeat(n) })
+      const make = (n: number) => access({ sub: 'u', aud: 'my-client', pad: 'a'.repeat(n) })
       let n = Math.floor((length - (await make(0)).length) * 0.75)
       let token = await make(n)
       while (token.length > length) {

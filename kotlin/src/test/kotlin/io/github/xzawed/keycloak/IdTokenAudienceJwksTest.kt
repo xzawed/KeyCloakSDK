@@ -103,7 +103,7 @@ internal class IdTokenAudienceJwksTest {
 
     // 액세스 토큰의 aud 는 재정의 값, id_token 의 aud 는 client id — 실제 Keycloak 이 내는 모양. id_token 은 typ "ID" 를 싣는다
     // (id_token 검증기는 그 밖의 typ 을 거부한다).
-    private val accessToken by lazy { signed(apiAudience) }
+    private val accessToken by lazy { signed(apiAudience, typ = "Bearer") }
 
     private fun serveTokens() {
         server.stubFor(

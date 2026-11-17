@@ -36,9 +36,16 @@ final class JwtValidator
 
     /**
      * 액세스 토큰이 아닌 Keycloak 토큰의 페이로드 `typ`(`org.keycloak.util.TokenUtil`) — id_token · refresh · offline ·
-     * 백채널 logout · 직렬화된 id_token. 액세스 토큰은 `Bearer` · `DPoP` 다.
+     * 백채널 logout · 직렬화된 id_token. 액세스 토큰은 `Bearer` · `DPoP` 다. 거부 문구에 종류를 이름 붙이는 데만 쓴다 —
+     * 검사 자체는 아래 허용 목록이다.
      */
     private const NOT_ACCESS_TOKEN_TYPES = ['ID', 'Refresh', 'Offline', 'Logout', 'Serialized-ID'];
+
+    /**
+     * 액세스 토큰의 페이로드 `typ`(소문자) — Keycloak 자신의 자원 쪽 검사(`TokenVerifier.TokenTypeCheck` · `DPoPUtil`)처럼 ASCII
+     * 대소문자를 무시하고 견준다(클라이언트 옵션 「use lower-case bearer type」이면 Keycloak 은 `bearer` 를 쓴다).
+     */
+    private const ACCESS_TOKEN_TYPES = ['bearer', 'dpop'];
 
     /** id_token 의 페이로드 `typ` — Keycloak 26.6 이 모든 id_token 에 싣는 값이고, validateIdToken() 이 받는 유일한 값이다. */
     private const ID_TOKEN_TYPE = 'ID';
@@ -50,18 +57,24 @@ final class JwtValidator
     ) {}
 
     /**
-     * Validates an access token — the expected aud is `expectedAudience` (when set), otherwise `clientId`. A token whose
-     * payload `typ` names another kind of Keycloak token — an id_token (`ID`), `Refresh`, `Offline`, `Logout` or
-     * `Serialized-ID` — is refused even when it passes every other check; any other `typ`, or none, is not looked at.
+     * Validates an access token — the expected aud is `expectedAudience` (when set), otherwise `clientId`. It is accepted
+     * only when its payload `typ` is `Bearer` or `DPoP`, ignoring ASCII case — the access-token types Keycloak writes.
+     * Another Keycloak kind — an id_token (`ID`), `Refresh`, `Offline`, `Logout` or `Serialized-ID` — is refused by name;
+     * anything else, a missing `typ` included, is refused without quoting it.
      */
     public function validate(#[\SensitiveParameter] string $jwt): ValidatedToken
     {
         $validated = $this->verify($jwt, $this->config->expectedAudience ?? $this->config->clientId);
-        // 토큰 종류 — 액세스 경로의 거부 목록(validateIdToken() 은 반대로 "ID" 하나만 받는다). 문자열일 때만, 대소문자까지
-        // 정확히 견준다. 값을 인용해도 된다 — 위 다섯 상수 중 하나다.
+        // 토큰 종류 — Keycloak 자신의 허용 목록(validateIdToken() 은 "ID" 하나만 받는다). 다섯 종류는 이름을 단 문구로 — 값을
+        // 인용해도 된다, 다섯 상수 중 하나다(대소문자까지 정확히 견준다). 그 밖(없음 · 문자열 아님 · 다른 값)은 typ 를 싣지 않는
+        // 상수 문구로 — 다섯 밖의 typ 는 토큰을 만든 쪽이 고른 값이다. 이 거부 목록만 있던 동안 typ 가 없는 realm 서명 토큰
+        // (JARM 인가 응답 JWT)이 받혔다. strtolower 는 PHP 8.2 부터 로캘과 무관하게 ASCII 만 바꾼다.
         $typ = $validated->claims['typ'] ?? null;
         if (\is_string($typ) && \in_array($typ, self::NOT_ACCESS_TOKEN_TYPES, true)) {
             throw new TokenValidationError(sprintf('not an access token (typ "%s")', $typ));
+        }
+        if (!\is_string($typ) || !\in_array(strtolower($typ), self::ACCESS_TOKEN_TYPES, true)) {
+            throw new TokenValidationError('not an access token (typ is not Bearer or DPoP)');
         }
 
         return $validated;
@@ -89,8 +102,8 @@ final class JwtValidator
         }
 
         $validated = $this->verify($idToken, $clientId);
-        // 토큰 종류 — id_token 경로는 허용 목록이다: typ 가 정확히 문자열 "ID" 여야 한다(액세스 경로의 거부 목록과 달리 —
-        // aud 와 azp 가 이 클라이언트인 액세스 토큰은 다른 검사를 전부 지나고, 그 typ 는 소문자 "bearer" 일 수도 있다). 문구는
+        // 토큰 종류 — id_token 경로는 정확 일치하는 허용 목록(하나)이다: typ 가 정확히 문자열 "ID" 여야 한다(aud 와 azp 가 이
+        // 클라이언트인 액세스 토큰은 다른 검사를 전부 지나고, 그 typ 는 소문자 "bearer" 일 수도 있어 거부 목록이 놓친다). 문구는
         // 상수다 — typ 는 토큰을 만든 쪽이 고른 값이라 싣지 않는다(azp 도 싣지 않는다).
         if (($validated->claims['typ'] ?? null) !== self::ID_TOKEN_TYPE) {
             throw new TokenValidationError('not an id_token (typ is not "ID")');

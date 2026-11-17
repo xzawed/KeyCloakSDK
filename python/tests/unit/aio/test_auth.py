@@ -457,6 +457,8 @@ async def test_exchange_and_validate_share_one_cold_cache_backoff(ajwks):
 # 지킨다. 어느 검사도 다른 경로에 걸리지 않는다. 검증기 칸은 `tests/unit/test_jwt.py` 다.
 
 _NO_AZP = object()  # azp 클레임 자체가 없다
+#: typ 클레임 자체가 없다 — `_signed_token` 이 그 클레임을 뺀다(None 은 JSON null 로 남는다).
+_NO_TYP = object()
 _AZP_MISMATCH = "Authorized party (azp) mismatch"
 _AZP_MISSING = "Missing azp claim for multiple audiences"
 
@@ -489,17 +491,55 @@ async def test_validate_refuses_a_keycloak_token_that_is_not_an_access_token(ajw
     assert ajwks.call_count == 1
 
 
-@pytest.mark.parametrize("typ", [None, "Bearer", "DPoP", "at+jwt"])
+@pytest.mark.parametrize("typ", ["Bearer", "bearer", "DPoP", "dpop"])
 async def test_validate_accepts_an_access_token_typ(ajwks, typ):
-    """(A) 대조 — typ 가 없거나 access 토큰의 값이면 지금처럼 통과한다."""
+    """(A) 허용 목록 — typ 가 ASCII 대소문자를 무시하고 `Bearer` · `DPoP` 면 통과한다(sync 동형)."""
     client, key, endpoints = _validate_client(_config(), ajwks)
-    extra = {} if typ is None else {"typ": typ}
 
     result = await client.validate(
-        _signed_token(key, issuer=endpoints.issuer, audience="app", **extra)
+        _signed_token(key, issuer=endpoints.issuer, audience="app", typ=typ)
     )
 
-    assert result.subject == "user-1"
+    assert (result.subject, result.claims["typ"]) == ("user-1", typ)
+
+
+_NOT_ACCESS = "Token is not an access token (typ is not Bearer or DPoP)"
+
+
+@pytest.mark.parametrize(
+    "typ",
+    [
+        pytest.param(_NO_TYP, id="absent"),
+        pytest.param("at+jwt", id="at+jwt"),
+        pytest.param("CANARY-TYP-7c2e", id="token-chosen string"),
+        pytest.param(1, id="number"),
+        pytest.param(None, id="null"),
+        pytest.param(["Bearer"], id="array"),
+    ],
+)
+async def test_validate_refuses_a_token_not_typed_bearer_or_dpop(ajwks, typ):
+    """(A) — 허용 목록 밖은 상수 문구로 거부한다(sync 동형)."""
+    client, key, endpoints = _validate_client(_config(), ajwks)
+    token = _signed_token(key, issuer=endpoints.issuer, audience="app", typ=typ)
+
+    with pytest.raises(TokenValidationError) as refused:
+        await client.validate(token)
+
+    assert type(refused.value) is TokenValidationError
+    assert str(refused.value) == _NOT_ACCESS
+    assert ajwks.call_count == 1
+
+
+async def test_validate_refuses_a_jarm_authorization_response(ajwks):
+    """JARM 인가 응답 모양(typ 없음 · aud = client_id · code · state) — sync 동형."""
+    client, key, endpoints = _validate_client(_config(), ajwks)
+    claims = {"iss": endpoints.issuer, "aud": "app", "exp": int(time.time()) + 60, "code": "c0de"}
+    jarm = jjwt.encode({"alg": "RS256", "kid": key.kid}, {**claims, "state": "s1"}, key)
+
+    with pytest.raises(TokenValidationError) as refused:
+        await client.validate(jarm)
+
+    assert str(refused.value) == _NOT_ACCESS
 
 
 async def test_validate_does_not_judge_azp(ajwks):
@@ -624,7 +664,7 @@ async def test_validate_id_token_refuses_an_access_token_issued_to_the_client(aj
 @pytest.mark.parametrize(
     "extra",
     [
-        pytest.param({}, id="absent"),
+        pytest.param({"typ": _NO_TYP}, id="absent"),
         pytest.param({"typ": "bearer"}, id="lowercase bearer"),
         pytest.param({"typ": 1}, id="number"),
         pytest.param({"typ": None}, id="null"),
@@ -692,7 +732,7 @@ async def test_validate_id_token_shares_one_jwks_store_with_validate_and_the_exc
 @pytest.mark.parametrize(
     "extra",
     [
-        pytest.param({}, id="absent"),
+        pytest.param({"typ": _NO_TYP}, id="absent"),
         pytest.param({"typ": "Bearer"}, id="Bearer"),
         pytest.param({"typ": "Logout"}, id="Logout"),
     ],
@@ -796,8 +836,18 @@ async def test_introspect_maps_inactive_token_with_missing_fields():
 def _signed_token(
     key: RSAKey, issuer: str, audience: str | list[str], **extra_claims: object
 ) -> str:
-    claims = {"iss": issuer, "aud": audience, "sub": "user-1", "exp": int(time.time()) + 60}
+    """realm 키로 서명한다. typ 를 주지 않으면 Keycloak 의 액세스 토큰처럼 `Bearer` 다(sync 동형) —
+    id_token 은 `typ="ID"` 를 준다. `typ=_NO_TYP` 은 그 클레임을 뺀다."""
+    claims: dict[str, object] = {
+        "iss": issuer,
+        "aud": audience,
+        "sub": "user-1",
+        "exp": int(time.time()) + 60,
+        "typ": "Bearer",
+    }
     claims.update(extra_claims)
+    if claims.get("typ") is _NO_TYP:
+        del claims["typ"]
     return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
 
 
@@ -1277,6 +1327,7 @@ def _es256_setup(config: KeycloakConfig, ajwks) -> tuple[AsyncAuthClient, str]:
             "aud": config.client_id,
             "sub": "user-1",
             "exp": int(time.time()) + 60,
+            "typ": "Bearer",  # Keycloak 의 액세스 토큰 모양(sync 동형)
         },
         key,
     )

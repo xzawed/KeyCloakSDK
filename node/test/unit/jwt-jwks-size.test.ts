@@ -79,8 +79,9 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
+/** Keycloak 의 액세스 토큰 모양 — typ "Bearer"(액세스 검증은 Bearer · DPoP 만 받는다). */
 async function token(kid: string): Promise<string> {
-  return new SignJWT({ sub: 'u', aud: 'my-client' })
+  return new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuer(ISS)
     .setIssuedAt()

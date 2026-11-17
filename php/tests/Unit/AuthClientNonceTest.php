@@ -39,6 +39,10 @@ final class AuthClientNonceTest extends TestCase
     private const NOT_AN_ID_TOKEN = 'not an id_token (typ is not "ID")';
     /** typ 를 싣지 않는 칸의 표지 — JSON null 인 typ 와 「typ 없음」을 가른다. */
     private const NO_TYP = "\0no typ";
+    /** 액세스 경로가 Bearer · DPoP 밖의 typ 를 거부하는 문구 — 상수다(다섯 종류는 이름을 단 문구다). */
+    private const NOT_BEARER_OR_DPOP = 'not an access token (typ is not Bearer or DPoP)';
+    /** 다섯 밖의 typ 를 넣는 칸의 표지 — 거부 문구에 없어야 한다. */
+    private const TYP_CANARY = 'x-canary-typ-2H8M';
 
     /** @var array{priv:string,jwk:array<string,mixed>} */
     private array $key;
@@ -204,6 +208,72 @@ final class AuthClientNonceTest extends TestCase
         } catch (TokenValidationError $refused) {
         }
         self::assertSame('audience does not contain ' . self::OVERRIDE, $refused->getMessage());
+    }
+
+    // ── 액세스 경로의 허용 목록 — validate() 는 payload typ 가 ASCII 대소문자를 무시하고 Bearer 나 DPoP 일 때만 받는다(Keycloak
+    // 자신의 TokenVerifier.TokenTypeCheck). 다섯 종류의 문구는 JwtValidatorTest 가 잰다. ──
+
+    /**
+     * 이 규칙이 닫는 구멍 — Keycloak 의 JARM 인가 응답 JWT(response_mode=query.jwt): realm 이 서명하고 iss 가 realm · aud 가
+     * client id(기대 audience 의 기본값) · exp 가 있고 typ 가 없다(sub · azp 도 없다). 액세스 토큰이 아니다.
+     */
+    public function testValidateRefusesAJarmAuthorizationResponse(): void
+    {
+        $jarm = $this->sign(['iss' => $this->iss, 'aud' => 'it-client', 'exp' => time() + 60, 'code' => 'c0de', 'state' => 'st4te']);
+        try {
+            $this->authWithTokenBody([])->validate($jarm);
+            self::fail('a JARM authorization response is not an access token');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame(self::NOT_BEARER_OR_DPOP, $refused->getMessage());
+        self::assertNull($refused->getPrevious());
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function typsOtherThanBearerOrDPoP(): iterable
+    {
+        yield 'no typ' => [self::NO_TYP];
+        yield 'typ a number' => [1];
+        yield 'typ null' => [null];
+        yield 'typ a list' => [['Bearer']];
+        yield 'typ at+jwt' => ['at+jwt'];
+        yield 'typ an arbitrary value' => [self::TYP_CANARY];
+    }
+
+    /** 상수 문구 하나로 거부하고 typ 를 싣지 않는다 — 다섯 밖의 typ 는 토큰을 만든 쪽이 고른 값이다. */
+    #[DataProvider('typsOtherThanBearerOrDPoP')]
+    public function testValidateRefusesAnAccessTokenNotTypedBearerOrDPoP(mixed $typ): void
+    {
+        $claims = $this->accessTokenClaims(['it-client']);
+        unset($claims['typ']);
+        if ($typ !== self::NO_TYP) {
+            $claims['typ'] = $typ;
+        }
+        try {
+            $this->authWithTokenBody([])->validate($this->sign($claims));
+            self::fail('only typ Bearer or DPoP is an access token');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame(self::NOT_BEARER_OR_DPOP, $refused->getMessage());
+        self::assertNull($refused->getPrevious());
+        self::assertFalse(str_contains($refused->getMessage(), self::TYP_CANARY), 'the refusal quotes the token\'s typ');
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function bearerOrDPoP(): iterable
+    {
+        yield 'Bearer' => ['Bearer'];
+        yield 'bearer (the lower-case client option)' => ['bearer'];
+        yield 'DPoP' => ['DPoP'];
+        yield 'dpop' => ['dpop'];
+    }
+
+    #[DataProvider('bearerOrDPoP')]
+    public function testValidateAcceptsAnAccessTokenTypedBearerOrDPoP(string $typ): void
+    {
+        $claims = $this->accessTokenClaims(['it-client']);
+        $claims['typ'] = $typ;
+        self::assertSame(['it-client'], $this->authWithTokenBody([])->validate($this->sign($claims))->audience);
     }
 
     /**
@@ -603,7 +673,8 @@ final class AuthClientNonceTest extends TestCase
      */
     private function accessTokenClaims(array $aud): array
     {
-        return ['sub' => 'u', 'iss' => $this->iss, 'aud' => $aud, 'azp' => 'it-client', 'exp' => time() + 300, 'iat' => time()];
+        // typ 는 Keycloak 이 액세스 토큰에 쓰는 `Bearer` 다(validate() 는 Bearer · DPoP 만 받는다).
+        return ['sub' => 'u', 'iss' => $this->iss, 'aud' => $aud, 'azp' => 'it-client', 'typ' => 'Bearer', 'exp' => time() + 300, 'iat' => time()];
     }
 
     /** @param array<string,mixed> $claims */

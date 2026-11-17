@@ -291,7 +291,9 @@ def _config(url: str) -> KeycloakConfig:
 
 
 def _signed(url: str) -> str:
+    """Keycloak 의 액세스 토큰 모양(typ `Bearer` — access 검증은 Bearer · DPoP 만 받는다)."""
     claims = {"iss": f"{url}/realms/r", "aud": "c", "sub": "s", "exp": int(time.time()) + 600}
+    claims["typ"] = "Bearer"
     return jjwt.encode({"alg": "RS256", "kid": "k1"}, claims, KEY)
 
 

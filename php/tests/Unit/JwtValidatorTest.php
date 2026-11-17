@@ -118,12 +118,13 @@ final class JwtValidatorTest extends TestCase
 
     /**
      * Keycloak 이 내는 모양 — azp 는 토큰을 요청한 클라이언트다. aud 가 여럿인 id_token 은 azp 가 있어야 한다(OIDC Core §3.1.3.7).
+     * typ 는 액세스 토큰의 `Bearer` 다(validate() 는 Bearer · DPoP 만 받는다) — id_token 은 idTokenClaims() 가 "ID" 로 덮는다.
      *
      * @return array<string,mixed>
      */
     private function goodClaims(): array
     {
-        return ['sub' => 's1', 'iss' => $this->iss, 'aud' => ['it-client', 'account'], 'azp' => 'it-client', 'exp' => time() + 300, 'iat' => time()];
+        return ['sub' => 's1', 'iss' => $this->iss, 'aud' => ['it-client', 'account'], 'azp' => 'it-client', 'typ' => 'Bearer', 'exp' => time() + 300, 'iat' => time()];
     }
 
     /**
@@ -309,7 +310,8 @@ final class JwtValidatorTest extends TestCase
     // ── 토큰 종류 — 액세스 경로(validate)만. Keycloak 은 토큰의 종류를 페이로드 `typ` 클레임에 적는다
     // (org.keycloak.util.TokenUtil): 액세스 토큰은 Bearer · DPoP, id_token 은 ID, 그 밖에 Refresh · Offline · Logout(백채널
     // 로그아웃 토큰) · Serialized-ID. 모두 realm 키로 서명되고 aud 에 이 클라이언트를 담을 수 있어, validate() 가 id_token 이나
-    // 로그아웃 토큰을 액세스 토큰으로 받았다. ──
+    // 로그아웃 토큰을 액세스 토큰으로 받았다. 다섯만 거부하던 동안에는 typ 가 아예 없는 realm 서명 토큰 — JARM 인가 응답
+    // JWT — 이 받혔다. 이제 Bearer · DPoP 만 받고, 다섯은 이름을 단 문구로 거부한다. ──
 
     /** @return iterable<string, array{string}> */
     public static function notAccessTokenTypes(): iterable
@@ -336,32 +338,74 @@ final class JwtValidatorTest extends TestCase
     }
 
     /**
-     * 그 밖은 지금처럼 통과한다 — typ 없음(testValidTokenPasses) · 액세스 토큰의 것(Bearer · DPoP · RFC 9068 at+jwt) · 다른 문자열
-     * (대조는 대소문자까지 정확히 같아야 한다) · 문자열이 아닌 값("ID" 를 담고 있어도).
+     * 액세스 경로는 Keycloak 자신의 허용 목록이다(`TokenVerifier.TokenTypeCheck` 는 equalsIgnoreCase · `DPoPUtil` 은 Bearer 와
+     * DPoP) — typ 가 ASCII 대소문자를 무시하고 Bearer 나 DPoP 인 문자열일 때만 받는다. 클라이언트 옵션 「use lower-case bearer
+     * type」이면 Keycloak 은 "bearer" 를 쓴다.
      *
-     * @return iterable<string, array{mixed}>
+     * @return iterable<string, array{string}>
      */
-    public static function otherTypValues(): iterable
+    public static function accessTokenTypes(): iterable
     {
         yield 'Bearer' => ['Bearer'];
+        yield 'bearer' => ['bearer'];
+        yield 'BEARER' => ['BEARER'];
         yield 'DPoP' => ['DPoP'];
-        yield 'at+jwt' => ['at+jwt'];
-        yield 'a lower-case id' => ['id'];
-        yield 'ID and a space' => ['ID '];
-        yield 'another string' => ['Custom'];
-        yield 'a number' => [42];
-        yield 'true' => [true];
-        yield 'null' => [null];
-        yield 'a list holding ID' => [['ID']];
-        yield 'an object holding ID' => [['typ' => 'ID']];
+        yield 'dpop' => ['dpop'];
+        yield 'DPOP' => ['DPOP'];
     }
 
-    #[DataProvider('otherTypValues')]
-    public function testValidateAcceptsAnyOtherTyp(mixed $typ): void
+    #[DataProvider('accessTokenTypes')]
+    public function testValidateAcceptsBearerOrDPoPIgnoringAsciiCase(string $typ): void
     {
         $c = $this->goodClaims();
         $c['typ'] = $typ;
         self::assertSame('s1', $this->validator()->validate($this->sign($c))->subject);
+    }
+
+    /** 다섯 밖의 typ 를 넣는 칸의 표지 — 거부 문구에 없어야 한다(그 typ 는 토큰을 만든 쪽이 고른 값이다). */
+    private const TYP_CANARY = 'x-canary-typ-9V3D';
+
+    /**
+     * 그 밖은 상수 문구 하나로 거부한다 — 없음(JARM 인가 응답 JWT 는 typ 가 없다) · RFC 9068 at+jwt · 다른 문자열 · 다섯의 다른
+     * 대소문자 · 정확 일치가 아닌 값 · 비ASCII 닮은꼴 · 문자열이 아닌 값.
+     *
+     * @return iterable<string, array{mixed, array<string,mixed>}>
+     */
+    public static function typsOtherThanBearerOrDPoP(): iterable
+    {
+        yield 'no typ' => [self::NO_TYP, []];
+        yield 'a JARM authorization response (no typ)' => [self::NO_TYP, ['code' => 'c0de', 'state' => 'st4te']];
+        yield 'at+jwt' => ['at+jwt', []];
+        yield 'an arbitrary string' => [self::TYP_CANARY, []];
+        yield 'an empty string' => ['', []];
+        yield 'Bearer and a space' => ['Bearer ', []];
+        yield 'a lower-case id' => ['id', []];
+        yield 'Logout and a space' => ['Logout ', []];
+        yield 'a fullwidth look-alike' => ['Ｂｅａｒｅｒ', []];
+        yield 'null' => [null, []];
+        yield 'a number' => [42, []];
+        yield 'true' => [true, []];
+        yield 'a list holding Bearer' => [['Bearer'], []];
+        yield 'an object holding Bearer' => [['typ' => 'Bearer'], []];
+    }
+
+    /** @param array<string,mixed> $extra */
+    #[DataProvider('typsOtherThanBearerOrDPoP')]
+    public function testValidateRefusesATokenNotTypedBearerOrDPoP(mixed $typ, array $extra): void
+    {
+        $c = $extra + $this->goodClaims();
+        unset($c['typ']);
+        if ($typ !== self::NO_TYP) {
+            $c['typ'] = $typ;
+        }
+        try {
+            $this->validator()->validate($this->sign($c));
+            self::fail('only typ Bearer or DPoP is an access token');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame('not an access token (typ is not Bearer or DPoP)', $refused->getMessage());
+        self::assertNull($refused->getPrevious());
+        self::assertFalse(str_contains($refused->getMessage(), self::TYP_CANARY), 'the refusal quotes the token\'s typ');
     }
 
     /** 액세스 토큰의 azp 는 그것을 요청한 클라이언트다 — 리소스 서버가 받는 토큰은 다른 클라이언트를 담는다. 액세스 경로는 보지 않는다. */
@@ -382,7 +426,7 @@ final class JwtValidatorTest extends TestCase
 
     /**
      * id_token 경로가 받는 typ 는 정확히 문자열 "ID" 하나다 — Keycloak 26.6 이 모든 id_token 에 싣는 값
-     * (`TokenManager.AccessTokenResponseBuilder.generateIDToken`). 액세스 경로의 거부 목록과 달리 허용 목록이다: 액세스 토큰은
+     * (`TokenManager.AccessTokenResponseBuilder.generateIDToken`). 정확 일치하는 허용 목록(하나)이다: 액세스 토큰은
      * typ 가 소문자 "bearer" 일 수 있어(클라이언트 옵션 "use lower-case bearer type") 거부 목록이 놓친다.
      *
      * @return iterable<string, array{mixed}>

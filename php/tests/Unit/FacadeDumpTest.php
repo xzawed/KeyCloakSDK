@@ -196,8 +196,9 @@ final class FacadeDumpTest extends TestCase
         $auth = self::authClient($cfg, $http);
         $ts = $auth->clientCredentialsToken();
         $ir = $auth->introspect(self::ACCESS);
+        // 액세스 토큰 — typ 는 Keycloak 이 쓰는 `Bearer` 다(validate() 는 Bearer · DPoP 만 받는다).
         $jwt = FbJwt::encode([
-            'iss' => self::SERVER . '/realms/r', 'sub' => 'u1', 'aud' => 'c',
+            'iss' => self::SERVER . '/realms/r', 'sub' => 'u1', 'aud' => 'c', 'typ' => 'Bearer',
             'exp' => time() + 60, 'iat' => time(),
         ], $key['priv'], 'RS256', 'k1');
         $vt = $auth->validate($jwt);

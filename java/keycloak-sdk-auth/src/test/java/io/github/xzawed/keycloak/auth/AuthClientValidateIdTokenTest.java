@@ -31,7 +31,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * exp · skew, 그리고 id_token 자리의 종류 — 페이로드 typ 이 정확히 문자열 "ID" — 와 그다음 azp(OIDC Core §3.1.3.7 4·5). nonce 는
  * 보지 않는다(교환의 몫). 등록부 {@code id-token-validator-not-public}.
  *
- * <p>종류는 허용 목록이다(액세스 쪽 validate() 는 거부 목록): Keycloak 은 id_token 을 한 곳에서만 만들고 늘 typ "ID" 를 싣는다
+ * <p>종류는 허용 목록이다(액세스 쪽 validate() 는 Bearer · DPoP 의 허용 목록): Keycloak 은 id_token 을 한 곳에서만 만들고 늘 typ "ID" 를 싣는다
  * (TokenManager.generateIDToken — 실서버 통합에서도 "ID" 를 쟀다). 액세스 토큰은 typ 이 "Bearer" 이고 aud 에 client id 를, azp 에
  * 그 client 를 담을 수 있다 — 종류를 안 보면 그 토큰이 이 길의 다른 검사를 전부 지난다(아래 첫 거부 시험의 대조군이 그것을 보인다).
  * 검증기는 정적 JWKS 를 주입한다(키 원천 공유는 {@code IdTokenAudienceJwksSharingTest} 가 운영 경로 forRealm 으로 잰다).

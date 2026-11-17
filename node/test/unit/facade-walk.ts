@@ -334,8 +334,9 @@ export async function dumpRoots() {
     clientSecret: SECRET,
   }
   const issuer = `${origin}/realms/r`
-  const sign = (typ: string): Promise<string> =>
-    new SignJWT({})
+  // `typ` 은 보호 머리의 것이다. 페이로드 클레임은 `claims` 다.
+  const sign = (typ: string, claims: Record<string, unknown> = {}): Promise<string> =>
+    new SignJWT(claims)
       .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ })
       .setIssuer(issuer)
       .setSubject('u1')
@@ -344,7 +345,8 @@ export async function dumpRoots() {
       .setExpirationTime('1m')
       .sign(privateKey)
   const idToken = await sign('JWT')
-  const jwt = await sign('at+jwt')
+  // 액세스 토큰 — Keycloak 처럼 페이로드 typ "Bearer"(액세스 검증은 Bearer · DPoP 만 받는다).
+  const jwt = await sign('at+jwt', { typ: 'Bearer' })
   idp.tokenResponse = {
     access_token: ACCESS,
     token_type: 'Bearer',

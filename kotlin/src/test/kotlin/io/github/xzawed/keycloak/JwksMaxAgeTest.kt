@@ -231,6 +231,7 @@ internal class JwksMaxAgeTest {
                     JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.keyID).build(),
                     JWTClaimsSet
                         .Builder()
+                        .claim("typ", "Bearer")
                         .issuer(issuer)
                         .audience("app")
                         .subject(key.keyID)

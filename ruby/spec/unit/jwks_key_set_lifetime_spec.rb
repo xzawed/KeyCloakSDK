@@ -32,9 +32,10 @@ RSpec.describe KeycloakSdk::JwtValidator do
     { status: 200, body: jwks.to_json, headers: { "Content-Type" => "application/json" } }
   end
 
+  # Keycloak 의 접근 토큰 모양 — typ "Bearer"(접근 토큰 검증은 Bearer · DPoP 만 받는다).
   def token(kid)
     claims = { "sub" => "u-#{kid}", "iss" => "https://kc.example.com/realms/demo", "aud" => "app",
-               "exp" => Time.now.to_i + 600 }
+               "typ" => "Bearer", "exp" => Time.now.to_i + 600 }
     JWT.encode(claims, keys.fetch(kid), "RS256", { kid: kid })
   end
 

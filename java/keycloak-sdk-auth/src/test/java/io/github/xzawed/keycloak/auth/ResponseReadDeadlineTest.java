@@ -426,7 +426,7 @@ class ResponseReadDeadlineTest {
 
   private static String signedToken(String url) throws Exception {
     SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(url + "/realms/r").audience("app").subject("u1")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(url + "/realms/r").audience("app").subject("u1")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(signing));
     return jwt.serialize();

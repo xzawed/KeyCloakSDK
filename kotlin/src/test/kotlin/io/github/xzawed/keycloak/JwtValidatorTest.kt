@@ -25,6 +25,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Base64
 import java.util.Date
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -58,6 +59,8 @@ internal class JwtValidatorTest {
         val builder =
             JWTClaimsSet
                 .Builder()
+                // 액세스 토큰 모양 — typ "Bearer"(액세스 검증기는 Bearer · DPoP 만 받는다 · id_token 시험은 [typedId] 가 "ID" 로 바꾼다).
+                .claim("typ", "Bearer")
                 .issuer(iss)
                 .audience(aud)
                 .subject(subject)
@@ -763,12 +766,17 @@ internal class JwtValidatorTest {
         }
     }
 
-    // ── (A) 액세스 토큰 자리에 온 다른 Keycloak 토큰 — 페이로드의 typ 클레임 ──
+    // ── (A) 액세스 토큰 자리의 종류 — 페이로드의 typ 클레임 ──
     // Keycloak 은 typ 클레임에 토큰의 종류를 적는다(org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
     // 액세스 토큰은 Bearer · DPoP, 그 밖은 ID · Refresh · Offline · Logout · Serialized-ID. id_token 과 back-channel logout
     // 토큰도 같은 realm 키로 서명되고 iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(expectedAudience =
-    // clientId)의 aud 검사까지 지난다 — 그래서 validate() 가 그것을 액세스 토큰으로 받아 줬다. 다섯을 거부하고 나머지는
-    // 지금처럼 받는다(Java `JwtValidatorTest` 동형).
+    // clientId)의 aud 검사까지 지난다. 그래서 validate() 는 허용 목록으로 본다 — Keycloak 의 자원 쪽 검사와 같다
+    // (TokenVerifier.TokenTypeCheck 는 equalsIgnoreCase · 없으면 거부, DPoPUtil.withDPoPVerifier 는 Bearer · DPoP): typ 이 문자열이고
+    // ASCII 대소문자를 무시해 Bearer 또는 DPoP 와 같을 때만 받는다(Keycloak 은 클라이언트 옵션 「use lower-case bearer type in token
+    // responses」 아래 "bearer" 로 쓴다). 다섯은 지금의 메시지로, 그 밖은 상수 메시지로 거부한다(Java `JwtValidatorTest` 동형).
+
+    // 다섯이 아닌 거부의 메시지 — 상수다. 토큰이 고른 typ 값은 싣지 않는다.
+    private val notBearerOrDPoP = "not an access token (typ is not Bearer or DPoP)"
 
     // iss · aud · exp(1분 뒤)가 맞는 RS256 토큰 — extra 가 클레임을 더한다.
     private fun signedWith(
@@ -791,20 +799,108 @@ internal class JwtValidatorTest {
             }
         }
 
-    // 다섯 값과 정확히(대소문자 · 공백까지) 같은 문자열만 거부된다 — 액세스 토큰의 값 · 그 밖의 문자열 · 문자열 아닌 값 · 부재는 통과.
+    // 액세스 토큰의 typ — Bearer · DPoP 를 ASCII 대소문자를 무시해 받는다(Keycloak 은 옵션에 따라 "bearer" 로 쓴다).
     @Test
-    fun `validate accepts any other typ claim, a non-string one and none`() =
+    fun `validate accepts a token typed Bearer or DPoP, ignoring ASCII case`() =
         runTest {
             val key = rsaKey()
             val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
-            val passing: List<Any?> =
-                listOf(null, "Bearer", "DPoP", "at+jwt", "id", "logout", "ID ", "", listOf("ID"), 1L, true, mapOf("typ" to "ID"))
 
-            for (typ in passing) {
-                val token = signedWith(key) { if (typ != null) claim("typ", typ) }
-                // 토큰이 정말 그 값을 실었는지(되읽은 값) — 직렬화가 값을 바꿨다면 이 경우는 아무것도 재지 않는다.
-                assertEquals(typ, validator.validate(token).claims["typ"], "typ=$typ")
+            for (typ in listOf("Bearer", "bearer", "BEARER", "DPoP", "dpop", "DPOP")) {
+                assertEquals(typ, validator.validate(signedWith(key) { claim("typ", typ) }).claims["typ"], typ)
             }
+        }
+
+    // Bearer · DPoP 가 아닌 typ — 부재 · 다른 문자열(RFC 9068 at+jwt · 다섯의 다른 대소문자 · 공백 붙은 값 · 빈 문자열 · 임의의
+    // 문자열) · 문자열이 아닌 값. 전부 같은 상수 메시지다 — 토큰이 고른 값을 싣지 않는다.
+    @Test
+    fun `validate refuses a token whose typ is not Bearer or DPoP`() =
+        runTest {
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+            val refused: List<Any?> =
+                listOf(
+                    null,
+                    "at+jwt",
+                    "hp-chosen-kind-7Qx",
+                    "id",
+                    "logout",
+                    "Bearer ",
+                    "",
+                    1L,
+                    true,
+                    listOf("Bearer"),
+                    mapOf("typ" to "Bearer"),
+                )
+
+            for (typ in refused) {
+                // null 이면 typ 을 싣지 않는다(직렬화가 null 클레임을 뺀다) — 부재다.
+                val token = signedWith(key) { claim("typ", typ) }
+                // 전제: 토큰이 정말 그 값을 실었다(되읽은 값) — 아니면 이 경우는 아무것도 재지 않는다.
+                assertEquals(typ, SignedJWT.parse(token).jwtClaimsSet.getClaim("typ"), "전제: typ=$typ")
+                val e = assertFailsWith<TokenValidationException>("typ=$typ") { validator.validate(token) }
+                assertEquals(notBearerOrDPoP, e.message, "typ=$typ")
+            }
+        }
+
+    // JSON null 인 typ — 「있지만 문자열이 아닌」 값. 부재와 따로 친다(전제로 정말 "typ":null 을 실었는지 본다).
+    @Test
+    fun `validate refuses a token whose typ is JSON null`() =
+        runTest {
+            val key = rsaKey()
+            val token =
+                signedWith(key) {
+                    serializeNullClaims(true)
+                    claim("typ", null)
+                }
+            assertContains(SignedJWT.parse(token).payload.toString(), "\"typ\":null")
+
+            val e =
+                assertFailsWith<TokenValidationException> {
+                    JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience).validate(token)
+                }
+            assertEquals(notBearerOrDPoP, e.message)
+        }
+
+    // 토큰이 고른 typ 은 메시지 어디에도 실리지 않는다 — 다섯(SDK 가 아는 상수)만 실린다.
+    @Test
+    fun `validate never echoes a token-chosen typ`() =
+        runTest {
+            val key = rsaKey()
+            val canary = "hp-typ-canary-0123456789"
+            val token = signedWith(key) { claim("typ", canary) }
+
+            val e =
+                assertFailsWith<TokenValidationException> {
+                    JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience).validate(token)
+                }
+            assertFalse(canary in e.stackTraceToString(), e.toString())
+        }
+
+    // JARM 인가 응답(Keycloak AuthorizationResponseToken — OIDCRedirectUriBuilder 가 만든다): typ 이 없고 iss = realm · aud = client
+    // id · exp 를 싣고 realm 키로 서명된다. response_mode=query.jwt 면 브라우저 URL 로 다닌다. 기본 기대 audience(= client id)의 aud
+    // 검사까지 다 지나 — 종류만이 그것을 가른다.
+    @Test
+    fun `validate refuses a JARM authorization response`() =
+        runTest {
+            val key = rsaKey()
+            val jarm =
+                JWTClaimsSet
+                    .Builder()
+                    .issuer(issuer)
+                    .audience(audience)
+                    .expirationTime(Date(System.currentTimeMillis() + 60_000))
+                    .claim("code", "auth-code-1")
+                    .claim("state", "state-1")
+                    .build()
+            val token = signedRs256(key, jarm)
+            assertEquals(null, SignedJWT.parse(token).jwtClaimsSet.getClaim("typ"), "전제: JARM 응답에는 typ 이 없다")
+
+            val e =
+                assertFailsWith<TokenValidationException> {
+                    JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience).validate(token)
+                }
+            assertEquals(notBearerOrDPoP, e.message)
         }
 
     // typ 은 서명 · iss · aud · exp 가 통과한 **뒤에** 본다 — 검증 전 클레임으로 판정하지 않는다. typ="ID" 를 실은 위조 서명 ·
@@ -847,7 +943,8 @@ internal class JwtValidatorTest {
         }
 
     // withAudience 가 주는 것은 id_token 검증기다(`AuthClient.validateIdToken` · 코드 교환). Keycloak 의 id_token 은 typ "ID" 라
-    // (A) 거부 목록을 걸지 않고, 대신 typ 허용 목록(정확히 "ID" — `AuthClientValidateIdTokenTest`)과 그다음 (B) azp 규칙을 건다.
+    // (A) 허용 목록(Bearer · DPoP)을 걸지 않고, 대신 typ 허용 목록(정확히 "ID" — `AuthClientValidateIdTokenTest`)과 그다음 (B) azp
+    // 규칙을 건다.
     // 같은 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고, 파생이 원본을
     // 바꾸지 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다). (B) 는 aud 가 둘인데 azp 가 없는 토큰으로 본다: 원본은 액세스 토큰
     // 모양(typ "Bearer")을 받고, 파생은 id_token 모양(typ "ID")을 azp 로 거부한다 — 종류가 azp 보다 먼저라, 파생에 주는 것은 typ

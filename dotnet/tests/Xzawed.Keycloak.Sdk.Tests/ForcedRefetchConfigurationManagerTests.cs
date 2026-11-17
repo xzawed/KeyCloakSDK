@@ -88,7 +88,7 @@ public sealed class ForcedRefetchConfigurationManagerTests : IDisposable
     }
 
     private static string Token(RsaSecurityKey key) => new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(
-        $$"""{"iss":"{{Issuer}}","sub":"s","aud":"c","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
+        $$"""{"iss":"{{Issuer}}","sub":"s","aud":"c","typ":"Bearer","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
         new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
 
     private static async Task<bool> AcceptsAsync(JwtValidator v, string token)

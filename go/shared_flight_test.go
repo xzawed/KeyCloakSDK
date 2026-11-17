@@ -194,8 +194,9 @@ func (p *flightIdP) token(t *testing.T, key *rsa.PrivateKey, kid string) string 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// An access token: typ "Bearer" (Validate accepts only Bearer or DPoP).
 	s, err := jwt.Signed(sig).Claims(jwt.Claims{Subject: "u1", Issuer: p.srv.URL + "/realms/r", Audience: jwt.Audience{"c"},
-		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}).Serialize()
+		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}).Claims(map[string]any{"typ": "Bearer"}).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}

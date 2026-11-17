@@ -214,8 +214,9 @@ public class AuthClient internal constructor(
 
     /**
      * Verifies the signature against the realm JWKS and enforces issuer/audience (= `expectedAudience`)/exp/nbf
-     * (hardened [JwtValidator], reusing §jwt), and rejects a Keycloak token that is not an access token (`typ` claim
-     * `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`).
+     * (hardened [JwtValidator], reusing §jwt), and accepts only an access token: the payload `typ` must be `Bearer` or
+     * `DPoP`, ignoring case — a token without `typ`, or of another kind (`ID`, `Refresh`, `Offline`, `Logout`,
+     * `Serialized-ID`, …), is rejected.
      */
     public suspend fun validate(accessToken: String): ValidatedToken = ensureValidator().validate(accessToken)
 

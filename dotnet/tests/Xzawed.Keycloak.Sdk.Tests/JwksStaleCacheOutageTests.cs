@@ -261,7 +261,7 @@ public sealed class JwksStaleCacheOutageTests : IDisposable
         new(Issuer, new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "c" } }, _http, _clock.Read, () => 1.0);
 
     private string Token(RsaSecurityKey key, string sub) => new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(
-        $$"""{"iss":"{{Issuer}}","sub":"{{sub}}","aud":"c","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
+        $$"""{"iss":"{{Issuer}}","sub":"{{sub}}","aud":"c","typ":"Bearer","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
         new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
 
     /// <summary>A well-formed token under a kid the IdP never published.</summary>

@@ -181,6 +181,8 @@ private fun signed(
     val claims =
         JWTClaimsSet
             .Builder()
+            // 액세스 토큰 모양 — typ "Bearer"(validate 는 Bearer · DPoP 만 받는다). id_token 은 extra 의 typ "ID" 가 이긴다.
+            .claim("typ", "Bearer")
             .issuer(issuer)
             .audience("c")
             .subject("u1")

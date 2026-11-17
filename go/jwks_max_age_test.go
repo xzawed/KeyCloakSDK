@@ -105,7 +105,9 @@ func (p *maxAgeIdP) token(t *testing.T, kid string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := jwt.Signed(sig).Claims(claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(10*time.Minute))).Serialize()
+	// An access token: typ "Bearer" (Validate accepts only Bearer or DPoP).
+	s, err := jwt.Signed(sig).Claims(claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(10*time.Minute))).
+		Claims(map[string]any{"typ": "Bearer"}).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}

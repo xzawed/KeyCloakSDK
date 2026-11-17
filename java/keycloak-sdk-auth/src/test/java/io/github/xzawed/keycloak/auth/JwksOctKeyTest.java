@@ -199,8 +199,9 @@ class JwksOctKeyTest {
         .build();
   }
 
+  // 액세스 토큰 모양 — typ "Bearer"(액세스 검증기는 Bearer · DPoP 만 받는다).
   private static JWTClaimsSet claims(OidcMetadata md, String sub) {
-    return new JWTClaimsSet.Builder().issuer(md.getIssuer()).audience("app").subject(sub)
+    return new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(md.getIssuer()).audience("app").subject(sub)
         .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build();
   }
 

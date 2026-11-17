@@ -41,8 +41,9 @@ nonce·콜드캐시 백오프·토큰응답 타입검증 축은 `scripts/test/te
   (W3c) 분류 실행에서 JWKS 를 조회한 행마다 콜드 캐시 + /certs 503 에서 k 회 — 전부
        실패, 1 <= /certs <= k-1. 시간이 아니라 요청 수만 잰다.
   (W3d) JWKS_FETCH 행마다 서명 위조 — IdP 키로 서명한 대조는 성공하고, 같은 kid 의
-       다른 키로 서명한 토큰은 SDK 예외로 거부된다(Grok 레그가 연 축 — 아래). 이름에
-       id_token 이 든 파라미터를 받는 행은 두 칸 다 typ `ID` 를 싣는다(`_id_token_params`).
+       다른 키로 서명한 토큰은 SDK 예외로 거부된다(Grok 레그가 연 축 — 아래). 두 칸 다 그
+       행이 받는 종류의 typ 를 싣는다 — 이름에 id_token 이 든 파라미터를 받는 행은 `ID`
+       (`_id_token_params`), 나머지는 `Bearer`.
   실패한 칸은 `_KNOWN_GAPS` 에 이유와 함께 있으면 GAP 으로 찍히고, 관측되지 않는 항목은
   낡은 것이라 실패한다.
 
@@ -328,7 +329,8 @@ def _recording_idp(key: RSAKey) -> Iterator[_Recorder]:
     rec.url = f"http://127.0.0.1:{server.server_address[1]}"
     # ⚠️ 평문이면 토큰을 받는 메서드(validate 둘)가 JWS 파싱에서 요청 없이 실패해
     # UNDETERMINED 가 되고 JWKS_FETCH 가 빈다(Go 실측) — 그래서 이 IdP 키로 서명한 JWS 다.
-    rec.universal = _sign(key, "k1", rec.issuer, {})
+    # Keycloak 의 액세스 토큰처럼 typ `Bearer` — access 검증(validate 행)이 받는 모양이다.
+    rec.universal = _sign(key, "k1", rec.issuer, {"typ": "Bearer"})
     # Keycloak 의 id_token 처럼 typ `ID` — id_token 경로는 종류를 허용 목록으로 본다.
     rec.id_token = _sign(key, "k1", rec.issuer, {"nonce": rec.universal, "typ": "ID"})
     threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
@@ -633,8 +635,9 @@ def _nonce_params(member: _Member) -> frozenset[str]:
 
 def _id_token_params(member: _Member) -> frozenset[str]:
     """이름에 "id_token" 이 든 파라미터(서명에서) — 그 인자는 Keycloak 의 id_token 모양(payload typ
-    `ID`)이어야 맞는 토큰이다. id_token 경로는 종류를 허용 목록으로 보고, access 경로는 `ID` 를
-    거부한다 — 보편 인자 하나로는 둘 다 맞출 수 없어 W3d 가 이 행에만 그 모양으로 서명한다."""
+    `ID`)이어야 맞는 토큰이다. 두 경로가 다 종류를 허용 목록으로 본다(id_token 은 `ID`, access 는
+    `Bearer` · `DPoP`) — 보편 인자 하나로는 둘 다 맞출 수 없어 W3d 가 행마다 그 행이 받는 모양으로
+    서명한다."""
     return _params_named(member, "id_token")
 
 
@@ -1351,13 +1354,14 @@ def _run_forged_d(
     print(f"\n(d) 서명 위조 대상(분류가 JWKS_FETCH 인 행): {', '.join(map(_short, labels))}")
     cells: list[_Cell] = []
     for label in labels:
-        # id_token 을 받는 행은 두 칸 다 Keycloak 의 id_token 모양(typ `ID`)이다 — 아니면 대조가
-        # 종류 검사에서 거부돼 위조 칸이 아무것도 증명 못 한다. 두 칸이 다른 것은 서명 키뿐이다.
-        shape: dict[str, object] = {"typ": "ID"} if _id_token_params(members[label]) else {}
+        # 두 칸 다 그 행이 받는 종류의 모양이다 — id_token 을 받는 행은 typ `ID`, 나머지(access)는
+        # typ `Bearer`. 아니면 대조가 종류 검사에서 거부돼 위조 칸이 아무것도 증명 못 한다. 두 칸이
+        # 다른 것은 서명 키뿐이다.
+        id_row = bool(_id_token_params(members[label]))
+        shape: dict[str, object] = {"typ": "ID" if id_row else "Bearer"}
         for code, forged in (("대조", False), ("key≠·kid=k1", True)):
             with _recording_idp(key) as rec:
-                if forged or shape:
-                    rec.universal = _sign(other if forged else key, "k1", rec.issuer, shape)
+                rec.universal = _sign(other if forged else key, "k1", rec.issuer, shape)
                 sent, err = _run(_cell_async(rec, members[label], builder_of, frozenset(), None))
             certs = sum(1 for r in sent if _is_certs_get(r))
             cell = _Cell("d", label, code, note=f"certs {certs}")

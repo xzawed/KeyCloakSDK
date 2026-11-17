@@ -96,7 +96,8 @@ final class KeySetLifetimeTest extends TestCase
 
     private function token(string $kid): string
     {
-        $claims = ['sub' => "u-$kid", 'iss' => 'https://kc.test/realms/r', 'aud' => 'c', 'exp' => time() + 600];
+        // 액세스 토큰 — typ 는 Keycloak 이 쓰는 `Bearer` 다(validate() 는 Bearer · DPoP 만 받는다).
+        $claims = ['sub' => "u-$kid", 'iss' => 'https://kc.test/realms/r', 'aud' => 'c', 'typ' => 'Bearer', 'exp' => time() + 600];
 
         return FbJwt::encode($claims, self::$keys[$kid]['priv'], 'RS256', $kid);
     }

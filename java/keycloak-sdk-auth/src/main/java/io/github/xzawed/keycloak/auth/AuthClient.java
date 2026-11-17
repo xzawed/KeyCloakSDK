@@ -36,8 +36,8 @@ public class AuthClient {
     this.config = config; this.metadata = metadata; this.jwtValidator = injectedValidator;
   }
 
-  // JWKS 기반 서명·issuer·audience·만료 검증 + 액세스 토큰이 아닌 Keycloak 토큰(typ 클레임 ID · Refresh · Offline · Logout ·
-  // Serialized-ID) 거부. 실패 시 TokenValidationException.
+  // JWKS 기반 서명·issuer·audience·만료 검증 + 액세스 토큰의 종류: 페이로드 typ 이 Bearer · DPoP(ASCII 대소문자 무시)인 토큰만
+  // 받는다 — 부재 · 문자열 아님 · 그 밖의 값(ID · Refresh · Offline · Logout · Serialized-ID 포함)은 거부. 실패 시 TokenValidationException.
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1) — Nimbus 타입을 공개 API에 노출하지 않는다.
   public ValidatedToken validate(String accessToken) {
     return validator().validate(accessToken);

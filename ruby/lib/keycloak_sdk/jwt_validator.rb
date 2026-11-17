@@ -14,12 +14,17 @@ module KeycloakSdk
     JWT_MAX_BYTES = 256_000
     private_constant :JWT_MAX_BYTES
 
-    # 접근 토큰이 아닌 Keycloak 토큰의 페이로드 `typ`(org.keycloak.util.TokenUtil) — id_token · refresh · offline ·
-    # 백채널 logout · 직렬화된 id_token. 접근 토큰은 Bearer · DPoP 다.
+    # 접근 토큰의 페이로드 `typ`(org.keycloak.util.TokenUtil 의 TOKEN_TYPE_BEARER · TOKEN_TYPE_DPOP) — 접근 토큰 경로는
+    # 이 둘만 받는다(허용 목록, ASCII 대소문자 무시 — Keycloak 자신의 TokenVerifier.TokenTypeCheck 가 equalsIgnoreCase 다).
+    ACCESS_TOKEN_TYPES = %w[Bearer DPoP].freeze
+    private_constant :ACCESS_TOKEN_TYPES
+
+    # 접근 토큰이 아닌 Keycloak 토큰의 페이로드 `typ` — id_token · refresh · offline · 백채널 logout · 직렬화된 id_token.
+    # 허용 목록 밖이라 거부되고, 대소문자까지 정확히 이 다섯 중 하나일 때만 거부 문구가 그 값을 말한다.
     NOT_ACCESS_TOKEN_TYPES = %w[ID Refresh Offline Logout Serialized-ID].freeze
     private_constant :NOT_ACCESS_TOKEN_TYPES
 
-    # id_token 경로가 받는 유일한 페이로드 `typ` — **허용 목록**이다(접근 토큰 경로는 위 거부 목록이다). Keycloak 26.6.9 는
+    # id_token 경로가 받는 유일한 페이로드 `typ` — 접근 토큰 경로처럼 **허용 목록**이다. Keycloak 26.6.9 는
     # id_token 을 한 곳(`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만 만들고 거기서 늘 "ID" 를 싣는다
     # (실서버 통합 시험도 "ID" 를 쟀다). 그래서 부재 · 문자열이 아닌 값 · 그 밖의 문자열은 전부 거부다 — aud 에 client_id 가
     # 있고 azp 가 client_id 인 접근 토큰(typ "Bearer", 소문자 "bearer" 도)이 id_token 검사를 지나던 틈을 닫는다.
@@ -50,13 +55,15 @@ module KeycloakSdk
     end
 
     # Validates an access token. `audience:` is the expected aud for this call only (default = the value given at
-    # construction). A token whose payload `typ` names another kind of Keycloak token — an id_token (`ID`), `Refresh`,
-    # `Offline`, `Logout` or `Serialized-ID` — is refused even when every other check passes; any other `typ`, or
-    # none, is not looked at. An id_token goes through `validate_id_token`.
+    # construction). After every other check passes, the token kind is an allow-list, as in Keycloak's own
+    # resource-side check: the payload `typ` must be a String equal to `Bearer` or `DPoP`, ignoring ASCII case. A
+    # missing, non-String or other `typ` is refused — another kind of Keycloak token (`ID`, `Refresh`, `Offline`,
+    # `Logout`, `Serialized-ID`, whose message names it) or a realm-signed JWT without `typ` (a JARM authorization
+    # response, whose message is constant). An id_token goes through `validate_id_token`.
     # ⚠️ nil or blank is a ConfigError, as in the constructor — with `aud: nil`, ruby-jwt skips the aud check.
     def validate(token, audience: @audience)
       validated = verify(token, audience)
-      reject_other_token_type!(validated.claims)
+      require_access_token_type!(validated.claims)
       validated
     end
 
@@ -97,12 +104,19 @@ module KeycloakSdk
       raise TokenValidationError, "JWT validation failed: #{e.message}", cause: RedactedCause.new(e)
     end
 
-    # 토큰 종류 — 접근 토큰 경로만. 문자열일 때만, 대소문자까지 정확히 견준다. 값을 인용해도 된다 — 위 다섯 상수 중 하나다.
-    def reject_other_token_type!(claims)
+    # 토큰 종류 — 접근 토큰 경로만. 허용 목록이다: String 이고 ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같을 때만
+    # 지난다(`casecmp` 는 A–Z 만 접는다 — 유니코드 접기인 `casecmp?` 가 아니다). 부재 · String 이 아닌 값 · 그 밖의 문자열은
+    # 거부다 — typ 이 없는 realm 서명 JWT(JARM 인가 응답, aud = client_id)가 접근 토큰으로 받아들여졌다. 정확히 다섯 종류면
+    # 그 값을 인용하고(다섯 상수 중 하나다), 나머지는 상수 문구다 — 토큰이 고른 typ 을 인용하지 않는다.
+    def require_access_token_type!(claims)
       typ = claims["typ"]
-      return unless typ.is_a?(String) && NOT_ACCESS_TOKEN_TYPES.include?(typ)
-
-      raise TokenValidationError, "JWT validation failed: not an access token (typ \"#{typ}\")"
+      if typ.is_a?(String)
+        return if ACCESS_TOKEN_TYPES.any? { |t| typ.casecmp(t)&.zero? }
+        if NOT_ACCESS_TOKEN_TYPES.include?(typ)
+          raise TokenValidationError, "JWT validation failed: not an access token (typ \"#{typ}\")"
+        end
+      end
+      raise TokenValidationError, "JWT validation failed: not an access token (typ is not Bearer or DPoP)"
     end
 
     # 토큰 종류 — id_token 경로만. 허용 목록이다: String 이고 대소문자까지 "ID" 와 같을 때만 지난다. 값을 인용하지 않는다 —

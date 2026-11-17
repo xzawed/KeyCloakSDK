@@ -206,9 +206,11 @@ func (a *AuthClient) Logout(ctx context.Context, refreshToken string) error {
 	return err
 }
 
-// Validate verifies an access token's signature and hardened claims, and refuses
-// a Keycloak token that is not an access token (typ claim ID, Refresh, Offline,
-// Logout or Serialized-ID). An id_token is ValidateIDToken's.
+// Validate verifies an access token's signature and hardened claims, and accepts
+// it only when its payload typ is Bearer or DPoP, ignoring ASCII case — the
+// access-token types Keycloak writes. Another Keycloak kind (typ ID, Refresh,
+// Offline, Logout or Serialized-ID) is refused by name; anything else, a missing
+// typ included, is refused without quoting it. An id_token is ValidateIDToken's.
 func (a *AuthClient) Validate(ctx context.Context, accessToken string) (*ValidatedToken, error) {
 	return a.val.Validate(ctx, accessToken)
 }

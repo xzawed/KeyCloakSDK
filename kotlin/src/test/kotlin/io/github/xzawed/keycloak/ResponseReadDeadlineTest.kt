@@ -287,6 +287,7 @@ internal class ResponseReadDeadlineTest {
                 JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
                 JWTClaimsSet
                     .Builder()
+                    .claim("typ", "Bearer")
                     .issuer("$url/realms/r")
                     .audience("app")
                     .subject("u1")

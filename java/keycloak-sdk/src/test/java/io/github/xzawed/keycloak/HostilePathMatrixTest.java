@@ -203,7 +203,9 @@ class HostilePathMatrixTest {
       server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
       server.createContext("/", this::handle);
       server.start();
-      jws = sign(key, "k1", iss(), Map.of());
+      // 액세스 토큰 모양(typ "Bearer") — validate 가 이것을 받아 ValidatedToken 수신자를 만든다(액세스 검증기는 Bearer · DPoP 만
+      // 받는다 — 없으면 그 게터 행이 수신자 없이 UNDETERMINED 가 된다).
+      jws = sign(key, "k1", iss(), Map.of("typ", "Bearer"));
       universal = jws;
     }
 

@@ -35,9 +35,14 @@ public class JwtValidatorTests
         return new JwtValidator(tvp);          // internal test ctor
     }
 
-    // `extra` is appended to the claims as written — `,"typ":"ID"`.
-    private static string PayloadJson(string aud, long expOffset = 300, string iss = Issuer, string extra = "")
-        => $$"""{"iss":"{{iss}}","sub":"user-1","aud":{{aud}},"exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expOffset}},"iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}{{extra}}}""";
+    // `extra` is appended to the claims as written — `,"typ":"ID"`. `typ` adds a string typ claim unless it is null or
+    // `extra` already writes one (a JSON object must not carry the same key twice). The default is the access-token shape,
+    // typ "Bearer" — ValidateAsync accepts only Bearer or DPoP, so a test of another check cannot fail on the kind instead.
+    private static string PayloadJson(string aud, long expOffset = 300, string iss = Issuer, string extra = "", string? typ = "Bearer")
+    {
+        var typClaim = typ is null || extra.Contains("\"typ\":", StringComparison.Ordinal) ? "" : $",\"typ\":\"{typ}\"";
+        return $$"""{"iss":"{{iss}}","sub":"user-1","aud":{{aud}},"exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expOffset}},"iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}{{typClaim}}{{extra}}}""";
+    }
 
     // 경계 변환(등록부 boundary-exception-conversion-incomplete) — 공개 생성자는 issuer 문자열을 받고 디스커버리 주소를 그 뒤에
     // 붙인다. 쓸 수 없는 주소의 예외(UriFormatException · 상대 주소의 InvalidOperationException)는 첫 검증 때 나고, 검증 경계가
@@ -164,10 +169,16 @@ public class JwtValidatorTests
     // The kind an id_token carries (Keycloak's TokenUtil.TOKEN_TYPE_ID) — the id_token path refuses any other typ.
     private const string TypedId = ",\"typ\":\"ID\"";
 
-    // ── Token type — the access path only. Keycloak writes the kind of token into a payload `typ` claim
+    // ── Token type on the access path. Keycloak writes the kind of token into a payload `typ` claim
     // (org.keycloak.util.TokenUtil): "Bearer" or "DPoP" on an access token, "ID" on an id_token, "Refresh", "Offline",
     // "Logout" on a back-channel logout token, "Serialized-ID". All of them are signed by the realm key and can name this
-    // client in aud, so ValidateAsync took an id_token or a logout token for an access token. ──
+    // client in aud — and so can a JARM authorization response, which carries no typ at all. So ValidateAsync holds the
+    // kind to Keycloak's own resource-side allow-list (TokenVerifier.TokenTypeCheck compares with equalsIgnoreCase and
+    // refuses a missing typ; DPoPUtil.withDPoPVerifier allows Bearer and DPoP): a string equal to Bearer or DPoP ignoring
+    // ASCII case — Keycloak writes "bearer" under a client option. The five known kinds keep their message; anything else
+    // gets one constant message that never echoes the token's typ. ──
+
+    private const string NotBearerOrDPoP = "not an access token (typ is not Bearer or DPoP)";
 
     [Theory]
     [InlineData("ID")]
@@ -184,26 +195,66 @@ public class JwtValidatorTests
         Assert.Null(refused.InnerException);
     }
 
-    // Everything else is left as it was: no typ, an access token's (Bearer · DPoP · RFC 9068 at+jwt), any other string —
-    // the comparison is exact and case-sensitive — and a value that is not a string, even one that holds "ID".
+    // An access token's kind: Bearer or DPoP, ignoring ASCII case (Keycloak writes "bearer" under a client option).
     [Theory]
-    [InlineData("")]
-    [InlineData(",\"typ\":\"Bearer\"")]
-    [InlineData(",\"typ\":\"DPoP\"")]
-    [InlineData(",\"typ\":\"at+jwt\"")]
-    [InlineData(",\"typ\":\"id\"")]
-    [InlineData(",\"typ\":\"ID \"")]
-    [InlineData(",\"typ\":\"Custom\"")]
-    [InlineData(",\"typ\":42")]
-    [InlineData(",\"typ\":true")]
-    [InlineData(",\"typ\":null")]
-    [InlineData(",\"typ\":[\"ID\"]")]
-    [InlineData(",\"typ\":{\"typ\":\"ID\"}")]
-    public async Task Access_validation_accepts_every_other_typ(string typClaim)
+    [InlineData("Bearer")]
+    [InlineData("bearer")]
+    [InlineData("BEARER")]
+    [InlineData("DPoP")]
+    [InlineData("dpop")]
+    [InlineData("DPOP")]
+    public async Task Access_validation_accepts_a_token_typed_Bearer_or_DPoP_ignoring_ASCII_case(string typ)
     {
         var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
-        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\"", extra: typClaim), Key));
-        Assert.Equal("user-1", vt.Subject);
+        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\"", typ: typ), Key));
+        Assert.Equal(typ, vt.Claims["typ"]);
+    }
+
+    // Any other typ — none, another string (RFC 9068 at+jwt, one of the five in another case, a trailing space, empty, an
+    // arbitrary one) or a value that is not a JSON string (JSON null included) — gets the one constant message.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("\"at+jwt\"")]
+    [InlineData("\"hp-chosen-kind-7Qx\"")]
+    [InlineData("\"id\"")]
+    [InlineData("\"logout\"")]
+    [InlineData("\"Bearer \"")]
+    [InlineData("\"\"")]
+    [InlineData("42")]
+    [InlineData("true")]
+    [InlineData("null")]
+    [InlineData("[\"Bearer\"]")]
+    [InlineData("{\"typ\":\"Bearer\"}")]
+    public async Task Access_validation_refuses_a_token_whose_typ_is_not_Bearer_or_DPoP(string? typJson)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var token = Sign(PayloadJson("\"it-client\"", typ: null, extra: typJson is null ? "" : $",\"typ\":{typJson}"), Key);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(token));
+        Assert.Equal(NotBearerOrDPoP, refused.Message);
+        Assert.Null(refused.InnerException);
+    }
+
+    // The token's typ is never echoed — only the five known kinds (constants the SDK knows) are named in a message.
+    [Fact]
+    public async Task Access_validation_never_echoes_a_token_chosen_typ()
+    {
+        const string canary = "hp-typ-canary-0123456789";
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", typ: canary), Key)));
+        Assert.DoesNotContain(canary, refused.ToString());
+    }
+
+    // A JARM authorization response (Keycloak's AuthorizationResponseToken, built by OIDCRedirectUriBuilder): no typ, iss =
+    // the realm, aud = the client id, an exp, signed by the realm key — with response_mode=query.jwt it travels in the
+    // browser URL. It passes every other check of the default configuration; only the kind tells it apart.
+    [Fact]
+    public async Task Access_validation_refuses_a_JARM_authorization_response()
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var jarm = $$"""{"iss":"{{Issuer}}","aud":"it-client","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 60}},"code":"auth-code-1","state":"state-1"}""";
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(Sign(jarm, Key)));
+        Assert.Equal(NotBearerOrDPoP, refused.Message);
     }
 
     // An access token's azp is the client that asked for it — a resource server's tokens name other clients — so the
@@ -217,7 +268,7 @@ public class JwtValidatorTests
     }
 
     // ── The id_token path (ValidateForAudienceAsync — AuthClient.ValidateIdTokenAsync and the code exchange): not the
-    // access path's token-type deny-list — an id_token is typed "ID" — but, after every other check, the kind, an
+    // access path's token-type allow-list — an id_token is typed "ID" — but, after every other check, the kind, an
     // allow-list: typ must be exactly "ID" (AuthClientTests.ValidateIdTokenAsync_*), and then the authorized party (OIDC
     // Core §3.1.3.7 steps 4–5: several audiences need an azp, and an azp must be the client id). The tokens below are
     // typed "ID", so they reach the azp rule. ──
@@ -268,7 +319,7 @@ public class JwtValidatorTests
     public async Task Id_token_path_refuses_an_azp_that_is_not_a_string(string azp)
     {
         var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
-        var token = Sign(PayloadJson("\"it-client\"", extra: azp), Key);
+        var token = Sign(PayloadJson("\"it-client\"", extra: azp, typ: null), Key); // no typ: the payload read refuses it first
         var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateForAudienceAsync(token, "it-client"));
         Assert.StartsWith("IDX14101:", refused.Message); // IdentityModel could not read the payload
         refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(token));
@@ -295,7 +346,7 @@ public class JwtValidatorTests
     public async Task Missing_exp_rejected()
     {
         var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
-        var noExp = $$"""{"iss":"{{Issuer}}","sub":"u","aud":"it-client","iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}}""";
+        var noExp = $$"""{"iss":"{{Issuer}}","sub":"u","aud":"it-client","typ":"Bearer","iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}}""";
         await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(Sign(noExp, Key)));
     }
 
@@ -305,7 +356,7 @@ public class JwtValidatorTests
     public async Task Missing_iat_yields_null_issued_at()
     {
         var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
-        var noIat = $$"""{"iss":"{{Issuer}}","sub":"u","aud":"it-client","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
+        var noIat = $$"""{"iss":"{{Issuer}}","sub":"u","aud":"it-client","typ":"Bearer","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
         var vt = await v.ValidateAsync(Sign(noIat, Key));
         Assert.NotNull(vt.ExpiresAt);
         Assert.Null(vt.IssuedAt);
@@ -529,7 +580,7 @@ public class JwtValidatorTests
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         for (var pad = 0; ;)
         {
-            var token = Sign($$"""{"iss":"{{iss}}","sub":"user-1","aud":"it-client","exp":{{now + 300}},"iat":{{now}},"pad":"{{new string('x', pad)}}"}""", Key);
+            var token = Sign($$"""{"iss":"{{iss}}","sub":"user-1","aud":"it-client","typ":"Bearer","exp":{{now + 300}},"iat":{{now}},"pad":"{{new string('x', pad)}}"}""", Key);
             if (token.Length > target)
                 pad--; // one payload byte is one or two base64url characters, so this cannot step past the window
             else if (token.Length < target - 8)

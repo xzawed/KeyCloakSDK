@@ -177,7 +177,8 @@ func newHPIdP(t *testing.T, key *rsa.PrivateKey) *hpIdP {
 		mux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(idp.srv.Close)
-	idp.universal = hpSign(t, key, idp.iss(), nil)
+	// typ "Bearer" — 접근 토큰의 종류다(Validate 는 Bearer · DPoP 만 받는다). 없으면 Validate 행의 분류 실행이 종류에서 거부된다.
+	idp.universal = hpSign(t, key, idp.iss(), map[string]any{"typ": "Bearer"})
 	// typ "ID" — Keycloak 이 모든 id_token 에 싣는 값이고, id_token 검사(ValidateIDToken · 교환)는 그 밖을 거부한다.
 	idp.idToken = hpSign(t, key, idp.iss(), map[string]any{"nonce": idp.universal, "typ": "ID"})
 	return idp

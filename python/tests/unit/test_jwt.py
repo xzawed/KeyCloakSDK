@@ -30,8 +30,17 @@ def _rsa_key() -> RSAKey:
     return RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
 
 
+#: typ 클레임 자체가 없다 — `_sign` 이 그 클레임을 뺀다(None 은 JSON null 로 남는다).
+_NO_TYP = object()
+
+
 def _sign(key: RSAKey, claims: dict) -> str:
-    return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
+    """realm 키로 서명한다. typ 를 주지 않으면 Keycloak 의 액세스 토큰처럼 `Bearer` 를 싣는다 —
+    access 검증은 Bearer · DPoP 만 받는다. `typ=_NO_TYP` 은 그 클레임을 뺀다."""
+    payload = {"typ": "Bearer", **claims}
+    if payload["typ"] is _NO_TYP:
+        del payload["typ"]
+    return jjwt.encode({"alg": "RS256", "kid": key.kid}, payload, key)
 
 
 def _b64url(data: bytes) -> str:
@@ -546,31 +555,76 @@ def test_access_validator_refuses_a_keycloak_token_that_is_not_an_access_token(t
     assert str(refused.value) == f"Token is not an access token (typ {typ})"
 
 
-@pytest.mark.parametrize(
-    "extra",
-    [
-        pytest.param({}, id="absent"),
-        pytest.param({"typ": "Bearer"}, id="Bearer"),
-        pytest.param({"typ": "DPoP"}, id="DPoP"),
-        pytest.param({"typ": "at+jwt"}, id="at+jwt"),
-        pytest.param({"typ": "id"}, id="case-sensitive"),
-        pytest.param({"typ": "Logout "}, id="exact-match"),
-        pytest.param({"typ": None}, id="null"),
-        pytest.param({"typ": ["ID"]}, id="array"),
-        pytest.param({"typ": 1}, id="number"),
-    ],
-)
-def test_access_validator_passes_any_other_typ_as_before(extra):
-    """(A) 대조 — access 토큰의 typ(없음 · Bearer · DPoP · RFC 9068 의 at+jwt)와 다섯 밖의
-    값은 지금처럼 통과한다. 비교는 대소문자까지 정확 일치이고, 문자열이 아닌 typ 는 판정하지
-    않는다."""
+@pytest.mark.parametrize("typ", ["Bearer", "bearer", "BEARER", "DPoP", "dpop", "DPOP", "dPoP"])
+def test_access_validator_accepts_bearer_or_dpop_ignoring_ascii_case(typ):
+    """(A) 허용 목록 — typ 가 ASCII 대소문자를 무시하고 `Bearer` · `DPoP` 와 같은 문자열일 때만
+    받는다(Keycloak 의 `TokenVerifier.TokenTypeCheck` 는 `equalsIgnoreCase` 이고, 클라이언트 옵션
+    「use lower-case bearer type」 이면 `bearer` 를 쓴다). 토큰이 실은 값을 그대로 돌려준다."""
     key = _rsa_key()
 
     result = JwtValidator(issuer=ISSUER, audience="app").validate(
-        _sign(key, _typed_claims(**extra)), KeySet([key])
+        _sign(key, _typed_claims(typ=typ)), KeySet([key])
     )
 
-    assert result.subject == "user-1"
+    assert result.claims["typ"] == typ
+
+
+_NOT_ACCESS = "Token is not an access token (typ is not Bearer or DPoP)"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param({"typ": _NO_TYP}, id="absent"),
+        pytest.param({"typ": "at+jwt"}, id="at+jwt"),
+        pytest.param({"typ": "id"}, id="case-sensitive kind"),
+        pytest.param({"typ": "Logout "}, id="exact-match kind"),
+        pytest.param({"typ": "Bearer "}, id="trailing space"),
+        pytest.param({"typ": " bearer"}, id="leading space"),
+        pytest.param({"typ": "BearerX"}, id="prefix"),
+        pytest.param({"typ": ""}, id="empty"),
+        pytest.param({"typ": "CANARY-TYP-7c2e"}, id="token-chosen string"),
+        pytest.param({"typ": None}, id="null"),
+        pytest.param({"typ": ["Bearer"]}, id="array"),
+        pytest.param({"typ": 1}, id="number"),
+        pytest.param({"typ": True}, id="boolean"),
+        pytest.param({"typ": {"typ": "Bearer"}}, id="object"),
+    ],
+)
+def test_access_validator_refuses_anything_but_bearer_or_dpop_with_a_constant_message(extra):
+    """(A) — 부재 · 문자열이 아닌 값 · 그 밖의 문자열(다섯 종류와 대소문자 · 공백만 다른 값도)은
+    거부다. 문구는 상수다 — 토큰이 고른 typ 를 싣지 않는다. 클레임 실패라 서명 실패 하위 타입이
+    아니다(파사드가 JWKS 를 재조회하지 않는다)."""
+    key = _rsa_key()
+
+    with pytest.raises(TokenValidationError) as refused:
+        JwtValidator(issuer=ISSUER, audience="app").validate(
+            _sign(key, _typed_claims(**extra)), KeySet([key])
+        )
+
+    assert type(refused.value) is TokenValidationError
+    assert str(refused.value) == _NOT_ACCESS
+
+
+def test_access_validator_refuses_a_jarm_authorization_response():
+    """JARM 인가 응답(Keycloak `AuthorizationResponseToken` — `OIDCRedirectUriBuilder`)의 모양:
+    typ 가 없고, iss = realm · aud = client_id · exp 와 code · state 를 싣고 realm 키로 서명된다.
+    기본 설정(기대 audience = client_id)의 aud 검사를 지난다 — 종류가 가른다."""
+    key = _rsa_key()
+    jarm = {
+        "iss": ISSUER,
+        "aud": "app",
+        "exp": int(time.time()) + 60,
+        "code": "c0de",
+        "state": "s1",
+    }
+
+    with pytest.raises(TokenValidationError) as refused:
+        JwtValidator(issuer=ISSUER, audience="app").validate(
+            _sign(key, {**jarm, "typ": _NO_TYP}), KeySet([key])
+        )
+
+    assert str(refused.value) == _NOT_ACCESS
 
 
 def test_typ_is_judged_after_the_existing_claim_checks():
@@ -588,7 +642,7 @@ def test_typ_is_judged_after_the_existing_claim_checks():
 
 
 def test_id_token_validator_accepts_typ_id():
-    """(A) 의 거부 목록은 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다."""
+    """(A) 는 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다."""
     key = _rsa_key()
     validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
 
@@ -603,7 +657,7 @@ _NOT_ID_TOKEN = 'Token is not an id_token (typ is not "ID")'
 @pytest.mark.parametrize(
     "extra",
     [
-        pytest.param({}, id="absent"),
+        pytest.param({"typ": _NO_TYP}, id="absent"),
         pytest.param({"typ": "Bearer"}, id="Bearer"),
         pytest.param({"typ": "bearer"}, id="lowercase bearer"),
         pytest.param({"typ": "id"}, id="case-sensitive"),
@@ -648,7 +702,9 @@ def test_id_token_kind_is_judged_after_the_existing_claim_checks():
     validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
 
     with pytest.raises(TokenValidationError) as refused:
-        validator.validate(_sign(key, _typed_claims(aud="someone-else")), KeySet([key]))
+        validator.validate(
+            _sign(key, _typed_claims(aud="someone-else", typ=_NO_TYP)), KeySet([key])
+        )
 
     assert str(refused.value) == "Audience not contained"
 

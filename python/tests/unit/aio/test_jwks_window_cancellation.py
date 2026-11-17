@@ -41,7 +41,9 @@ _ISSUER = OidcEndpoints.for_realm(_CONFIG).issuer
 
 
 def _token(key: RSAKey, kid: str, subject: str) -> str:
+    """Keycloak 의 액세스 토큰 모양(typ `Bearer` — access 검증은 Bearer · DPoP 만 받는다)."""
     claims = {"iss": _ISSUER, "aud": "app", "sub": subject, "exp": int(time.time()) + 600}
+    claims["typ"] = "Bearer"
     return jjwt.encode({"alg": "RS256", "kid": kid}, claims, key)
 
 

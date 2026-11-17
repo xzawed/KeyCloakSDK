@@ -86,8 +86,9 @@ module ResponseReadDeadlineSpec
                             read_timeout: READ_TIMEOUT)
   end
 
+  # Keycloak 의 접근 토큰 모양 — typ "Bearer"(접근 토큰 검증은 Bearer · DPoP 만 받는다).
   def signed(url)
-    claims = { iss: "#{url}/realms/#{REALM}", aud: "c", sub: "s", exp: Time.now.to_i + 600 }
+    claims = { iss: "#{url}/realms/#{REALM}", aud: "c", sub: "s", typ: "Bearer", exp: Time.now.to_i + 600 }
     JWT.encode(claims, KEY, "RS256", { kid: "k1" })
   end
 

@@ -130,9 +130,9 @@ function idTokenWithoutNonce(key: CryptoKey): Promise<string> {
     .sign(key)
 }
 
-/** JWKS 의 `k1` 로 서명한 액세스 토큰 — `validate` 가 재정의 audience 로 잰다. */
+/** JWKS 의 `k1` 로 서명한 액세스 토큰(Keycloak 처럼 typ "Bearer") — `validate` 가 재정의 audience 로 잰다. */
 function accessToken(audience: string): Promise<string> {
-  return new SignJWT({})
+  return new SignJWT({ typ: 'Bearer' })
     .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
     .setIssuer(`${idp.origin}/realms/r`)
     .setSubject('u1')

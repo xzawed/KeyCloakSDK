@@ -160,8 +160,9 @@ final class AuthClient
     }
 
     /**
-     * Validates an access token (JwtValidator::validate()). A Keycloak token of another kind — an id_token included — is
-     * refused; an id_token is validateIdToken()'s.
+     * Validates an access token (JwtValidator::validate()). It is accepted only when its payload `typ` is `Bearer` or
+     * `DPoP`, ignoring ASCII case; another Keycloak kind — an id_token included — is refused by name, anything else (a
+     * missing `typ` included) without quoting it. An id_token is validateIdToken()'s.
      *
      * @throws TokenValidationError on a validation failure
      */

@@ -174,10 +174,11 @@ func dumpRoots(t *testing.T) ([]dumpRoot, []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// An access token: typ "Bearer" (Validate accepts only Bearer or DPoP).
 	raw, err := jwt.Signed(sig).Claims(jwt.Claims{
 		Issuer: srv.URL + "/realms/r", Subject: "u1", Audience: jwt.Audience{"c"},
 		Expiry: jwt.NewNumericDate(time.Now().Add(time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now()),
-	}).Serialize()
+	}).Claims(map[string]any{"typ": "Bearer"}).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}

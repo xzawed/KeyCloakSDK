@@ -1263,6 +1263,7 @@ private fun crtSigned(
     val claims =
         JWTClaimsSet
             .Builder()
+            .claim("typ", "Bearer")
             .issuer(issuer)
             .audience("app")
             .subject("u1")

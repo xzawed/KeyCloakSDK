@@ -227,8 +227,11 @@ class AsyncAuthClient:
     @ascrub_frames
     async def validate(self, access_token: str) -> ValidatedToken:
         """Verifies the signature against the realm JWKS and enforces issuer/audience/exp/nbf
-        (sync `JwtValidator`), then refuses a Keycloak token that is not an access token (`typ`
-        claim `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`).
+        (sync `JwtValidator`), then accepts only an access token: the `typ` claim must equal
+        `Bearer` or `DPoP` ignoring ASCII case (isomorphic with sync `AuthClient.validate`). A
+        missing, non-string or other `typ` is refused — another Keycloak token (`ID`, `Refresh`,
+        `Offline`, `Logout`, `Serialized-ID`) or a realm-signed JWT without `typ` (a JARM
+        authorization response) never passes as an access token.
 
         The JWKS is loaded on the first call and cached on the instance (until 300 seconds after
         it was received — isomorphic with sync). Key-rotation resilience is the same as sync

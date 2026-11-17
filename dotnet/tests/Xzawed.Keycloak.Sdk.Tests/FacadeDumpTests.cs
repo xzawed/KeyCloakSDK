@@ -358,11 +358,12 @@ public sealed class FacadeDumpTests
         => idp.Given(request).RespondWith(Response.Create().WithStatusCode(status)
             .WithHeader("Content-Type", "application/json").WithBody(body));
 
+    // 액세스 토큰 모양(typ "Bearer") — ValidateAsync 는 Bearer · DPoP 만 받는다(둘 다 ValidateAsync 로 간다).
     private static string Sign(RsaSecurityKey key, string issuer, string audience)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(
-            $$"""{"iss":"{{issuer}}","sub":"u1","aud":"{{audience}}","exp":{{now + 300}},"iat":{{now}}}""",
+            $$"""{"iss":"{{issuer}}","sub":"u1","aud":"{{audience}}","typ":"Bearer","exp":{{now + 300}},"iat":{{now}}}""",
             new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
     }
 

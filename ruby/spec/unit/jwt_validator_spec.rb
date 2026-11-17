@@ -33,10 +33,12 @@ RSpec.describe KeycloakSdk::JwtValidator do
     JWT.encode(claims, key, alg, header)
   end
 
+  # Keycloak 의 접근 토큰 모양 — typ "Bearer"(접근 토큰 경로는 Bearer · DPoP 만 받는다). typ 이 없는 토큰은
+  # `.except("typ")` 로 만든다.
   def base_claims(**over)
     now = Time.now.to_i
     { "sub" => "user-1", "iss" => issuer, "aud" => audience, "exp" => now + 300,
-      "iat" => now }.merge(over.transform_keys(&:to_s))
+      "iat" => now, "typ" => "Bearer" }.merge(over.transform_keys(&:to_s))
   end
 
   before { stub_jwks }
@@ -127,11 +129,22 @@ RSpec.describe KeycloakSdk::JwtValidator do
 
   # 토큰 종류 — 접근 토큰 경로(`validate`)만. Keycloak 은 토큰의 종류를 페이로드 `typ` 클레임에 적는다
   # (org.keycloak.util.TokenUtil): 접근 토큰은 Bearer · DPoP, id_token 은 ID, 그 밖에 Refresh · Offline · Logout(백채널
-  # 로그아웃 토큰) · Serialized-ID. 모두 realm 키로 서명되고 aud 에 이 클라이언트를 담을 수 있어 `validate` 가 id_token
-  # 이나 로그아웃 토큰을 접근 토큰으로 받았다.
+  # 로그아웃 토큰) · Serialized-ID. Keycloak 자신의 리소스 쪽 검사(TokenVerifier.TokenTypeCheck 의 equalsIgnoreCase ·
+  # DPoPUtil.withDPoPVerifier)처럼 **허용 목록**이다 — typ 이 ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같은 String 일
+  # 때만 받는다(클라이언트 옵션 「use lower-case bearer type」 이면 "bearer"). 부재 · String 이 아닌 값 · 그 밖의 문자열은
+  # 거부다 — typ 이 없는 realm 서명 JWT(JARM 인가 응답, aud = client_id)가 접근 토큰으로 받아들여졌다. 정확히 다섯 종류면
+  # 지금의 문구(그 값을 말한다), 나머지는 상수 문구(토큰이 고른 typ 을 싣지 않는다).
   describe "token type (access tokens only)" do
+    let(:not_access) { "JWT validation failed: not an access token (typ is not Bearer or DPoP)" }
+
+    %w[Bearer bearer BEARER DPoP dpop DPOP dPoP].each do |typ|
+      it "accepts typ #{typ.inspect} (ASCII case ignored)" do
+        expect(validator.validate(sign(base_claims("typ" => typ))).claims["typ"]).to eq(typ)
+      end
+    end
+
     %w[ID Refresh Offline Logout Serialized-ID].each do |typ|
-      it "refuses a token typed #{typ}" do
+      it "refuses a token typed #{typ} with today's message" do
         want = "JWT validation failed: not an access token (typ \"#{typ}\")"
         expect { validator.validate(sign(base_claims("typ" => typ))) }
           .to raise_error(KeycloakSdk::TokenValidationError, want) { |e| expect(e.cause).to be_nil }
@@ -143,17 +156,28 @@ RSpec.describe KeycloakSdk::JwtValidator do
         .to raise_error(KeycloakSdk::TokenValidationError, 'JWT validation failed: not an access token (typ "ID")')
     end
 
-    it "accepts a token without typ" do
-      expect(base_claims).not_to have_key("typ")
-      expect(validator.validate(sign(base_claims)).subject).to eq("user-1")
+    it "refuses a token without typ with the constant message" do
+      claims = base_claims.except("typ")
+      expect(claims).not_to have_key("typ")
+      expect { validator.validate(sign(claims)) }
+        .to raise_error(KeycloakSdk::TokenValidationError, not_access) { |e| expect(e.cause).to be_nil }
     end
 
-    # 그 밖은 지금처럼 통과한다 — 접근 토큰의 것(Bearer · DPoP · RFC 9068 at+jwt), 다른 문자열(대소문자까지 정확히
-    # 견준다), 문자열이 아닌 값("ID" 를 담고 있어도).
-    ["Bearer", "DPoP", "at+jwt", "id", "ID ", "Custom", 42, true, nil, ["ID"], { "typ" => "ID" }].each do |typ|
-      it "accepts typ #{typ.inspect}" do
-        expect(validator.validate(sign(base_claims("typ" => typ))).subject).to eq("user-1")
+    # 허용 목록 밖은 전부 상수 문구다 — 다섯 종류와 대소문자 · 공백만 다른 값도(정확히 같을 때만 지금의 문구다), 문자열이
+    # 아닌 값("Bearer" 를 담고 있어도).
+    ["at+jwt", "id", "ID ", "Bearer ", " bearer", "BearerX", "", "CANARY-TYP-7c2e", 42, true, nil, ["Bearer"],
+     { "typ" => "Bearer" }].each do |typ|
+      it "refuses typ #{typ.inspect} with the constant message" do
+        expect { validator.validate(sign(base_claims("typ" => typ))) }
+          .to raise_error(KeycloakSdk::TokenValidationError, not_access)
       end
+    end
+
+    # JARM 인가 응답(Keycloak AuthorizationResponseToken — OIDCRedirectUriBuilder)의 모양: typ 이 없고 iss = realm ·
+    # aud = client_id · exp 와 code · state 를 싣고 realm 키로 서명된다. 기본 설정의 aud 검사를 지난다 — 종류가 가른다.
+    it "refuses a JARM authorization response (no typ · code · state · aud the client_id)" do
+      jarm = base_claims("code" => "c0de-from-the-browser-url", "state" => "st-1").except("typ", "sub")
+      expect { validator.validate(sign(jarm)) }.to raise_error(KeycloakSdk::TokenValidationError, not_access)
     end
 
     # 접근 토큰의 azp 는 그것을 요청한 클라이언트다 — 리소스 서버가 받는 토큰은 다른 클라이언트를 담는다.
@@ -238,7 +262,8 @@ RSpec.describe KeycloakSdk::JwtValidator do
       let(:not_id_token) { 'JWT validation failed: not an id_token (typ is not "ID")' }
 
       it "refuses a token without typ" do
-        expect { validator.validate_id_token(sign(base_claims("azp" => audience)), client_id: audience) }
+        token = sign(base_claims("azp" => audience).except("typ"))
+        expect { validator.validate_id_token(token, client_id: audience) }
           .to raise_error(KeycloakSdk::TokenValidationError, not_id_token) { |e| expect(e.cause).to be_nil }
       end
 
@@ -257,7 +282,8 @@ RSpec.describe KeycloakSdk::JwtValidator do
       end
 
       it "judges the kind after the other checks (a foreign aud without typ is refused for its aud)" do
-        expect { validator.validate_id_token(sign(base_claims("aud" => "someone-else")), client_id: audience) }
+        token = sign(base_claims("aud" => "someone-else").except("typ"))
+        expect { validator.validate_id_token(token, client_id: audience) }
           .to raise_error(KeycloakSdk::TokenValidationError, /Invalid audience\. Expected app,/)
       end
     end

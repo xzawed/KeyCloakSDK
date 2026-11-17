@@ -42,9 +42,16 @@ const JWT_MAX_BYTES = 256_000
 const JWKS_MAX_AGE_SECONDS = 300
 
 /**
- * 액세스 토큰이 아닌 Keycloak 토큰의 `typ` 클레임 값 — `org.keycloak.util.TokenUtil`(keycloak-client-common-synced
- * 26.0.12)의 `TOKEN_TYPE_*` 중 액세스 토큰의 둘(Bearer · DPoP)을 뺀 다섯이다. 액세스 검증기의 `validate` 가 거부한다(아홉
- * 언어 공통 — Java `JwtValidator.NON_ACCESS_TOKEN_TYPES`). ⚠️ **export 하지 않는다** — 공개 표면을 늘리지 않는다.
+ * 액세스 토큰의 `typ` — `org.keycloak.util.TokenUtil`(keycloak-client-common-synced 26.0.12)의 `TOKEN_TYPE_BEARER` ·
+ * `TOKEN_TYPE_DPOP` 를 ASCII 소문자로 접은 값이다. 액세스 검증기의 `validate` 는 이 둘만 받는다(허용 목록 —
+ * `requireAccessTokenType`). ⚠️ **export 하지 않는다** — 공개 표면을 늘리지 않는다.
+ */
+const ACCESS_TOKEN_TYPES: ReadonlySet<string> = new Set(['bearer', 'dpop'])
+
+/**
+ * 액세스 토큰이 아닌 Keycloak 토큰의 `typ` 클레임 값 — 같은 `TOKEN_TYPE_*` 중 액세스 토큰의 둘(Bearer · DPoP)을 뺀 다섯이다.
+ * 허용 목록 밖이라 거부되고, 정확히(대소문자 구분) 이 다섯 중 하나일 때만 거부 문구가 그 값을 말한다(아홉 언어 공통 — Java
+ * `JwtValidator.NON_ACCESS_TOKEN_TYPES`). ⚠️ **export 하지 않는다** — 공개 표면을 늘리지 않는다.
  */
 const NON_ACCESS_TOKEN_TYPES: ReadonlySet<string> = new Set([
   'ID',
@@ -54,22 +61,34 @@ const NON_ACCESS_TOKEN_TYPES: ReadonlySet<string> = new Set([
   'Serialized-ID',
 ])
 
-/**
- * 액세스 토큰 자리에 온 다른 Keycloak 토큰을 거부한다. id_token 과 back-channel logout 토큰도 같은 realm 키로 서명되고
- * iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(audience = clientId)의 aud 검사까지 지난다 — `typ` 클레임만이
- * 그것을 가른다. 문자열이고 `NON_ACCESS_TOKEN_TYPES` 의 하나와 정확히(대소문자 구분) 같을 때만 거부한다 — 부재 · Bearer ·
- * DPoP · at+jwt · 그 밖의 문자열 · 문자열이 아닌 값은 지금처럼 통과다. 메시지에 싣는 값은 그 다섯 상수 중 하나다.
- */
-function rejectNonAccessToken(payload: JWTPayload): void {
-  const typ = payload['typ']
-  if (typeof typ === 'string' && NON_ACCESS_TOKEN_TYPES.has(typ)) {
-    throw new KeycloakTokenValidationError(`not an access token (typ "${typ}")`)
-  }
+/** ASCII 대문자(A–Z)만 소문자로 접는다 — 허용 목록은 ASCII 대소문자만 무시한다(`toLowerCase` 는 유니코드 매핑이다). */
+function asciiLowerCase(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32))
 }
 
 /**
- * id_token 의 종류 — payload `typ` 이 정확히(대소문자 구분) 문자열 "ID" 가 아니면 거부한다. 액세스 경로의 거부 목록과 달리
- * **허용 목록**이다: Keycloak 26.6.9 는 id_token 을 한 곳(`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만
+ * 액세스 토큰의 종류 — Keycloak 자신의 리소스 쪽 검사처럼 **허용 목록**이다(`TokenVerifier.TokenTypeCheck` 는
+ * `equalsIgnoreCase` 로 견주고 부재를 거부한다 · `DPoPUtil.withDPoPVerifier` 가 Bearer · DPoP 를 받는다). payload `typ` 이
+ * ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같은 문자열일 때만 지난다 — `TokenManager.formatTokenType` 은 클라이언트 옵션
+ * 「use lower-case bearer type」 이 켜지면 "bearer" 를 쓴다. 부재 · 문자열이 아닌 값 · 그 밖의 문자열은 거부다: typ 이 없는
+ * realm 서명 JWT — JARM 인가 응답(`AuthorizationResponseToken`, iss = realm · aud = client id · exp) — 가 기본 설정(audience
+ * = clientId)의 aud 검사까지 지나 액세스 토큰으로 받아들여졌다. 문구는 둘이다 — 알려진 다섯 종류(`NON_ACCESS_TOKEN_TYPES`,
+ * 정확히 같을 때)는 지금처럼 그 값을 말하고(다섯 상수 중 하나다), 나머지는 상수다(토큰이 고른 typ 을 싣지 않는다).
+ */
+function requireAccessTokenType(payload: JWTPayload): void {
+  const typ = payload['typ']
+  if (typeof typ === 'string') {
+    if (ACCESS_TOKEN_TYPES.has(asciiLowerCase(typ))) return
+    if (NON_ACCESS_TOKEN_TYPES.has(typ)) {
+      throw new KeycloakTokenValidationError(`not an access token (typ "${typ}")`)
+    }
+  }
+  throw new KeycloakTokenValidationError('not an access token (typ is not Bearer or DPoP)')
+}
+
+/**
+ * id_token 의 종류 — payload `typ` 이 정확히(대소문자 구분) 문자열 "ID" 가 아니면 거부한다. 액세스 경로(Bearer · DPoP,
+ * ASCII 대소문자 무시)처럼 **허용 목록**이다: Keycloak 26.6.9 는 id_token 을 한 곳(`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만
  * 만들고 거기서 늘 "ID" 를 싣는다(실서버 통합 테스트도 "ID" 를 쟀다). 그래서 부재 · 문자열이 아닌 값 · 그 밖의 문자열이 전부
  * 거부다 — aud 에 client id 가 있고 azp 가 client id 인 액세스 토큰(typ "Bearer", 소문자 "bearer" 도)이 id_token 검사를 지나던
  * 틈을 닫는다. 메시지는 상수다 — 토큰이 고른 typ 를 싣지 않는다(azp 를 싣지 않는 것과 같은 이유).
@@ -372,9 +391,9 @@ export interface JwtValidatorOptions {
  * Self-hardened JWT validator. It does not trust library defaults:
  * algorithm pinning (the header alg is not trusted, `none` is rejected) · exact issuer match · audience membership
  * check (multiple aud accepted) · exp/nbf ± clock skew · DoS-safe JWKS refetch (key set lifetime 300 seconds —
- * within it, a refetch only on an unresolved kid + cooldown rate-limit). After those checks pass, `validate` rejects a
- * Keycloak token that is not an access token — one whose `typ` claim is `ID`, `Refresh`, `Offline`, `Logout` or
- * `Serialized-ID`.
+ * within it, a refetch only on an unresolved kid + cooldown rate-limit). After those checks pass, `validate` accepts
+ * only an access token — the payload `typ` claim must be `Bearer` or `DPoP`, ASCII case ignored, as Keycloak's own
+ * verifier requires; an id, refresh, offline or logout token, or a token without `typ`, is refused.
  *
  * The key source is injected (a local JWKS in tests, the remote JWKS of `forJwksUri` in real use).
  */
@@ -390,8 +409,9 @@ export class JwtValidator {
     private readonly keys: JWTVerifyGetKey,
     private readonly opts: JwtValidatorOptions,
     // id_token 검증기인가(코드 교환 · 공개 `AuthClient.validateIdToken`) — `withAudience` 가 만든 것만 참이다. 참이면 액세스
-    // 토큰의 typ 거부 목록 대신 종류 허용 목록(typ 이 정확히 "ID" — `requireIdTokenType`)과 azp 를 본다. 거짓(`forKeySource` ·
-    // `forJwksUri`)이면 거부 목록만 본다. ⚠️ `//` 주석이다 — JSDoc 이면 private 이어도 방출 `.d.ts` 에 실린다.
+    // 토큰의 종류(Bearer · DPoP) 대신 id_token 의 종류(typ 이 정확히 "ID" — `requireIdTokenType`)와 azp 를 본다. 거짓
+    // (`forKeySource` · `forJwksUri`)이면 액세스 토큰의 종류만 본다(`requireAccessTokenType`). ⚠️ `//` 주석이다 — JSDoc 이면
+    // private 이어도 방출 `.d.ts` 에 실린다.
     private readonly idToken = false,
   ) {}
 
@@ -449,8 +469,8 @@ export class JwtValidator {
    * id_token 검증기 — 기대 audience 를 바꾸고 종류를 id_token 으로 바꾼다. 키 소스(`keys`)는 **같은 객체**를 넘긴다. 코드
    * 교환과 공개 `AuthClient.validateIdToken` 이 id_token 을 client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token
    * `aud` 는 client_id 를 담는다). `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다. 같은 이유로
-   * `validate` 의 typ 거부 목록(Keycloak 의 id_token 은 typ "ID")을 건너뛰고, 대신 종류 허용 목록(typ 이 정확히 "ID" —
-   * `requireIdTokenType`)과 azp 를 본다(`requireAuthorizedParty` — azp 는 이 audience 와 대조).
+   * `validate` 의 액세스 토큰 종류(Bearer · DPoP — Keycloak 의 id_token 은 typ "ID")를 건너뛰고, 대신 id_token 의 종류(typ 이
+   * 정확히 "ID" — `requireIdTokenType`)와 azp 를 본다(`requireAuthorizedParty` — azp 는 이 audience 와 대조).
    *
    * ⚠️ 새 키 소스를 만들지 말 것 — JWKS 캐시·재조회 쿨다운·fetch 실패 백오프가 전부 `keys` 클로저 안에
    * 있어서, 둘로 나뉘면 IdP 요청과 DoS 상한이 두 배가 된다. I/O 는 하지 않는다.
@@ -496,7 +516,7 @@ export class JwtValidator {
         requireIdTokenType(payload)
         requireAuthorizedParty(payload, this.opts.audience)
       } else {
-        rejectNonAccessToken(payload)
+        requireAccessTokenType(payload)
       }
       const aud = payload.aud
       return {

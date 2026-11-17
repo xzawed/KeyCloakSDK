@@ -83,7 +83,7 @@ class JwksEmptyKeysetTest {
   private static String token(OidcMetadata md, RSAKey key, String sub) throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
-        new JWTClaimsSet.Builder().issuer(md.getIssuer()).audience("app").subject(sub)
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(md.getIssuer()).audience("app").subject(sub)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();

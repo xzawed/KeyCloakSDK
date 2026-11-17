@@ -59,6 +59,8 @@ func (f *jwtFixture) validator(t *testing.T, minRefetch time.Duration) *Validato
 	})
 }
 
+// sign signs an access token: cl plus the payload typ "Bearer" Keycloak writes on one (Validate accepts only Bearer or
+// DPoP). A token of another kind is signWith's, with its own typ.
 func (f *jwtFixture) sign(t *testing.T, key *rsa.PrivateKey, kid string, cl jwt.Claims) string {
 	t.Helper()
 	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key},
@@ -66,7 +68,7 @@ func (f *jwtFixture) sign(t *testing.T, key *rsa.PrivateKey, kid string, cl jwt.
 	if err != nil {
 		t.Fatalf("signer: %v", err)
 	}
-	s, err := jwt.Signed(sig).Claims(cl).Serialize()
+	s, err := jwt.Signed(sig).Claims(cl).Claims(map[string]any{"typ": "Bearer"}).Serialize()
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -907,7 +909,7 @@ func (f *jwtFixture) signPadded(t *testing.T, target int) string {
 	}
 	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
 	for pad := 0; ; {
-		tok, err := jwt.Signed(sig).Claims(cl).Claims(map[string]any{"pad": strings.Repeat("x", pad)}).Serialize()
+		tok, err := jwt.Signed(sig).Claims(cl).Claims(map[string]any{"typ": "Bearer", "pad": strings.Repeat("x", pad)}).Serialize()
 		if err != nil {
 			t.Fatalf("serialize: %v", err)
 		}
@@ -922,15 +924,16 @@ func (f *jwtFixture) signPadded(t *testing.T, target int) string {
 	}
 }
 
-// ── Token kinds: the access path refuses five typ values, the id_token path accepts only typ "ID" and judges azp
-// (validator cells) ──
+// ── Token kinds: the access path accepts only typ Bearer or DPoP (ignoring ASCII case, the five other Keycloak kinds
+// refused by name), the id_token path accepts only typ "ID" and judges azp (validator cells) ──
 //
 // The typ claim Keycloak 26 puts on each token (org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
 // Bearer and DPoP are access tokens; ID, Refresh, Offline, Logout and Serialized-ID are not. Before the fix the
 // validator read neither typ nor azp, so an id_token ("ID") and a back-channel logout token ("Logout") passed Validate,
 // and so did an id_token with several audiences whose azp was another client (measured). The id_token path then judged
-// no typ at all, so an access token whose aud and azp both name the client passed it. Which path applies which check
-// is pinned on the facade in auth_test.go.
+// no typ at all, so an access token whose aud and azp both name the client passed it. The access path then refused
+// only the five, so a realm-signed token with no typ — the JARM authorization response JWT (aud = the client id) —
+// still passed it. Which path applies which check is pinned on the facade in auth_test.go.
 
 // nonAccessTypes are the five Keycloak token types that are not access tokens.
 var nonAccessTypes = []string{"ID", "Refresh", "Offline", "Logout", "Serialized-ID"}
@@ -976,27 +979,54 @@ func TestValidateRefusesAKeycloakTokenThatIsNotAnAccessToken(t *testing.T) {
 	}
 }
 
-// TestValidatePassesAnyOtherTyp is (A)'s control: an access token's typ (absent, Bearer, DPoP, RFC 9068's at+jwt) and
-// every value outside the five pass as before — the match is exact and case-sensitive, and a typ that is not a
-// string is not judged.
-func TestValidatePassesAnyOtherTyp(t *testing.T) {
+// msgNotBearerOrDPoP is the access path's refusal of every typ that is neither one of the five Keycloak kinds above
+// nor Bearer/DPoP. Constant: a typ outside the five is whatever the token's minter chose, so it is never quoted.
+const msgNotBearerOrDPoP = "claims: not an access token (typ is not Bearer or DPoP)"
+
+// TestValidateAcceptsOnlyBearerOrDPoP pins (A) as Keycloak's own allow-list (TokenVerifier.TokenTypeCheck compares
+// with equalsIgnoreCase, DPoPUtil allows Bearer and DPoP): a payload typ that is a string equal to Bearer or DPoP
+// ignoring ASCII case passes — Keycloak lower-cases it to "bearer" under the client option "use lower-case bearer
+// type in token responses". Anything else is refused with one constant message: absent (the JARM authorization
+// response JWT carries no typ), not a string, RFC 9068's at+jwt, another case of a known kind, an exact-match miss,
+// a non-ASCII look-alike. A claims failure: no cause, no JWKS refetch.
+func TestValidateAcceptsOnlyBearerOrDPoP(t *testing.T) {
 	f := newJWTFixture(t)
 	v := f.validator(t, time.Minute)
-	for name, extra := range map[string]map[string]any{
-		"absent":         {},
-		"Bearer":         {"typ": "Bearer"},
-		"DPoP":           {"typ": "DPoP"},
-		"at+jwt":         {"typ": "at+jwt"},
-		"case-sensitive": {"typ": "id"},
-		"exact match":    {"typ": "Logout "},
-		"null":           {"typ": nil},
-		"array":          {"typ": []string{"ID"}},
-		"number":         {"typ": 1},
-	} {
-		cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
-		if _, err := v.Validate(context.Background(), f.signWith(t, cl, extra)); err != nil {
-			t.Errorf("%s: an access token must pass, got %v", name, err)
+	cl := func() jwt.Claims { return claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute)) }
+	for _, typ := range []string{"Bearer", "bearer", "BEARER", "DPoP", "dpop", "DPOP"} {
+		if _, err := v.Validate(context.Background(), f.signWith(t, cl(), map[string]any{"typ": typ})); err != nil {
+			t.Errorf("typ %q: an access token must pass, got %v", typ, err)
 		}
+	}
+	const canary = "x-canary-typ-5Q2W"
+	for name, extra := range map[string]map[string]any{
+		"absent":                {},
+		"at+jwt":                {"typ": "at+jwt"},
+		"arbitrary string":      {"typ": canary},
+		"empty":                 {"typ": ""},
+		"trailing space":        {"typ": "Bearer "},
+		"another case of ID":    {"typ": "id"},
+		"exact-match miss":      {"typ": "Logout "},
+		"fullwidth look-alike":  {"typ": "Ｂｅａｒｅｒ"},
+		"null":                  {"typ": nil},
+		"array":                 {"typ": []string{"Bearer"}},
+		"number":                {"typ": 1},
+		"boolean":               {"typ": true},
+		"object":                {"typ": map[string]any{"typ": "Bearer"}},
+		"JARM response, no typ": {"code": "c0de", "state": "st4te"},
+	} {
+		_, err := v.Validate(context.Background(), f.signWith(t, cl(), extra))
+		var tve *TokenValidationError
+		if !errors.As(err, &tve) || tve.Msg != msgNotBearerOrDPoP || tve.Cause != nil {
+			t.Errorf("%s: want Msg=%q and no cause, got %v", name, msgNotBearerOrDPoP, err)
+			continue
+		}
+		if strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: the refusal quotes the token's typ: %v", name, err)
+		}
+	}
+	if n := atomic.LoadInt32(f.fetches); n != 1 {
+		t.Fatalf("a claims failure must not refetch the JWKS: /certs=%d, want 1", n)
 	}
 }
 
@@ -1022,10 +1052,11 @@ func TestValidateLeavesAzpAlone(t *testing.T) {
 	f := newJWTFixture(t)
 	v := f.validator(t, time.Minute)
 	exp := time.Now().Add(5 * time.Minute)
+	bearer := func(extra map[string]any) map[string]any { extra["typ"] = "Bearer"; return extra } // an access token's typ
 	for name, tok := range map[string]string{
-		"several auds, no azp":      f.signWith(t, claims(jwt.Audience{"my-client", "other"}, testISS, exp), map[string]any{}),
-		"several auds, foreign azp": f.signWith(t, claims(jwt.Audience{"my-client", "other"}, testISS, exp), map[string]any{"azp": "frontend"}),
-		"single aud, foreign azp":   f.signWith(t, claims(jwt.Audience{"my-client"}, testISS, exp), map[string]any{"azp": "x"}),
+		"several auds, no azp":      f.signWith(t, claims(jwt.Audience{"my-client", "other"}, testISS, exp), bearer(map[string]any{})),
+		"several auds, foreign azp": f.signWith(t, claims(jwt.Audience{"my-client", "other"}, testISS, exp), bearer(map[string]any{"azp": "frontend"})),
+		"single aud, foreign azp":   f.signWith(t, claims(jwt.Audience{"my-client"}, testISS, exp), bearer(map[string]any{"azp": "x"})),
 	} {
 		if _, err := v.Validate(context.Background(), tok); err != nil {
 			t.Errorf("%s: an access token's azp is not judged, got %v", name, err)
@@ -1035,8 +1066,8 @@ func TestValidateLeavesAzpAlone(t *testing.T) {
 
 // TestIDTokenValidatorAcceptsOnlyTypID pins the id_token path's kind rule: the payload typ must be exactly the string
 // "ID" — what Keycloak 26.6 puts on every id_token it issues (TokenManager.AccessTokenResponseBuilder.generateIDToken).
-// An allow-list, where the access path has a deny-list: an access token may be typed "bearer" in lowercase (the client
-// option "use lower-case bearer type"), which a deny-list of "Bearer" would miss. Any other typ — another string,
+// An allow-list of one, matched exactly: an access token may be typed "bearer" in lowercase (the client option "use
+// lower-case bearer type"), which a deny-list of "Bearer" would miss. Any other typ — another string,
 // another case, absent, not a string — is refused with one constant message, as a claims failure: no cause, and no
 // JWKS refetch.
 func TestIDTokenValidatorAcceptsOnlyTypID(t *testing.T) {
