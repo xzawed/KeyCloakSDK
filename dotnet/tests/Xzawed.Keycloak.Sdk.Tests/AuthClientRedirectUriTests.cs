@@ -135,13 +135,58 @@ public sealed class AuthClientRedirectUriTests : IDisposable
     public void Neighbour_of_a_space_separator_is_carried_verbatim(int codePoint) =>
         AssertCarried("https://app/c" + (char)codePoint + "b");
 
-    // 남긴 것(문서화된 잔여) — Keycloak 의 java.net.URI 는 이것들도 거부하지만(JDK 21.0.8 실측: 경로의 [ ] → "Illegal character in
-    // path", scheme 뒤가 빈 값 → "Expected scheme-specific part") R3 는 받는다. 이 행이 바뀌면 그 판정을 다시 연 것이다.
+    // R4 — R3 를 지나도 Keycloak 의 java.net.URI.create 가 거부하는 모양(등록부 redirect-uri-r3-narrower-than-keycloak). 표는 JDK
+    // 21.0.8 로 잰 거부 그대로다: scheme 뒤가 빈 값("Expected scheme-specific part") · 괄호 호스트 하나 밖의 [ ](경로 · 호스트 이름 ·
+    // 사용자 정보 · 포트 자리 · 빈 괄호 · 괄호 안의 괄호). 문구는 R3 와 같다.
     [Theory]
-    [InlineData("https://app/c[b")]
-    [InlineData("https://app/c]b")]
     [InlineData("https:")]
     [InlineData("myapp:")]
+    [InlineData("https://app/c[b")]
+    [InlineData("https://app/c]b")]
+    [InlineData("myapp:/c[b")]
+    [InlineData("https://[::1]/c[b")]
+    [InlineData("https://app[1]/cb")]
+    [InlineData("https://[::1]]/cb")]
+    [InlineData("myapp://a]b")]
+    [InlineData("https://[::1]:x/cb")]
+    [InlineData("https://u[@h/cb")]
+    [InlineData("https://a]b@[::1]/cb")]
+    [InlineData("https://a@b@[::1]/cb")]
+    [InlineData("https://[]/cb")]
+    [InlineData("https://[a[b]/cb")]
+    [InlineData("https://app/c[b?x")]
+    [InlineData("https://u@[::1]/c]b")]
+    public void Shape_java_net_uri_refuses_is_refused(string redirectUri) => AssertRefused(redirectUri, NotUri);
+
+    // 대조군 — 같은 측정에서 java.net.URI 가 받는 값: 괄호 호스트 하나(사용자 정보 · 포트 · 빈 포트와 함께) · 불투명한 값과 쿼리의 괄호 ·
+    // scheme 뒤 / 하나.
+    [Theory]
+    [InlineData("https://[::1]/cb")]
+    [InlineData("https://[::1]:8443/cb")]
+    [InlineData("https://u@[::1]:8443/cb")]
+    [InlineData("myapp:c[b")]
+    [InlineData("urn:x[y]")]
+    [InlineData("https:/")]
+    [InlineData("myapp://[::1]")]
+    [InlineData("myapp://[::1]:8443")]
+    [InlineData("https://[::1]:/cb")]
+    [InlineData("https://[::1]?x=[1]")]
+    public void Shape_java_net_uri_accepts_is_carried_verbatim(string redirectUri) => AssertCarried(redirectUri);
+
+    // 순서 — 앞 규칙에도 걸리는 값은 앞 규칙의 문구다(R3 와 R4 는 문구가 같아 문구만 본다).
+    [Theory]
+    [InlineData("c[b", NotAbsolute)]
+    [InlineData("https://app/c[b#f", Fragment)]
+    [InlineData("https://app/c[b c", NotUri)]
+    public void An_earlier_rule_answers_first(string redirectUri, string message) => AssertRefused(redirectUri, message);
+
+    // 남긴 것(문서화된 잔여) — Keycloak 의 java.net.URI 는 이것들도 거부하지만(JDK 21.0.8 실측: "Expected authority" · 괄호 안의 값 —
+    // "Malformed IPv6 address") R4 는 받는다. 괄호 안의 값은 판정하지 않기로 했다(브리프의 잔여). 이 행이 바뀌면 그 판정을 다시 연 것이다.
+    [Theory]
+    [InlineData("https://")]
+    [InlineData("myapp://")]
+    [InlineData("https://[zz]/cb")]
+    [InlineData("https://[v1.x]/cb")]
     public void Documented_residual_is_carried_verbatim(string redirectUri) => AssertCarried(redirectUri);
 
     /// <summary>R3 — 짝 없는 서로게이트(뒤에 낮은 것이 없는 높은 것 · 앞에 높은 것이 없는 낮은 것). 고치기 전에는 Duende 의 인코더가
