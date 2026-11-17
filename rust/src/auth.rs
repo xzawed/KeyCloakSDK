@@ -9,6 +9,7 @@ use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::jwt::JwtValidator;
 use crate::oidc::OidcEndpoints;
+use crate::redirect_uri::reject_fragment;
 use crate::token_provider::TokenProvider;
 use crate::tokens::{AuthorizationRequest, IntrospectionResult, TokenSet, ValidatedToken};
 use async_trait::async_trait;
@@ -114,7 +115,8 @@ fn now_secs() -> u64 {
 }
 
 impl AuthClient {
-    /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`.
+    /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`, and so is a
+    /// config `redirect_uri` with a fragment component, an empty one included (RFC 6749 §3.1.2).
     /// The shared `http` (with the TLS, timeout and SSRF policies injected) is used as-is; no client of its own is built.
     pub fn new(
         config: KeycloakConfig,
@@ -141,6 +143,11 @@ impl AuthClient {
             Some(s) => core.set_client_secret(ClientSecret::new(s.to_string())),
             None => core,
         };
+        let redirect =
+            RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
+                .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?;
+        // `create_authorization_request()` 가 이 값을 싣는다 — 호출당 판과 같은 R2(RFC 6749 §3.1.2).
+        reject_fragment(redirect.url())?;
         let oidc = core
             .set_auth_uri(
                 AuthUrl::new(endpoints.authorization())
@@ -154,10 +161,7 @@ impl AuthClient {
                 IntrospectionUrl::new(endpoints.introspection())
                     .map_err(|e| KeycloakError::Config(format!("introspect url: {e}")))?,
             )
-            .set_redirect_uri(
-                RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
-                    .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?,
-            );
+            .set_redirect_uri(redirect);
         Ok(Self {
             config,
             endpoints,
@@ -184,12 +188,15 @@ impl AuthClient {
     /// exchange's `redirect_uri` to equal the value used at authorization (RFC 6749 §4.1.3).
     ///
     /// ⚠️ An invalid URL is `KeycloakError::Config` — per §4, the underlying type (`RedirectUrl`) and its
-    /// parse error do not leak out of the facade.
+    /// parse error do not leak out of the facade. So is a value with a fragment component, an empty one included
+    /// (RFC 6749 §3.1.2). An accepted value is sent exactly as given.
     pub fn create_authorization_request_with_redirect(
         &self,
         redirect_uri: &str,
     ) -> Result<AuthorizationRequest> {
-        Ok(self.authorization_request(Some(Self::redirect_url(redirect_uri)?)))
+        let uri = Self::redirect_url(redirect_uri)?;
+        reject_fragment(uri.url())?;
+        Ok(self.authorization_request(Some(uri)))
     }
 
     /// 상류 `RedirectUrl` 조립 — 파싱 오류를 경계에서 SDK 타입으로 바꾼다(§4).
@@ -696,6 +703,129 @@ mod tests {
             "boundary must translate to KeycloakError::Config, got: {err:?}"
         );
     }
+
+    // ── RFC 6749 §3.1.2 — 인가요청의 redirect_uri (등록부 authz-request-redirect-unvalidated) ──
+    //
+    // 절대 URI(R1)는 `url::Url` 파싱이 이미 강제한다 — 그 문구(`invalid redirect_uri: <파싱 오류>`)를 그대로 둔다.
+    // 새 것은 fragment(R2)다: `Url::parse` 는 fragment 를 받아 주므로, 보지 않으면 `https://app/cb#f` 가 URL 에 실렸다.
+    // 검사만 한다 — 상류(oauth2 `RedirectUrl`)는 호출자의 문자열 원본을 싣는다.
+    const REDIRECT_R2: &str = "invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)";
+
+    fn redirect_refusal(r: Result<AuthorizationRequest>) -> String {
+        match r {
+            Err(KeycloakError::Config(m)) => m,
+            other => panic!("expected KeycloakError::Config, got {other:?}"),
+        }
+    }
+
+    /// 절대 URI 가 아니면 파싱 오류 문구 그대로다(R1 — 새 문구 없음). `cb#f` 도 R1 이다(R1 이 R2 보다 먼저).
+    #[tokio::test]
+    async fn authorization_request_refuses_a_relative_redirect_uri_with_the_parse_message() {
+        let auth = test_auth();
+        for input in ["", "cb", "/cb", "//app/cb", "not a url", "cb#f"] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(input));
+            assert!(
+                msg.starts_with("invalid redirect_uri: "),
+                "{input:?}: {msg}"
+            );
+            assert_ne!(msg, REDIRECT_R2, "{input:?}: R1 comes before R2");
+        }
+    }
+
+    /// fragment 성분 — 빈 fragment(`…#`)도 fragment 다.
+    #[tokio::test]
+    async fn authorization_request_refuses_a_redirect_uri_with_a_fragment() {
+        let auth = test_auth();
+        for input in ["https://app/cb#", "https://app/cb#f"] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(input));
+            assert_eq!(msg, REDIRECT_R2, "{input:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn authorization_request_refusal_does_not_quote_the_input() {
+        let auth = test_auth();
+        for input in ["cb-CANARY-7d1f", "https://app/cb#CANARY-7d1f"] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(input));
+            assert!(!msg.contains("CANARY"), "{input:?}: {msg}");
+        }
+    }
+
+    /// 받은 값은 고치지 않는다 — URL 의 redirect_uri 를 디코드하면 입력과 정확히 같다(대문자 스킴·호스트도).
+    #[tokio::test]
+    async fn authorization_request_carries_an_accepted_redirect_uri_verbatim() {
+        let auth = test_auth();
+        for input in [
+            "https://app/cb",
+            "https://app/cb?x=1",
+            "myapp:/cb",
+            "com.example.app:/oauth2redirect",
+            "HTTP://LOCALHOST/cb",
+        ] {
+            let req = auth
+                .create_authorization_request_with_redirect(input)
+                .unwrap_or_else(|e| panic!("{input:?} refused: {e:?}"));
+            let url = url::Url::parse(&req.url).expect("authorization URL");
+            let sent: Vec<String> = url
+                .query_pairs()
+                .filter(|(k, _)| k == "redirect_uri")
+                .map(|(_, v)| v.into_owned())
+                .collect();
+            assert_eq!(sent, vec![input.to_string()], "{input:?}: {}", req.url);
+        }
+    }
+
+    /// 생성 때 config 의 redirect_uri 도 같은 R2 를 지난다 — 그 값이 `create_authorization_request()` 가 싣는다.
+    #[tokio::test]
+    async fn construction_refuses_a_config_redirect_uri_with_a_fragment() {
+        let config = |uri: &str| {
+            KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+                .unwrap()
+                .with_redirect_uri(uri)
+        };
+        for input in ["https://app/cb#", "https://app/cb#f"] {
+            match crate::client::KeycloakClient::new(config(input)) {
+                Err(KeycloakError::Config(m)) => assert_eq!(m, REDIRECT_R2, "{input:?}"),
+                Err(e) => panic!("{input:?}: expected Config, got {e:?}"),
+                Ok(_) => panic!("{input:?}: a config redirect_uri with a fragment was accepted"),
+            }
+        }
+        // 대조 — fragment 가 없으면 만들어지고, 인자 없는 인가요청이 그 값을 그대로 싣는다.
+        let client =
+            crate::client::KeycloakClient::new(config("HTTP://LOCALHOST/cb")).expect("constructs");
+        let req = client.auth().create_authorization_request();
+        let url = url::Url::parse(&req.url).expect("authorization URL");
+        let sent: Vec<String> = url
+            .query_pairs()
+            .filter(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        assert_eq!(sent, vec!["HTTP://LOCALHOST/cb".to_string()], "{}", req.url);
+    }
+
+    /// 교환은 바뀌지 않는다 — R2 는 인가요청 쪽에만 걸었다(공유 `redirect_url` 에 넣지 않았다). 교환은 호출자의
+    /// 문자열을 그대로 보낸다.
+    #[tokio::test]
+    async fn exchange_with_redirect_is_unchanged_and_sends_the_value_verbatim() {
+        let (auth, server) = public_client_token_fixture().await;
+        auth.exchange_code_with_redirect("code", "verifier", "https://app/cb#f", None)
+            .await
+            .expect("the exchange does not judge the redirect_uri's fragment");
+        let reqs = server
+            .received_requests()
+            .await
+            .expect("received_requests available");
+        let token = reqs
+            .iter()
+            .find(|r| r.url.path().ends_with("/token"))
+            .expect("token endpoint must have been called");
+        let sent: Vec<String> = url::form_urlencoded::parse(&token.body)
+            .filter(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        assert_eq!(sent, vec!["https://app/cb#f".to_string()]);
+    }
+
     #[tokio::test]
     async fn create_authorization_request_returns_nonce() {
         let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
