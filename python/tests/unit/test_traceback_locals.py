@@ -266,15 +266,14 @@ async def test_failed_validate_id_token_keeps_the_token_out_of_frame_locals_aio(
 # --- 인가 URL 조립·생성자 — Grok 레그가 찾고 실측으로 확인한 두 자리 ---------------------------
 
 
-class _Hostile(str):
-    """`str()` 이 실패하는 redirect_uri — `urlencode` 가 조립 도중 던진다(verifier 는 이미 로컬).
+def _unencodable(*args: object, **kwargs: object) -> str:
+    """조립(`urlencode`)이 던진다 — verifier 는 이미 `authorization_url` 프레임의 로컬이다.
 
-    ⚠️ `str` 의 하위 타입이고 값은 절대 URI 다 — redirect_uri 검사(`_internal/redirect_uri.py`)는
-    `str()` 을 부르지 않고 그 값을 읽어 통과시키므로, 실패가 PKCE 생성 **뒤**(`urlencode`)에 난다.
-    `str` 이 아닌 값은 이제 생성 전에 거부된다(R1) — 그러면 이 테스트가 잴 로컬이 없다."""
-
-    def __str__(self) -> str:
-        raise ValueError("unprintable redirect_uri")
+    ⚠️ 예전에는 `str()` 이 던지는 redirect_uri 로 같은 실패를 냈다. 이제 그 `str()` 은 redirect_uri
+    검사(`_internal/redirect_uri.py`)가 PKCE 생성 **앞**에서 부르므로, 그 값으로는 이 테스트가 잴
+    로컬이 생기지 않는다(실측: `@scrub_frames` 를 뗀 변이에서도 초록이었다). 그래서 조립 자체를
+    실패시킨다."""
+    raise ValueError("unencodable query")
 
 
 _PKCE = ("PV9x2c-generated-verifier-canary-0123456789ab", "challenge")
@@ -287,12 +286,13 @@ def test_failed_authorization_url_keeps_the_verifier_out_of_frame_locals(
     """예전에는 `authorization_url` 프레임의 `code_verifier` 로컬이 찍혔다(실측)."""
     module = "keycloak_sdk.auth" if facade == "sync" else "keycloak_sdk.aio.auth"
     monkeypatch.setattr(f"{module}._generate_pkce_pair", lambda: _PKCE)
+    monkeypatch.setattr(f"{module}.urlencode", _unencodable)
     if facade == "sync":
         client: AuthClient | AsyncAuthClient = _sync_client(monkeypatch, _jwt(_KEY), _JWKS)[0]
     else:
         client = _aio_client(monkeypatch, _jwt(_KEY), _JWKS)[0]
 
-    err = _catch(lambda: client.authorization_url(_Hostile("https://app/cb")))
+    err = _catch(lambda: client.authorization_url("https://app/cb"))
 
     assert type(err) is ValueError
     assert _PKCE[0] not in _render(err)

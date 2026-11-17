@@ -1,14 +1,18 @@
 """The `redirect_uri` an authorization request may carry -- checked, never rewritten.
 
 Registry `authz-request-redirect-unvalidated`. Both mirrors' `authorization_url` call
-`check_redirect_uri` first, before PKCE, state or nonce exist. The value goes into the URL
-exactly as given: the code exchange sends the caller's string verbatim, and the two requests
-must carry the same value (RFC 6749 §4.1.3), so normalising one of them breaks the flow.
+`checked_redirect_uri` first, before PKCE, state or nonce exist, and put the string it returns
+into the URL. That string is `str(redirect_uri)` -- what `urlencode` made of any value before
+(a URL object such as Starlette's `request.url_for(...)` result worked, so it still does) -- and
+it is checked and sent as is: the code exchange sends the caller's string verbatim, and the two
+requests must carry the same value (RFC 6749 §4.1.3), so normalising one of them breaks the
+flow. Checking the converted string is also what keeps a `str` subclass whose `__str__` differs
+from its value from sending something that was never checked.
 
 Three rules, in this order:
 
-- R1 absolute (RFC 6749 §3.1.2, RFC 3986 §4.3): a scheme, then `:`. A non-`str` -- the
-  signature says `str`, the runtime does not -- is not an absolute URI either.
+- R1 absolute (RFC 6749 §3.1.2, RFC 3986 §4.3): a scheme, then `:`. `None` becomes "None" and
+  `bytes` become "b'...'" (the signature says `str`), so neither is an absolute URI.
 - R2 no fragment (RFC 6749 §3.1.2): no `#` anywhere; `https://app/cb#` has an empty one.
 - R3 a URI Keycloak can read (RFC 3986 §2): Keycloak parses `redirect_uri` with
   `java.net.URI.create` and refuses the request when that throws -- for every character in
@@ -42,11 +46,19 @@ _UNREADABLE = re.compile(
 )
 
 
-def check_redirect_uri(redirect_uri: object) -> None:
-    """Raise `KeycloakConfigError` unless `redirect_uri` passes R1, R2 and R3 (in that order)."""
-    if not isinstance(redirect_uri, str) or _SCHEME.match(redirect_uri) is None:
+def checked_redirect_uri(redirect_uri: object) -> str:
+    """`str(redirect_uri)` once it passes R1, R2 and R3 (in that order) -- the string to send.
+
+    Anything else raises `KeycloakConfigError`. An exception from the value's own `__str__`
+    propagates as it did from `urlencode`.
+    """
+    # `str()` is what `urlencode` did. `str.__str__` then makes it a plain `str`: a `__str__` may
+    # return a `str` subclass, whose own `__str__` would have `urlencode` send something else.
+    text = str.__str__(str(redirect_uri))
+    if _SCHEME.match(text) is None:
         raise KeycloakConfigError(NOT_ABSOLUTE)
-    if "#" in redirect_uri:
+    if "#" in text:
         raise KeycloakConfigError(FRAGMENT)
-    if _UNREADABLE.search(redirect_uri) is not None:
+    if _UNREADABLE.search(text) is not None:
         raise KeycloakConfigError(NOT_VALID)
+    return text

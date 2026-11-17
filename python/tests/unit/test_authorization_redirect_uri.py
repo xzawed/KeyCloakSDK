@@ -67,13 +67,76 @@ def test_a_value_that_is_not_an_absolute_uri_is_refused(facade: str, value: str)
     assert _refusal(_authorization_url(facade), value) == NOT_ABSOLUTE
 
 
-@pytest.mark.parametrize("facade", FACADES)
-@pytest.mark.parametrize("value", [None, 42, b"https://app/cb"])
-def test_a_value_that_is_not_a_string_is_not_an_absolute_uri(facade: str, value: object) -> None:
-    """서명은 `str` 이지만 런타임에는 무엇이든 온다.
+class _UrlLike:
+    """`str()` 이 URL 인 객체.
 
-    예전에는 `None` 이 문자열 "None" 으로, `42` 가 "42" 로 실렸다(실측)."""
-    assert _refusal(_authorization_url(facade), value) == NOT_ABSOLUTE
+    Starlette·FastAPI 의 `request.url_for(...)` 가 돌려주는 `URL` 의 모양이다."""
+
+    def __init__(self, url: str) -> None:
+        self._url = url
+
+    def __str__(self) -> str:
+        return self._url
+
+
+class _ShowsRelative(str):
+    """값은 절대 URI 지만 `str()` 은 상대 URI 다 — `urlencode` 가 싣는 것은 `str()` 이다."""
+
+    def __str__(self) -> str:
+        return "cb"
+
+
+class _ShowsAbsolute(str):
+    """값은 상대 URI 지만 `str()` 은 절대 URI 다."""
+
+    def __str__(self) -> str:
+        return "https://app/shown"
+
+
+class _GivesSubclass:
+    """`__str__` 이 str 하위 타입을 돌려준다(파이썬이 허락한다).
+
+    그 하위 타입의 `__str__` 은 "cb" 다. 검사한 값과 싣는 값이 같으려면 검사가 그것을
+    평범한 str 로 바꿔 넘겨야 한다."""
+
+    def __str__(self) -> str:
+        return _ShowsRelative("https://app/cb")
+
+
+@pytest.mark.parametrize("facade", FACADES)
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (None, NOT_ABSOLUTE),  # "None"
+        (42, NOT_ABSOLUTE),  # "42"
+        (b"https://app/cb", NOT_ABSOLUTE),  # "b'https://app/cb'" — 서명은 str 이다
+        (_UrlLike("cb"), NOT_ABSOLUTE),
+        (_UrlLike("https://app/cb#f"), FRAGMENT),
+        (_UrlLike("https://app/c b"), NOT_VALID),
+        (_ShowsRelative("https://app/cb"), NOT_ABSOLUTE),  # 검사한 것과 싣는 것이 갈리면 안 된다
+    ],
+)
+def test_a_value_is_checked_as_the_string_the_url_carries(
+    facade: str, value: object, message: str
+) -> None:
+    """서명은 `str` 이지만 런타임에는 무엇이든 온다 — `urlencode` 가 하던 대로 `str()` 로 바꾼
+    그 문자열을 검사한다. 예전에는 `None` 이 "None" 으로, `42` 가 "42" 로 실렸다(실측)."""
+    assert _refusal(_authorization_url(facade), value) == message
+
+
+@pytest.mark.parametrize("facade", FACADES)
+@pytest.mark.parametrize(
+    ("value", "sent"),
+    [
+        (_UrlLike("https://app/cb?x=1"), "https://app/cb?x=1"),
+        (_ShowsAbsolute("cb"), "https://app/shown"),
+        (_GivesSubclass(), "https://app/cb"),
+    ],
+)
+def test_a_url_object_is_carried_as_its_string(facade: str, value: object, sent: str) -> None:
+    """URL 객체는 예전에도 실렸다(`urlencode` 가 `str()` 했다) — 그 문자열이 검사를 거쳐 실린다."""
+    result = _authorization_url(facade)(value)  # type: ignore[arg-type]
+    assert parse_qs(urlsplit(result.url).query)["redirect_uri"] == [sent]
 
 
 @pytest.mark.parametrize("facade", FACADES)
