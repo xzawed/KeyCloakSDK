@@ -44,6 +44,10 @@ internal const val JWKS_MAX_AGE_SECONDS: Int = 300
 // (`JwtValidator.NON_ACCESS_TOKEN_TYPES`)와 같은 집합이다.
 private val NON_ACCESS_TOKEN_TYPES: Set<String> = setOf("ID", "Refresh", "Offline", "Logout", "Serialized-ID")
 
+// id_token 의 typ — Keycloak 은 id_token 을 한 곳(TokenManager.AccessTokenResponseBuilder.generateIDToken)에서만 만들고 늘 이 값을
+// 싣는다(실서버 통합 실측도 "ID"). id_token 검증기는 이것과 정확히 같은 문자열만 받는다(허용 목록 — Java 자매 `ID_TOKEN_TYPE`).
+private const val ID_TOKEN_TYPE: String = "ID"
+
 // jwt.kt — JwtValidator: Java SDK의 JwtValidator(io.github.xzawed.keycloak.auth.JwtValidator)와 100%
 // 동형인 하드닝 불변식(§jwt)을 지킨다: RS256 alg 핀 · alg=none/미서명 명시 거부 · iss 정확일치
 // (exactMatchClaims엔 issuer만 — aud를 넣으면 다중값 정상 토큰이 오탐 거부된다) · aud 포함검사 ·
@@ -57,9 +61,9 @@ public class JwtValidator private constructor(
     private val allowedAlgs: Set<JWSAlgorithm>,
     private val skew: Duration,
 ) {
-    // 코드 교환의 id_token 검증기인가 — [withAudience] 가 만든 것만 참이다. 참이면 typ 거부(액세스 토큰 전용 — Keycloak 의
-    // id_token 은 typ "ID" 다)를 건너뛰고 azp 를 본다([requireAuthorizedParty]). 거짓(forRealm · withStaticJwks ·
-    // withJwkSource)이면 그 반대다(Java 자매의 생성자 인자 `idToken`).
+    // id_token 검증기인가(`AuthClient.validateIdToken` · 코드 교환) — [withAudience] 가 만든 것만 참이다. 참이면 액세스 토큰의 typ
+    // 거부 목록 대신 azp([requireAuthorizedParty])와 typ 허용 목록([requireIdTokenType] — 정확히 "ID")을 본다. 거짓(forRealm ·
+    // withStaticJwks · withJwkSource)이면 typ 거부 목록만 본다(Java 자매의 생성자 인자 `idToken`).
     // ⚠️ 생성자 인자가 아니라 속성인 것은 위 ⚠️(게시본의 합성 public 생성자 모양) 때문이다. [withAudience] 가 새 검증기를
     // 내보내기 **전에** 한 번 정하고, 그 뒤로 바꾸는 자리는 없다.
     private var idToken: Boolean = false
@@ -82,8 +86,9 @@ public class JwtValidator private constructor(
      * public API. A JWKS fetch can be blocking I/O, so it is wrapped in [runInterruptible].
      * After the signature and claim checks pass, a Keycloak token that is not an access token — its `typ` claim is `ID`,
      * `Refresh`, `Offline`, `Logout` or `Serialized-ID` — is rejected with [TokenValidationException].
-     * The code exchange's id_token validation (`AuthClient.requireValidNonce` → [withAudience]'s validate) is this
-     * function too, so the cap check is here and only here; that validator skips the `typ` check and checks `azp` instead.
+     * The id_token validation (`AuthClient.validateIdToken`, which the code exchange calls too → [withAudience]'s validate)
+     * is this function as well, so the cap check is here and only here; that validator checks `azp` and then requires a
+     * `typ` of exactly `ID` instead of rejecting those five.
      */
     public suspend fun validate(accessToken: String): ValidatedToken {
         // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에, IO 디스패처로 넘기기도 전에([JWT_MAX_BYTES]).
@@ -106,9 +111,15 @@ public class JwtValidator private constructor(
                 throw TokenValidationException("algorithm not allowed: ${alg.name} (a JWKS holds public keys only)")
             }
             val claims = onIo { processor.process(jwt, null) }
-            // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다. 둘 다 TokenValidationException 이라 아래
-            // catch 가 감싸지 않는다(IO 디스패처 밖이라 코루틴 스택 복구의 사본도 아니다).
-            if (idToken) requireAuthorizedParty(claims) else rejectNonAccessToken(claims)
+            // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다. 종류가 두 길 모두 마지막이다(id_token 길은 azp
+            // 다음). 전부 TokenValidationException 이라 아래 catch 가 감싸지 않는다(IO 디스패처 밖이라 코루틴 스택 복구의 사본도
+            // 아니다).
+            if (idToken) {
+                requireAuthorizedParty(claims)
+                requireIdTokenType(claims)
+            } else {
+                rejectNonAccessToken(claims)
+            }
             validatedTokenFrom(claims)
         } catch (e: TokenValidationException) {
             throw e
@@ -148,9 +159,20 @@ public class JwtValidator private constructor(
         }
     }
 
-    // 코드 교환의 id_token 검증기 — 기대 audience 를 client id 로 바꾸고(OIDC Core §2 · §3.1.3.7 대로 id_token 의 aud 는
-    // client id 이고, `expectedAudience` 재정의는 액세스 토큰 전용이다) 종류를 id_token 으로 바꾼다: typ 거부를 건너뛰고 azp
-    // 를 본다. iss · alg 핀 · skew 는 그대로다.
+    // id_token 자리에 온 다른 토큰을 거부한다(Java `JwtValidator.requireIdTokenType` 동형) — 허용 목록이다: 페이로드 typ 이
+    // 정확히(대소문자 구분) 문자열 "ID" 여야 한다. 부재 · 문자열이 아닌 값(숫자 · 배열 · JSON null …) · 그 밖의 문자열은
+    // 거부다. 액세스 토큰(typ "Bearer" — 클라이언트 설정에 따라 소문자 "bearer")도 aud 에 client id 를, azp 에 그 client 를
+    // 담을 수 있어 위 검사를 전부 지난다 — 거부 목록이면 "bearer" 같은 변형을 놓친다. 메시지는 상수다 — typ 은 토큰이 고른
+    // 문자열이라 싣지 않는다(azp 를 싣지 않는 것과 같은 이유).
+    private fun requireIdTokenType(claims: JWTClaimsSet) {
+        if (claims.getClaim("typ") != ID_TOKEN_TYPE) {
+            throw TokenValidationException("not an id_token (typ is not \"ID\")")
+        }
+    }
+
+    // id_token 검증기(`AuthClient.validateIdToken` · 코드 교환) — 기대 audience 를 client id 로 바꾸고(OIDC Core §2 · §3.1.3.7
+    // 대로 id_token 의 aud 는 client id 이고, `expectedAudience` 재정의는 액세스 토큰 전용이다) 종류를 id_token 으로 바꾼다:
+    // 액세스 토큰의 typ 거부 목록 대신 azp 와 typ 허용 목록("ID")을 본다. iss · alg 핀 · skew 는 그대로다.
     // ⚠️ 같은 [jwkSource] 객체를 넘긴다 — 새 저장소를 만들면 JWKS 캐시·재조회 rate-limit 창·콜드 캐시 창이 둘로
     // 갈려 IdP 요청 상한이 두 배가 된다(`IdTokenAudienceJwksTest`). 조회도 suspension point 도 없다.
     internal fun withAudience(audience: String): JwtValidator =

@@ -352,8 +352,8 @@ private class HpIdP(
     // UNDETERMINED 가 되고 JWKS_FETCH 가 빈다 — 그래서 이 IdP 키로 서명한 **유효한 JWS** 다(URL·폼에 안전한 글자뿐).
     val universal: String = hpSign(key, key.keyID, iss, emptyMap())
 
-    // 토큰 응답의 id_token — nonce 가 보편 인자라 exchangeCode 의 nonce 검증까지 통과한다.
-    val idToken: String = hpSign(key, key.keyID, iss, mapOf("nonce" to universal))
+    // 토큰 응답의 id_token — nonce 가 보편 인자라 exchangeCode 의 nonce 검증까지 통과한다(Keycloak 처럼 typ "ID").
+    val idToken: String = hpSign(key, key.keyID, iss, mapOf("nonce" to universal, "typ" to "ID"))
 
     fun config(): KeycloakConfig =
         KeycloakConfig(
@@ -1254,25 +1254,34 @@ private class HpNonceVariant(
     val idToken: (HpIdP, RSAKey) -> String?,
 )
 
+// id_token 은 전부 Keycloak 처럼 typ "ID" 를 싣는다 — 변형마다 제 검사로 거부되게(id_token 검증기는 그 밖의 typ 을 거부한다).
+// 「typ≠ID」 는 그 종류 검사(공개 validateIdToken 과 같은 검사)를 교환 계급 전부에 붙인다.
+private val HP_ID_TYP: Pair<String, Any> = "typ" to "ID"
+
 private val HP_NONCE_VARIANTS =
     listOf(
-        HpNonceVariant("대조", "ok") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal)) },
-        HpNonceVariant("nonce≠", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to "hp-other-nonce")) },
-        HpNonceVariant("key≠·kid=k1", "reject") { p, o -> hpSign(o, "k1", p.iss, mapOf("nonce" to p.universal)) },
-        HpNonceVariant("key≠·kid=k2", "reject") { p, o -> hpSign(o, "k2", p.iss, mapOf("nonce" to p.universal)) },
+        HpNonceVariant("대조", "ok") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal, HP_ID_TYP)) },
+        HpNonceVariant("nonce≠", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to "hp-other-nonce", HP_ID_TYP)) },
+        HpNonceVariant("key≠·kid=k1", "reject") { p, o -> hpSign(o, "k1", p.iss, mapOf("nonce" to p.universal, HP_ID_TYP)) },
+        HpNonceVariant("key≠·kid=k2", "reject") { p, o -> hpSign(o, "k2", p.iss, mapOf("nonce" to p.universal, HP_ID_TYP)) },
         HpNonceVariant("id_token없음", "reject", touchesJwks = false) { _, _ -> null },
-        HpNonceVariant("nonce클레임없음", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, emptyMap()) },
-        HpNonceVariant("iss≠", "reject") { p, _ -> hpSign(p.key, "k1", "${p.iss}-other", mapOf("nonce" to p.universal)) },
-        HpNonceVariant("aud≠", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal), aud = "hp-other-client") },
+        HpNonceVariant("nonce클레임없음", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf(HP_ID_TYP)) },
+        HpNonceVariant("iss≠", "reject") { p, _ -> hpSign(p.key, "k1", "${p.iss}-other", mapOf("nonce" to p.universal, HP_ID_TYP)) },
+        HpNonceVariant("aud≠", "reject") { p, _ ->
+            hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal, HP_ID_TYP), aud = "hp-other-client")
+        },
         // 만료는 skew(30s)를 넉넉히 넘겨 지난 것이다.
         HpNonceVariant("exp지남", "reject") { p, _ ->
-            hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal), expInMillis = -600_000)
+            hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal, HP_ID_TYP), expInMillis = -600_000)
         },
-        HpNonceVariant("exp없음", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal), expInMillis = null) },
+        HpNonceVariant("exp없음", "reject") { p, _ ->
+            hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal, HP_ID_TYP), expInMillis = null)
+        },
         // 서명 없는 JWT 는 키를 고르기 전에 거부된다 — JWKS 에 안 닿는 것이 맞다.
         HpNonceVariant("alg=none", "reject", touchesJwks = false) { p, _ ->
-            PlainJWT(hpClaims(p.iss, mapOf("nonce" to p.universal))).serialize()
+            PlainJWT(hpClaims(p.iss, mapOf("nonce" to p.universal, HP_ID_TYP))).serialize()
         },
+        HpNonceVariant("typ≠ID", "reject") { p, _ -> hpSign(p.key, "k1", p.iss, mapOf("nonce" to p.universal, "typ" to "Bearer")) },
     )
 
 private suspend fun hpRunNonceB(

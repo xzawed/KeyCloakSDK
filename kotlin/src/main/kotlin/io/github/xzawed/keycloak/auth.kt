@@ -132,8 +132,9 @@ public class AuthClient internal constructor(
      * threading the nonce, the id_token passes effectively unvalidated).
      * The id_token's `aud` is checked against `clientId`, per OIDC Core §3.1.3.7 — `expectedAudience` is only for
      * [validate]'s access tokens, so overriding it does not apply to this exchange. Its `azp` must be present when `aud`
-     * has more than one value and, when present, must equal `clientId` (§3.1.3.7 steps 4–5); [validate]'s `typ` check
-     * does not apply here, since Keycloak's id_token carries `typ` "ID".
+     * has more than one value and, when present, must equal `clientId` (§3.1.3.7 steps 4–5), and its payload `typ` must
+     * be exactly "ID" (Keycloak's id_token carries it) — the check is [validateIdToken], public for an id_token obtained
+     * some other way. A failed id_token check is reported as "invalid id_token".
      * Omitting `expectedNonce` (a custom flow without a nonce) skips id_token validation.
      */
     public suspend fun exchangeCode(
@@ -219,6 +220,17 @@ public class AuthClient internal constructor(
     public suspend fun validate(accessToken: String): ValidatedToken = ensureValidator().validate(accessToken)
 
     /**
+     * Validates an id_token with exactly the checks [exchangeCode] runs on one before it compares the nonce: the signature
+     * against the same realm key store [validate] uses (one JWKS cache and refetch window), the algorithm pin (an HS
+     * algorithm is refused), the length cap, an exact `iss`, an `aud` that contains [KeycloakConfig.clientId] — not
+     * [KeycloakConfig.expectedAudience], which applies to access tokens only — a required `exp` within the clock skew, the
+     * `azp` rule (OIDC Core §3.1.3.7 steps 4–5: several audiences need an `azp`, and an `azp` must be the client id), and
+     * a payload `typ` of exactly `"ID"`. The nonce is not compared — that stays in [exchangeCode]; the returned claims
+     * carry it. A failure throws [TokenValidationException], as [validate] does.
+     */
+    public suspend fun validateIdToken(idToken: String): ValidatedToken = ensureValidator().withAudience(config.clientId).validate(idToken)
+
+    /**
      * Releases auth resources. The auth/JWKS transport has one connection pool per process ([BoundedTransport] — like
      * HttpURLConnection's keep-alive cache), so AuthClient owns no connection pool and this is a no-op, but it
      * implements `AutoCloseable` for symmetry with the [KeycloakClient] close protocol (isomorphic with Node
@@ -238,11 +250,10 @@ public class AuthClient internal constructor(
         }
     }
 
-    // id_token의 nonce 클레임을 대조하기 전에 realm JWKS로 서명·iss·aud·exp까지 강화 검증한다. aud는 언제나
-    // config.clientId다(OIDC Core §2 · §3.1.3.7) — config.expectedAudience는 액세스 토큰(validate) 전용이다.
-    // ⚠️ 새 검증기를 만들지 않고 ensureValidator()의 것에서 audience 만 바꾼다 — 같은 JWKS 저장소(캐시·재조회
-    // 창)를 공유해야 IdP 요청 상한이 그대로다(`IdTokenAudienceJwksTest`). 파생은 id_token 검증기다 — validate() 의 typ
-    // 거부(Keycloak 의 id_token 은 typ "ID")를 걸지 않고 azp 를 본다(aud 가 둘 이상이면 있어야 하고, 있으면 clientId).
+    // id_token의 nonce 클레임을 대조하기 전에 공개 [validateIdToken] 과 같은 검사(그 함수다 — 사본이 없다)로 realm JWKS 서명·iss·
+    // aud(언제나 config.clientId — OIDC Core §2 · §3.1.3.7)·exp·azp·typ "ID" 까지 강화 검증한다.
+    // ⚠️ 그 함수는 새 검증기를 만들지 않고 ensureValidator()의 것에서 audience 만 바꾼다 — 같은 JWKS 저장소(캐시·재조회
+    // 창)를 공유해야 IdP 요청 상한이 그대로다(`IdTokenAudienceJwksTest`).
     private suspend fun requireValidNonce(
         idToken: String?,
         expectedNonce: String,
@@ -252,7 +263,7 @@ public class AuthClient internal constructor(
         }
         val claims =
             try {
-                ensureValidator().withAudience(config.clientId).validate(idToken)
+                validateIdToken(idToken)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: TokenValidationException) {
