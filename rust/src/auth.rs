@@ -8,7 +8,7 @@ use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::jwt::JwtValidator;
-use crate::oidc::OidcEndpoints;
+use crate::oidc::{OidcEndpoints, authorization_scopes};
 use crate::redirect_uri::check_redirect_uri;
 use crate::token_provider::TokenProvider;
 use crate::tokens::{AuthorizationRequest, IntrospectionResult, TokenSet, ValidatedToken};
@@ -213,8 +213,9 @@ impl AuthClient {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
         // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려준다. 호출자에게
         // 함께 돌려줘 콜백 후 exchange_code(expected_nonce)로 넘기면 id_token 재생을 막는다.
-        // config.scopes를 반영(사용자 커스텀 스코프). 비면 "openid" 폴백.
-        let scopes = self.scopes();
+        // config.scopes를 반영(사용자 커스텀 스코프) — 정확한 "openid" 는 빼고 싣는다. `authorize_url` 이
+        // 그것을 늘 맨 앞에 더하므로 그대로 더하면 `scope=openid+openid` 였다(`authorization_scopes`).
+        let scopes = authorization_scopes(&self.config.scopes);
         let mut builder = self
             .oidc
             .authorize_url(
@@ -332,14 +333,14 @@ impl AuthClient {
         }
     }
 
-    /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(authz-url·client-credentials 공용).
-    /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
     /// The client secret this client sends (empty for a public client) — what an echoed `error` is compared against
     /// (`oauth_error_code`).
     fn sent_secret(&self) -> &str {
         self.config.client_secret.as_deref().unwrap_or_default()
     }
 
+    /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(client-credentials — 인가요청은 `authorization_scopes`).
+    /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
     fn scopes(&self) -> Vec<Scope> {
         if self.config.scopes.is_empty() {
             vec![Scope::new("openid".to_string())]
@@ -932,6 +933,95 @@ mod tests {
             req.url.contains("nonce="),
             "nonce must be on the authorization URL"
         );
+    }
+
+    // ── 인가요청의 scope — openid 는 한 번 (등록부 rust-authz-scope-openid-duplicated) ──
+    //
+    // openidconnect 의 `authorize_url(AuthenticationFlow…)` 는 `openid` 를 늘 맨 앞에 더한다. 설정의 scope(기본
+    // `["openid"]`)를 그대로 더하면 URL 이 `scope=openid+openid` 였다. 인가요청에서만 설정의 정확한 `openid` 를
+    // 빼고, client_credentials 는 설정 그대로 보낸다.
+    fn scoped_auth(server_uri: &str, scopes: Option<&[&str]>) -> AuthClient {
+        let mut config = KeycloakConfig::new(server_uri, "it-realm", "it-client").unwrap();
+        if let Some(scopes) = scopes {
+            config.scopes = scopes.iter().map(|s| s.to_string()).collect();
+        }
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap()
+    }
+
+    fn scope_values(pairs: url::form_urlencoded::Parse<'_>) -> Vec<String> {
+        pairs
+            .filter(|(k, _)| k == "scope")
+            .map(|(_, v)| v.into_owned())
+            .collect()
+    }
+
+    /// 기본(설정을 건드리지 않음) · 빈 목록 · `openid` 가 든 목록은 `openid` 한 번, `openid` 가 없는 목록은 그 앞에
+    /// `openid` — 두 인가요청 메서드 모두.
+    #[tokio::test]
+    async fn authorization_request_sends_openid_once() {
+        let cases: [(Option<&[&str]>, &str); 5] = [
+            (None, "openid"),
+            (Some(&[]), "openid"),
+            (Some(&["openid", "profile"]), "openid profile"),
+            (Some(&["profile"]), "openid profile"),
+            (
+                Some(&["profile", "openid", "email"]),
+                "openid profile email",
+            ),
+        ];
+        let mut wrong = Vec::new();
+        for (scopes, want) in cases {
+            let auth = scoped_auth("http://kc:8080", scopes);
+            let per_call = auth
+                .create_authorization_request_with_redirect("https://app/cb")
+                .expect("valid redirect uri");
+            for url in [auth.create_authorization_request().url, per_call.url] {
+                let parsed = url::Url::parse(&url).expect("authorization URL");
+                let sent = scope_values(parsed.query_pairs());
+                if sent != vec![want.to_string()] {
+                    wrong.push(format!("{scopes:?} → {sent:?}, want {want:?}"));
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "scope parameter: {wrong:#?}");
+    }
+
+    /// 대조 — client_credentials 는 설정의 scope 를 그대로 보낸다(빈 목록은 `openid` 폴백, 오늘과 같다).
+    #[tokio::test]
+    async fn client_credentials_sends_the_configured_scopes_unchanged() {
+        let cases: [(Option<&[&str]>, &str); 4] = [
+            (None, "openid"),
+            (Some(&[]), "openid"),
+            (Some(&["openid", "profile"]), "openid profile"),
+            (Some(&["profile"]), "profile"),
+        ];
+        for (scopes, want) in cases {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/realms/it-realm/protocol/openid-connect/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+                })))
+                .mount(&server)
+                .await;
+            let auth = scoped_auth(&server.uri(), scopes);
+            auth.client_credentials_token()
+                .await
+                .expect("client_credentials");
+            let reqs = server
+                .received_requests()
+                .await
+                .expect("received_requests available");
+            assert_eq!(reqs.len(), 1, "{scopes:?}");
+            assert_eq!(
+                scope_values(url::form_urlencoded::parse(&reqs[0].body)),
+                vec![want.to_string()],
+                "{scopes:?}"
+            );
+        }
     }
 
     #[tokio::test]
