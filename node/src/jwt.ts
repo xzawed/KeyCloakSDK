@@ -359,7 +359,9 @@ export interface JwtValidatorOptions {
  * Self-hardened JWT validator. It does not trust library defaults:
  * algorithm pinning (the header alg is not trusted, `none` is rejected) · exact issuer match · audience membership
  * check (multiple aud accepted) · exp/nbf ± clock skew · DoS-safe JWKS refetch (key set lifetime 300 seconds —
- * within it, a refetch only on an unresolved kid + cooldown rate-limit).
+ * within it, a refetch only on an unresolved kid + cooldown rate-limit). After those checks pass, `validate` rejects a
+ * Keycloak token that is not an access token — one whose `typ` claim is `ID`, `Refresh`, `Offline`, `Logout` or
+ * `Serialized-ID`.
  *
  * The key source is injected (a local JWKS in tests, the remote JWKS of `forJwksUri` in real use).
  */
@@ -447,11 +449,8 @@ export class JwtValidator {
     return new JwtValidator(this.keys, { ...this.opts, audience }, true)
   }
 
-  /**
-   * Verifies the token (signature, pinned algorithm, exact `iss`, `aud` containment, `exp`/`nbf` ± clock skew) and then
-   * rejects a Keycloak token that is not an access token — one whose `typ` claim is `ID`, `Refresh`, `Offline`,
-   * `Logout` or `Serialized-ID`.
-   */
+  // ⚠️ JSDoc 을 달지 말 것 — 방출 리포트에서 `// (undocumented)` 줄이 사라져 api-extractor 게이트가 「직전 릴리스의 공개 API
+  // 줄이 바뀌었다」로 막는다(실측: 그 한 줄이 `<`). 계약은 클래스 문서에 적는다.
   async validate(token: string): Promise<ValidatedToken> {
     try {
       // ⚠️ 길이 상한이 맨 앞이다 — jose 가 나누고 디코드하기 전, JWKS 를 찾기 전(`JWT_MAX_BYTES`). 단위는 UTF-16 코드
