@@ -22,6 +22,14 @@ require "pp"
 # 바닥 경로는 SDK 타입의 `inspect`·`to_s`·`pretty_inspect`, 예외는 `full_message` 까지(`cause` 사슬의
 # 메시지가 거기 실린다). 남의 타입은 걷기만 하고 따로 찍지 않는다 — SDK 객체의 `inspect` 가 이미 그것을 싣는다.
 #
+# ⚠️ 비밀 이름의 필드가 빈 값으로만 닿으면 실패한다(등록부 `facade-dump-reached-empty-secret-field`). 카나리아 검사는
+# 뿌리가 채운 값만 본다 — 아무 뿌리도 채우지 않는 새 비밀 필드는 빈 값으로 찍혀 아무것도 증명하지 못한 채 초록이었다.
+# 그래서 걷기가 SDK 타입이 선언한 필드(ivar 는 `ruby/lib` 에서 그것을 대입하는 SDK 클래스·모듈의 것, `Data` 멤버는 그
+# 클래스의 것)마다 「비지 않은 값을 쥔 인스턴스를 봤는가」를 적고(`Walker#record`), 이름이 비밀을 뜻하는데 닿은
+# 인스턴스가 전부 빈 값이면 실패한다 — 뿌리에서 카나리아로 채우거나 `EMPTY_SECRET_EXEMPT` 에 이유와 함께 적는다.
+# 한계: 비밀 이름의 필드가 비지 않은 자리표시 값을 쥐면, 비밀이 순한 이름의 필드에 들면, 인코딩된(base64 등) 비밀이면
+# 이 검사는 못 본다.
+#
 # ⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. 새 타입이 이 뿌리들이 안 밟는 경로로
 # 비밀을 받으면 그 비밀은 여기 없다 — 그때는 그 경로를 뿌리에 더한다. 검사는 **전체 일치**라서
 # 부분 노출(`"CANA***"` 같은 접두·접미 마스크)은 못 잡는다 — 부분 일치는 렌더링 속 난수(JWKS 모듈러스·
@@ -47,6 +55,93 @@ module FacadeDumpSpec
 
   # 알려진 누출 — `"뿌리|카나리아"` => 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**(낡은 항목 검사).
   KNOWN_LEAKS = {}.freeze
+
+  # 비밀 이름인데 닿은 인스턴스가 전부 빈 값이어도 되는 필드 — `"<타입>.<필드>"` => 이유. ⚠️ 이유 없는 면제는 넣지
+  # 않는다. 더는 「닿고 · 빈 값만」이 아니면(비지 않은 값이 보였거나 닿지 않으면) 낡은 면제다.
+  EMPTY_SECRET_EXEMPT = {}.freeze
+
+  # 규칙 1–3 — 비밀 이름의 낱말, 빈 값, 그리고 SDK 타입이 선언한 필드(규칙 2).
+  module SecretFields
+    WORDS = %w[secret password passwd passphrase token credential verifier private key bearer].freeze
+    # 대소문자 경계 — 대문자 묶음(약어)은 다음 대문자 낱말 앞에서 끝난다(`IDToken` → `ID`·`Token`).
+    WORD = /[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/
+    # `ruby/lib` 의 ivar 대입(`@이름 =`·`@이름 ||=` 등) — ivar 는 선언이 없으므로 대입이 곧 선언이다.
+    IVAR = %r{@([a-z_]\w*)\s*(?:\|\||&&|[-+*/])?=(?![=~>])}
+    IVARS = Kernel.instance_method(:instance_variables)
+    IVAR_GET = Kernel.instance_method(:instance_variable_get)
+    CLASS_OF = Kernel.instance_method(:class)
+
+    # `_`·`-`·`$`·`.`·`@`·`#` 와 대소문자 경계로 자르고, 소문자로 바꿔 끝의 `s` 하나를 뗀다.
+    def self.words(name)
+      name.to_s.split(/[_\-$.@#]+/).flat_map { |part| part.scan(WORD) }.map { |w| w.downcase.delete_suffix("s") }
+    end
+
+    def self.secret_named?(name) = words(name).any? { |w| WORDS.include?(w) }
+
+    # nil, 길이 0 인 String·Array·Hash·Set. 불리언·숫자·심벌·그 밖의 객체는 비지 않았다.
+    def self.empty?(value)
+      case value
+      when nil then true
+      when String, Array, Hash, Set then value.empty?
+      else false
+      end
+    end
+
+    # (선언한 SDK 타입, 필드, 값). ivar 는 그것을 `ruby/lib` 에서 대입하는 가장 가까운 SDK 조상의 것이고, 아무 SDK
+    # 조상도 대입하지 않는 ivar(`Faraday::Middleware` 가 두는 `@app`·`@options`)는 세지 않는다. `Data` 멤버는 그 클래스의 것.
+    def self.of(obj)
+      klass = CLASS_OF.bind_call(obj)
+      ivar_fields(obj, klass) + member_fields(obj, klass)
+    end
+
+    def self.ivar_fields(obj, klass)
+      owners = klass.ancestors.select { |a| a.name.to_s.start_with?("KeycloakSdk::") }
+      IVARS.bind_call(obj).filter_map do |iv|
+        owner = owners.find { |a| ivar_table.fetch(a.name, []).include?(iv.to_s) }
+        [owner.name, iv.to_s, IVAR_GET.bind_call(obj, iv)] if owner
+      end
+    end
+
+    def self.member_fields(obj, klass)
+      return [] unless obj.is_a?(Data)
+
+      Data.instance_method(:to_h).bind_call(obj).map { |k, v| [klass.name, k.to_s, v] }
+    end
+
+    # 완전 이름 => 그 클래스·모듈이 대입하는 ivar 들 — 들여쓰기로 중첩을 복원한다(`Declared.declarations` 와 같은 법).
+    def self.ivar_table
+      @ivar_table ||= Dir.glob(File.join(Declared::LIB, "**", "*.rb")).each_with_object({}) do |file, table|
+        scope_ivars(File.readlines(file), table)
+      end
+    end
+
+    def self.scope_ivars(lines, table)
+      stack = []
+      lines.each do |line|
+        next if blank?(line)
+
+        indent = unwind(stack, line)
+        declared = Declared::DECL.match(line)
+        declared ? stack << [indent, declared[2] || declared[3]] : assigned(stack, line, table)
+      end
+    end
+
+    def self.blank?(line) = line.strip.empty? || line.lstrip.start_with?("#")
+
+    # 이 줄이 대입하는 ivar 를 지금 범위(가장 안쪽 클래스·모듈)의 것으로 적는다.
+    def self.assigned(stack, line, table)
+      return if stack.empty?
+
+      (table[stack.map(&:last).join("::")] ||= []).concat(line.scan(IVAR).map { |(name)| "@#{name}" })
+    end
+
+    # 이 줄의 들여쓰기 — 그만큼 이상 들여 쓴 범위(이미 닫힌 클래스·모듈)를 스택에서 걷어낸다.
+    def self.unwind(stack, line)
+      indent = line[/\A\s*/].size
+      stack.pop while stack.any? && stack.last[0] >= indent
+      indent
+    end
+  end
 
   class FlowError < StandardError; end
 
@@ -244,7 +339,7 @@ module FacadeDumpSpec
     IVAR_GET = Kernel.instance_method(:instance_variable_get)
     CLASS_OF = Kernel.instance_method(:class)
 
-    attr_reader :reached, :leaks, :known_seen, :contamination
+    attr_reader :reached, :leaks, :known_seen, :contamination, :fields
 
     def initialize(canaries)
       @canaries = canaries
@@ -253,7 +348,33 @@ module FacadeDumpSpec
       @leaks = []
       @known_seen = Set.new
       @contamination = []
+      # `"<선언 타입>.<필드>"` => 닿은 인스턴스 하나라도 비지 않은 값을 쥐었는가(`record`).
+      @fields = {}
     end
+
+    # SDK 타입이 선언한 필드마다 이 인스턴스가 비지 않은 값을 쥐었는가 — 판정은 예제가 한다.
+    def record(obj)
+      SecretFields.of(obj).each do |owner, name, value|
+        key = "#{owner}.#{name}"
+        @fields[key] = @fields.fetch(key, false) || !SecretFields.empty?(value)
+      end
+    end
+
+    # 비밀 이름인데 닿은 인스턴스가 전부 빈 값을 쥔 필드, 그리고 낡은 면제(규칙 4·5).
+    def empty_secret_problems
+      empty_secret_fields.map do |key|
+        "#{key}: secret-named but every reached instance holds an empty value — fill it from a root with a canary, " \
+          "or exempt it with a reason"
+      end + stale_empty_exemptions.map { |key| "#{key}: EMPTY_SECRET_EXEMPT 에 있지만 더는 「닿고 · 빈 값만」이 아니다 — 낡은 면제다" }
+    end
+
+    def empty_secret_fields
+      @fields.reject { |key, seen| seen || EMPTY_SECRET_EXEMPT.key?(key) }.keys
+             .select { |key| SecretFields.secret_named?(key.split(".").last) }.sort
+    end
+
+    # 낡은 면제 — 더는 「닿고 · 빈 값만」이 아니다(비지 않은 값이 보였거나 닿지 않는다).
+    def stale_empty_exemptions = EMPTY_SECRET_EXEMPT.keys.reject { |key| @fields.key?(key) && !@fields[key] }
 
     def visited = @seen.size
 
@@ -333,7 +454,10 @@ module FacadeDumpSpec
       outs
     end
 
+    # ⚠️ 기록은 여기서 한다 — 적대 경로 행렬은 이 걷기를 쓰되 `render` 를 덮어 찍지 않으므로 기록도 하지 않는다
+    # (행렬의 동작·출력은 그대로다).
     def render(obj, path, root)
+      record(obj) if own?(obj)
       klass = CLASS_OF.bind_call(obj)
       renderings(obj).each do |how, out|
         scan(out).each do |name|
@@ -437,6 +561,22 @@ RSpec.describe KeycloakSdk do
     it "never walks into the harness's own objects (example, scene, webmock stubs)" do
       expect(walker.visited).to be > 100 # 걷기가 실제로 내려갔다
       expect(walker.contamination).to eq([]), "하네스 객체에 닿았다 — 오염을 제거하라:\n#{walker.contamination.join("\n")}"
+    end
+
+    it "fails a secret-named field that every reached instance holds empty, unless it is exempted with a reason" do
+      named = walker.fields.keys.select { |key| FacadeDumpSpec::SecretFields.secret_named?(key.split(".").last) }
+      expect(named.size).to be >= 5 # 기록이 공허하지 않다
+      problems = walker.empty_secret_problems
+      expect(problems).to eq([]), problems.join("\n")
+    end
+
+    it "splits a field name into whole words (IDToken is id and token; keycloak is not key)" do
+      fields = FacadeDumpSpec::SecretFields
+      expect(fields.words("IDToken")).to eq(%w[id token])
+      expect(fields.words("@client_secret")).to eq(%w[client secret])
+      expect(fields.secret_named?("@code_verifier")).to be(true)
+      expect(fields.secret_named?("keycloak")).to be(false)
+      expect(fields.secret_named?("@expected_audience")).to be(false)
     end
 
     it "sees a canary when a carrier does print one (the detector is not blind)" do
