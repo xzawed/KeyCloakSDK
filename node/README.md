@@ -75,7 +75,7 @@ try {
 
 `KeycloakClient` implements `AsyncDisposable`, so `await using client = KeycloakClient.create(…)` cleans up on scope exit.
 
-For the browser/authorization-code flow, start with `client.auth.createAuthorizationRequest(redirectUri)` and exchange the callback with `client.auth.exchangeCode(code, redirectUri, codeVerifier, nonce)` — the `nonce` must be passed back for id_token validation to succeed.
+For the browser/authorization-code flow, start with `client.auth.createAuthorizationRequest(redirectUri)` and exchange the callback with `client.auth.exchangeCode(code, redirectUri, codeVerifier, nonce)` — the `nonce` must be passed back for id_token validation to succeed. `redirectUri` must be an absolute URL without a query or a fragment, and both calls send it normalized (`http://localhost:3000` goes out as `http://localhost:3000/`), because Keycloak requires the two requests to carry the same string — register that form, or a `/*` wildcard, in the client's Valid Redirect URIs.
 
 ## Security defaults
 
