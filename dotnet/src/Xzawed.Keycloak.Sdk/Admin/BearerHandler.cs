@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace Xzawed.Keycloak.Admin;
@@ -15,6 +16,11 @@ internal sealed class BearerHandler : DelegatingHandler
     {
         // Before the token provider runs: an admin request it sends meanwhile is its own, not this write's.
         var unread = AdminResponseBody.TakeUnread();
+        // Every admin body — typed client, raw REST and Raw — is a JsonContent the transport writes lazily below. One the
+        // serializer would rewrite (an unpaired surrogate becomes U+FFFD) ends here, before the token is asked for
+        // (UnpairedSurrogateRequestBodyTests).
+        if (request.Content is JsonContent body)
+            EncodableBody.Require(body.Value, body.ObjectType);
         string token;
         try
         {
