@@ -2,6 +2,7 @@ package keycloak
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -27,6 +28,9 @@ func (c *Client) String() string { return "Client{" + c.cfg.String() + "}" }
 
 // GoString is the `%#v` hook — `%#v` does not use Stringer.
 func (c *Client) GoString() string { return c.String() }
+
+// Format keeps the non-string verbs (%d %b %e …) off the client secret — see formatMasked.
+func (c *Client) Format(f fmt.State, verb rune) { formatMasked(f, verb, c, c.String()) }
 
 // New validates the config and assembles the auth facade. Admin is deferred, so
 // a public/PKCE client without a secret can still use Auth.

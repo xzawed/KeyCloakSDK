@@ -13,12 +13,15 @@
       "go/client.go"
     ],
     "owners": {
+      "go/admin.go:AdminClient.Format": "coverage-omit-hides-security-paths",
       "go/admin.go:AdminClient.GoString": "coverage-omit-hides-security-paths",
       "go/admin.go:AdminClient.String": "coverage-omit-hides-security-paths",
       "go/admin.go:answeredWithoutStatus": "coverage-omit-hides-security-paths",
       "go/admin.go:unreadAnswer": "coverage-omit-hides-security-paths",
+      "go/auth.go:AuthClient.Format": "coverage-omit-hides-security-paths",
       "go/auth.go:AuthClient.GoString": "coverage-omit-hides-security-paths",
       "go/auth.go:AuthClient.String": "coverage-omit-hides-security-paths",
+      "go/client.go:Client.Format": "coverage-omit-hides-security-paths",
       "go/client.go:Client.GoString": "coverage-omit-hides-security-paths",
       "go/client.go:Client.String": "coverage-omit-hides-security-paths"
     }

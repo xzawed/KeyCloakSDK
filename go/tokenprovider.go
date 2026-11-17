@@ -2,6 +2,7 @@ package keycloak
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -61,6 +62,11 @@ func (p *clientCredentialsProvider) String() string {
 
 // GoString is the `%#v` hook — `%#v` does not use Stringer.
 func (p *clientCredentialsProvider) GoString() string { return p.String() }
+
+// Format keeps the non-string verbs (%d %b %e …) off the cached token — see formatMasked.
+func (p *clientCredentialsProvider) Format(f fmt.State, verb rune) {
+	formatMasked(f, verb, p, p.String())
+}
 
 // NewClientCredentialsTokenProvider caches a token and refreshes it before
 // expiry, collapsing concurrent refreshes via single-flight. A caller whose ctx

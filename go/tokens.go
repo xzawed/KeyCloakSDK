@@ -46,6 +46,9 @@ func (t TokenSet) String() string {
 // blocked here (it round-trips, so storing `***` is worse).
 func (t TokenSet) GoString() string { return t.String() }
 
+// Format keeps the non-string verbs (%d %b %e …) off the fields — see formatMasked.
+func (t TokenSet) Format(f fmt.State, verb rune) { formatMasked(f, verb, t, t.String()) }
+
 // LogValue is the `log/slog` masking hook. JSONHandler does not go through Stringer and serializes
 // the fields by reflection, so with String() alone a structured log writes them verbatim (confirmed
 // by measurement).
@@ -129,5 +132,8 @@ func (a AuthorizationRequest) String() string {
 // through `String()` (a control test pins this). ⚠️ `json.Marshal` is a separate path and is not
 // blocked here (it round-trips, so storing `***` is worse).
 func (a AuthorizationRequest) GoString() string { return a.String() }
+
+// Format keeps the non-string verbs (%d %b %e …) off the fields — see formatMasked.
+func (a AuthorizationRequest) Format(f fmt.State, verb rune) { formatMasked(f, verb, a, a.String()) }
 
 func (a AuthorizationRequest) LogValue() slog.Value { return slog.StringValue(a.String()) }
