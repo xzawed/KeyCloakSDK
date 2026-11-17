@@ -1640,3 +1640,59 @@ TEST:scripts/test/test-integration-coverage-gate.sh
 OLD:      - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
 NEW:      - shell: bash -c "bash {0} || true" # PROBE-REC
 SITE:bash {0} || true" # PROBE-REC
+
+### probe-deps-no-copy
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:      cp -R "$ROOT/$_dep" "$WT/$_dep" 2>/dev/null || fail_invalid "--deps $_d: $_dep 를 워크트리로 복사하지 못했다." ;;
+NEW:      mkdir -p "$WT/$_dep" ;; # PROBE-REC
+SITE:mkdir -p "$WT/$_dep" ;; # PROBE-REC
+
+### probe-deps-no-source-check
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:      [ -d "$ROOT/$_dep" ] || fail_invalid "--deps $_d: 본 트리에 $_dep 가 없다 — 먼저 설치하라(.claude/rules/$_d.md)."
+NEW:      : # PROBE-REC
+SITE:: # PROBE-REC
+
+### probe-deps-any-lang
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:    *) echo "usage: --deps 는 node · php · python 만 준비한다: [$_d]" >&2; exit 2 ;;
+NEW:    *) ;; # PROBE-REC
+SITE:*) ;; # PROBE-REC
+
+### probe-deps-no-pythonpath
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:      PYTHONPATH="$WT/python/src"
+NEW:      PYTHONPATH="${PYTHONPATH:-}" # PROBE-REC
+SITE:PYTHONPATH="${PYTHONPATH:-}" # PROBE-REC
+
+### probe-deps-no-venv-default
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:        for _py in "$ROOT/python/.venv/Scripts/python.exe" "$ROOT/python/.venv/bin/python"; do
+NEW:        for _py in /nonexistent/python; do # PROBE-REC
+SITE:/nonexistent/python; do # PROBE-REC
+
+### probe-deps-no-landing
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:        || fail_invalid "--deps python: $KCSDK_PY 가 워크트리의 keycloak_sdk 를 적재하지 않는다 — 본 트리를 읽는 채로 재면 잡히는 변이가 SILENT 로 나온다." ;;
+NEW:        || true ;; # PROBE-REC
+SITE:|| true ;; # PROBE-REC
+
+### probe-deps-no-silent-guard
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:    *) if printf '%s\n' "$CHANGED" | grep -q '^python/src/'; then
+NEW:    *) if false; then # PROBE-REC
+SITE:if false; then # PROBE-REC
+
+### probe-python-bytecode-written
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:PYTHONDONTWRITEBYTECODE=1
+NEW:PYTHONDONTWRITEBYTECODE= # PROBE-REC
+SITE:PYTHONDONTWRITEBYTECODE= # PROBE-REC
