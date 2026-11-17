@@ -147,9 +147,11 @@ export class AuthClient {
   /**
    * Builds the start URL of a PKCE (S256) authorization-code flow (synchronous, no network). The PKCE challenge is
    * computed directly with `node:crypto`, without relying on openid-client's async helpers (isomorphic with the
-   * Python SDK).
+   * Python SDK). `redirectUri` must be a URL without a query or a fragment (a `KeycloakConfigError` otherwise); it is
+   * sent normalized, as the same string `exchangeCode` sends for the same value.
    */
   createAuthorizationRequest(redirectUri: string): AuthorizationRequest {
+    const redirect = redirectUrl(redirectUri)
     const codeVerifier = base64url(randomBytes(32))
     const codeChallenge = base64url(createHash('sha256').update(codeVerifier).digest())
     const state = base64url(randomBytes(16))
@@ -158,7 +160,7 @@ export class AuthClient {
     const url = new URL(this.#endpoints.authorization)
     url.searchParams.set('response_type', 'code')
     url.searchParams.set('client_id', this.#cfg.clientId)
-    url.searchParams.set('redirect_uri', redirectUri)
+    url.searchParams.set('redirect_uri', redirect.href)
     url.searchParams.set('scope', scope)
     url.searchParams.set('state', state)
     url.searchParams.set('nonce', nonce)
@@ -183,7 +185,8 @@ export class AuthClient {
   /**
    * Exchanges an authorization code + PKCE verifier for tokens (`authorization_code` grant).
    * openid-client extracts the code from the callback URL, so the code (+iss) is appended to `redirectUri` and
-   * passed.
+   * passed. `redirectUri` follows the rule of `createAuthorizationRequest` (a URL without a query or a fragment,
+   * `KeycloakConfigError` otherwise, before any request) and goes out as the same normalized string.
    *
    * `createAuthorizationRequest` always puts a `nonce` in the authorization URL, so Keycloak returns that nonce
    * inside the id_token it issues. openid-client v6 verifies the id_token's nonce automatically and, when no
