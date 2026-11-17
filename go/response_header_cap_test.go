@@ -165,9 +165,10 @@ func newHdrIdP(t *testing.T, key *rsa.PrivateKey) *hdrIdP {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// An access token: typ "Bearer" (Validate accepts only Bearer or DPoP).
 	p.token, err = jwt.Signed(sig).Claims(jwt.Claims{Subject: "u1", Issuer: p.url + "/realms/r",
 		Audience: jwt.Audience{"c"}, Expiry: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		IssuedAt: jwt.NewNumericDate(time.Now())}).Serialize()
+		IssuedAt: jwt.NewNumericDate(time.Now())}).Claims(map[string]any{"typ": "Bearer"}).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -49,7 +49,7 @@ type tokenKind int
 
 const (
 	// kindAccess is the zero value, so a Validator built without a kind judges typ: one that forgets its kind
-	// refuses an id_token rather than letting another kind of token through Validate.
+	// refuses an id_token rather than letting another kind of token through Validate. typ must be Bearer or DPoP.
 	kindAccess tokenKind = iota
 	// kindIDToken is the id_token ValidateIDToken checks (and ExchangeCode, through it): typ exactly "ID", then azp
 	// (OIDC Core §3.1.3.7 steps 4–5).
@@ -58,8 +58,36 @@ const (
 
 // nonAccessTokenTypes are the typ claim values Keycloak puts on the tokens that are not access tokens:
 // org.keycloak.util.TokenUtil (keycloak-client-common-synced 26.0.12) less its two access types, Bearer and DPoP.
-// Matched exactly, case included.
+// Matched exactly, case included — only to name the kind in the refusal; the access check itself is the allow-list
+// below.
 var nonAccessTokenTypes = map[string]bool{"ID": true, "Refresh": true, "Offline": true, "Logout": true, "Serialized-ID": true}
+
+// isAccessTokenType reports whether typ is an access token's — Bearer or DPoP, ignoring ASCII case, as Keycloak's own
+// resource-side check reads it (TokenVerifier.TokenTypeCheck · DPoPUtil). Keycloak writes Bearer, lower-cased to
+// "bearer" under the client option "use lower-case bearer type in token responses". ASCII only: a non-ASCII byte never
+// equals one of the lower-case targets.
+func isAccessTokenType(typ string) bool {
+	for _, want := range [...]string{"bearer", "dpop"} {
+		if len(typ) != len(want) {
+			continue
+		}
+		equal := true
+		for i := 0; i < len(typ); i++ {
+			c := typ[i]
+			if 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != want[i] {
+				equal = false
+				break
+			}
+		}
+		if equal {
+			return true
+		}
+	}
+	return false
+}
 
 // Backoff for *failed* JWKS fetches — a different axis from minRefetch.
 //
@@ -99,10 +127,10 @@ type validatorOptions struct {
 // Validator performs hardened JWT verification: it does not trust library
 // defaults. Algorithm pinning (header alg not trusted, "none" rejected), exact
 // issuer match, audience membership (multi-valued aud accepted), exp/nbf with
-// clock skew, a Keycloak token that is not an access token refused (typ claim
-// ID, Refresh, Offline, Logout or Serialized-ID), and DoS-safe JWKS refetch (a
-// fetched key set is used for 300 seconds; within them a forged signature never
-// triggers a refetch, only an unresolved kid does, rate-limited).
+// clock skew, only an access token accepted (typ claim Bearer or DPoP, ignoring
+// ASCII case), and DoS-safe JWKS refetch (a fetched key set is used for 300
+// seconds; within them a forged signature never triggers a refetch, only an
+// unresolved kid does, rate-limited).
 type Validator struct {
 	opts validatorOptions
 	*jwksState
@@ -283,14 +311,17 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 
 // checkKind runs the checks that differ per token kind. A claims failure like the shared ones: no cause, no refetch.
 //
-// An access token (kindAccess) must not be another kind of Keycloak token: with the signature, iss, aud and exp
-// right, an id_token or a back-channel logout token passed Validate, since its aud is the client id —
-// ExpectedAudience's default. typ is one of the five constants when quoted, so the message carries no token content.
+// An access token (kindAccess) must carry a payload typ of Bearer or DPoP, ignoring ASCII case — Keycloak's own
+// allow-list (TokenVerifier.TokenTypeCheck). With the signature, iss, aud and exp right, an id_token or a back-channel
+// logout token passed Validate, since its aud is the client id — ExpectedAudience's default; and so, while only the
+// five other Keycloak kinds were refused, did a realm-signed token with no typ at all: the JARM authorization response
+// JWT. One of the five keeps its own message, which quotes typ — one of five constants, so no token content. Any other
+// typ (absent, not a string, another value) is refused with one constant message that never quotes it.
 //
 // The id_token (kindIDToken) must be typed exactly "ID" — the string Keycloak puts on every id_token it issues. An
-// allow-list, where the access path has a deny-list: an access token whose aud and azp both name the client passes
-// every other id_token check, and its typ may be "bearer" in lowercase (a client option), which a deny-list would
-// miss. The refusal is constant and never quotes typ, a value the token's minter chose. Then OIDC Core §3.1.3.7
+// allow-list of one, matched exactly: an access token whose aud and azp both name the client passes every other
+// id_token check, and its typ may be "bearer" in lowercase (a client option), which a deny-list would miss. The
+// refusal is constant and never quotes typ, a value the token's minter chose. Then OIDC Core §3.1.3.7
 // steps 4–5: with several audiences azp must be present, and a present azp must be a string equal to the client id
 // — this Validator's audience (forIDToken). The azp value itself is not quoted.
 func (v *Validator) checkKind(aud jwt.Audience, all map[string]any) error {
@@ -310,8 +341,12 @@ func (v *Validator) checkKind(aud jwt.Audience, all map[string]any) error {
 		}
 		return nil
 	}
-	if typ, ok := all["typ"].(string); ok && nonAccessTokenTypes[typ] {
+	typ, isString := all["typ"].(string)
+	if isString && nonAccessTokenTypes[typ] {
 		return &TokenValidationError{Msg: "claims: not an access token (typ " + typ + ")"}
+	}
+	if !isString || !isAccessTokenType(typ) {
+		return &TokenValidationError{Msg: "claims: not an access token (typ is not Bearer or DPoP)"}
 	}
 	return nil
 }
