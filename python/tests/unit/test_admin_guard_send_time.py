@@ -726,6 +726,45 @@ def test_an_admin_whose_grant_object_cannot_be_watched_is_refused_untouched(
     assert "send" not in vars(nested.connection._s), "거부한 설치가 그랜트 세션에 훅을 남겼다"
 
 
+def _unhardenable() -> ConnectionManager:
+    """리다이렉트를 막을 자리가 없는 연결 — 하드닝을 걸 수 없다."""
+    broken = ConnectionManager(base_url="http://127.0.0.1:9")
+    broken._s.resolve_redirects = None
+    return broken
+
+
+def test_a_grant_connection_that_cannot_be_hardened_is_not_set() -> None:
+    """끼울 연결을 무장할 수 없으면 세터가 `KeycloakConfigError` 이고 끼우지 않는다 — 옛 연결이
+    남고, 거부한 연결에는 SDK 훅이 하나도 남지 않는다(전부이거나 아무것도)."""
+    client = AdminClient(_cfg("http://127.0.0.1:9"))
+    nested = client.raw.connection.keycloak_openid
+    old = nested.connection
+    broken = _unhardenable()
+
+    with pytest.raises(KeycloakConfigError, match=r"cannot harden the admin token grant"):
+        nested.connection = broken
+
+    assert nested.connection is old
+    assert [n for n in ("send", "resolve_redirects") if vars(broken._s).get(n)] == []
+    client.close()
+    broken._s.close()
+
+
+def test_an_injected_openids_connection_that_cannot_be_hardened_is_not_set() -> None:
+    cfg = _cfg("http://127.0.0.1:9")
+    openid = _grant_object(KeycloakOpenID)
+    auth = AuthClient(cfg, OidcEndpoints.for_realm(cfg), openid=openid)
+    old = openid.connection
+    broken = _unhardenable()
+
+    with pytest.raises(KeycloakConfigError, match=r"cannot harden the auth back-channel"):
+        openid.connection = broken
+
+    assert openid.connection is old
+    auth.close()
+    broken._s.close()
+
+
 def test_public_realm_and_client_setters_keep_the_armed_grant_objects() -> None:
     """python-keycloak 자신의 동작(지키는 범위) — realm·client 의 공개 세터는 그랜트 객체·그
     연결·세션을 다시 만들지 않는다(7.1.1: 그랜트 객체를 만드는 곳은
