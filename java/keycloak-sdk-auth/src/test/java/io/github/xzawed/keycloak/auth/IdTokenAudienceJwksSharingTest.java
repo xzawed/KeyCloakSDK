@@ -72,9 +72,11 @@ class IdTokenAudienceJwksSharingTest {
     certsHits.set(0);
     TokenSet ts = client.exchangeCode("c", CALLBACK, VERIFIER, NONCE);
     assertEquals(idToken, ts.getIdToken());
-    // A3 — forRealm 경로에서도 validate() 는 재정의를 찾는다: 액세스(aud=api)는 통과, id_token(aud=app)은 거부.
+    // A3 — forRealm 경로에서도 validate() 는 재정의를 찾는다: 액세스(aud=api)는 통과, id_token(aud=app)은 거부. 거부는 aud
+    // 검사의 것이다(이 토큰엔 typ 이 없다 — 「not an access token」이 이 자리를 대신 채우지 못하게 메시지까지 본다).
     assertTrue(client.validate(ts.getAccessToken()).getAudience().contains(OVERRIDE));
-    assertThrows(TokenValidationException.class, () -> client.validate(ts.getIdToken()));
+    assertEquals("JWT validation failed",
+        assertThrows(TokenValidationException.class, () -> client.validate(ts.getIdToken())).getMessage());
     int shared = certsHits.get();
 
     // 대조군: 저장소 둘 — 같은 서버·같은 두 토큰을 각자의 forRealm 검증기로.
