@@ -25,9 +25,11 @@ use Xzawed\Keycloak\OidcEndpoints;
  * 인가 요청의 redirect_uri — RFC 6749 §3.1.2 가 금하는 값은 URL 에 싣지 않는다(등록부 `authz-request-redirect-unvalidated`).
  *
  * 예전에는 `createAuthorizationRequest()` 가 어떤 문자열이든 실었다(`cb` · `not a url` · `https://app/cb#f`). 규칙은
- * 순서대로 셋이다 — R1 절대 URI(scheme 과 `:`) · R2 fragment 없음(`#` 가 어디에도 없다 — 빈 fragment 도) · R3 Keycloak 이
- * 읽는 URI(서버의 `java.net.URI.create` 가 던지는 값 — RFC 3986 §2. 잘못된 UTF-8 도 R3). 인자가 null 이면 검사하지 않는다 —
- * 그때 실리는 것은 config 값이고, 그 값은 `KeycloakConfig` 생성자가 같은 규칙으로 본다.
+ * 순서대로 넷이다 — R1 절대 URI(scheme 과 `:`) · R2 fragment 없음(`#` 가 어디에도 없다 — 빈 fragment 도) · R3 Keycloak 이
+ * 읽는 URI(서버의 `java.net.URI.create` 가 던지는 값 — RFC 3986 §2. 잘못된 UTF-8 도 R3) · R4 R3 를 지나도 서버가 던지는 값
+ * (scheme 의 `:` 뒤가 빔 · `?` 앞 경로나 authority 의 괄호 호스트 밖의 `[`·`]` — 등록부 `redirect-uri-r3-narrower-than-keycloak`,
+ * 문구는 R3 와 같다). 인자가 null 이면 검사하지 않는다 — 그때 실리는 것은 config 값이고, 그 값은 `KeycloakConfig` 생성자가 같은
+ * 규칙으로 본다.
  *
  * 위반은 KeycloakConfigError 이고 메시지는 입력을 인용하지 않는다. 받은 값은 고쳐 쓰지 않는다 — 교환이 같은 문자열을
  * 그대로 보낸다(고쳐 쓰면 두 요청이 갈린다).
@@ -76,6 +78,35 @@ final class AuthorizationRedirectUriTest extends TestCase
         yield 'U+2028 line separator' => ["https://app/c\u{2028}b"];
     }
 
+    /**
+     * R4 — R1–R3 를 지나도 `java.net.URI.create` 가 던지는 값(JDK 21.0.8 실측): scheme 의 `:` 뒤가 비었다(R4a), 또는 `:` 뒤가
+     * `/` 인 값의 `?` 앞에서 `[`·`]` 가 authority 의 괄호 호스트 하나 밖에 있다(R4b). 문구는 R3 와 같다.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function r4(): iterable
+    {
+        foreach ([
+            'https:', 'myapp:', 'https://app/c[b', 'https://app/c]b', 'myapp:/c[b', 'https://[::1]/c[b', 'https://app[1]/cb',
+            'https://[::1]]/cb',
+        ] as $value) {
+            yield $value => [$value];
+        }
+    }
+
+    /**
+     * 순서 — R1·R2 는 R4 보다 앞이다(문구가 갈린다). R3 와 R4 는 문구가 같아 글만 잰다.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function failingR4Too(): iterable
+    {
+        yield 'R1 before R4' => ['1x:', self::NOT_ABSOLUTE];
+        yield 'R2 before R4' => ['https://app/c[b#f', self::FRAGMENT];
+        yield 'R3 (space) and R4' => ['https://app/c b[', self::NOT_VALID];
+        yield 'R3 (invalid UTF-8) and R4' => ["https://app/c[\xFFb", self::NOT_VALID];
+    }
+
     /** @return iterable<string, array{string}> */
     public static function accepted(): iterable
     {
@@ -83,6 +114,8 @@ final class AuthorizationRedirectUriTest extends TestCase
             'https://app/cb', 'https://app/cb?x=1', 'myapp:/cb', 'com.example.app:/oauth2redirect', 'HTTP://LOCALHOST/cb',
             'https://app/c%20b', "https://app/c\u{00FC}b", 'https://app/cb?x=[1]', "https://app/c'b", 'https://app/c+*!b',
             'https://app/c~b', "https://app/c\u{00A1}b", 'https://app/c%2Fb', "https://app/c\u{200B}b", "https://app/c\u{3001}b",
+            'https://[::1]/cb', 'https://[::1]:8443/cb', 'https://u@[::1]:8443/cb', 'myapp:c[b', 'urn:x[y]', 'https:/',
+            'https://[::1]?x=[1]',
         ] as $value) {
             yield $value => [$value];
         }
@@ -104,6 +137,18 @@ final class AuthorizationRedirectUriTest extends TestCase
     public function testAValueKeycloakCannotParseIsRefused(string $value): void
     {
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::auth()->createAuthorizationRequest($value)));
+    }
+
+    #[DataProvider('r4')]
+    public function testAValueKeycloakCannotParseAfterR3IsRefused(string $value): void
+    {
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::auth()->createAuthorizationRequest($value)));
+    }
+
+    #[DataProvider('failingR4Too')]
+    public function testAValueFailingR4TooGetsTheEarlierRule(string $value, string $message): void
+    {
+        self::assertSame($message, self::refusal(fn () => self::auth()->createAuthorizationRequest($value)));
     }
 
     /**
@@ -201,12 +246,15 @@ final class AuthorizationRedirectUriTest extends TestCase
     {
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https://app/c b')));
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config("https://app/c\xFFb")));
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https:')));
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https://app/c[b')));
     }
 
     public function testConfigKeepsNullAndAnAbsoluteRedirectUriAsGiven(): void
     {
         self::assertNull(self::config(null)->redirectUri);
         self::assertSame('HTTP://LOCALHOST/c%20b', self::config('HTTP://LOCALHOST/c%20b')->redirectUri);
+        self::assertSame('https://u@[::1]:8443/cb', self::config('https://u@[::1]:8443/cb')->redirectUri);
     }
 
     /** BMP 코드 포인트 하나의 UTF-8 — 확장(mbstring·intl)에 기대지 않는다. */
