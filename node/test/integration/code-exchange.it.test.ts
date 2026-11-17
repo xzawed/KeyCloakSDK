@@ -319,6 +319,22 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
   })
 
   /**
+   * 등록된 콜백(`http://localhost/it-callback`)의 다른 표기 — 대문자 scheme · 호스트와 기본 포트 — 로도 교환이 끝난다.
+   * Keycloak 은 토큰 요청의 redirect_uri 를 인가 요청 때 저장한 문자열과 그대로 비교하고(26.6.9
+   * `AuthorizationCodeGrantType`), openid-client 는 토큰 요청에 WHATWG 정규형을 싣는다. 고치기 전에는 인가 요청이 받은
+   * 표기 그대로라 두 요청이 갈렸다(등록부 `node-authz-request-redirect-unvalidated`, 단위 실측
+   * `test/unit/redirect-uri.test.ts`). 로그인 헬퍼는 서버가 실제로 돌려보낸 콜백(정규형)과 대조한다.
+   */
+  it('등록된 콜백의 다른 표기로도 교환이 끝난다 — 두 요청이 같은 정규형을 싣는다', async () => {
+    const spelled = 'HTTP://LOCALHOST:80/it-callback'
+    const request = kc.auth.createAuthorizationRequest(spelled)
+    expect(new URL(request.url).searchParams.get('redirect_uri')).toBe(REDIRECT_URI)
+    const code = await browserLogin(request, REDIRECT_URI, ...ALICE)
+    const tokens = await kc.auth.exchangeCode(code, spelled, request.codeVerifier, request.nonce)
+    expect(tokens.accessToken.length).toBeGreaterThan(0)
+  })
+
+  /**
    * JWKS 밖 키(HS256)로 서명된 id_token 은 핀을 열어도 거부된다 — `exchangeCode` 가 id_token 을 SDK 검증기에
    * 태우기 때문이다.
    *
