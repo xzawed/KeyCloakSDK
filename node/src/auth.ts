@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import * as oidc from 'openid-client'
 import type { KeycloakConfig } from './config.js'
-import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
+import { KeycloakAuthError, KeycloakConfigError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
@@ -103,6 +103,19 @@ function failure(message: string, e: unknown): KeycloakAuthError | KeycloakTrans
 }
 
 /**
+ * `exchangeCode` 의 redirect URI — URL 로 읽히지 않으면 요청 전에(discovery 도 부르지 않고) `KeycloakConfigError`
+ * (`invalid redirect_uri: <사유>`)다. rust `redirect_url` · kotlin `redirectUri` 와 같은 분류다. 전에는 `new URL` 의
+ * `TypeError` 가 SDK 오류 계층 밖으로 나갔다(§4 — 등록부 `node-nonsdk-error-escapes`).
+ */
+function redirectUrl(value: string): URL {
+  try {
+    return new URL(value)
+  } catch (e) {
+    throw new KeycloakConfigError(`invalid redirect_uri: ${(e as Error).message}`, { cause: e })
+  }
+}
+
+/**
  * Authentication (OIDC/OAuth2) facade. It wraps openid-client v6's functional API without exposing the underlying
  * types in the public API — every failure is converted to an SDK error at the boundary (§4 contract):
  * {@link KeycloakTransportError} when the response never fully arrived (a network failure, a timeout, a body over
@@ -201,8 +214,8 @@ export class AuthClient {
     codeVerifier: string,
     nonce?: string,
   ): Promise<TokenSet> {
+    const currentUrl = redirectUrl(redirectUri)
     const config = await this.#discover()
-    const currentUrl = new URL(redirectUri)
     currentUrl.searchParams.set('code', code)
     // RFC 9207: Keycloak은 인가 응답에 iss를 포함하며 openid-client가 이를 검증한다.
     currentUrl.searchParams.set('iss', this.#endpoints.issuer)

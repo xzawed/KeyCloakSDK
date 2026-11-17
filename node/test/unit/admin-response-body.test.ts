@@ -1006,6 +1006,22 @@ function settle(p: Promise<unknown>): Promise<string> {
 
 const wire = (r: Seen): string => `${r.method} ${r.target}\n${r.head.join('\n')}\n\n${r.body}`
 
+/**
+ * 파사드가 **일부러** 쌍둥이와 다른 결과 — admin-client 가 SDK 오류 계층 밖의 맨 오류를 던지는 자리를 파사드는 SDK
+ * 오류로 바꾼다(§4 · 등록부 `node-nonsdk-error-escapes`, `public-path-nonsdk-errors.test.ts`): 경로 조각의 짝 없는
+ * 서로게이트(`URIError` → `KeycloakTransportError`)와 생성의 쓸 수 없는 `Location`(맨 `Error` → 같은 문구의
+ * `KeycloakAdminError`). 쌍둥이의 결과에서 파사드가 내야 할 결과를 **정확히** 만든다 — 이 밖의 차이는 그대로 diff 다.
+ */
+function sdkConversionOf(theirs: string): string | undefined {
+  if (theirs === 'URIError: URI malformed | cause -')
+    return 'KeycloakTransportError: admin request failed: a path segment holds an unpaired surrogate | cause URIError: URI malformed'
+  const m =
+    /^Error: ((?:location header is not found in request|resourceId is not found in Location header from request): .*) \| cause -$/.exec(
+      theirs,
+    )
+  return m ? `KeycloakAdminError: ${m[1]} | cause -` : undefined
+}
+
 describe('파사드 ↔ admin-client 동등성', () => {
   /**
    * 파사드 호출(다섯 리소스 × 다섯 + 생성 payload 의 `realm` 키 · 기본 인자 둘 · 타입이 막는 JS 값 null·undefined)을 그 쌍둥이와
@@ -1032,7 +1048,8 @@ describe('파사드 ↔ admin-client 동등성', () => {
           const theirsWire = srv.seen.splice(0).map(wire)
           pairs += 1
           const where = `${scriptName} · ${label}(${JSON.stringify(arg)})`
-          if (mine !== theirs) diffs.push(`${where}: result\n  facade ${mine}\n  twin   ${theirs}`)
+          if (mine !== theirs && mine !== sdkConversionOf(theirs))
+            diffs.push(`${where}: result\n  facade ${mine}\n  twin   ${theirs}`)
           if (JSON.stringify(mineWire) !== JSON.stringify(theirsWire))
             diffs.push(
               `${where}: wire\n  facade ${JSON.stringify(mineWire)}\n  twin   ${JSON.stringify(theirsWire)}`,
