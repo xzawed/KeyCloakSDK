@@ -24,10 +24,12 @@ RSpec.describe KeycloakSdk::JwtValidator do
       %("e":"#{enc.call(key.e)}"}]})
   end
 
+  # Keycloak 의 접근 토큰 모양 — typ "Bearer"(접근 토큰 검증은 Bearer · DPoP 만 받는다).
   def signed
     now = Time.now.to_i
-    JWT.encode({ iss: "#{UnsendableTokenSpec::SERVER}/realms/r", aud: "c", sub: "u-1", iat: now, exp: now + 300 },
-               key, "RS256", { kid: "k1" })
+    claims = { iss: "#{UnsendableTokenSpec::SERVER}/realms/r", aud: "c", sub: "u-1", typ: "Bearer", iat: now,
+               exp: now + 300 }
+    JWT.encode(claims, key, "RS256", { kid: "k1" })
   end
 
   # ruby-jwt 는 맨 먼저 토큰을 `split` 한다 — 잘못된 UTF-8 이면 raw ArgumentError(실측, 수정 전).

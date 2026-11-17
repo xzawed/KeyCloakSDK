@@ -292,8 +292,9 @@ module HostilePathMatrixSpec
     def initialize
       @key = OpenSSL::PKey::RSA.generate(2048)
       @other = OpenSSL::PKey::RSA.generate(2048)
-      # ⚠️ 평문이 아니라 **서명한 JWS** — 토큰을 받는 메서드(validate 둘)가 요청 전에 실패하지 않게.
-      @universal = sign(@key, "k1", {})
+      # ⚠️ 평문이 아니라 **서명한 JWS** — 토큰을 받는 메서드(validate 둘)가 요청 전에 실패하지 않게. Keycloak 의 접근 토큰
+      # 처럼 typ "Bearer" — 접근 토큰 경로(`JwtValidator#validate`)는 Bearer · DPoP 만 받는다.
+      @universal = sign(@key, "k1", { "typ" => "Bearer" })
       # Keycloak 의 id_token 처럼 typ "ID" — id_token 경로는 종류를 허용 목록으로 본다(`JwtValidator#validate_id_token`).
       @id_token = sign(@key, "k1", { "nonce" => @universal, "typ" => "ID" })
       @jwks = { keys: [JWT::JWK.new(@key, kid: "k1").export] }.to_json

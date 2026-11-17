@@ -145,10 +145,12 @@ module FacadeDumpSpec
       KeycloakSdk::Config.new(server_url: server, realm: realm, client_id: "c", client_secret: SECRET)
     end
 
+    # Keycloak 의 접근 토큰 모양 — typ "Bearer"(접근 토큰 검증은 Bearer · DPoP 만 받는다).
     def sign(aud)
       now = Time.now.to_i
-      JWT.encode({ "iss" => "#{SERVER}/realms/r", "sub" => "u1", "aud" => aud, "exp" => now + 60, "iat" => now },
-                 @key, "RS256", { kid: "k1" })
+      claims = { "iss" => "#{SERVER}/realms/r", "sub" => "u1", "aud" => aud, "typ" => "Bearer", "exp" => now + 60,
+                 "iat" => now }
+      JWT.encode(claims, @key, "RS256", { kid: "k1" })
     end
 
     # 실패 뿌리 — 공개 API 의 실제 실패 호출에서 얻는다. SDK 밖 예외는 잡지 않고 그대로 터뜨린다(§4).

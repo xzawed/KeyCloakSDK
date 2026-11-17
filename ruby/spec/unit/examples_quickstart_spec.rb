@@ -25,8 +25,10 @@ RSpec.describe KeycloakSdk::KeycloakClient, ".new driven by examples/quickstart.
 
   before do
     now = Time.now.to_i
-    token = JWT.encode({ "sub" => "svc", "iss" => realm_url, "aud" => "it-client", "exp" => now + 300, "iat" => now },
-                       key, "RS256", { kid: "k1" })
+    # Keycloak 의 접근 토큰 모양 — typ "Bearer"(접근 토큰 검증은 Bearer · DPoP 만 받는다).
+    claims = { "sub" => "svc", "iss" => realm_url, "aud" => "it-client", "typ" => "Bearer", "exp" => now + 300,
+               "iat" => now }
+    token = JWT.encode(claims, key, "RS256", { kid: "k1" })
     stub_request(:get, "#{realm_url}/protocol/openid-connect/certs")
       .to_return(status: 200, headers: json, body: { keys: [JWT::JWK.new(key, kid: "k1").export] }.to_json)
     stub_request(:post, "#{realm_url}/protocol/openid-connect/token")
