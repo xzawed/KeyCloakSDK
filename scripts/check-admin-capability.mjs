@@ -140,6 +140,10 @@ function hasDecl({ file, re, where }) {
 // 경로를 여기 한 자리에만 둔다 — 자가테스트(`--print-sources`)가 같은 목록을 읽어
 // 임시 트리를 만들므로, 테스트가 경로를 손으로 다시 적는 2차 정의 자리가 생기지 않는다.
 // python만 프로브가 둘이다(sync + aio 미러는 표에서 한 행이라 갈리면 안 된다).
+// ⚠️ **모든 프로브는 줄 머리(공백 뒤)의 선언에 닻을 내린다**(`^\s*` + `m`). 닻이 없으면 주석 속 선언 · 호출의 글자를
+// 선언으로 센다 — 실측(2026-11-17): 일곱 언어가 주석으로 바꾼 선언을 「있음」으로 셌고, node 는 `async` 가 선택이라
+// `raw().users.update(` 한 줄로도 통과했다(자가테스트의 「선언 줄을 주석으로」 칸).
+// 못 가르는 것: 블록 주석 · 문자열 안에 맨 선언 줄만 있는 경우 — 파서가 아니라 줄 머리 닻이다(Grok 레그).
 function updateProbes(lang, resource) {
   const P = PASCAL[resource];
   const s = SINGULAR[resource];
@@ -147,13 +151,13 @@ function updateProbes(lang, resource) {
   switch (lang) {
     case "php":
       return [
-        at(`php/src/Admin/${P}Resource.php`, /public function update\s*\(/, `php ${resource}`),
+        at(`php/src/Admin/${P}Resource.php`, /^\s*public function update\s*\(/m, `php ${resource}`),
       ];
     case "go":
       return [
         at(
           `go/admin_${resource}.go`,
-          new RegExp(`func \\([^)]*\\*${P}Resource\\) Update\\s*\\(`),
+          new RegExp(`^func \\([^)]*\\*${P}Resource\\) Update\\s*\\(`, "m"),
           `go ${resource}`,
         ),
       ];
@@ -161,7 +165,7 @@ function updateProbes(lang, resource) {
       return [
         at(
           "rust/src/admin.rs",
-          new RegExp(`pub async fn update_${s}\\s*\\(`),
+          new RegExp(`^\\s*pub async fn update_${s}\\s*\\(`, "m"),
           `rust ${resource}`,
         ),
       ];
@@ -169,7 +173,7 @@ function updateProbes(lang, resource) {
       return [
         at(
           `java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/${P}Resource.java`,
-          /public\s+\S+\s+update\s*\(/,
+          /^\s*public\s+\S+\s+update\s*\(/m,
           `java ${resource}`,
         ),
       ];
@@ -177,12 +181,12 @@ function updateProbes(lang, resource) {
       return [
         at(
           `kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/${P}.kt`,
-          /public suspend fun update\s*\(/,
+          /^\s*public suspend fun update\s*\(/m,
           `kotlin ${resource}`,
         ),
       ];
     case "node":
-      return [at(`node/src/admin/${resource}.ts`, /(?:async\s+)?update\s*\(/, `node ${resource}`)];
+      return [at(`node/src/admin/${resource}.ts`, /^\s*async update\s*\(/m, `node ${resource}`)];
     case "python":
       return [
         at(
@@ -200,7 +204,7 @@ function updateProbes(lang, resource) {
       return [
         at(
           `dotnet/src/Xzawed.Keycloak.Sdk/Admin/${P}Resource.cs`,
-          /public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+UpdateAsync\s*\(/,
+          /^\s*public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+UpdateAsync\s*\(/m,
           `dotnet ${resource}`,
         ),
       ];
