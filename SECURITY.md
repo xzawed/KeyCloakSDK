@@ -36,14 +36,14 @@ This project is a multi-language SDK for Keycloak covering authentication
 (OIDC/OAuth2) and the Admin REST API. Security-relevant areas include, but are
 not limited to:
 
-- **JWT validation** — algorithm pinning, `iss`/`aud`/`exp`/`nbf` enforcement,
+- **JWT validation** — algorithm pinning, `iss`/`aud`/`exp`/`nbf`/`typ` enforcement,
   DoS-safe JWKS refetch (a key set lives 300 seconds on all nine; before that,
   refetch is rate-limited on all nine and eight languages refetch only on an
   unresolved key id — .NET also refetches on a bad signature, bounded by the
   same interval). All nine implement hardened, self-verified validation.
 - **OIDC flows** — PKCE (S256) on all nine. nonce/`id_token` replay protection
   on all nine: the authorization request always issues a nonce and `exchange*`
-  fully validates the `id_token` (signature · `iss` · `aud` · `exp`) against it
+  fully validates the `id_token` (signature · `iss` · `aud` · `azp` · `exp`) against it
   when the caller passes that nonce back. The exchange-side argument is
   optional on all nine — omit it and id_token validation is skipped (custom
   no-nonce flows). State is returned to the caller on all nine (the SDK is

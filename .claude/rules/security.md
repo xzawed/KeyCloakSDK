@@ -83,7 +83,11 @@ Only what the nine must move **together** lives here — changing one language a
 
 ⚠️ **Stamp the forced-refetch window when the fetch is decided, not when it succeeds** — a success-only stamp leaves it open through an outage. So a 503 spends the window too, and a stamped fetch must run to completion under the SDK's own HTTP timeouts, whatever the caller cancels; **never roll the stamp back on cancellation** (python: each cancelled forged-kid validation then cost an IdP request — 10 vs 1).
 
-⚠️ **Every count above is fresh-cache only — the 30s gate never sees the initial load or a reload after the key set expires**, because it sits on the *forced* (unresolved-kid) path, which needs a fresh cache. Probe (2026-09-04 · cold cache · JWKS 503 · 20 validations · IdP requests) **before → after**: rust·go·python·php·node·ruby all **20→1**; **dotnet 40→2** (two requests per validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. ⚠️ **java·kotlin were already at 2 and were not changed** (2026-09-06): Nimbus rate-limits the *source*, so it covers the cold load the other seven missed. `JwksColdCacheOutageTest` pins both lanes — control interval 0 → **20**.
+⚠️ **Every count above is fresh-cache only — the 30s gate never sees the initial load or a reload after the key set expires**, because it sits on the *forced* (unresolved-kid) path, which needs a fresh cache. ⚠️ **java·kotlin were already at 2 and were not changed** (2026-09-06): Nimbus rate-limits the *source*, so it covers the cold load the other seven missed. `JwksColdCacheOutageTest` pins both lanes — control interval 0 → **20**.
+<!-- 측정(2026-11-17 에 주입 문단에서 옮김 — Token kind 절의 자리, 판정 방법은 그대로): Probe (2026-09-04 · cold cache · JWKS 503 ·
+     20 validations · IdP requests) before → after: rust·go·python·php·node·ruby all 20→1; dotnet 40→2 (two requests per
+     validation there, so one window costs two). Healthy controls (20 forced) stayed 1-4. -->
+
 
 **The fix, in all seven** (reference: `ruby/lib/keycloak_sdk/jwks_store.rb`): back off *failed* fetches — 0.2s doubling to a 5s cap, jitter ×[0.5, 1.0) — and inside the window fail immediately **without touching the IdP**. Four rules, each measured: (1) ⚠️ **never reuse the 30s here** — one transient 503 would mean "no token validates for 30s", worse than the defect; (2) ⚠️ **never sleep** — pacing retries is the consumer's job, not a library's; (3) ⚠️ **success resets the counter**, or a long-lived process stays pinned at the cap; (4) ⚠️ **a warm-cache unresolved-kid rejection is not a fetch failure** — counting it lets a forged-kid flood raise the backoff and block legitimate tokens (node: `JWKSNoMatchingKey` and `remote.fresh` never count).
 
@@ -118,6 +122,14 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 ## OAuth error code
 
 ⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent, in all nine** (node carries none) — an echoing IdP put the secret there. Tests: `OAuthErrorCodeEcho*` · `*oauth_error_code_echo*`.
+
+## Token kind
+
+⚠️ **All nine: the access `validate` refuses payload `typ` `ID`·`Refresh`·`Offline`·`Logout`·`Serialized-ID`; the exchange's id_token checks `azp` (OIDC Core §3.1.3.7).** A deny-list — registry `access-token-typ-deny-list`.
+<!-- 왜: 그 전에는 id_token(aud = client id = 기본 expected audience)이 액세스 토큰으로 통과했다. 거부 목록인 이유: RFC 9068 ·
+     경량 토큰 · DPoP · 백채널 logout 의 클레임 typ 을 실서버로 재지 못했다. 다시 재는 명령(아홉 검증기 파일이 나온다):
+     git grep -c Serialized-ID -- ':!*test*' ':!*Test*' ':!*spec*' ':!*.md' -->
+
 
 ## Secret memory hygiene — it has a boundary (do not oversell it)
 
