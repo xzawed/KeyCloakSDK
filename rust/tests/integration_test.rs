@@ -581,9 +581,11 @@ const ALGORITHM_NOT_PINNED: &str = "authorization code exchange failed: invalid 
 const LOGOUT_REFUSED: &str = "authentication error: logout failed (HTTP 400)";
 /// access 검증(`validate()`)이 실서버 id_token 을 거부하는 문구 — Keycloak 은 id_token 의 `typ` 를 `ID` 로 싣는다.
 const NOT_AN_ACCESS_TOKEN_ID: &str = "not an access token (typ ID)";
+/// id_token 검사(`validate_id_token`)가 typ 가 `"ID"` 가 아닌 토큰을 거부하는 문구 — 교환 접두가 없다.
+const NOT_AN_ID_TOKEN: &str = "not an id_token (typ is not \"ID\")";
 
-/// JWT 페이로드를 **아무것도 검증하지 않고** 읽는다 — 서버가 무엇을 실었는지 보는 전제 확인과, 교환이 이미 검증한
-/// id_token 의 클레임 읽기 전용이다. ⚠️ `validate()` 로 읽지 말 것 — access 검증이라 id_token(typ `ID`)을 거부한다.
+/// JWT 페이로드를 **아무것도 검증하지 않고** 읽는다 — 서버가 무엇을 실었는지 보는 전제 확인 전용이다. 검증한 id_token
+/// 클레임은 `validate_id_token` 으로 읽는다. ⚠️ `validate()` 로 읽지 말 것 — access 검증이라 id_token(typ `ID`)을 거부한다.
 fn unverified_claims(jwt: &str) -> serde_json::Value {
     let payload = jwt.split('.').nth(1).expect("a JWS payload");
     let raw =
@@ -786,11 +788,29 @@ async fn exchange_binds_tokens_to_the_nonce_and_user(env: Arc<Env>, redirect: Re
         Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, NOT_AN_ACCESS_TOKEN_ID),
         other => panic!("validate() must refuse the server-signed id_token, got {other:?}"),
     }
-    // 클레임은 교환이 검증한(서명 · iss · aud · exp · azp · nonce) 그 id_token 의 것이다.
-    let id = unverified_claims(&id_token);
-    assert_eq!(id["nonce"].as_str(), Some(request.nonce.as_str()));
+    // 클레임은 교환이 쓴 그 검사(공개 `validate_id_token` — 서명 · iss · aud · exp · typ · azp)로 검증해 읽는다.
+    let id = kc
+        .auth()
+        .validate_id_token(&id_token)
+        .await
+        .expect("the server's id_token passes the public id_token check");
+    assert_eq!(
+        id.claims.get("nonce").and_then(|v| v.as_str()),
+        Some(request.nonce.as_str())
+    );
     // sub 는 **독립 원천**(admin API 로 읽은 alice 의 id)과 대조한다.
-    assert_eq!(id["sub"].as_str(), Some(env.alice_id.as_str()));
+    assert_eq!(id.subject, env.alice_id);
+    // 공개 id_token 검사는 서버의 access 토큰을 거부한다 — aud 가 이 클라이언트를 담으면 typ(`Bearer`)로(나머지는 다
+    // 맞는다 — azp 도 이 클라이언트다), 아니면 aud 검사로.
+    let access_names_the_client =
+        audience_of(&unverified_claims(&tokens.access_token)).contains(&IT_WEB.0.to_string());
+    match kc.auth().validate_id_token(&tokens.access_token).await {
+        Err(KeycloakError::TokenValidation(m)) if access_names_the_client => {
+            assert_eq!(m, NOT_AN_ID_TOKEN)
+        }
+        Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, ACCESS_AUDIENCE_MISMATCH),
+        other => panic!("validate_id_token must refuse the server's access token, got {other:?}"),
+    }
 
     // refresh: 새 접근 토큰을 준다 — 같은 사용자의 활성 토큰이다.
     let refreshed = kc.auth().refresh(&refresh_token).await.expect("refresh");
@@ -939,6 +959,11 @@ async fn exchange_with_the_nonce_succeeds_under_an_expected_audience_override(
         !aud.iter().any(|a| a == "it-client"),
         "precondition: {aud:?}"
     );
+    // 같은 클라이언트의 공개 id_token 검사도 같다 — 재정의는 id_token 에 걸리지 않는다.
+    kc.auth()
+        .validate_id_token(tokens.id_token.as_deref().expect("an id_token"))
+        .await
+        .expect("validate_id_token under expected_audience=it-client");
 
     // access 검증은 재정의를 그대로 쓴다 — 담지 않은 토큰은 거부하고, 담은 토큰은 통과한다.
     match kc.auth().validate(&tokens.access_token).await {

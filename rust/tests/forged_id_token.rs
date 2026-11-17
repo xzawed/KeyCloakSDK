@@ -42,7 +42,8 @@ fn rsa_key() -> (String, serde_json::Value) {
     (pem, jwk)
 }
 
-/// kid·iss·aud·exp·nonce 가 전부 맞는 id_token — 서명한 키만 다를 수 있다.
+/// kid·iss·aud·exp·nonce·typ 가 전부 맞는 id_token — 서명한 키만 다를 수 있다. typ `ID` 는 Keycloak 이 모든 id_token 에
+/// 싣는 값이고, id_token 검사는 그 밖을 거부한다.
 fn id_token(signer_pem: &str, issuer: &str) -> String {
     let mut header = Header::new(Algorithm::RS256);
     header.kid = Some(KID.into());
@@ -52,7 +53,7 @@ fn id_token(signer_pem: &str, issuer: &str) -> String {
         .as_secs();
     let claims = json!({
         "sub": "alice-id", "iss": issuer, "aud": CLIENT_ID,
-        "exp": now + 300, "iat": now, "nonce": NONCE,
+        "exp": now + 300, "iat": now, "nonce": NONCE, "typ": "ID",
     });
     encode(
         &header,
