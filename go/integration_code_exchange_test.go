@@ -248,7 +248,14 @@ func TestE2ECodeExchange(t *testing.T) {
 			if tokens.AccessToken == "" || tokens.RefreshToken == "" || tokens.IDToken == "" {
 				t.Fatalf("exchange must return access, refresh and id tokens: %v", tokens)
 			}
-			idToken, err := kc.Auth.Validate(ctx, tokens.IDToken)
+			// The access-token Validate refuses the id_token: Keycloak types it "ID" (TokenUtil.TOKEN_TYPE_ID).
+			var tve *TokenValidationError
+			if _, err := kc.Auth.Validate(ctx, tokens.IDToken); !errors.As(err, &tve) ||
+				tve.Msg != "claims: not an access token (typ ID)" {
+				t.Fatalf("Validate must refuse the server-signed id_token as not an access token, got %v", err)
+			}
+			// Its claims, verified the way ExchangeCode verified them: the id_token sibling (forIDToken).
+			idToken, err := kc.Auth.val.forIDToken(kc.Auth.cfg.ClientID).Validate(ctx, tokens.IDToken)
 			if err != nil {
 				t.Fatalf("validate the id_token: %v", err)
 			}
@@ -319,7 +326,8 @@ func TestE2ECodeExchange(t *testing.T) {
 		if err != nil || unchecked.IDToken == "" {
 			t.Fatalf("precondition exchange: %v %v", unchecked, err)
 		}
-		claims, err := kc.Auth.Validate(ctx, unchecked.IDToken)
+		// Verified as an id_token (forIDToken) — the access-token Validate refuses an id_token (typ "ID").
+		claims, err := kc.Auth.val.forIDToken(kc.Auth.cfg.ClientID).Validate(ctx, unchecked.IDToken)
 		if err != nil {
 			t.Fatalf("precondition validate: %v", err)
 		}

@@ -113,9 +113,10 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // validated (iss/aud/exp via the hardened Validator) and its nonce claim is
 // compared against expectedNonce — OIDC nonce replay protection. The id_token's
 // aud must contain Config.ClientID (OIDC Core §3.1.3.7), whatever
-// Config.ExpectedAudience is set to. A mismatch, a missing id_token, or a
-// validation failure all fail closed. An empty expectedNonce skips id_token
-// validation (custom no-nonce flows).
+// Config.ExpectedAudience is set to, and its azp must be Config.ClientID when
+// present — and present when aud has several values (§3.1.3.7 steps 4–5). A
+// mismatch, a missing id_token, or a validation failure all fail closed. An
+// empty expectedNonce skips id_token validation (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
 	octx, capped, refused, below := a.oauthCtx(ctx)
 	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
@@ -136,11 +137,13 @@ func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVe
 // expectedNonce. The id_token's aud is the client id, not Config.ExpectedAudience
 // (the access-token audience), so it is checked by a sibling of the access-token
 // Validator that shares its key store — one JWKS cache and one set of refetch gates.
+// The sibling is of the id_token kind: it judges azp, and not the typ that the
+// access-token Validate refuses ("ID" is what a Keycloak id_token carries).
 func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce string) error {
 	if idToken == "" {
 		return &AuthError{Msg: "authorization code exchange failed: missing id_token for nonce validation"}
 	}
-	vt, err := a.val.withAudience(a.cfg.ClientID).Validate(ctx, idToken)
+	vt, err := a.val.forIDToken(a.cfg.ClientID).Validate(ctx, idToken)
 	if err != nil {
 		return &AuthError{Msg: "authorization code exchange failed: invalid id_token", Cause: err}
 	}
@@ -206,7 +209,9 @@ func (a *AuthClient) Logout(ctx context.Context, refreshToken string) error {
 	return err
 }
 
-// Validate verifies an access token's signature and hardened claims.
+// Validate verifies an access token's signature and hardened claims, and refuses
+// a Keycloak token that is not an access token (typ claim ID, Refresh, Offline,
+// Logout or Serialized-ID).
 func (a *AuthClient) Validate(ctx context.Context, accessToken string) (*ValidatedToken, error) {
 	return a.val.Validate(ctx, accessToken)
 }

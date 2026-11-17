@@ -921,3 +921,165 @@ func (f *jwtFixture) signPadded(t *testing.T, target int) string {
 		}
 	}
 }
+
+// ── Token kinds: the access path judges typ, the id_token path judges azp (validator cells) ──
+//
+// The typ claim Keycloak 26 puts on each token (org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
+// Bearer and DPoP are access tokens; ID, Refresh, Offline, Logout and Serialized-ID are not. Before the fix the
+// validator read neither typ nor azp, so an id_token ("ID") and a back-channel logout token ("Logout") passed Validate,
+// and so did an id_token with several audiences whose azp was another client (measured). Which path applies which
+// check is pinned on the facade in auth_test.go.
+
+// nonAccessTypes are the five Keycloak token types that are not access tokens.
+var nonAccessTypes = []string{"ID", "Refresh", "Offline", "Logout", "Serialized-ID"}
+
+// signWith signs cl with the fixture's key under kid k1, extra merged into the payload (typ, azp, a replaced aud …).
+func (f *jwtFixture) signWith(t *testing.T, cl jwt.Claims, extra map[string]any) string {
+	t.Helper()
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: f.priv},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "k1"))
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	s, err := jwt.Signed(sig).Claims(cl).Claims(extra).Serialize()
+	if err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	return s
+}
+
+// TestValidateRefusesAKeycloakTokenThatIsNotAnAccessToken pins (A): with the signature, iss, aud and exp right, a
+// Keycloak token of another kind still does not pass Validate. The refusal is a claims failure: no cause, and no
+// JWKS refetch.
+func TestValidateRefusesAKeycloakTokenThatIsNotAnAccessToken(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute)
+	for _, typ := range nonAccessTypes {
+		cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+		_, err := v.Validate(context.Background(), f.signWith(t, cl, map[string]any{"typ": typ}))
+		var tve *TokenValidationError
+		if !errors.As(err, &tve) {
+			t.Fatalf("typ %q: want *TokenValidationError, got %v", typ, err)
+		}
+		if want := "claims: not an access token (typ " + typ + ")"; tve.Msg != want || tve.Cause != nil {
+			t.Fatalf("typ %q: got Msg=%q Cause=%v, want Msg=%q and no cause", typ, tve.Msg, tve.Cause, want)
+		}
+	}
+	if n := atomic.LoadInt32(f.fetches); n != 1 {
+		t.Fatalf("a claims failure must not refetch the JWKS: /certs=%d, want 1", n)
+	}
+}
+
+// TestValidatePassesAnyOtherTyp is (A)'s control: an access token's typ (absent, Bearer, DPoP, RFC 9068's at+jwt) and
+// every value outside the five pass as before — the match is exact and case-sensitive, and a typ that is not a
+// string is not judged.
+func TestValidatePassesAnyOtherTyp(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute)
+	for name, extra := range map[string]map[string]any{
+		"absent":         {},
+		"Bearer":         {"typ": "Bearer"},
+		"DPoP":           {"typ": "DPoP"},
+		"at+jwt":         {"typ": "at+jwt"},
+		"case-sensitive": {"typ": "id"},
+		"exact match":    {"typ": "Logout "},
+		"null":           {"typ": nil},
+		"array":          {"typ": []string{"ID"}},
+		"number":         {"typ": 1},
+	} {
+		cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+		if _, err := v.Validate(context.Background(), f.signWith(t, cl, extra)); err != nil {
+			t.Errorf("%s: an access token must pass, got %v", name, err)
+		}
+	}
+}
+
+// TestValidateJudgesTypAfterTheSharedChecks: (A) runs once every shared check has passed — a token that fails one of
+// them keeps that check's refusal.
+func TestValidateJudgesTypAfterTheSharedChecks(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute)
+	typID := map[string]any{"typ": "ID"}
+	for want, tok := range map[error]string{
+		jwt.ErrInvalidAudience: f.signWith(t, claims(jwt.Audience{"other-client"}, testISS, time.Now().Add(5*time.Minute)), typID),
+		jwt.ErrExpired:         f.signWith(t, claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(-5*time.Minute)), typID),
+	} {
+		if _, err := v.Validate(context.Background(), tok); !errors.Is(err, want) {
+			t.Errorf("want the shared check's refusal (%v), got %v", want, err)
+		}
+	}
+}
+
+// TestValidateLeavesAzpAlone: (B) never applies to Validate — an access token's azp is the client that requested it,
+// which legitimately differs from the expected audience, and several audiences do not require one.
+func TestValidateLeavesAzpAlone(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute)
+	exp := time.Now().Add(5 * time.Minute)
+	for name, tok := range map[string]string{
+		"several auds, no azp":      f.signWith(t, claims(jwt.Audience{"my-client", "other"}, testISS, exp), map[string]any{}),
+		"several auds, foreign azp": f.signWith(t, claims(jwt.Audience{"my-client", "other"}, testISS, exp), map[string]any{"azp": "frontend"}),
+		"single aud, foreign azp":   f.signWith(t, claims(jwt.Audience{"my-client"}, testISS, exp), map[string]any{"azp": "x"}),
+	} {
+		if _, err := v.Validate(context.Background(), tok); err != nil {
+			t.Errorf("%s: an access token's azp is not judged, got %v", name, err)
+		}
+	}
+}
+
+// TestIDTokenValidatorLeavesTypAlone: (A) never applies to the id_token ExchangeCode checks — Keycloak types it "ID".
+func TestIDTokenValidatorLeavesTypAlone(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute).forIDToken("my-client")
+	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
+	vt, err := v.Validate(context.Background(), f.signWith(t, cl, map[string]any{"typ": "ID"}))
+	if err != nil {
+		t.Fatalf("an id_token typed ID must pass the id_token check: %v", err)
+	}
+	if vt.Claims["typ"] != "ID" {
+		t.Fatalf("typ claim: %v", vt.Claims["typ"])
+	}
+}
+
+// TestIDTokenValidatorAppliesOIDCAzpRules pins (B), OIDC Core §3.1.3.7 steps 4–5: with several audiences azp must be
+// present, and a present azp must be a string equal to the client id — the id_token validator's audience.
+func TestIDTokenValidatorAppliesOIDCAzpRules(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute).forIDToken("my-client")
+	exp := time.Now().Add(5 * time.Minute)
+	const mismatch, missing = "claims: authorized party (azp) mismatch", "claims: missing azp claim for multiple audiences"
+	for _, tc := range []struct {
+		name  string
+		aud   jwt.Audience
+		extra map[string]any
+		want  string // "" = accepted
+	}{
+		{"single aud, no azp", jwt.Audience{"my-client"}, map[string]any{}, ""},
+		{"one-element aud array, no azp", jwt.Audience{"my-client"}, map[string]any{"aud": []string{"my-client"}}, ""},
+		{"single aud, azp is the client", jwt.Audience{"my-client"}, map[string]any{"azp": "my-client"}, ""},
+		{"several auds, azp is the client", jwt.Audience{"my-client", "other"}, map[string]any{"azp": "my-client"}, ""},
+		{"single aud, foreign azp", jwt.Audience{"my-client"}, map[string]any{"azp": "evil"}, mismatch},
+		{"several auds, no azp", jwt.Audience{"my-client", "evil"}, map[string]any{}, missing},
+		{"several auds, foreign azp", jwt.Audience{"my-client", "evil"}, map[string]any{"azp": "evil"}, mismatch},
+		{"null azp", jwt.Audience{"my-client"}, map[string]any{"azp": nil}, mismatch},
+		{"azp not a string", jwt.Audience{"my-client"}, map[string]any{"azp": []string{"my-client"}}, mismatch},
+	} {
+		_, err := v.Validate(context.Background(), f.signWith(t, claims(tc.aud, testISS, exp), tc.extra))
+		if tc.want == "" {
+			if err != nil {
+				t.Errorf("%s: must pass, got %v", tc.name, err)
+			}
+			continue
+		}
+		var tve *TokenValidationError
+		if !errors.As(err, &tve) || tve.Msg != tc.want || tve.Cause != nil {
+			t.Errorf("%s: want Msg=%q and no cause, got %v", tc.name, tc.want, err)
+		}
+	}
+	// (B) runs once the shared checks have passed: an id_token that does not name the client keeps the audience
+	// refusal, azp or not.
+	tok := f.signWith(t, claims(jwt.Audience{"evil", "other"}, testISS, exp), map[string]any{})
+	if _, err := v.Validate(context.Background(), tok); !errors.Is(err, jwt.ErrInvalidAudience) {
+		t.Errorf("foreign audiences: want the audience refusal, got %v", err)
+	}
+}

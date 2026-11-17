@@ -44,6 +44,22 @@ const jwksMaxAgeSeconds = 300
 // errSymmetricJWK is why a JWKS oct element is skipped — see fetch.
 var errSymmetricJWK = errors.New("symmetric (oct) key: a JWKS is public, so it is never a verification key")
 
+// tokenKind selects the checks that follow the shared ones (signature, iss, aud, exp/nbf) — they differ per kind.
+type tokenKind int
+
+const (
+	// kindAccess is the zero value, so a Validator built without a kind judges typ: one that forgets its kind
+	// refuses an id_token rather than letting another kind of token through Validate.
+	kindAccess tokenKind = iota
+	// kindIDToken is the id_token ExchangeCode checks: azp instead of typ (OIDC Core §3.1.3.7 steps 4–5).
+	kindIDToken
+)
+
+// nonAccessTokenTypes are the typ claim values Keycloak puts on the tokens that are not access tokens:
+// org.keycloak.util.TokenUtil (keycloak-client-common-synced 26.0.12) less its two access types, Bearer and DPoP.
+// Matched exactly, case included.
+var nonAccessTokenTypes = map[string]bool{"ID": true, "Refresh": true, "Offline": true, "Logout": true, "Serialized-ID": true}
+
 // Backoff for *failed* JWKS fetches — a different axis from minRefetch.
 //
 // minRefetch (30s) caps a flood of unresolved kids *after the cache is populated*. The two below
@@ -74,21 +90,24 @@ type validatorOptions struct {
 	now func() time.Time
 	// jitter is the failure backoff's jitter source, a factor in [0.5, 1.0) — a seam for tests. Nil means clockJitter.
 	jitter func() float64
+	// kind selects the checks after the shared ones: typ for an access token (the zero value), azp for the id_token.
+	kind tokenKind
 }
 
 // Validator performs hardened JWT verification: it does not trust library
 // defaults. Algorithm pinning (header alg not trusted, "none" rejected), exact
 // issuer match, audience membership (multi-valued aud accepted), exp/nbf with
-// clock skew, and DoS-safe JWKS refetch (a fetched key set is used for 300
-// seconds; within them a forged signature never triggers a refetch, only an
-// unresolved kid does, rate-limited).
+// clock skew, a Keycloak token that is not an access token refused (typ claim
+// ID, Refresh, Offline, Logout or Serialized-ID), and DoS-safe JWKS refetch (a
+// fetched key set is used for 300 seconds; within them a forged signature never
+// triggers a refetch, only an unresolved kid does, rate-limited).
 type Validator struct {
 	opts validatorOptions
 	*jwksState
 }
 
 // jwksState is the key store: the cached JWKS and every gate on refetching it. It sits behind a
-// pointer so that withAudience's siblings share it — one cache, one forced-refetch window, one
+// pointer so that forIDToken's siblings share it — one cache, one forced-refetch window, one
 // failure backoff and one fetch in flight per Client, whichever audience a caller checks.
 type jwksState struct {
 	mu          sync.Mutex
@@ -181,13 +200,14 @@ func newValidator(opts validatorOptions) *Validator {
 	return &Validator{opts: opts, jwksState: &jwksState{}}
 }
 
-// withAudience returns a Validator that requires audience in aud and shares this one's key store.
-// Only the audience differs: issuer, algorithm pin, skew and the refetch gates are this Validator's.
-// ExchangeCode uses it for the id_token, whose aud is the client id (OIDC Core §2, §3.1.3.7) while
-// Config.ExpectedAudience names the access-token audience.
-func (v *Validator) withAudience(audience string) *Validator {
+// forIDToken returns the Validator ExchangeCode checks its id_token with: it requires clientID in aud, judges azp
+// instead of typ (kindIDToken — a Keycloak id_token is typed "ID") and shares this one's key store. Only the audience
+// and the kind differ: issuer, algorithm pin, skew and the refetch gates are this Validator's. The id_token's aud is
+// the client id (OIDC Core §2, §3.1.3.7) while Config.ExpectedAudience names the access-token audience.
+func (v *Validator) forIDToken(clientID string) *Validator {
 	o := v.opts
-	o.audience = audience
+	o.audience = clientID
+	o.kind = kindIDToken
 	return &Validator{opts: o, jwksState: v.jwksState}
 }
 
@@ -239,6 +259,10 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 	}, time.Duration(v.opts.clockSkewSec)*time.Second); err != nil {
 		return nil, &TokenValidationError{Msg: "claims: " + err.Error(), Cause: err}
 	}
+	// The checks that differ per kind, once every shared check has passed.
+	if err := v.checkKind(claims.Audience, all); err != nil {
+		return nil, err
+	}
 
 	vt := &ValidatedToken{
 		Subject:  claims.Subject,
@@ -253,6 +277,35 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 		vt.IssuedAt = int64(*claims.IssuedAt)
 	}
 	return vt, nil
+}
+
+// checkKind runs the checks that differ per token kind. A claims failure like the shared ones: no cause, no refetch.
+//
+// An access token (kindAccess) must not be another kind of Keycloak token: with the signature, iss, aud and exp
+// right, an id_token or a back-channel logout token passed Validate, since its aud is the client id —
+// ExpectedAudience's default. typ is one of the five constants when quoted, so the message carries no token content.
+//
+// The id_token (kindIDToken) is typed "ID", so typ is not judged; OIDC Core §3.1.3.7 steps 4–5 apply instead: with
+// several audiences azp must be present, and a present azp must be a string equal to the client id — this
+// Validator's audience (forIDToken). The azp value itself is not quoted.
+func (v *Validator) checkKind(aud jwt.Audience, all map[string]any) error {
+	if v.opts.kind == kindIDToken {
+		azp, present := all["azp"]
+		if !present {
+			if len(aud) > 1 {
+				return &TokenValidationError{Msg: "claims: missing azp claim for multiple audiences"}
+			}
+			return nil
+		}
+		if s, ok := azp.(string); !ok || s != v.opts.audience {
+			return &TokenValidationError{Msg: "claims: authorized party (azp) mismatch"}
+		}
+		return nil
+	}
+	if typ, ok := all["typ"].(string); ok && nonAccessTokenTypes[typ] {
+		return &TokenValidationError{Msg: "claims: not an access token (typ " + typ + ")"}
+	}
+	return nil
 }
 
 // resolveKey returns the verification key for kid from the cached JWKS.
