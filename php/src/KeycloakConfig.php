@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Xzawed\Keycloak;
 
 use Xzawed\Keycloak\Exception\KeycloakConfigError;
+use Xzawed\Keycloak\Internal\RedirectUri;
 
 /**
  * 불변 설정. 시크릿은 PHP 관용상 string이며 마스킹으로 심층방어(char[] 소거는 PHP에서 불가 — 과대광고 금지).
@@ -51,6 +52,11 @@ final readonly class KeycloakConfig implements \JsonSerializable
         public float $connectTimeout = 5.0,
         public float $readTimeout = 10.0,
         public int $clockSkew = 30,
+        /**
+         * The callback URL `createAuthorizationRequest()` sends when it is given none. When set, it must be an absolute URI
+         * without a fragment that Keycloak can parse (RFC 6749 §3.1.2 · RFC 3986 §2) — otherwise construction throws
+         * KeycloakConfigError. It is kept and sent exactly as given.
+         */
         public ?string $redirectUri = null,
         array $signatureAlgorithms = ['RS256'],
         /** Minimum interval (seconds) between JWKS refetches caused by an unresolved kid — the DoS amplification cap. The default is the constant above. */
@@ -91,6 +97,8 @@ final readonly class KeycloakConfig implements \JsonSerializable
         if ($this->clockSkew < 0) {
             throw new KeycloakConfigError('clockSkew must be >= 0');
         }
+        // createAuthorizationRequest(null) 이 보내는 값이다 — 호출당 값과 같은 규칙(RFC 6749 §3.1.2 · RFC 3986 §2). 고쳐 쓰지 않는다.
+        RedirectUri::check($this->redirectUri);
         // 후행 슬래시 제거(엔드포인트 조립 규약)
         $this->serverUrl = rtrim($serverUrl, '/');
         $this->scopes = array_values($scopes);
