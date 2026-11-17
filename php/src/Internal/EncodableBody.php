@@ -23,8 +23,10 @@ use Xzawed\Keycloak\Exception\SanitizedCause;
  * serializer is `@internal` to fschmtt — what makes using it safe is the exact pin in `composer.json` (as for
  * `RenamableRoles`); `AdminUnencodableBodyTest` drives the real stack, so it is the drift guard when that pin moves.
  *
- * Whatever the serializer throws is refused the same way (the request could not have been sent either). The cause is the
- * sanitised copy — the original's trace arguments hold the representation, which can carry secrets.
+ * Whatever the serializer throws is refused the same way (the request could not have been sent either, and nothing
+ * foreign may leave the facade — §4). The cause is the sanitised copy — the original's trace arguments hold the
+ * representation, which can carry secrets. A new serializer per call, like fschmtt's per client: writes are rare, and
+ * no state outlives the call (long-lived workers included).
  *
  * @internal
  */
@@ -32,12 +34,10 @@ final class EncodableBody
 {
     public const MESSAGE = 'admin request failed: the request body could not be encoded as JSON';
 
-    private static ?Serializer $serializer = null;
-
     public static function check(#[\SensitiveParameter] Representation $representation): void
     {
         try {
-            (self::$serializer ??= new Serializer())->serialize($representation);
+            (new Serializer())->serialize($representation);
         } catch (\Throwable $e) {
             throw new KeycloakTransportError(self::MESSAGE, previous: SanitizedCause::of($e));
         }
