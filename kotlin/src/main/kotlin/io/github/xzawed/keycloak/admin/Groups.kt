@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.requireEncodableBody
 import org.keycloak.admin.client.CreatedResponseUtil
 import org.keycloak.representations.idm.GroupRepresentation
 
@@ -14,8 +15,9 @@ public class GroupsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.GroupsResource,
 ) {
     /** Creates a group, then extracts the new group's id from the response's Location header and returns it. */
-    public suspend fun create(representation: GroupRepresentation): String =
-        adminCall {
+    public suspend fun create(representation: GroupRepresentation): String {
+        requireEncodableBody(representation)
+        return adminCall {
             val response = delegate.add(representation)
             try {
                 CreatedResponseUtil.getCreatedId(response)
@@ -23,6 +25,7 @@ public class GroupsResource internal constructor(
                 response.close()
             }
         }
+    }
 
     public suspend fun get(id: String): GroupRepresentation = adminCall { delegate.group(id).toRepresentation() }
 
@@ -40,6 +43,7 @@ public class GroupsResource internal constructor(
         id: String,
         representation: GroupRepresentation,
     ) {
+        requireEncodableBody(representation)
         adminCall { delegate.group(id).update(representation) }
     }
 

@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.requireEncodableBody
 import jakarta.ws.rs.WebApplicationException
 import org.keycloak.admin.client.CreatedResponseUtil
 import org.keycloak.representations.idm.ClientRepresentation
@@ -13,8 +14,9 @@ public class ClientsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.ClientsResource,
 ) {
     /** Creates a client, then extracts the new client's id from the response's Location header and returns it. */
-    public suspend fun create(representation: ClientRepresentation): String =
-        adminCall {
+    public suspend fun create(representation: ClientRepresentation): String {
+        requireEncodableBody(representation)
+        return adminCall {
             val response = delegate.create(representation)
             try {
                 CreatedResponseUtil.getCreatedId(response)
@@ -22,6 +24,7 @@ public class ClientsResource internal constructor(
                 response.close()
             }
         }
+    }
 
     public suspend fun get(id: String): ClientRepresentation = adminCall { delegate.get(id).toRepresentation() }
 
@@ -31,6 +34,7 @@ public class ClientsResource internal constructor(
         id: String,
         representation: ClientRepresentation,
     ) {
+        requireEncodableBody(representation)
         adminCall { delegate.get(id).update(representation) }
     }
 
