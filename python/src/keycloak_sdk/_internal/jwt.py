@@ -3,14 +3,14 @@
 joserfc의 `jwt.decode(..., algorithms=[...])`는 서명·알고리즘 핀닝을 수행한다
 (`none`/미서명/미허용 알고리즘 토큰을 거부). 그러나 exp/nbf/iss/aud 클레임 검증은
 호출자 책임이므로, 이 모듈이 issuer 정확일치·audience 포함검사·exp/nbf(+클록 스큐)를
-수동으로 강제한다.
+수동으로 강제한다. 그 뒤에 토큰 종류별 검사(access 의 typ · id_token 의 azp)가 붙는다.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Collection
-from typing import Any
+from typing import Any, Literal
 
 from joserfc import jwt as _jwt
 from joserfc.errors import InvalidKeyIdError, MissingKeyError
@@ -25,6 +25,15 @@ from ..tokens import ValidatedToken
 #: `DefaultMaximumTokenSizeInBytes` 와 같은 수이고, Keycloak 26.6 기본값이 받는 가장 긴
 #: Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
 JWT_MAX_BYTES = 256_000
+
+#: Keycloak 이 access 토큰이 **아닌** 토큰에 싣는 `typ` 클레임 값 — `org.keycloak.util.TokenUtil`
+#: (keycloak-client-common-synced 26.0.12)의 상수 일곱 중 access 토큰의 둘(Bearer · DPoP)을 뺀 다섯.
+#: 대소문자까지 정확 일치로만 본다.
+_NOT_ACCESS_TOKEN_TYPES = frozenset({"ID", "Refresh", "Offline", "Logout", "Serialized-ID"})
+
+#: 검증하는 토큰의 종류 — 공통 검사(서명 · iss · aud · exp · nbf) 뒤에 붙는 검사가 종류마다 갈린다.
+#: `access` 는 typ 를(`_NOT_ACCESS_TOKEN_TYPES`), `id_token` 은 azp 를(OIDC Core §3.1.3.7 ④⑤) 본다.
+TokenKind = Literal["access", "id_token"]
 
 
 def check_token_size(token: str) -> None:
@@ -81,8 +90,18 @@ class JwtValidator:
       멤버십(`in`)으로 판단한다(다중 audience를 갖는 실제 Keycloak 토큰 대응).
     - exp: 필수 클레임. `now - clock_skew >= exp`이면 만료로 간주.
     - nbf: 선택 클레임. `now + clock_skew < nbf`이면 아직 유효하지 않음으로 간주.
+    - 종류(`kind`)별 검사 — 위 검사가 다 통과한 **뒤**다.
+      - `access`(기본): `typ` 클레임이 Keycloak 의 access 아닌 종류
+        (`_NOT_ACCESS_TOKEN_TYPES` — id_token · refresh · 백채널 로그아웃 토큰 …)인
+        문자열이면 거부한다. 다른 값 · 없음은 지금처럼 통과한다.
+      - `id_token`: typ 는 보지 않는다(Keycloak 의 id_token 은 `ID` 다). 대신
+        OIDC Core §3.1.3.7 ④⑤ — aud 가 둘 이상이면 azp 가 있어야 하고, 있는 azp 는
+        `audience` 와 같은 문자열이어야 한다. 이 종류의 `audience` 는 곧 client_id 다
+        (코드를 교환한 클라이언트 — 파사드가 그렇게 넘긴다).
+      ⚠️ 판정이 기본값(`access`)으로 떨어지게 둔다 — 종류를 빠뜨린 검증기는 typ 를
+      보는 쪽이다.
     - 서명/알고리즘/키(kid) 결정 실패는 `TokenSignatureError`(`TokenValidationError`의
-      하위 타입)로, 클레임(issuer/audience/exp/nbf) 실패는 평범한 `TokenValidationError`
+      하위 타입)로, 클레임(issuer/audience/exp/nbf/typ/azp) 실패는 평범한 `TokenValidationError`
       로 래핑되어 전파된다 — 호출자가 "JWKS 재조회로 복구 가능한 실패"와 "재조회해도
       소용없는 실패"를 구분할 수 있게 하기 위함이다.
     """
@@ -93,6 +112,8 @@ class JwtValidator:
         audience: str,
         allowed_algs: tuple[str, ...] = ("RS256",),
         clock_skew: float = 30.0,
+        *,
+        kind: TokenKind = "access",
     ) -> None:
         if not allowed_algs:
             # joserfc는 algorithms=[]/None이면 권장 알고리즘 집합(HS256 포함)으로
@@ -100,6 +121,7 @@ class JwtValidator:
             raise ValueError("allowed_algs must be non-empty")
         self._issuer = issuer
         self._audience = audience
+        self._kind = kind
         self._algs: list[str] = list(allowed_algs)
         self._skew = clock_skew
         # ⚠️ 레지스트리를 넘기면 joserfc 는 `algorithms=` 를 보지 않는다 — 핀은 레지스트리가 든다.
@@ -168,3 +190,29 @@ class JwtValidator:
         nbf = claims.get("nbf")
         if nbf is not None and now + self._skew < float(nbf):
             raise TokenValidationError("Token not yet valid")
+
+        if self._kind == "id_token":
+            self._check_authorized_party(claims)
+        else:
+            self._check_access_type(claims)
+
+    def _check_access_type(self, claims: dict[str, Any]) -> None:
+        """(access) Keycloak 의 다른 종류 토큰을 거부한다 — 서명 · iss · aud · exp 만으로는
+        id_token 과 백채널 로그아웃 토큰이 access 검증을 통과했다(aud 가 client_id 라 기대
+        audience 의 기본값과 같다)."""
+        typ = claims.get("typ")
+        if isinstance(typ, str) and typ in _NOT_ACCESS_TOKEN_TYPES:
+            # typ 는 다섯 상수 중 하나라 그대로 실어도 토큰 내용이 새지 않는다.
+            raise TokenValidationError(f"Token is not an access token (typ {typ})")
+
+    def _check_authorized_party(self, claims: dict[str, Any]) -> None:
+        """(id_token) OIDC Core §3.1.3.7 ④⑤ — azp 는 이 id_token 을 받은 클라이언트다."""
+        aud = claims.get("aud")
+        if "azp" not in claims:
+            if isinstance(aud, list) and len(aud) > 1:
+                raise TokenValidationError("Missing azp claim for multiple audiences")
+            return
+        azp = claims["azp"]
+        if not isinstance(azp, str) or azp != self._audience:
+            # azp 값은 싣지 않는다 — 토큰 내용을 오류 문구로 옮기지 않는다.
+            raise TokenValidationError("Authorized party (azp) mismatch")
