@@ -135,7 +135,7 @@ export class AuthClient {
       JwtValidator.forJwksUri(this.#endpoints.jwks, {
         issuer: this.#endpoints.issuer,
         // 액세스 토큰: expectedAudience가 설정되면 그 값을, 아니면 clientId를 기대한다(기존 동작).
-        // id_token은 이 값을 쓰지 않는다 — `#verifyIdToken`이 clientId로 파생한다.
+        // id_token은 이 값을 쓰지 않는다 — `#validateIdToken`이 clientId로 파생한다.
         audience: cfg.expectedAudience ?? cfg.clientId,
         allowedAlgs: [...cfg.signatureAlgorithms],
         clockSkewSeconds: cfg.clockSkewSeconds,
@@ -235,10 +235,10 @@ export class AuthClient {
    * 서명·alg 핀·iss·aud·exp를 강제한다.
    *
    * id_token의 aud는 **clientId**로 검사한다(OIDC Core §2·§3.1.3.7) — `expectedAudience`는 액세스 토큰의
-   * 리소스 서버 제한이다. 검증기는 `#validator`에서 audience만 바꿔 파생하므로 키 소스(JWKS 캐시·재조회
-   * 제한·백오프)는 하나다. 파생은 지연한다 — 주입된 검증기가 교환 경로에 닿기 전에는 부르지 않는다.
-   * 파생은 id_token 검증기다 — `validate` 의 typ 거부(Keycloak 의 id_token 은 typ "ID")를 걸지 않고 azp 를 본다(aud 가
-   * 둘 이상이면 있어야 하고, 있으면 clientId). openid-client 는 aud 가 하나인 id_token 의 azp 를 보지 않는다.
+   * 리소스 서버 제한이다. 검사는 공개 `validateIdToken` 과 같은 `#validateIdToken` 하나다(둘로 나누지 않는다) — 거기서
+   * 검증기를 `#validator`에서 audience만 바꿔 파생하므로 키 소스(JWKS 캐시·재조회 제한·백오프)는 하나다.
+   * 파생은 id_token 검증기다 — `validate` 의 typ 거부 목록 대신 종류 허용 목록(typ 이 정확히 "ID")과 azp 를 본다(aud 가
+   * 둘 이상이면 있어야 하고, 있으면 clientId). openid-client 는 aud 가 하나인 id_token 의 azp 도, typ 도 보지 않는다.
    */
   async #verifyIdToken(idToken: string | undefined): Promise<void> {
     if (idToken === undefined) {
@@ -247,8 +247,7 @@ export class AuthClient {
       )
     }
     try {
-      this.#idTokenValidator ??= this.#validator.withAudience(this.#cfg.clientId)
-      await this.#idTokenValidator.validate(idToken)
+      await this.#validateIdToken(idToken)
     } catch (e) {
       throw new KeycloakAuthError('Authorization code exchange failed: invalid id_token', {
         cause: e,
@@ -319,6 +318,35 @@ export class AuthClient {
   /** Verifies the signature against the realm JWKS and enforces issuer/audience/exp/nbf (hardened {@link JwtValidator}). */
   async validate(accessToken: string): Promise<ValidatedToken> {
     return this.#validator.validate(accessToken)
+  }
+
+  /**
+   * Validates an id_token with exactly the check {@link AuthClient.exchangeCode} runs on the id_token before it
+   * compares the nonce — both call the same function. The signature is verified against the realm JWKS through the
+   * same key store {@link AuthClient.validate} uses (one cache, one refetch limit, one backoff), under the
+   * `signatureAlgorithms` pin (an HS algorithm is refused even when allowed — a JWKS holds public keys only) and the
+   * 256,000-byte length cap. `iss` must match exactly, `aud` must contain the configured **clientId** (not
+   * `expectedAudience`, which restricts access tokens) and `exp` is required, checked with the clock skew. Then the
+   * token kind: the payload `typ` claim must be exactly the string `"ID"` — a missing, non-string or other value is
+   * refused. Last, the authorized party (OIDC Core §3.1.3.7 steps 4–5): with more than one `aud` an `azp` is
+   * required, and an `azp` that is present (JSON null included) must be the clientId.
+   *
+   * The nonce is not compared — that stays in `exchangeCode`. A failed check is a `KeycloakTokenValidationError`, as
+   * for `validate`.
+   */
+  async validateIdToken(idToken: string): Promise<ValidatedToken> {
+    return this.#validateIdToken(idToken)
+  }
+
+  /**
+   * id_token 검사의 한 길 — 공개 `validateIdToken` 과 교환(`#verifyIdToken`)이 함께 부른다. 검증기는 `#validator` 에서
+   * audience 만 clientId 로 바꿔 파생한다(`withAudience` — 키 소스는 같은 객체, I/O 없음). 파생은 지연한다 — 주입된 검증기가
+   * id_token 경로에 닿기 전에는 부르지 않는다. ⚠️ 판정 논리는 여기 두지 않는다 — 이 파일은 단위 커버리지 밖이라 여기 숨은
+   * 분기는 두 게이트 어디에도 안 잡힌다. 종류 · azp 규칙은 측정되는 `jwt.ts` 에 있다.
+   */
+  #validateIdToken(idToken: string): Promise<ValidatedToken> {
+    this.#idTokenValidator ??= this.#validator.withAudience(this.#cfg.clientId)
+    return this.#idTokenValidator.validate(idToken)
   }
 
   /**

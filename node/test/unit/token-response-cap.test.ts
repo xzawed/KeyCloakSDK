@@ -67,8 +67,9 @@ function client(): KeycloakClient {
   })
 }
 
+/** 교환이 검증하는 id_token — Keycloak 의 것처럼 typ "ID" 를 싣는다(id_token 경로는 종류를 허용 목록으로 본다). */
 function idToken(): Promise<string> {
-  return new SignJWT({ nonce: NONCE })
+  return new SignJWT({ nonce: NONCE, typ: 'ID' })
     .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
     .setIssuer(idp.issuer)
     .setSubject('u1')

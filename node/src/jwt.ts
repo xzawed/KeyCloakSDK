@@ -68,6 +68,19 @@ function rejectNonAccessToken(payload: JWTPayload): void {
 }
 
 /**
+ * id_token 의 종류 — payload `typ` 이 정확히(대소문자 구분) 문자열 "ID" 가 아니면 거부한다. 액세스 경로의 거부 목록과 달리
+ * **허용 목록**이다: Keycloak 26.6.9 는 id_token 을 한 곳(`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만
+ * 만들고 거기서 늘 "ID" 를 싣는다(실서버 통합 테스트도 "ID" 를 쟀다). 그래서 부재 · 문자열이 아닌 값 · 그 밖의 문자열이 전부
+ * 거부다 — aud 에 client id 가 있고 azp 가 client id 인 액세스 토큰(typ "Bearer", 소문자 "bearer" 도)이 id_token 검사를 지나던
+ * 틈을 닫는다. 메시지는 상수다 — 토큰이 고른 typ 를 싣지 않는다(azp 를 싣지 않는 것과 같은 이유).
+ */
+function requireIdTokenType(payload: JWTPayload): void {
+  if (payload['typ'] !== 'ID') {
+    throw new KeycloakTokenValidationError('not an id_token (typ is not "ID")')
+  }
+}
+
+/**
  * id_token 의 azp — OIDC Core §3.1.3.7 4·5. aud 가 둘 이상이면 azp 가 있어야 하고, azp 가 있으면(JSON null 도 있는 것이다)
  * `clientId`(이 검증기의 기대 audience)와 같은 문자열이어야 한다. 액세스 토큰에는 걸지 않는다 — 액세스 토큰의 azp 는 그 토큰을
  * 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다. 메시지에 azp 값을 싣지 않는다(토큰이 고른 문자열이다).
@@ -376,9 +389,9 @@ export class JwtValidator {
   private constructor(
     private readonly keys: JWTVerifyGetKey,
     private readonly opts: JwtValidatorOptions,
-    // 코드 교환의 id_token 검증기인가 — `withAudience` 가 만든 것만 참이다. 참이면 typ 거부(액세스 토큰 전용 — Keycloak 의
-    // id_token 은 typ "ID" 다)를 건너뛰고 azp 를 본다. 거짓(`forKeySource` · `forJwksUri`)이면 그 반대다. ⚠️ `//` 주석이다 —
-    // JSDoc 이면 private 이어도 방출 `.d.ts` 에 실린다.
+    // id_token 검증기인가(코드 교환 · 공개 `AuthClient.validateIdToken`) — `withAudience` 가 만든 것만 참이다. 참이면 액세스
+    // 토큰의 typ 거부 목록 대신 종류 허용 목록(typ 이 정확히 "ID" — `requireIdTokenType`)과 azp 를 본다. 거짓(`forKeySource` ·
+    // `forJwksUri`)이면 거부 목록만 본다. ⚠️ `//` 주석이다 — JSDoc 이면 private 이어도 방출 `.d.ts` 에 실린다.
     private readonly idToken = false,
   ) {}
 
@@ -433,10 +446,11 @@ export class JwtValidator {
   }
 
   /**
-   * 코드 교환의 id_token 검증기 — 기대 audience 를 바꾸고 종류를 id_token 으로 바꾼다. 키 소스(`keys`)는 **같은 객체**를
-   * 넘긴다. 코드 교환이 id_token 을 client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token `aud` 는 client_id 를
-   * 담는다). `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다. 같은 이유로 `validate` 의 typ 거부
-   * (Keycloak 의 id_token 은 typ "ID")를 건너뛰고, 대신 azp 를 본다(`requireAuthorizedParty` — azp 는 이 audience 와 대조).
+   * id_token 검증기 — 기대 audience 를 바꾸고 종류를 id_token 으로 바꾼다. 키 소스(`keys`)는 **같은 객체**를 넘긴다. 코드
+   * 교환과 공개 `AuthClient.validateIdToken` 이 id_token 을 client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token
+   * `aud` 는 client_id 를 담는다). `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다. 같은 이유로
+   * `validate` 의 typ 거부 목록(Keycloak 의 id_token 은 typ "ID")을 건너뛰고, 대신 종류 허용 목록(typ 이 정확히 "ID" —
+   * `requireIdTokenType`)과 azp 를 본다(`requireAuthorizedParty` — azp 는 이 audience 와 대조).
    *
    * ⚠️ 새 키 소스를 만들지 말 것 — JWKS 캐시·재조회 쿨다운·fetch 실패 백오프가 전부 `keys` 클로저 안에
    * 있어서, 둘로 나뉘면 IdP 요청과 DoS 상한이 두 배가 된다. I/O 는 하지 않는다.
@@ -476,9 +490,10 @@ export class JwtValidator {
         clockTolerance: this.opts.clockSkewSeconds, // exp/nbf ± skew
         requiredClaims: ['exp'], // exp 존재 강제 — jose는 exp가 있을 때만 만료검사하므로 부재 시 무만료 토큰이 통과한다(Go/Rust/Python 동형 심층방어)
       })
-      // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다. 둘 다 KeycloakTokenValidationError 라 아래 catch 가
-      // 감싸지 않는다.
+      // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다. 전부 KeycloakTokenValidationError 라 아래 catch 가
+      // 감싸지 않는다. id_token 은 종류(typ "ID")를 azp 보다 먼저 본다 — 그 토큰이 id_token 인지가 azp 를 읽을 전제다.
       if (this.idToken) {
+        requireIdTokenType(payload)
         requireAuthorizedParty(payload, this.opts.audience)
       } else {
         rejectNonAccessToken(payload)

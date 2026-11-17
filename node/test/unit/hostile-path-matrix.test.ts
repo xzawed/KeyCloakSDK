@@ -100,7 +100,8 @@ const UNDETERMINED_EXEMPT: Readonly<Record<string, string>> = {
 const HIDDEN_REACH_EXEMPT: Readonly<Record<string, string>> = {
   'JwtValidator#keys':
     'TS private 키 소스(jose 원격 JWKS + 콜드 캐시 백오프, jwt.ts) — 생성자 파라미터 프로퍼티라 런타임엔 보이지만 ' +
-    '방출 .d.ts 에 없다. 공개 경로는 JwtValidator#validate·AuthClient#validate 둘뿐이고 둘 다 JWKS_FETCH 행으로 W3c 를 받는다',
+    '방출 .d.ts 에 없다. 공개 경로는 JwtValidator#validate·AuthClient#validate·AuthClient#validateIdToken 셋이고 셋 다 ' +
+    'JWKS_FETCH 행으로 W3c 를 받는다',
 }
 
 /**
@@ -368,7 +369,8 @@ async function startServer(keys: Keys): Promise<IdpServer> {
         realm,
         iss,
         universal,
-        idToken: await sign(keys.priv, 'k1', iss, { nonce: universal }),
+        // Keycloak 의 id_token 처럼 typ "ID" — id_token 경로는 종류를 허용 목록으로 본다(`jwt.ts` `requireIdTokenType`).
+        idToken: await sign(keys.priv, 'k1', iss, { nonce: universal, typ: 'ID' }),
         reqs: [],
         tokenResp: undefined,
         certsDown: false,
@@ -1375,13 +1377,13 @@ async function runVariantsA(
 /**
  * W3b 의 변형 — 대조(맞는 id_token)와 다섯. 다른 키로 서명할 때 kid 가 k1 이면 캐시된 키로 서명 검증이 실패하고,
  * k2 면 키를 못 찾는다. `reachJwks` 는 그 칸이 JWKS 에 닿아야 하는가다(머리 주석 — nonce 대조는 openid-client 가
- * 검증기 앞에서 한다).
+ * 검증기 앞에서 한다). 모든 id_token 은 Keycloak 처럼 typ "ID" 를 싣는다 — 변형이 대조와 다른 것이 그 칸의 한 가지뿐이게.
  */
 const NONCE_VARIANTS: ReadonlyArray<{
   code: string
   kid: string
   otherKey: boolean
-  /** undefined 면 `{ nonce: 보편 인자 }`(= 호출에 넘긴 nonce) */
+  /** undefined 면 `{ nonce: 보편 인자, typ: "ID" }`(= 호출에 넘긴 nonce) */
   claims: Record<string, unknown> | undefined
   noIdToken: boolean
   want: 'ok' | 'reject'
@@ -1401,7 +1403,7 @@ const NONCE_VARIANTS: ReadonlyArray<{
     code: 'nonce≠',
     kid: 'k1',
     otherKey: false,
-    claims: { nonce: 'hp-other-nonce' },
+    claims: { nonce: 'hp-other-nonce', typ: 'ID' },
     noIdToken: false,
     want: 'reject',
     reachJwks: false,
@@ -1437,7 +1439,7 @@ const NONCE_VARIANTS: ReadonlyArray<{
     code: 'nonce클레임없음',
     kid: 'k1',
     otherKey: false,
-    claims: {},
+    claims: { typ: 'ID' },
     noIdToken: false,
     want: 'reject',
     reachJwks: false,
@@ -1473,7 +1475,7 @@ function nonceIdToken(
   idp: HpIdp,
   signer: CryptoKey,
 ): Promise<string> {
-  const claims = nv.claims ?? { nonce: idp.universal }
+  const claims = nv.claims ?? { nonce: idp.universal, typ: 'ID' }
   if (nv.alg === 'none') {
     return Promise.resolve(
       new UnsecuredJWT(claims)
