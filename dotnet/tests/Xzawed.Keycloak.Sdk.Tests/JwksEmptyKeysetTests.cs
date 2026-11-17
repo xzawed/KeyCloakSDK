@@ -88,7 +88,7 @@ public class JwksEmptyKeysetTests
     }
 
     private static string Payload(string issuer, string sub)
-        => $$"""{"iss":"{{issuer}}","sub":"{{sub}}","aud":"it-client","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
+        => $$"""{"iss":"{{issuer}}","sub":"{{sub}}","aud":"it-client","typ":"Bearer","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
 
     private static string Sign(string payloadJson, SecurityKey key)
         => new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }

@@ -57,6 +57,9 @@ public sealed class ValidationCancellationTests : IDisposable
         $$"""{"iss":"{{Issuer}}","sub":"u1","aud":"c","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}{{extra}}}""",
         new SigningCredentials(_key, SecurityAlgorithms.RsaSha256));
 
+    // The access-token shape — typ "Bearer": ValidateAsync accepts only Bearer or DPoP.
+    private string AccessToken() => Token(""","typ":"Bearer" """);
+
     /// <summary>An already-cancelled token ends the call before IdentityModel runs — no discovery, no JWKS, so the call
     /// cannot start a refetch (or stamp the refetch window) for a caller that has gone.</summary>
     [Fact]
@@ -66,8 +69,8 @@ public sealed class ValidationCancellationTests : IDisposable
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Validator().ValidateAsync(Token(), cts.Token));
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Auth().ValidateAsync(Token(), cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Validator().ValidateAsync(AccessToken(), cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Auth().ValidateAsync(AccessToken(), cts.Token));
         // The public id_token check takes the token too.
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Auth().ValidateIdTokenAsync(Token(""","typ":"ID" """), cts.Token));
 
@@ -79,7 +82,7 @@ public sealed class ValidationCancellationTests : IDisposable
     public async Task Cancelling_while_validation_waits_on_the_IdP_ends_it()
     {
         using var cts = new CancellationTokenSource();
-        var call = Validator().ValidateAsync(Token(), cts.Token);
+        var call = Validator().ValidateAsync(AccessToken(), cts.Token);
         await _idp.DiscoveryArrived.WaitAsync(Hang);
 
         cts.Cancel();
@@ -109,7 +112,7 @@ public sealed class ValidationCancellationTests : IDisposable
     public async Task Control_an_uncancelled_validation_completes_when_the_IdP_answers()
     {
         using var cts = new CancellationTokenSource();
-        var call = Validator().ValidateAsync(Token(), cts.Token);
+        var call = Validator().ValidateAsync(AccessToken(), cts.Token);
         await _idp.DiscoveryArrived.WaitAsync(Hang);
 
         _idp.Release();
@@ -125,13 +128,13 @@ public sealed class ValidationCancellationTests : IDisposable
     {
         var v = Validator();
         using var cts = new CancellationTokenSource();
-        var call = v.ValidateAsync(Token(), cts.Token);
+        var call = v.ValidateAsync(AccessToken(), cts.Token);
         await _idp.DiscoveryArrived.WaitAsync(Hang);
         cts.Cancel();
         Assert.IsAssignableFrom<OperationCanceledException>(await Ended(call));
 
         _idp.Release();
-        Assert.Equal("u1", (await v.ValidateAsync(Token()).WaitAsync(Hang)).Subject);
+        Assert.Equal("u1", (await v.ValidateAsync(AccessToken()).WaitAsync(Hang)).Subject);
         Assert.Equal(2, _idp.Requests); // the cancelled call's discovery and JWKS fetch, and nothing since
     }
 

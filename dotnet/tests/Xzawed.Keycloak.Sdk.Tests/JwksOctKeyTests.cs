@@ -326,8 +326,9 @@ public class JwksOctKeyTests
         return $$"""{"kty":"RSA","kid":"{{key.KeyId}}","use":"sig","alg":"RS256","n":"{{Base64UrlEncoder.Encode(p.Modulus)}}","e":"{{Base64UrlEncoder.Encode(p.Exponent)}}"}""";
     }
 
+    // An access token (typ "Bearer" — ValidateAsync accepts only Bearer or DPoP), genuine or forged by the key it is signed with.
     internal static string Payload(string issuer, string sub)
-        => $$"""{"iss":"{{issuer}}","sub":"{{sub}}","aud":"it-client","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
+        => $$"""{"iss":"{{issuer}}","sub":"{{sub}}","aud":"it-client","typ":"Bearer","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""";
 
     internal static string Sign(string payloadJson, SecurityKey key, string algorithm)
         => new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }

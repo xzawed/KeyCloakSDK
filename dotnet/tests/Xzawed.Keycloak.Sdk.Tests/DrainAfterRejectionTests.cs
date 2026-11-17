@@ -167,7 +167,7 @@ public sealed class DrainAfterRejectionTests
             Issuer = issuer,
             Audience = "c",
             Expires = DateTime.UtcNow.AddMinutes(5),
-            Claims = new Dictionary<string, object> { ["sub"] = "u1" },
+            Claims = new Dictionary<string, object> { ["sub"] = "u1", ["typ"] = "Bearer" }, // an access token: Bearer or DPoP only
             SigningCredentials = new SigningCredentials(Key, SecurityAlgorithms.RsaSha256),
         });
     }

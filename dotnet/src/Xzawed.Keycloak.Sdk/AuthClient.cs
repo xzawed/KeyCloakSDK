@@ -116,7 +116,7 @@ public sealed class AuthClient : ITokenSource
         // validator's one ConfigurationManager — the same JWKS cache, refresh gate and backoff as ValidateAsync —
         // but aud against ClientId, never KeycloakConfig.ExpectedAudience: an id_token's aud MUST contain the
         // client_id (OIDC Core §2, §3.1.3.7), and ExpectedAudience restricts access tokens only; typ exactly "ID"
-        // instead of the access-token typ deny-list, and then azp against ClientId too)
+        // instead of the access-token typ allow-list (Bearer · DPoP), and then azp against ClientId too)
         // and then check the nonce claim. Fails CLOSED when a nonce was supplied
         // (CreateAuthorizationRequest always issues one), matching the Node posture —
         // a missing id_token must throw, NOT silently skip validation (an attacker could otherwise strip

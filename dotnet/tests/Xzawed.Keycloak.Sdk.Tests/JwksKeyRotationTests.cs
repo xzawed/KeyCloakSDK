@@ -317,7 +317,7 @@ public sealed class JwksKeyRotationTests : IDisposable
             .GetValue(v)!).ConfigurationManager!;
 
     private string Token(RsaSecurityKey key, string sub) => new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(
-        $$"""{"iss":"{{Issuer}}","sub":"{{sub}}","aud":"c","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
+        $$"""{"iss":"{{Issuer}}","sub":"{{sub}}","aud":"c","typ":"Bearer","exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300}}}""",
         new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
 
     /// <summary>A well-formed token under a random kid the IdP never published.</summary>

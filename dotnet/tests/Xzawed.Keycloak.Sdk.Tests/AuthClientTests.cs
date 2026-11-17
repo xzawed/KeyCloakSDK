@@ -343,10 +343,14 @@ public class AuthClientTests : IDisposable
     }
 
     // The id_token shape: Claims plus typ "ID", as Keycloak writes it — the id_token check refuses any other typ, so a test
-    // of another id_token check cannot pass on the kind instead. (Claims itself also builds access tokens, which must not
-    // carry it.)
+    // of another id_token check cannot pass on the kind instead. (Claims itself carries no typ: the kind tests pass their own.)
     private static string IdClaims(string issuer, string audJson, string nonce = Nonce, long? expOffset = 300, string extra = "")
         => Claims(issuer, audJson, nonce, expOffset, ",\"typ\":\"ID\"" + extra);
+
+    // The access-token shape: Claims plus typ "Bearer", as Keycloak writes it — ValidateAsync accepts only Bearer or DPoP, so
+    // a test of another access check cannot fail (or pass) on the kind instead.
+    private static string AccessClaims(string issuer, string audJson, string nonce = Nonce, long? expOffset = 300, string extra = "")
+        => Claims(issuer, audJson, nonce, expOffset, ",\"typ\":\"Bearer\"" + extra);
 
     private static string SignClaims(string payloadJson, SecurityKey? key, string alg = SecurityAlgorithms.RsaSha256)
     {
@@ -399,10 +403,10 @@ public class AuthClientTests : IDisposable
         StubToken(SignClaims(IdClaims(issuer, "\"c\""), key));
         await Exchange(auth);
 
-        var access = await auth.ValidateAsync(SignClaims(Claims(issuer, "[\"extra-api\",\"account\"]"), key));
+        var access = await auth.ValidateAsync(SignClaims(AccessClaims(issuer, "[\"extra-api\",\"account\"]"), key));
         Assert.Contains(Override, access.Audience);
         var clientIdOnly = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
-            () => auth.ValidateAsync(SignClaims(Claims(issuer, "\"c\""), key)));
+            () => auth.ValidateAsync(SignClaims(AccessClaims(issuer, "\"c\""), key)));
         Assert.IsType<SecurityTokenInvalidAudienceException>(clientIdOnly.InnerException);
     }
 
@@ -556,7 +560,7 @@ public class AuthClientTests : IDisposable
         var issuer = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
         StubKeyStore(issuer, key);
         var idToken = SignClaims(IdClaims(issuer, "\"c\""), key);
-        var accessToken = SignClaims(Claims(issuer, "\"extra-api\""), key);
+        var accessToken = SignClaims(AccessClaims(issuer, "\"extra-api\""), key);
         StubToken(idToken);
 
         using (var kc = KeycloakClient.Create(cfg))
@@ -599,7 +603,7 @@ public class AuthClientTests : IDisposable
         Assert.Equal(0, Hits(CertsPath));
 
         // Control: the store is cold, not unreachable — a genuine access token on the same client loads it now.
-        await kc.Auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key));
+        await kc.Auth.ValidateAsync(SignClaims(AccessClaims(issuer, "\"extra-api\""), key));
         Assert.Equal(1, Hits(CertsPath));
     }
 
@@ -617,7 +621,7 @@ public class AuthClientTests : IDisposable
         var opts = KeycloakClient.ValidatorOptionsFor(cfg, issuer);
         var auth = new AuthClient(cfg, OidcEndpoints.For(cfg.ServerUrl, cfg.Realm), new JwtValidator(issuer, opts, http), http);
 
-        Assert.Contains(Override, (await auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key))).Audience);
+        Assert.Contains(Override, (await auth.ValidateAsync(SignClaims(AccessClaims(issuer, "\"extra-api\""), key))).Audience);
         var warm = Hits(CertsPath);
         StubToken(SignClaims(IdClaims(issuer, "\"c\""), attacker));
         await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth));
@@ -625,15 +629,15 @@ public class AuthClientTests : IDisposable
         Assert.True(afterExchange > warm, "the forged id_token must reach the store's refetch — else nothing below is shared");
 
         await Assert.ThrowsAsync<KeycloakTokenValidationException>(
-            () => auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), attacker)));
+            () => auth.ValidateAsync(SignClaims(AccessClaims(issuer, "\"extra-api\""), attacker)));
         Assert.Equal(afterExchange, await SettledHitsAsync(CertsPath, afterExchange));
 
         // Control: a second store has a window of its own and does refetch on the same forgery.
         var second = new JwtValidator(issuer, opts, http);
-        await second.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key));
+        await second.ValidateAsync(SignClaims(AccessClaims(issuer, "\"extra-api\""), key));
         var secondWarm = Hits(CertsPath);
         await Assert.ThrowsAsync<KeycloakTokenValidationException>(
-            () => second.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), attacker)));
+            () => second.ValidateAsync(SignClaims(AccessClaims(issuer, "\"extra-api\""), attacker)));
         Assert.True(await SettledHitsAsync(CertsPath, secondWarm) > secondWarm,
             "control: a separate store must refetch, else this test cannot see one");
     }
@@ -660,7 +664,7 @@ public class AuthClientTests : IDisposable
              .RespondWith(Response.Create().WithStatusCode(503));
         var key = NewKey();
         StubToken(SignClaims(IdClaims(ep.Issuer, "\"c\""), key));
-        var accessToken = SignClaims(Claims(ep.Issuer, "\"extra-api\""), key);
+        var accessToken = SignClaims(AccessClaims(ep.Issuer, "\"extra-api\""), key);
         var frozen = new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero);
         using var http = new HttpClient();
         var opts = KeycloakClient.ValidatorOptionsFor(cfg, ep.Issuer);
@@ -680,8 +684,8 @@ public class AuthClientTests : IDisposable
 
     // ── Public id_token validation (registry id-token-validator-not-public). ValidateIdTokenAsync is exactly the check the
     // exchange runs on its id_token before it compares the nonce — ExchangeCodeAsync calls it, one path — plus the kind rule
-    // of the id_token path: the payload typ must be exactly the string "ID" (an allow-list; ValidateAsync keeps its
-    // deny-list). No nonce parameter: the nonce comparison stays in the exchange. ──
+    // of the id_token path: the payload typ must be exactly the string "ID" (an allow-list; ValidateAsync has its own, Bearer
+    // and DPoP). No nonce parameter: the nonce comparison stays in the exchange. ──
 
     private const string NotAnIdToken = "not an id_token (typ is not \"ID\")";
 
@@ -785,7 +789,7 @@ public class AuthClientTests : IDisposable
             () => auth.ValidateIdTokenAsync(SignClaims(Claims(issuer, "\"extra-api\"", extra: typed), key)));
         Assert.IsType<SecurityTokenInvalidAudienceException>(refused.InnerException);
         Assert.Equal(new[] { "c" }, (await auth.ValidateIdTokenAsync(SignClaims(Claims(issuer, "\"c\"", extra: typed), key))).Audience);
-        Assert.Contains(Override, (await auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key))).Audience);
+        Assert.Contains(Override, (await auth.ValidateAsync(SignClaims(AccessClaims(issuer, "\"extra-api\""), key))).Audience);
     }
 
     /// <summary>Every other id_token check of the exchange holds on the public method too (it is the same function), each
@@ -856,7 +860,7 @@ public class AuthClientTests : IDisposable
         var issuer = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
         StubKeyStore(issuer, key);
         var idToken = SignClaims(Claims(issuer, "\"c\"", extra: ",\"typ\":\"ID\""), key);
-        var accessToken = SignClaims(Claims(issuer, "\"extra-api\""), key);
+        var accessToken = SignClaims(AccessClaims(issuer, "\"extra-api\""), key);
 
         using (var kc = KeycloakClient.Create(cfg))
         {

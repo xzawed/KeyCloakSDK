@@ -1382,8 +1382,9 @@ public sealed class HostilePathMatrixTests
             BaseUrl = baseUrl;
             Issuer = baseUrl + "/realms/r";
             // ⚠️ 평문이면 토큰을 받는 메서드(ValidateAsync 둘)가 JWS 파싱에서 요청 없이 실패해 UNDETERMINED 가 되고 JWKS_FETCH 가 빈다
-            // — 그래서 이 IdP 키로 서명한 **유효한 JWS** 다. URL·경로·폼에 안전한 문자만 쓴다.
-            Universal = Sign(idp.Key, Issuer, null);
+            // — 그래서 이 IdP 키로 서명한 **유효한 JWS** 다. URL·경로·폼에 안전한 문자만 쓴다. 액세스 토큰 모양(typ "Bearer") —
+            // 액세스 검증은 Bearer · DPoP 만 받으므로, 없으면 ValidateAsync 가 ValidatedToken 을 내지 못한다.
+            Universal = Sign(idp.Key, Issuer, new Dictionary<string, object> { ["typ"] = "Bearer" });
             // Keycloak 의 id_token 처럼 typ "ID" — id_token 검사는 그 밖의 typ 을 거부한다.
             IdToken = Sign(idp.Key, Issuer, new Dictionary<string, object> { ["nonce"] = Universal, ["typ"] = "ID" });
         }

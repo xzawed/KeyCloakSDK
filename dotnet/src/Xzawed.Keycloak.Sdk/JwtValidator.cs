@@ -124,17 +124,23 @@ public sealed class JwtValidator
         ValidateIssuerSigningKey = true,
     };
 
+    /// <summary>The payload <c>typ</c> values of an access token (<c>org.keycloak.util.TokenUtil</c>) — the two Keycloak's own
+    /// resource-side check accepts (<c>DPoPUtil.withDPoPVerifier</c>). The access path accepts only these, ignoring case
+    /// (<see cref="RequireAccessToken"/>).</summary>
+    private static readonly string[] AccessTokenTypes = { "Bearer", "DPoP" };
+
     /// <summary>The payload <c>typ</c> values Keycloak gives the tokens that are not access tokens
-    /// (<c>org.keycloak.util.TokenUtil</c>): id_token, refresh, offline, back-channel logout and serialized id_token. An
-    /// access token is <c>Bearer</c> or <c>DPoP</c>.</summary>
+    /// (<c>org.keycloak.util.TokenUtil</c>): id_token, refresh, offline, back-channel logout and serialized id_token. Of the
+    /// values the access path refuses, only these five (an exact match) are named in its message.</summary>
     private static readonly HashSet<string> NotAccessTokenTypes = new(StringComparer.Ordinal)
     {
         "ID", "Refresh", "Offline", "Logout", "Serialized-ID",
     };
 
-    /// <summary>Validates an access token. A token whose payload <c>typ</c> names another kind of Keycloak token — an
-    /// id_token (<c>ID</c>), <c>Refresh</c>, <c>Offline</c>, <c>Logout</c> or <c>Serialized-ID</c> — is refused even
-    /// when it passes every other check; any other <c>typ</c>, or none, is not looked at.</summary>
+    /// <summary>Validates an access token. After every other check, its kind is held to Keycloak's own resource-side
+    /// allow-list: the payload <c>typ</c> must be a string equal to <c>Bearer</c> or <c>DPoP</c>, ignoring case — a token
+    /// with no <c>typ</c>, a non-string one or any other value (an id_token's <c>ID</c>, <c>Refresh</c>, <c>Offline</c>,
+    /// <c>Logout</c>, <c>Serialized-ID</c>, …) is refused.</summary>
     /// <param name="token">The compact JWT.</param>
     /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/>: at once when it is already cancelled
     /// (nothing is fetched), or while validation waits on the IdP. A discovery or JWKS fetch already under way is not
@@ -146,7 +152,7 @@ public sealed class JwtValidator
     /// <paramref name="audience"/> instead of the configured one, and the token type. The id_token path — its public entry is
     /// <c>AuthClient.ValidateIdTokenAsync</c>, which the code exchange calls too: an id_token's <c>aud</c> MUST contain the
     /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to. In place of the access path's
-    /// token-type deny-list it checks the kind — the payload <c>typ</c> must be exactly <c>ID</c>
+    /// token-type allow-list it checks the kind — the payload <c>typ</c> must be exactly <c>ID</c>
     /// (<see cref="RequireIdToken"/>) — and then the authorized party (<see cref="RequireAuthorizedParty"/>).</summary>
     internal Task<ValidatedToken> ValidateForAudienceAsync(string token, string audience, CancellationToken ct = default)
         => ValidateCoreAsync(token, ParametersForAudience(audience), jwt =>
@@ -155,14 +161,27 @@ public sealed class JwtValidator
             RequireAuthorizedParty(jwt, audience);
         }, ct);
 
-    /// <summary>The access path's last check: the payload <c>typ</c>, when it is a string, must not be one of
-    /// <see cref="NotAccessTokenTypes"/> (an exact, case-sensitive match). The value is quoted: it is one of those five.</summary>
+    /// <summary>The access path's last check — an allow-list (registry access-token-typ-deny-list), as Keycloak's own
+    /// resource-side check is: <c>TokenVerifier.TokenTypeCheck</c> compares ignoring case and refuses a missing
+    /// <c>typ</c>, and <c>DPoPUtil.withDPoPVerifier</c> allows <c>Bearer</c> and <c>DPoP</c>. The payload <c>typ</c> must be
+    /// a JSON string equal to one of <see cref="AccessTokenTypes"/> ignoring case — Keycloak writes <c>bearer</c> under the
+    /// client option "use lower-case bearer type in token responses". An id_token, a back-channel logout token and a JARM
+    /// authorization response (no <c>typ</c>; iss = the realm, aud = the client id) are all signed by the realm key and can
+    /// pass every other check of the default configuration; only the kind tells them apart. A <c>typ</c> that is exactly
+    /// one of <see cref="NotAccessTokenTypes"/> keeps its message (the value quoted is one of those five constants); anything
+    /// else gets one constant message — the token's own <c>typ</c> is never echoed.</summary>
     private static void RequireAccessToken(JsonWebToken jwt)
     {
-        // The payload claim — JsonWebToken.Typ is the JOSE header's. Only a JSON string is compared: a number, an array
-        // (even ["ID"]) or an object passes as before (Access_validation_accepts_every_other_typ).
-        if (jwt.TryGetPayloadValue<object>("typ", out var typ) && typ is string kind && NotAccessTokenTypes.Contains(kind))
-            throw new KeycloakTokenValidationException($"not an access token (typ \"{kind}\")");
+        // The payload claim — JsonWebToken.Typ is the JOSE header's. Only a JSON string can match. OrdinalIgnoreCase equals an
+        // ASCII-case-insensitive comparison for these two words (no non-ASCII character case-maps onto their letters).
+        if (jwt.TryGetPayloadValue<object>("typ", out var typ) && typ is string kind)
+        {
+            if (AccessTokenTypes.Any(t => string.Equals(kind, t, StringComparison.OrdinalIgnoreCase)))
+                return;
+            if (NotAccessTokenTypes.Contains(kind))
+                throw new KeycloakTokenValidationException($"not an access token (typ \"{kind}\")");
+        }
+        throw new KeycloakTokenValidationException("not an access token (typ is not Bearer or DPoP)");
     }
 
     /// <summary>The id_token path's last check — OIDC Core §3.1.3.7 steps 4–5: an id_token with more than one audience
