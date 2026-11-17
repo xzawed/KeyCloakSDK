@@ -36,8 +36,11 @@ _CONFIG = KeycloakConfig(
     server_url="https://kc.example.com", realm="r", client_id="app", client_secret="s3cret"
 )
 
-#: R3 의 글자 — U+0000-U+0020, U+007F-U+00A0, 그리고 아홉 개. 33 + 34 + 9.
-R3_CHARS = [chr(c) for c in (*range(0x21), *range(0x7F, 0xA1))] + list('"<>\\^`{|}')
+#: java.net.URI 가 거부하는 유니코드 공백 구분자 열일곱(JDK 21.0.8 실측).
+SPACE_SEPARATORS = (0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000)
+#: R3 의 글자 — U+0000-U+0020, U+007F-U+00A0, 공백 구분자 열일곱, 그리고 아홉 개. 33 + 34 + 17 + 9.
+R3_CHARS = [chr(c) for c in (*range(0x21), *range(0x7F, 0xA1), *SPACE_SEPARATORS)]
+R3_CHARS += list('"<>\\^`{|}')
 
 Build = Callable[[str], AuthorizationUrl]
 
@@ -95,6 +98,8 @@ def test_a_fragment_is_refused(facade: str, value: str) -> None:
         "https://app/c\ud800b",  # 짝 없는 서로게이트 — urlencode 의 UTF-8 strict 가 던진다
         "https://app/c\udc00b",
         "https://app/c\udfffb",
+        "https://app/c\U00003000b",  # 이데오그래픽 공백 — java.net.URI 가 거부한다
+        "https://app/c\U00002028b",  # 줄 구분자
     ],
 )
 def test_a_value_keycloak_cannot_parse_is_refused(facade: str, value: str) -> None:
@@ -119,7 +124,7 @@ def test_every_lone_surrogate_is_refused(facade: str) -> None:
 @pytest.mark.parametrize("facade", FACADES)
 def test_every_character_keycloak_refuses_is_refused(facade: str) -> None:
     """R3 의 글자 전부를 하나씩 — 범위의 양 끝(U+0020 · U+007F · U+00A0)이 빠지지 않게."""
-    assert len(R3_CHARS) == 76  # 빈 집합이면 아래 단언이 공허하게 통과한다
+    assert len(R3_CHARS) == 93  # 빈 집합이면 아래 단언이 공허하게 통과한다
     build = _authorization_url(facade)
     missed: list[str] = []
     for ch in R3_CHARS:
@@ -170,6 +175,8 @@ def test_the_message_does_not_quote_the_value(facade: str, value: str, message: 
         "https://app/c\U0001f600b",  # 아스트랄 문자 하나(짝지은 서로게이트가 아니다)
         "https://app/c\U0000d7ffb",  # 서로게이트 범위 바로 앞
         "https://app/c\U0000e000b",  # 서로게이트 범위 바로 뒤
+        "https://app/c\U0000200bb",  # U+200B — 공백 구분자 범위 바로 뒤(java.net.URI 가 받는다)
+        "https://app/c\U00003001b",  # U+3001 — 같다
     ],
 )
 def test_an_absolute_uri_is_carried_exactly_as_given(facade: str, value: str) -> None:
