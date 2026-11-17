@@ -3,7 +3,8 @@
 joserfc의 `jwt.decode(..., algorithms=[...])`는 서명·알고리즘 핀닝을 수행한다
 (`none`/미서명/미허용 알고리즘 토큰을 거부). 그러나 exp/nbf/iss/aud 클레임 검증은
 호출자 책임이므로, 이 모듈이 issuer 정확일치·audience 포함검사·exp/nbf(+클록 스큐)를
-수동으로 강제한다. 그 뒤에 토큰 종류별 검사(access 의 typ · id_token 의 azp)가 붙는다.
+수동으로 강제한다. 그 뒤에 토큰 종류별 검사(access 의 typ 거부 목록 · id_token 의 typ 허용
+목록과 azp)가 붙는다.
 """
 
 from __future__ import annotations
@@ -31,8 +32,17 @@ JWT_MAX_BYTES = 256_000
 #: 대소문자까지 정확 일치로만 본다.
 _NOT_ACCESS_TOKEN_TYPES = frozenset({"ID", "Refresh", "Offline", "Logout", "Serialized-ID"})
 
+#: id_token 경로가 받는 유일한 `typ` — **허용 목록**이다(access 경로는 거부 목록이다).
+#: Keycloak 26.6.9 는 id_token 을 한 곳
+#: (`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만 만들고 거기서 늘 `ID` 를
+#: 싣는다(실서버 통합 시험도 `ID` 를 쟀다). 그래서 부재 · 문자열이 아닌 값 · 그 밖의 문자열은
+#: 전부 거부다 — aud 에 client_id 가 있고 azp 가 client_id 인 access 토큰(typ `Bearer`,
+#: 소문자 `bearer` 도)이 id_token 검사를 지나던 틈을 닫는다.
+_ID_TYP = "ID"
+
 #: 검증하는 토큰의 종류 — 공통 검사(서명 · iss · aud · exp · nbf) 뒤에 붙는 검사가 종류마다 갈린다.
-#: `access` 는 typ 를(`_NOT_ACCESS_TOKEN_TYPES`), `id_token` 은 azp 를(OIDC Core §3.1.3.7 ④⑤) 본다.
+#: `access` 는 typ 거부 목록을(`_NOT_ACCESS_TOKEN_TYPES`), `id_token` 은 typ 허용 목록
+#: (`_ID_TYP`)과 azp 를(OIDC Core §3.1.3.7 ④⑤) 본다.
 TokenKind = Literal["access", "id_token"]
 
 
@@ -94,10 +104,11 @@ class JwtValidator:
       - `access`(기본): `typ` 클레임이 Keycloak 의 access 아닌 종류
         (`_NOT_ACCESS_TOKEN_TYPES` — id_token · refresh · 백채널 로그아웃 토큰 …)인
         문자열이면 거부한다. 다른 값 · 없음은 지금처럼 통과한다.
-      - `id_token`: typ 는 보지 않는다(Keycloak 의 id_token 은 `ID` 다). 대신
-        OIDC Core §3.1.3.7 ④⑤ — aud 가 둘 이상이면 azp 가 있어야 하고, 있는 azp 는
-        `audience` 와 같은 문자열이어야 한다. 이 종류의 `audience` 는 곧 client_id 다
-        (코드를 교환한 클라이언트 — 파사드가 그렇게 넘긴다).
+      - `id_token`: typ 가 정확히 문자열 `ID` 여야 한다(허용 목록 — `_ID_TYP`, 문구는
+        상수라 토큰이 고른 값을 싣지 않는다). 그다음 OIDC Core §3.1.3.7 ④⑤ — aud 가 둘
+        이상이면 azp 가 있어야 하고, 있는 azp 는 `audience` 와 같은 문자열이어야 한다. 이
+        종류의 `audience` 는 곧 client_id 다(파사드의 `validate_id_token` 과 코드 교환이 그렇게
+        넘긴다).
       ⚠️ 판정이 기본값(`access`)으로 떨어지게 둔다 — 종류를 빠뜨린 검증기는 typ 를
       보는 쪽이다.
     - 서명/알고리즘/키(kid) 결정 실패는 `TokenSignatureError`(`TokenValidationError`의
@@ -192,6 +203,8 @@ class JwtValidator:
             raise TokenValidationError("Token not yet valid")
 
         if self._kind == "id_token":
+            # 종류가 azp 보다 먼저다 — 그 토큰이 id_token 인지가 azp 를 읽을 전제다.
+            self._check_id_token_type(claims)
             self._check_authorized_party(claims)
         else:
             self._check_access_type(claims)
@@ -204,6 +217,12 @@ class JwtValidator:
         if isinstance(typ, str) and typ in _NOT_ACCESS_TOKEN_TYPES:
             # typ 는 다섯 상수 중 하나라 그대로 실어도 토큰 내용이 새지 않는다.
             raise TokenValidationError(f"Token is not an access token (typ {typ})")
+
+    def _check_id_token_type(self, claims: dict[str, Any]) -> None:
+        """(id_token) 종류 — typ 가 정확히(대소문자까지) 문자열 `ID` 가 아니면 거부한다."""
+        if claims.get("typ") != _ID_TYP:
+            # typ 값은 싣지 않는다 — 토큰이 고른 문자열이다(azp 를 싣지 않는 것과 같은 이유).
+            raise TokenValidationError('Token is not an id_token (typ is not "ID")')
 
     def _check_authorized_party(self, claims: dict[str, Any]) -> None:
         """(id_token) OIDC Core §3.1.3.7 ④⑤ — azp 는 이 id_token 을 받은 클라이언트다."""

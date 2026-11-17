@@ -12,10 +12,9 @@ import json
 import time
 import traceback
 import uuid
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import pytest
@@ -23,7 +22,6 @@ import requests
 from testcontainers.keycloak import KeycloakContainer
 
 from keycloak_sdk import KeycloakClient, KeycloakConfig
-from keycloak_sdk.aio import AsyncKeycloakClient
 from keycloak_sdk.auth import AuthorizationUrl
 
 _REALM_IMPORT_FILE = Path(__file__).parent / "it-realm-realm.json"
@@ -126,23 +124,11 @@ def strip_nonce(request: AuthorizationUrl) -> AuthorizationUrl:
     return replace(request, url=url._replace(query=query).geturl())
 
 
-def id_token_claims(kc: KeycloakClient, token: str) -> Mapping[str, Any]:
-    """교환이 id_token 을 검증하는 **그 길**로 검증한 클레임 — `AuthClient._verify_nonce` 와 같은
-    호출이다(서명 · iss · aud=client_id · exp · azp). ⚠️ `validate()` 로 읽지 말 것 — access
-    검증이라 id_token(typ `ID`)을 거부한다."""
-    return kc.auth._validate_for(token, kc.auth._config.client_id, kind="id_token").claims
-
-
-async def aid_token_claims(kc: AsyncKeycloakClient, token: str) -> Mapping[str, Any]:
-    """`id_token_claims` 의 aio 미러 — `AsyncAuthClient._verify_nonce` 와 같은 호출이다."""
-    validated = await kc.auth._validate_for(token, kc.auth._config.client_id, kind="id_token")
-    return validated.claims
-
-
 def unverified_claims(token: str) -> dict[str, object]:
     """JWT 페이로드를 **아무것도 검증하지 않고** 읽는다 — 맞는 검증 길이 없는 전제에만 쓴다(예:
     aud 에 client_id 가 없는 id_token — id_token 길은 그 aud 를, access 길은 typ `ID` 를
-    거부한다). 검증 길이 맞으면 `id_token_claims` 를 쓴다."""
+    거부한다). 검증 길이 맞으면 공개 `auth.validate_id_token`(교환이 id_token 을 검증하는 그
+    길)을 쓴다."""
     payload = token.split(".")[1]
     raw = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
     claims: dict[str, object] = json.loads(raw)

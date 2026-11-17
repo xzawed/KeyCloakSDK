@@ -212,7 +212,9 @@ class AuthClient:
         validation is skipped. The id_token's `aud` is checked against **`client_id`**, not
         `expected_audience` (OIDC Core §2·§3.1.3.7) — `expected_audience` is only for the access
         token that `validate()` checks. Its `azp` must also be `client_id` when present, and must
-        be present when `aud` has several values (OIDC Core §3.1.3.7, steps 4 and 5).
+        be present when `aud` has several values (OIDC Core §3.1.3.7, steps 4 and 5). That
+        id_token check is `validate_id_token`'s — the same function, so the payload `typ` must
+        also be exactly `"ID"`.
         """
         response = self._wrap(
             lambda: self._openid.token(
@@ -235,7 +237,7 @@ class AuthClient:
                 "authorization code exchange failed: missing id_token for nonce validation"
             )
         try:
-            validated = self._validate_for(id_token, self._config.client_id, kind="id_token")
+            validated = self._validate_id_token(id_token)
         except TokenValidationError as exc:
             raise KeycloakAuthError("authorization code exchange failed: invalid id_token") from exc
         if validated.claims.get("nonce") != expected_nonce:
@@ -283,13 +285,42 @@ class AuthClient:
             access_token, self._config.expected_audience or self._config.client_id, kind="access"
         )
 
+    @scrub_frames
+    def validate_id_token(self, id_token: str) -> ValidatedToken:
+        """Validates an id_token with exactly the check `exchange_code` runs on the id_token before
+        it compares the nonce — both call the same function.
+
+        The signature is verified against the realm JWKS through the same key cache `validate()`
+        uses (one cache, one forced-refetch window, one backoff), under the
+        `signature_algorithms` pin (an HS algorithm is refused even when allowed — a JWKS holds
+        public keys only) and the 256,000-byte length cap. `iss` must match exactly, `aud` must
+        contain the configured **`client_id`** (not `expected_audience`, which restricts access
+        tokens), and `exp` is required, checked with the clock skew. Then the token kind: the
+        payload `typ` claim must be exactly the string `"ID"` — a missing, non-string or other
+        value is refused. Last, the authorized party (OIDC Core §3.1.3.7, steps 4 and 5): with
+        more than one `aud` an `azp` is required, and an `azp` that is present (JSON null
+        included) must be `client_id`.
+
+        The nonce is not compared — that stays in `exchange_code`. A failed check raises
+        `TokenValidationError` (its `TokenSignatureError` / `TokenKeyError` subtypes for a
+        signature or key failure), as `validate()` does.
+        """
+        return self._validate_id_token(id_token)
+
+    def _validate_id_token(self, id_token: str) -> ValidatedToken:
+        """id_token 검사의 한 길 — 공개 `validate_id_token` 과 교환(`_verify_nonce`)이 함께 부른다.
+        기대 aud(와 azp 의 기준)는 `expected_audience` 가 아니라 client_id 다
+        (OIDC Core §2·§3.1.3.7). 판정 규칙(종류 · azp)은 측정되는 `_internal/jwt.py` 에 있다 —
+        이 파일은 커버리지 밖이다."""
+        return self._validate_for(id_token, self._config.client_id, kind="id_token")
+
     def _validate_for(self, token: str, audience: str, *, kind: TokenKind) -> ValidatedToken:
         """`validate()` 의 본체 — 기대 audience 와 토큰 종류만 호출자가 정한다.
 
         ⚠️ `kind` 는 기본값이 없다 — 두 호출자(access · id_token)가 각자 적는다. access 는 typ
-        를, id_token 은 azp 를 본다(`JwtValidator`). id_token 에 access 의 typ 검사가 걸리면
-        Keycloak 의 진짜 id_token(`ID`)이 거부되고, access 에 azp 검사가 걸리면 다른
-        클라이언트가 받은 정상 access 토큰이 거부된다.
+        거부 목록을, id_token 은 typ 허용 목록(`ID`)과 azp 를 본다(`JwtValidator`). id_token 에
+        access 의 typ 검사가 걸리면 Keycloak 의 진짜 id_token(`ID`)이 거부되고, access 에 azp
+        검사가 걸리면 다른 클라이언트가 받은 정상 access 토큰이 거부된다.
 
         ⚠️ **JWKS 상태는 여기서 만들지 않는다** — 캐시·30초 강제 재조회 창·콜드 캐시 백오프는
         이 인스턴스의 `_load_jwks` 하나가 소유하고, 두 경로가 그것을 함께 쓴다. `JwtValidator` 는
