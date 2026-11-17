@@ -72,6 +72,8 @@ final class AuthorizationRedirectUriTest extends TestCase
         yield '%g0' => ['https://app/c%g0'];
         yield 'invalid UTF-8' => ["https://app/c\xFFb"];
         yield 'truncated UTF-8 sequence' => ["https://app/c\xC3"];
+        yield 'U+3000 ideographic space' => ["https://app/c\u{3000}b"];
+        yield 'U+2028 line separator' => ["https://app/c\u{2028}b"];
     }
 
     /** @return iterable<string, array{string}> */
@@ -80,7 +82,7 @@ final class AuthorizationRedirectUriTest extends TestCase
         foreach ([
             'https://app/cb', 'https://app/cb?x=1', 'myapp:/cb', 'com.example.app:/oauth2redirect', 'HTTP://LOCALHOST/cb',
             'https://app/c%20b', "https://app/c\u{00FC}b", 'https://app/cb?x=[1]', "https://app/c'b", 'https://app/c+*!b',
-            'https://app/c~b', "https://app/c\u{00A1}b", 'https://app/c%2Fb',
+            'https://app/c~b', "https://app/c\u{00A1}b", 'https://app/c%2Fb', "https://app/c\u{200B}b", "https://app/c\u{3001}b",
         ] as $value) {
             yield $value => [$value];
         }
@@ -104,15 +106,19 @@ final class AuthorizationRedirectUriTest extends TestCase
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::auth()->createAuthorizationRequest($value)));
     }
 
-    /** R3 의 글자 전부를 하나씩 — U+0000-U+0020, U+007F-U+00A0, 그리고 아홉 개. 범위의 양 끝이 빠지지 않게. */
+    /**
+     * R3 의 글자 전부를 하나씩 — U+0000-U+0020, U+007F-U+00A0, java.net.URI 가 거부하는 유니코드 공백 구분자 열일곱,
+     * 그리고 아홉 개. 범위의 양 끝이 빠지지 않게.
+     */
     public function testEveryCharacterKeycloakRefusesIsRefused(): void
     {
         $chars = [];
-        foreach ([...range(0x00, 0x20), ...range(0x7F, 0xA0)] as $cp) {
-            $chars[] = $cp < 0x80 ? \chr($cp) : "\xC2" . \chr($cp);   // U+0080-U+00BF 의 UTF-8 은 C2 xx 다
+        $spaces = [0x1680, ...range(0x2000, 0x200A), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000];
+        foreach ([...range(0x00, 0x20), ...range(0x7F, 0xA0), ...$spaces] as $cp) {
+            $chars[] = self::utf8($cp);
         }
         $chars = [...$chars, '"', '<', '>', '\\', '^', '`', '{', '|', '}'];
-        self::assertCount(76, $chars);   // 빈 집합이면 아래 단언이 공허하게 통과한다
+        self::assertCount(93, $chars);   // 빈 집합이면 아래 단언이 공허하게 통과한다
         $missed = [];
         foreach ($chars as $ch) {
             if (self::refusal(fn () => self::auth()->createAuthorizationRequest("https://app/c{$ch}b")) !== self::NOT_VALID) {
@@ -182,6 +188,16 @@ final class AuthorizationRedirectUriTest extends TestCase
     {
         self::assertNull(self::config(null)->redirectUri);
         self::assertSame('HTTP://LOCALHOST/c%20b', self::config('HTTP://LOCALHOST/c%20b')->redirectUri);
+    }
+
+    /** BMP 코드 포인트 하나의 UTF-8 — 확장(mbstring·intl)에 기대지 않는다. */
+    private static function utf8(int $cp): string
+    {
+        return match (true) {
+            $cp < 0x80 => \chr($cp),
+            $cp < 0x800 => \chr(0xC0 | $cp >> 6) . \chr(0x80 | $cp & 0x3F),
+            default => \chr(0xE0 | $cp >> 12) . \chr(0x80 | $cp >> 6 & 0x3F) . \chr(0x80 | $cp & 0x3F),
+        };
     }
 
     /** 던져진 KeycloakConfigError 의 메시지, 던지지 않았으면 null. */
