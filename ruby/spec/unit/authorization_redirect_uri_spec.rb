@@ -67,8 +67,8 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
     URI.decode_www_form(URI(url).query).filter_map { |k, v| v if k == "redirect_uri" }
   end
 
-  # `cb#f` · `cb\xFF` 는 순서의 증명이다 — R1 이 R2·R3 보다 앞이다.
-  [*["", "cb", "/cb", "//app/cb", "not a url", "cb#f", "cb\xFF"].map { |v| [v.inspect, v] },
+  # `cb#f` · `cb\xFF` · `1x:` 는 순서의 증명이다 — R1 이 R2·R3·R4 보다 앞이다(`1x:` 는 R4 도 거부한다).
+  [*["", "cb", "/cb", "//app/cb", "not a url", "cb#f", "cb\xFF", "1x:"].map { |v| [v.inspect, v] },
    ["a UTF-16 String", "https://app/cb".encode("UTF-16LE")]].each do |what, value|
     it "refuses #{what} as not an absolute URI" do
       expect(refusal(value)).to eq(not_absolute)
@@ -105,18 +105,25 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
     end
   end
 
-  # `https://app/c b#f` · `https://app/c\xFF#f` 는 순서의 증명이다 — R2 가 R3 보다 앞이다.
-  ["https://app/cb#", "https://app/cb#f", "https://app/c b#f", "https://app/c\xFF#f"].each do |value|
+  # `https://app/c b#f` · `https://app/c\xFF#f` · `https://app/c[b#f` 는 순서의 증명이다 — R2 가 R3·R4 보다 앞이다.
+  ["https://app/cb#", "https://app/cb#f", "https://app/c b#f", "https://app/c\xFF#f",
+   "https://app/c[b#f"].each do |value|
     it "refuses #{value.inspect} for its fragment" do
       expect(refusal(value)).to eq(fragment)
     end
   end
 
+  # R4 — R1–R3 를 지나도 `java.net.URI.create` 가 던지는 값(JDK 21.0.8 실측): scheme 의 `:` 뒤가 비었다(R4a), 또는
+  # `:` 뒤가 `/` 인 값의 `?` 앞에서 `[`·`]` 가 authority 의 괄호 호스트 하나 밖에 있다(R4b). 문구는 R3 와 같아 R3·R4 를
+  # 함께 어기는 값(`https://app/c b[` · `https://app/c[\xFFb` · `myapp:/c[\xFF`)은 글만 잰다 — 깨진 UTF-8 은 R3 가 먼저
+  # 받으므로 R4 의 정규식이 그 문자열에서 던지지 않는다.
   [*["https://app/c b", "https://app/cb\n", "https://app/c\\b", "https://app/c%zz", "https://app/c\u{A0}b",
      "https://app/c%2", "https://app/c%", "https://app/c%g0", "https://app/c\xFFb", "https://app/c\u{3000}b",
-     "https://app/c\u{2028}b"].map { |v| [v.inspect, v] },
+     "https://app/c\u{2028}b", "https://app/c b[", "https://app/c[\xFFb", "myapp:/c[\xFF"].map { |v| [v.inspect, v] },
    ["a binary String whose bytes are not UTF-8", "https://app/c\xFFb".b],
-   ["an ISO-8859-1 String (its bytes are not UTF-8)", "https://app/c\xFCb".dup.force_encoding("ISO-8859-1")]]
+   ["an ISO-8859-1 String (its bytes are not UTF-8)", "https://app/c\xFCb".dup.force_encoding("ISO-8859-1")],
+   *["https:", "myapp:", "https://app/c[b", "https://app/c]b", "myapp:/c[b", "https://[::1]/c[b", "https://app[1]/cb",
+     "https://[::1]]/cb"].map { |v| ["#{v.inspect} (R4)", v] }]
     .each do |what, value|
     it "refuses #{what} as a URI Keycloak cannot parse" do
       expect(refusal(value)).to eq(not_valid)
@@ -145,7 +152,8 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
   ["https://app/cb", "https://app/cb?x=1", "myapp:/cb", "com.example.app:/oauth2redirect", "HTTP://LOCALHOST/cb",
    "https://app/c%20b", "https://app/c\u{FC}b", "https://app/cb?x=[1]", "https://app/c'b", "https://app/c+*!b",
    "https://app/c~b", "https://app/c\u{A1}b", "https://app/c%2Fb", "https://app/c\u{200B}b",
-   "https://app/c\u{3001}b"].each do |value|
+   "https://app/c\u{3001}b", "https://[::1]/cb", "https://[::1]:8443/cb", "https://u@[::1]:8443/cb", "myapp:c[b",
+   "urn:x[y]", "https:/", "https://[::1]?x=[1]"].each do |value|
     it "carries #{value.inspect} exactly as given" do
       expect(sent_redirect_uri(value)).to eq([value])
     end
