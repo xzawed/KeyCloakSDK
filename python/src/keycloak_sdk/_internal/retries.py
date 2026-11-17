@@ -20,8 +20,9 @@ Keycloak 의 PUT 에는 액션이 있고(`send-verify-email`), 다시 보내면 
 요청의 응답이며, GET 도 `Retry-After` 만큼 잠든다 — JWKS 면 `_jwks_lock` 을 쥔 채라 그동안 모든
 검증이 기다리고, 강제 재조회 창 하나가 IdP 요청 둘이 된다. 다시 보내도 되는지는 소비자만 안다.
 
-**어디에 거는가.** auth 레인은 생성 때 한 번(`forbid_retries` — `harden_openid`·`cap_openid` 와 같은
-자리). admin 레인은 `admin_guard.py` 가 요청마다 두 세션(REST·그랜트)의 어댑터를 다시 본다 —
+**어디에 거는가.** auth 레인은 생성 때와, 공개 세터로 끼우는 연결이 끼워지기
+전(`forbid_retries` — `harden_openid`·`cap_openid` 와 같은 자리, `openid_watch.py`). admin 레인은
+`admin_guard.py` 가 요청마다 두 세션(REST·그랜트)의 어댑터를 다시 본다 —
 `raw.connection` 을 갈아 끼우거나 어댑터를 새로 `mount` 해도 다음 요청 전에 잡힌다. `max_retries`
 가 없는 어댑터(requests `HTTPAdapter` 가 아닌, 소비자가 직접 건 전송)는 건드리지 않는다 — 그
 재시도는 이 SDK 가 볼 수 없고, 막으면 목 어댑터로 시험하는 소비자가 깨진다.
@@ -34,6 +35,7 @@ from typing import Any
 from urllib3.util.retry import Retry
 
 from ..exceptions import KeycloakConfigError
+from .openid_watch import watch
 
 #: requests 가 새 `HTTPAdapter` 에 주는 정책 — 어떤 요청도 다시 보내지 않는다(연결 수립 실패도).
 NO_RETRY = Retry(0, read=False)
@@ -64,9 +66,14 @@ def retrying_adapters(session: Any, where: str) -> list[tuple[str, Any]]:
         raise _unsupported(f"{where}.adapters") from exc
 
 
-def forbid_retries(openid: Any) -> None:
-    """auth 레인의 `KeycloakOpenID` — sync 세션의 어댑터에서 재시도를 끈다(생성 때 한 번).
-
-    `connection._s` 의 존재는 먼저 부르는 `harden_openid` 가 강제한다."""
-    for _prefix, adapter in retrying_adapters(openid.connection._s, "connection._s"):
+def _forbid_connection_retries(conn: Any) -> None:
+    # 세션이 없으면 어댑터 표를 읽지 못한 것과 같은 거부다(`retrying_adapters`).
+    for _prefix, adapter in retrying_adapters(getattr(conn, "_s", None), "connection._s"):
         adapter.max_retries = NO_RETRY
+
+
+def forbid_retries(openid: Any) -> None:
+    """auth 레인의 `KeycloakOpenID` — sync 세션의 어댑터에서 재시도를 끈다(생성 때, 그리고 공개
+    세터로 나중에 끼우는 연결도 끼우기 전에 — `openid_watch.py`)."""
+    _forbid_connection_retries(openid.connection)
+    watch(openid, _forbid_connection_retries, "auth back-channel")

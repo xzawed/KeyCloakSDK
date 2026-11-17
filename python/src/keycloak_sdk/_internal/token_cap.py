@@ -63,6 +63,7 @@ import requests
 
 from ..exceptions import KeycloakConfigError
 from .deadline import reader, request_seconds, seconds, within
+from .openid_watch import watch
 from .wire import FRAMING_ALLOWANCE_BYTES, exchange
 
 #: 토큰·introspection 응답 본문의 상한 — 푼 뒤 바이트. Keycloak 26.6 이 기본 설정으로 받는
@@ -437,12 +438,16 @@ def _wrap_send(conn: Any, attr: str, wrap: Callable[[Any], Callable[..., Any]]) 
     session.send = capped
 
 
+def _cap_connection(conn: Any) -> None:
+    _wrap_send(conn, "_s", capped_send)
+    _wrap_send(conn, "async_s", acapped_send)
+
+
 def cap_openid(openid: Any) -> None:
-    """auth 레인의 `KeycloakOpenID` — 두 세션의 `send` 를 감싼다(생성 때 한 번,
-    `harden_openid` 처럼).
+    """auth 레인의 `KeycloakOpenID` — 두 세션의 `send` 를 감싼다(생성 때, `harden_openid` 처럼 —
+    공개 세터로 나중에 끼우는 연결도 끼우기 전에, `openid_watch.py`).
 
     sync 는 `connection._s`(requests), aio 는 `connection.async_s`(httpx)로 나가지만 두 미러가
     두 세션을 다 가진다 — 쓰지 않는 쪽도 감싼다(`harden_openid` 와 같은 심층방어)."""
-    conn = openid.connection
-    _wrap_send(conn, "_s", capped_send)
-    _wrap_send(conn, "async_s", acapped_send)
+    _cap_connection(openid.connection)
+    watch(openid, _cap_connection, "auth back-channel")

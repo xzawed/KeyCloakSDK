@@ -12,7 +12,7 @@ from typing import TypeVar
 
 from ..._internal.admin_body import Answer, facade, no_body
 from ..._internal.lower import is_lower_failure, summarize
-from ...admin._translate import admin_failure, refused_grant, refused_guard
+from ...admin._translate import admin_failure, refused_grant, refused_guard, refused_send
 from ...exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
@@ -35,10 +35,10 @@ async def acall(awaitable: Awaitable[T]) -> T:
     """`awaitable`을 await하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
     python-keycloak 의 실패가 아닌 예외는 그대로 전파한다(변환 대상이 아님). admin 하드닝의 거부는
-    sync `call` 과 같이 새로 만든다(`refused_grant`·`refused_guard`). 리소스 파사드는
-    `await acall(self._admin.a_...(...))` 형태로 이 함수를 사용한다. sync `call` 과 같이 파사드
-    호출임을 표시하고(`facade` — 그 요청의 3xx 는 결과가 아니다) 받은 마지막 응답을 `answer` 에
-    둔다(`admin_failure` 가 읽는다).
+    sync `call` 과 같이 새로 만든다(`refused_grant`·`refused_send`·`refused_guard`). 리소스
+    파사드는 `await acall(self._admin.a_...(...))` 형태로 이 함수를 사용한다. sync `call` 과 같이
+    파사드 호출임을 표시하고(`facade` — 그 요청의 3xx 는 결과가 아니다) 받은 마지막 응답을
+    `answer` 에 둔다(`admin_failure` 가 읽는다).
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
@@ -53,5 +53,9 @@ async def acall(awaitable: Awaitable[T]) -> T:
     except Exception as e:
         if not is_lower_failure(e):
             raise
-        error, cause = admin_failure(e, answer), summarize(e)
+        refused = refused_send(e)
+        if refused is not None:
+            error, cause = refused, None
+        else:
+            error, cause = admin_failure(e, answer), summarize(e)
     raise error from cause
