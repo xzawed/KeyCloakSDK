@@ -247,4 +247,95 @@ _l='FAIL expected SyntaxError: text in docs'
 assert_eq "0" "$(line_code "$_l")" "줄 중간의 SyntaxError 는 표식이 아니다 — CAUGHT(0)"
 _l='FAIL note: [build failed] appears mid-line'
 assert_eq "0" "$(line_code "$_l")" "줄 중간의 [build failed] 는 표식이 아니다(줄 끝 앵커) — CAUGHT(0)"
+
+# ── 의존 준비(--deps) ──────────────────────────────────────────────────────
+# ⚠️ 워크트리는 **추적 파일만** 받는다. 실측(2026-11-17, 이 저장소의 SDK 에 상수 변이): node·php 검사는
+# node_modules · vendor 가 없어 기준선에서 죽었고(INVALID), 절대 경로 KCSDK_PY 의 python 은 venv 의 편집 설치
+# (`.pth` → **본 트리** src)를 적재해 시험이 잡는 변이를 **SILENT** 로 냈다 — 가장 비싼 거짓이다.
+# 샌드박스가 그 모양을 흉내 낸다: 의존 디렉터리는 무시되는 채로 본 트리에만 있고, 바깥 PYTHONPATH 가 본 트리
+# src 를 가리킨다(편집 설치의 `.pth` 와 같은 효과 — 워크트리 밖의 패키지가 import 경로에 있다).
+TOOLS="$(mktemp -d)"
+trap 'rm -rf "$SANDBOX" "$TOOLS"' EXIT
+(
+  cd "$SANDBOX"
+  printf 'node_modules/\nvendor/\n.venv/\n__pycache__/\n' > .gitignore
+  mkdir -p node php python/src/keycloak_sdk
+  echo '{}' > node/package.json
+  echo '{}' > php/composer.json
+  printf 'X = 1\n' > python/src/keycloak_sdk/__init__.py
+  git add -A
+  git -c user.email=t@t -c user.name=t commit -qm deps
+) >/dev/null 2>&1
+deps_run() {  # 종료코드 + 판정·INVALID 줄(메시지 대조용)
+  set +e
+  _o="$( cd "$SANDBOX" && sh scripts/probe.sh "$@" 2>&1 </dev/null )"
+  _c=$?
+  set -e
+  printf '%s %s' "$_c" "$(printf '%s\n' "$_o" | grep -E '^(CAUGHT|SILENT) —|^INVALID: |^usage: ' | head -1)"
+}
+deps_code() { _r="$(deps_run "$@")"; printf '%s' "${_r%% *}"; }
+_mut='sed -i s/hello/bye/ f.txt'
+
+# 본 트리에 없는 의존은 준비할 수 없다 — 조용히 빈 채로 가지 않는다.
+assert_contains "$(deps_run --no-site --deps node "$_mut" grep -q hello f.txt)" "2 INVALID: --deps node: 본 트리에 node/node_modules" \
+  "--deps node 인데 본 트리에 node_modules 가 없으면 INVALID(2) 와 그 이유"
+mkdir -p "$SANDBOX/node/node_modules" "$SANDBOX/php/vendor"
+echo orig > "$SANDBOX/node/node_modules/marker"
+echo orig > "$SANDBOX/php/vendor/marker"
+assert_eq "" "$(cd "$SANDBOX" && git status --porcelain)" "무시되는 의존 디렉터리는 트리를 더럽히지 않는다(전제)"
+
+# 대조군 — 의존을 안 고르면 기준선이 죽는다(오늘의 동작). 이것이 없으면 아래 CAUGHT 은 「늘 0」과 구분되지 않는다.
+_need_node='test -f node/node_modules/marker && grep -q hello f.txt'
+assert_eq "2" "$(deps_code --no-site "$_mut" sh -c "$_need_node")" \
+  "의존을 안 고르면 워크트리에 node_modules 가 없어 기준선이 INVALID(2)"
+assert_eq "0" "$(deps_code --no-site --deps node "$_mut" sh -c "$_need_node")" \
+  "--deps node 는 node_modules 를 워크트리에 준비한다 — 판정까지 간다(CAUGHT 0)"
+assert_eq "0" "$(deps_code --no-site --deps node,php "$_mut" sh -c 'test -f node/node_modules/marker && test -f php/vendor/marker && grep -q hello f.txt')" \
+  "쉼표로 둘을 고른다"
+
+# ⚠️ **복사지 링크가 아니다.** 정션이면 `git worktree remove --force` 가 본 트리의 내용까지 지웠고(실측 2026-09-10),
+# composer 는 정션을 따라 본 트리 src 를 적재해 php 변이가 거짓 SILENT 였다(2026-09-09). 워크트리 쪽에 쓴 것이
+# 본 트리에 비치면 링크다.
+assert_eq "0" "$(deps_code --no-site --deps php "$_mut" sh -c 'echo changed > php/vendor/marker && grep -q hello f.txt')" \
+  "--deps php 의 검사가 워크트리의 vendor 에 쓴다(CAUGHT 0)"
+assert_eq "orig" "$(cat "$SANDBOX/php/vendor/marker" 2>&1)" \
+  "워크트리의 vendor 에 쓴 것이 본 트리에 비치지 않는다 — 복사다(링크면 본 트리가 바뀌거나 지워진다)"
+assert_eq "orig" "$(cat "$SANDBOX/node/node_modules/marker" 2>&1)" "워크트리 정리 뒤에도 본 트리의 node_modules 가 그대로다"
+
+# 모르는 언어는 사용법 오류다(조용히 무시하면 「준비했다」로 읽힌다). 코드만 보면 공허하다 — 다른 길로도 2 가 난다.
+assert_contains "$(deps_run --no-site --deps rust "$_mut" grep -q hello f.txt)" "2 usage: --deps 는 node · php · python 만" \
+  "--deps 가 모르는 언어면 사용법 오류로 거부한다(2)"
+
+# python — 실제 해석기로 잰다(CI 러너와 이 PC 둘 다 있다 — 없으면 이 축은 공허하므로 실패로 둔다).
+PY=''
+for _c in python3 python; do
+  if command -v "$_c" >/dev/null 2>&1 && "$_c" -c 'import sys' >/dev/null 2>&1; then PY="$(command -v "$_c")"; break; fi
+done
+assert_ok test -n "$PY"
+_pymut='sed -i "s/X = 1/X = 2/" python/src/keycloak_sdk/__init__.py'
+_pychk='"$KCSDK_PY" -c "import sys, keycloak_sdk; sys.exit(0 if keycloak_sdk.X == 1 else 1)"'
+_mainsrc="$SANDBOX/python/src"
+# 바깥 PYTHONPATH = 본 트리 src — 편집 설치가 만드는 상황이다. 의존을 안 고르면 검사는 본 트리를 읽어 통과한다.
+assert_contains "$(PYTHONPATH="$_mainsrc" KCSDK_PY="$PY" deps_run --assume-relevant --site 'X = 2' "$_pymut" sh -c "$_pychk")" \
+  "2 INVALID: python 소스 변이가 통과했지만 --deps python 없이" \
+  "python src 변이의 통과는 --deps python 없이 SILENT 로 판정하지 않는다(INVALID 2) — 본 트리를 읽었을 수 있다"
+_caught='0 CAUGHT — 검사 명령이 변이를 잡았다.'
+assert_eq "$_caught" "$(PYTHONPATH="$_mainsrc" KCSDK_PY="$PY" deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut" sh -c "$_pychk")" \
+  "--deps python 은 워크트리의 src 를 앞세운다 — 같은 변이가 CAUGHT(0)"
+# 착지 — 해석기가 워크트리 대신 본 트리의 패키지를 적재하면 판정 전에 거부한다. 그것이 없으면 이 경우는 거짓 SILENT 다
+# (기준선은 본 트리로 통과하고, 변이는 안 읽히고, --deps python 이라 위 거부도 안 걸린다).
+printf '#!/bin/sh\nPYTHONPATH="%s" exec "%s" "$@"\n' "$_mainsrc" "$PY" > "$TOOLS/py-main"
+chmod +x "$TOOLS/py-main"
+assert_contains "$(KCSDK_PY="$TOOLS/py-main" deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut" sh -c "$_pychk")" \
+  "2 INVALID: --deps python: " \
+  "--deps python 의 해석기가 본 트리 패키지를 적재하면 INVALID(2) — 판정하지 않는다"
+# 해석기를 안 주면 본 트리의 python/.venv 를 쓰고, 그것도 없으면 거부한다.
+assert_contains "$(KCSDK_PY='' deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut" sh -c "$_pychk")" \
+  "2 INVALID: --deps python: 해석기가 없다" \
+  "KCSDK_PY 도 python/.venv 도 없으면 INVALID(2)"
+mkdir -p "$SANDBOX/python/.venv/bin"
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$PY" > "$SANDBOX/python/.venv/bin/python"
+chmod +x "$SANDBOX/python/.venv/bin/python"
+assert_eq "$_caught" "$(KCSDK_PY='' deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut" sh -c "$_pychk")" \
+  "KCSDK_PY 가 없으면 본 트리의 python/.venv 해석기로 잰다(CAUGHT 0)"
 assert_report

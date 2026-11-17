@@ -50,7 +50,7 @@ PATH="${KCSDK_TOOLS:-$HOME/tools}/apache-maven-3.9.9/bin:$PATH" mvn -f java/pom.
 ```
 
 - Full build and verification: `mvn -f java/pom.xml verify` (includes the coverage gate 90/85 and the integration tests; needs Docker)
-- Unit only: `mvn -f java/pom.xml test -DskipITs=true` · a single test: `-pl <module> -am -Dtest=<Class>#<method> -Dsurefire.failIfNoSpecifiedTests=false` (⚠️ **both extra flags are load-bearing** — `-pl` alone cannot resolve the sibling `1.0.0-SNAPSHOT`s, and `-am` alone dies on "no tests matching pattern" in the modules it pulled in)
+- Unit only: `mvn -f java/pom.xml test -DskipITs=true` · a single test: `-pl <module> -am -Dtest=<Class>#<method> -Dsurefire.failIfNoSpecifiedTests=false` (⚠️ **both extra flags are load-bearing** — `-pl` alone takes sibling `1.0.0-SNAPSHOT`s from `~/.m2` (absent: fails · **stale**: used silently), and `-am` alone dies on "no tests matching pattern" in the modules it pulled in)
 - Checking the release artifacts locally: `mvn -f java/pom.xml -Prelease -DskipTests -DskipITs=true -Dgpg.skip=true package`
 - The real release goes `v*` tag → `release.yml` (human approval gate).
 - ⚠️ **Do not write the exact patch versions here** — measure them with `java -version` and `node scripts/doctor.mjs java`.

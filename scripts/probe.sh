@@ -22,6 +22,7 @@
 # 사용:
 #   scripts/probe.sh --site '<의도한 자리 패턴>' '<변이 명령>' <검사 명령...>
 #   scripts/probe.sh --no-site                  '<변이 명령>' <검사 명령...>
+#   --deps node,php,python  워크트리에 없는 의존을 준비한다 — 그 언어의 검사면 필수다(아래 (2b)).
 # 예:
 #   scripts/probe.sh --site "SD_LANGS='java" "sed -i ... " sh scripts/test/test-deploy-facts.sh
 #
@@ -41,13 +42,22 @@ set -eu
 SITE=''
 SITE_MODE=''
 RELEVANCE_MODE=''
+DEPS=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --site)    [ "$#" -ge 2 ] || { echo "usage: --site 에 패턴이 없다" >&2; exit 2; }
                SITE="$2"; SITE_MODE=declared; shift 2 ;;
     --no-site) SITE_MODE=waived; shift ;;
     --assume-relevant) RELEVANCE_MODE=waived; shift ;;
+    --deps)    [ "$#" -ge 2 ] || { echo "usage: --deps 에 언어가 없다" >&2; exit 2; }
+               DEPS="$DEPS $(printf '%s' "$2" | tr ',' ' ')"; shift 2 ;;
     *)         break ;;
+  esac
+done
+for _d in $DEPS; do
+  case "$_d" in
+    node|php|python) ;;
+    *) echo "usage: --deps 는 node · php · python 만 준비한다: [$_d]" >&2; exit 2 ;;
   esac
 done
 
@@ -86,9 +96,44 @@ trap cleanup EXIT INT TERM
 rm -rf "$WT"
 git worktree add --detach "$WT" HEAD >/dev/null 2>&1 || fail_invalid "워크트리를 만들지 못했다."
 
+# (2b) 의존 — 워크트리는 **추적 파일만** 받는다. 실측(2026-11-17, SDK 상수 변이): node·php 검사는 node_modules ·
+# vendor 가 없어 기준선에서 죽었고(INVALID), 절대 경로 KCSDK_PY 의 python 은 venv 의 편집 설치(`.pth` → **본 트리**
+# src)를 적재해 시험이 잡는 변이를 **SILENT** 로 냈다. 고른 언어만 준비한다(복사는 node_modules 15 초 · vendor 8 초).
+for _d in $DEPS; do
+  case "$_d" in
+    node|php)
+      _dep=node/node_modules
+      [ "$_d" = php ] && _dep=php/vendor
+      [ -d "$ROOT/$_dep" ] || fail_invalid "--deps $_d: 본 트리에 $_dep 가 없다 — 먼저 설치하라(.claude/rules/$_d.md)."
+      # ⚠️ **복사한다 — 정션·링크는 안 된다.** `git worktree remove --force` 가 정션 대상(본 트리)의 내용까지 지웠고
+      # (실측 2026-09-10), composer 는 정션을 따라 본 트리 src 를 적재해 php 변이 셋이 거짓 SILENT 였다(2026-09-09).
+      cp -R "$ROOT/$_dep" "$WT/$_dep" 2>/dev/null || fail_invalid "--deps $_d: $_dep 를 워크트리로 복사하지 못했다." ;;
+    python)
+      # 편집 설치의 `.pth` 는 sys.path 끝에 본 트리 src 를 붙인다 — PYTHONPATH 가 그보다 앞선다. 바깥 값은 덮는다
+      # (그것이 본 트리를 가리킬 수 있다).
+      PYTHONPATH="$WT/python/src"
+      export PYTHONPATH
+      if [ -z "${KCSDK_PY:-}" ]; then
+        for _py in "$ROOT/python/.venv/Scripts/python.exe" "$ROOT/python/.venv/bin/python"; do
+          if [ -x "$_py" ]; then KCSDK_PY="$_py"; break; fi
+        done
+      fi
+      [ -n "${KCSDK_PY:-}" ] || fail_invalid "--deps python: 해석기가 없다 — KCSDK_PY 를 주거나 python/.venv 를 만든다(.claude/rules/python.md)."
+      export KCSDK_PY
+      # 착지 — 그 해석기가 **워크트리의** 패키지를 적재하는가. ⚠️ 검사가 다른 해석기나 `-I`·`-E`(환경 무시)를 쓰면
+      # 이 확인 밖이다 — 검사는 `"$KCSDK_PY"` 로 부른다.
+      ( cd "$WT/python" && "$KCSDK_PY" -c 'import os, sys, keycloak_sdk; sys.exit(0 if os.path.samefile(keycloak_sdk.__file__, sys.argv[1]) else 3)' \
+          "$WT/python/src/keycloak_sdk/__init__.py" ) >/dev/null 2>&1 \
+        || fail_invalid "--deps python: $KCSDK_PY 가 워크트리의 keycloak_sdk 를 적재하지 않는다 — 본 트리를 읽는 채로 재면 잡히는 변이가 SILENT 로 나온다." ;;
+  esac
+done
+
 # (3) 기준선 — 변이 전에 검사 명령이 통과해야 한다.
 if ! ( cd "$WT" && "$@" ) >/dev/null 2>&1; then
-  fail_invalid "기준선이 이미 실패한다. 이 상태에서 '잡았다'는 변이 때문인지 알 수 없다."
+  _hint=''
+  [ -n "$DEPS" ] || _hint="
+  (워크트리에는 node_modules · vendor · .venv 가 없다 — node·php·python 검사면 --deps <언어>.)"
+  fail_invalid "기준선이 이미 실패한다. 이 상태에서 '잡았다'는 변이 때문인지 알 수 없다.$_hint"
 fi
 
 # (4) 변이가 실제로 트리를 바꿨는지 본다 — 안 바꿨으면 「침묵」이 아니라 무효다.
@@ -206,6 +251,15 @@ if [ "$_rc" = 0 ]; then
   이것을 SILENT 로 읽으면 **없는 구멍**을 보고하게 된다(실측 2026-09-15).
   경로가 런타임에 조립되면(변수로 만든 파일명 류) --assume-relevant 로 명시적으로 면제하라."
   fi
+  # ⚠️ python 소스 변이의 통과는 `--deps python` 아래에서만 판정한다 — 그 밖에서는 해석기가 본 트리 src 를 적재했을
+  # 수 있다((2b)의 실측: 절대 경로 KCSDK_PY 로 잡히는 변이가 SILENT 였다).
+  case " $DEPS " in
+    *" python "*) ;;
+    *) if printf '%s\n' "$CHANGED" | grep -q '^python/src/'; then
+         fail_invalid "python 소스 변이가 통과했지만 --deps python 없이 쟀다 — venv 의 편집 설치는 본 트리 src 를 적재한다.
+  이 상태의 SILENT 는 거짓일 수 있다 — --deps python 으로 다시 잰다."
+       fi ;;
+  esac
   echo "SILENT — 변이가 적용됐는데 검사 명령이 통과했다(진짜 구멍)."
   exit 1
 fi
