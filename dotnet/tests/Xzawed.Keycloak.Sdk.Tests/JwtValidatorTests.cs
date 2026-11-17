@@ -217,9 +217,10 @@ public class JwtValidatorTests
     }
 
     // ── The id_token path (ValidateForAudienceAsync — AuthClient.ValidateIdTokenAsync and the code exchange): not the
-    // access path's token-type deny-list — an id_token is typed "ID" — but, after every other check, the authorized party
-    // (OIDC Core §3.1.3.7 steps 4–5: several audiences need an azp, and an azp must be the client id) and then the kind,
-    // an allow-list: typ must be exactly "ID" (AuthClientTests.ValidateIdTokenAsync_*). The tokens below are typed "ID". ──
+    // access path's token-type deny-list — an id_token is typed "ID" — but, after every other check, the kind, an
+    // allow-list: typ must be exactly "ID" (AuthClientTests.ValidateIdTokenAsync_*), and then the authorized party (OIDC
+    // Core §3.1.3.7 steps 4–5: several audiences need an azp, and an azp must be the client id). The tokens below are
+    // typed "ID", so they reach the azp rule. ──
 
     [Fact]
     public async Task Id_token_path_accepts_a_token_typed_ID()

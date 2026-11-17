@@ -115,8 +115,8 @@ public sealed class AuthClient : ITokenSource
         // ValidateIdTokenAsync — the one id_token check, public too (signature/alg pin/iss/exp on the hardened
         // validator's one ConfigurationManager — the same JWKS cache, refresh gate and backoff as ValidateAsync —
         // but aud against ClientId, never KeycloakConfig.ExpectedAudience: an id_token's aud MUST contain the
-        // client_id (OIDC Core §2, §3.1.3.7), and ExpectedAudience restricts access tokens only; azp against
-        // ClientId too, and typ exactly "ID" instead of the access-token typ deny-list)
+        // client_id (OIDC Core §2, §3.1.3.7), and ExpectedAudience restricts access tokens only; typ exactly "ID"
+        // instead of the access-token typ deny-list, and then azp against ClientId too)
         // and then check the nonce claim. Fails CLOSED when a nonce was supplied
         // (CreateAuthorizationRequest always issues one), matching the Node posture —
         // a missing id_token must throw, NOT silently skip validation (an attacker could otherwise strip
@@ -249,9 +249,9 @@ public sealed class AuthClient : ITokenSource
     /// the nonce: the signature against the key store <see cref="ValidateAsync"/> uses (one JWKS cache, refetch gate and
     /// backoff), the algorithm pin (an HS algorithm is refused), the length cap, the exact issuer, an <c>aud</c> that contains
     /// <see cref="KeycloakConfig.ClientId"/> — not <see cref="KeycloakConfig.ExpectedAudience"/>, which holds access tokens
-    /// only — a required <c>exp</c> within the clock skew, the authorized party (OIDC Core §3.1.3.7 steps 4–5: several
-    /// audiences need an <c>azp</c>, and an <c>azp</c> must be the client id), and a payload <c>typ</c> of exactly
-    /// <c>ID</c>. The nonce is not compared — that stays in the exchange; the claims returned carry it.</summary>
+    /// only — a required <c>exp</c> within the clock skew, a payload <c>typ</c> of exactly <c>ID</c>, and then the authorized
+    /// party (OIDC Core §3.1.3.7 steps 4–5: several audiences need an <c>azp</c>, and an <c>azp</c> must be the client id).
+    /// The nonce is not compared — that stays in the exchange; the claims returned carry it.</summary>
     /// <param name="idToken">The compact JWT.</param>
     /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/> — see
     /// <see cref="JwtValidator.ValidateAsync(string, CancellationToken)"/>.</param>

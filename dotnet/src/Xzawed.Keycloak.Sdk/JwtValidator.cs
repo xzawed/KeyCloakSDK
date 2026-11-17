@@ -146,13 +146,13 @@ public sealed class JwtValidator
     /// <paramref name="audience"/> instead of the configured one, and the token type. The id_token path — its public entry is
     /// <c>AuthClient.ValidateIdTokenAsync</c>, which the code exchange calls too: an id_token's <c>aud</c> MUST contain the
     /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to. In place of the access path's
-    /// token-type deny-list it checks the authorized party (<see cref="RequireAuthorizedParty"/>) and then the kind: the
-    /// payload <c>typ</c> must be exactly <c>ID</c> (<see cref="RequireIdToken"/>).</summary>
+    /// token-type deny-list it checks the kind — the payload <c>typ</c> must be exactly <c>ID</c>
+    /// (<see cref="RequireIdToken"/>) — and then the authorized party (<see cref="RequireAuthorizedParty"/>).</summary>
     internal Task<ValidatedToken> ValidateForAudienceAsync(string token, string audience, CancellationToken ct = default)
         => ValidateCoreAsync(token, ParametersForAudience(audience), jwt =>
         {
-            RequireAuthorizedParty(jwt, audience);
             RequireIdToken(jwt);
+            RequireAuthorizedParty(jwt, audience);
         }, ct);
 
     /// <summary>The access path's last check: the payload <c>typ</c>, when it is a string, must not be one of
@@ -183,12 +183,12 @@ public sealed class JwtValidator
         }
     }
 
-    /// <summary>The id_token path's last check, after <see cref="RequireAuthorizedParty"/> — an allow-list: the payload
-    /// <c>typ</c> must be exactly the string <c>ID</c> (ordinal). Keycloak types every id_token so; an access token
-    /// (<c>Bearer</c> — <c>bearer</c> under a client option) can name the client in both <c>aud</c> and <c>azp</c> and pass
-    /// every other check here, which a deny-list of <c>Bearer</c> would miss in lower case. Absent, not a JSON string, or any
-    /// other string is refused. The message is constant: the <c>typ</c> is the token's choice and is not echoed (nor is
-    /// <c>azp</c>).</summary>
+    /// <summary>The id_token path's first own check, before <see cref="RequireAuthorizedParty"/> — being an id_token is the
+    /// azp rule's premise, so a token that breaks both rules gets this message — and an allow-list: the payload <c>typ</c>
+    /// must be exactly the string <c>ID</c> (ordinal). Keycloak types every id_token so; an access token (<c>Bearer</c> —
+    /// <c>bearer</c> under a client option) can name the client in both <c>aud</c> and <c>azp</c> and pass every other check
+    /// here, which a deny-list of <c>Bearer</c> would miss in lower case. Absent, not a JSON string, or any other string is
+    /// refused. The message is constant: the <c>typ</c> is the token's choice and is not echoed (nor is <c>azp</c>).</summary>
     private static void RequireIdToken(JsonWebToken jwt)
     {
         // The payload claim — JsonWebToken.Typ is the JOSE header's. Only a JSON string can match: a number, an array (even
@@ -219,7 +219,7 @@ public sealed class JwtValidator
     /// <param name="token">The compact JWT.</param>
     /// <param name="tvp">The parameters of the path — access or id_token.</param>
     /// <param name="lastCheck">The path's own checks, run once every shared one has passed (<see cref="RequireAccessToken"/>,
-    /// or <see cref="RequireAuthorizedParty"/> then <see cref="RequireIdToken"/>).</param>
+    /// or <see cref="RequireIdToken"/> then <see cref="RequireAuthorizedParty"/>).</param>
     /// <param name="ct">See <see cref="ValidateAsync"/>.</param>
     private static async Task<ValidatedToken> ValidateCoreAsync(
         string token, TokenValidationParameters tvp, Action<JsonWebToken> lastCheck, CancellationToken ct)

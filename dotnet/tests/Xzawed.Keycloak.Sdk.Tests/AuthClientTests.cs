@@ -472,9 +472,9 @@ public class AuthClientTests : IDisposable
     }
 
     // ── Token type and authorized party. ValidateAsync refuses a token typed as another kind than an access token
-    // (JwtValidatorTests); the exchange validates an id_token, which Keycloak types "ID", so it does not — it holds the
-    // id_token's azp to the client id instead (OIDC Core §3.1.3.7 steps 4–5), and then requires typ to be exactly "ID"
-    // (ExchangeCode_refuses_an_id_token_that_is_not_typed_ID, below). ──
+    // (JwtValidatorTests); the exchange validates an id_token, which Keycloak types "ID", so it does not — it requires typ
+    // to be exactly "ID" instead (ExchangeCode_refuses_an_id_token_that_is_not_typed_ID, below) and then holds the
+    // id_token's azp to the client id (OIDC Core §3.1.3.7 steps 4–5). ──
 
     private static string IssuerOf(KeycloakConfig cfg) => OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
 
@@ -754,6 +754,20 @@ public class AuthClientTests : IDisposable
             extra: ",\"typ\":\"Logout\",\"sid\":\"s-1\",\"events\":{\"http://schemas.openid.net/event/backchannel-logout\":{}}"), key);
 
         var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(logoutToken));
+        Assert.Equal(NotAnIdToken, refused.Message);
+    }
+
+    /// <summary>The kind comes before the authorized party — being an id_token is the azp rule's premise (the nine languages
+    /// check in this order). A token that breaks both rules (typ "Bearer", two audiences, no azp) gets the kind's constant
+    /// message, not the azp one.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_checks_the_kind_before_the_authorized_party()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var token = SignClaims(Claims(IssuerOf(cfg), "[\"c\",\"other\"]", extra: ",\"typ\":\"Bearer\""), key);
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(token));
         Assert.Equal(NotAnIdToken, refused.Message);
     }
 
