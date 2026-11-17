@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Keycloak.AuthServices.Sdk.Admin.Models;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -35,6 +36,10 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// 경로로 비밀을 받으면 여기 없다. 그때는 그 경로를 뿌리에 더한다. (2) 외부(비 SDK) 객체는
 /// <see cref="ForeignHopBudget"/> 단계까지만 따라간다. 그 너머의 SDK <b>타입</b>은 대조가 「안 닿음」으로 잡지만,
 /// 이미 닿은 타입의 <b>두 번째 인스턴스</b>가 그 너머에만 있으면 렌더링되지 않는다.</para>
+/// <para>⚠️ SDK 타입이 선언한 비밀 이름 필드(<see cref="SecretWordsOf"/> · <see cref="SecretWords"/>)가 닿은 인스턴스마다 빈 값이면
+/// 실패한다 — 그 렌더링은 아무것도 증명하지 않는다(등록부 <c>facade-dump-reached-empty-secret-field</c>, 면제
+/// <see cref="EmptySecretExempt"/>). 남은 빈틈(구현하지 않는다): 비밀 이름 필드가 빈 값 아닌 자리표시자만 쥐는 것 · 평범한 이름의
+/// 필드에 든 비밀 · 인코딩된(base64 등) 비밀.</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class FacadeDumpTests
@@ -81,6 +86,21 @@ public sealed class FacadeDumpTests
     /// </summary>
     private static readonly Dictionary<string, string> KnownLeaks = new(StringComparer.Ordinal)
     {
+    };
+
+    /// <summary>
+    /// 비밀 이름 필드가 빈 값으로만 닿아도 되는 <c>"선언 타입 전체 이름.필드"</c> 와 그 이유(등록부
+    /// <c>facade-dump-reached-empty-secret-field</c>). ⚠️ 이유 없는 면제는 넣지 않는다. 더는 「닿았고 빈 값뿐」이 아니면(채워졌거나 ·
+    /// 안 닿거나 · 선언이 없어지면) 낡은 면제로 실패한다.
+    /// </summary>
+    private static readonly Dictionary<string, string> EmptySecretExempt = new(StringComparer.Ordinal)
+    {
+    };
+
+    /// <summary>비밀 낱말 — 낱말 단위로만 맞춘다(<c>keycloak</c> 은 <c>key</c> 가 아니다). 아홉 언어가 같은 집합이다.</summary>
+    private static readonly HashSet<string> SecretWords = new(StringComparer.Ordinal)
+    {
+        "secret", "password", "passwd", "passphrase", "token", "credential", "verifier", "private", "key", "bearer",
     };
 
     private readonly ITestOutputHelper _out;
@@ -159,7 +179,29 @@ public sealed class FacadeDumpTests
         }
         foreach (var name in Exempt.Keys.Where(n => declared.All(t => t.FullName != n)))
             problems.Add($"{name}: 면제 표에 있지만 선언이 없다 — 낡은 면제다");
+        // 비밀 이름 필드가 닿은 인스턴스마다 빈 값이면 그 렌더링은 아무것도 증명하지 않는다(등록부
+        // facade-dump-reached-empty-secret-field) — 같은 실패 메시지에 싣는다.
+        problems.AddRange(EmptySecretFields(walker.OwnFields));
+        _out.WriteLine($"비밀 이름 필드 {walker.OwnFields.Keys.Count(k => IsSecretNamed(k[(k.LastIndexOf('.') + 1)..]))} · " +
+                       $"빈 값뿐 면제 {EmptySecretExempt.Count}");
         Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    /// <summary>비밀 이름 판정의 경계 — 낱말 단위다(<c>keycloak</c> 은 <c>key</c> 가 아니다).</summary>
+    [Fact]
+    public void Secret_name_rule_matches_whole_words_only()
+    {
+        Assert.Equal(new[] { "id", "token" }, SecretWordsOf("IDToken"));
+        Assert.Equal(new[] { "client", "secret" }, SecretWordsOf("<ClientSecret>k__BackingField"));
+        Assert.Equal(new[] { "refresh", "token" }, SecretWordsOf("refreshToken$delegate"));
+        foreach (var yes in new[]
+                 {
+                     "clientSecret", "accessToken", "IDToken", "password", "passwd", "passphrase", "credentials", "codeVerifier",
+                     "privateKey", "keys", "bearer", "api_secret", "x-token", "a.token", "@token", "#token", "SECRETS",
+                 })
+            Assert.True(IsSecretNamed(yes), yes);
+        foreach (var no in new[] { "keycloak", "keycloakUrl", "monkey", "tokenizer", "secretary", "keystore", "scope", "expiresAt", "this$0" })
+            Assert.False(IsSecretNamed(no), no);
     }
 
     // ── 뿌리 ────────────────────────────────────────────────────────────────────────────────────
@@ -387,6 +429,84 @@ public sealed class FacadeDumpTests
     /// </summary>
     internal static bool HasNoInstances(Type t) => t.IsInterface || (t.IsAbstract && t.IsSealed);
 
+    // ── 빈 값으로만 닿은 비밀 이름 필드 ─────────────────────────────────────────────────────────────
+
+    /// <summary>필드 이름 → 낱말: camel·Pascal 경계(대문자 연속은 다음 대문자 낱말 앞에서 끝난다 — <c>IDToken</c> → id · token) ·
+    /// <c>_ - $ .</c> · 앞의 <c>@</c>·<c>#</c>. <c>&lt;X&gt;k__BackingField</c> → X · Kotlin <c>x$delegate</c> → x. 낱말마다 소문자로
+    /// 바꾸고 끝의 s 하나를 뗀다.</summary>
+    internal static List<string> SecretWordsOf(string field)
+    {
+        var n = field;
+        var backing = Regex.Match(n, "^<(.+)>k__BackingField\\z");
+        if (backing.Success)
+            n = backing.Groups[1].Value;
+        if (n.EndsWith("$delegate", StringComparison.Ordinal))
+            n = n[..^"$delegate".Length];
+        if (n.StartsWith('@') || n.StartsWith('#'))
+            n = n[1..];
+        var words = new List<string>();
+        foreach (var part in Regex.Split(n, "[_\\-$.]+"))
+        {
+            foreach (var w in Regex.Split(part, "(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])"))
+            {
+                if (w.Length == 0)
+                    continue;
+                var lower = w.ToLowerInvariant();
+                words.Add(lower.EndsWith('s') ? lower[..^1] : lower);
+            }
+        }
+        return words;
+    }
+
+    internal static bool IsSecretNamed(string field) => SecretWordsOf(field).Any(SecretWords.Contains);
+
+    /// <summary>빈 값 — null · 길이 0 문자열 · 길이 0 배열(<c>char[]</c>·<c>byte[]</c> 포함) · 빈 목록 · 집합 · 사전. 그 밖의 null 아닌
+    /// 값(참·거짓 · 수 · 열거값 · 객체)은 비지 않았다.</summary>
+    internal static bool IsEmptyValue(object? v) => v switch
+    {
+        null => true,
+        string s => s.Length == 0,
+        Array a => a.Length == 0,
+        System.Collections.ICollection c => c.Count == 0,
+        _ => GenericCount(v) == 0,
+    };
+
+    // HashSet<T> 처럼 비제네릭 ICollection 이 아닌 컬렉션의 Count — 못 읽으면(기본값 ImmutableArray 등) null(비지 않음으로 친다).
+    private static int? GenericCount(object v)
+    {
+        foreach (var i in v.GetType().GetInterfaces())
+        {
+            if (!i.IsGenericType)
+                continue;
+            var d = i.GetGenericTypeDefinition();
+            if (d != typeof(IReadOnlyCollection<>) && d != typeof(ICollection<>))
+                continue;
+            try { return (int?)i.GetProperty("Count")!.GetValue(v); }
+            catch (TargetInvocationException) { return null; }
+        }
+        return null;
+    }
+
+    /// <summary>비밀 이름 필드마다 — 닿은 인스턴스 전부가 빈 값이면 실패, 면제는 <see cref="EmptySecretExempt"/> 에 이유와 함께.
+    /// 면제가 더는 「닿았고 빈 값뿐」이 아니면 낡은 것으로 실패한다.</summary>
+    internal static List<string> EmptySecretFields(IReadOnlyDictionary<string, bool> fields)
+    {
+        var problems = new List<string>();
+        foreach (var (key, anyNonEmpty) in fields)
+        {
+            if (anyNonEmpty || EmptySecretExempt.ContainsKey(key) || !IsSecretNamed(key[(key.LastIndexOf('.') + 1)..]))
+                continue;
+            problems.Add($"{key}: secret-named but every reached instance holds an empty value — fill it from a root with a canary, " +
+                         "or exempt it with a reason");
+        }
+        foreach (var (key, reason) in EmptySecretExempt)
+        {
+            if (!fields.TryGetValue(key, out var anyNonEmpty) || anyNonEmpty)
+                problems.Add($"{key}: 면제 표에 있지만 더는 「닿았고 빈 값뿐」이 아니다(채워졌거나 · 안 닿거나 · 선언이 없다) — 낡은 면제다({reason})");
+        }
+        return problems;
+    }
+
     // ── 걷기 ────────────────────────────────────────────────────────────────────────────────────
 
     internal sealed class Walker
@@ -418,6 +538,11 @@ public sealed class FacadeDumpTests
 
         /// <summary>걷기가 들어간 테스트 어셈블리 객체 — 있으면 그 너머의 「닿음」과 「누출」은 SDK 가 아니라 하네스 것이다.</summary>
         public List<string> HarnessHits { get; } = new();
+
+        /// <summary>SDK 타입이 선언한 필드마다 — <c>"선언 타입 전체 이름.필드"</c> → 닿은 인스턴스 가운데 하나라도 빈 값이 아니었는가.
+        /// 비밀 이름 필드가 빈 값으로만 닿았는지를 <see cref="EmptySecretFields"/> 가 가른다(등록부
+        /// facade-dump-reached-empty-secret-field). 기록만 한다 — 걷기와 적대 경로 행렬의 결과는 바뀌지 않는다.</summary>
+        public SortedDictionary<string, bool> OwnFields { get; } = new(StringComparer.Ordinal);
         public int Visited { get; private set; }
         public int Rendered { get; private set; }
 
@@ -484,8 +609,19 @@ public sealed class FacadeDumpTests
             for (var t = type; t is not null; t = t.BaseType)
             {
                 foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
-                    Visit(root, $"{path}.{f.Name}", Read(f, value, own), owner, foreignHops);
+                {
+                    var fieldValue = Read(f, value, own);
+                    if (own && t.Assembly == _sdk)
+                        RecordField(t, f, fieldValue);
+                    Visit(root, $"{path}.{f.Name}", fieldValue, owner, foreignHops);
+                }
             }
+        }
+
+        private void RecordField(Type declaring, FieldInfo f, object? fieldValue)
+        {
+            var key = $"{(declaring.IsGenericType ? declaring.GetGenericTypeDefinition() : declaring).FullName}.{f.Name}";
+            OwnFields[key] = (OwnFields.TryGetValue(key, out var seenNonEmpty) && seenNonEmpty) || !IsEmptyValue(fieldValue);
         }
 
         // SDK 필드를 못 읽으면 걷기가 그 자리를 못 잰다 — 삼키지 않고 테스트를 깬다. 외부 내부 구현은 우리 렌더링 대상이 아니다.
