@@ -244,7 +244,10 @@ def test_authorization_url_percent_encodes_and_resists_param_injection():
     openid = MagicMock(spec=KeycloakOpenID)
     client = _client(openid, config=_config(scopes=("openid",)))
 
-    hostile = "https://app.example.com/cb?x=1 y&z=2"
+    # 원문 공백은 이제 조립 전에 거부된다(R3 —
+    # test_authorization_redirect_uri.py). 그래서 인코딩된 공백 `%20` 을 싣는다 —
+    # 왕복 단언이 `%` 자신의 인코딩까지 본다.
+    hostile = "https://app.example.com/cb?x=1%20y&z=2"
     result = client.authorization_url(hostile)
 
     assert " " not in result.url, f"원문 공백이 남았다: {result.url}"

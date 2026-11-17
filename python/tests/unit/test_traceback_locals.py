@@ -266,8 +266,12 @@ async def test_failed_validate_id_token_keeps_the_token_out_of_frame_locals_aio(
 # --- 인가 URL 조립·생성자 — Grok 레그가 찾고 실측으로 확인한 두 자리 ---------------------------
 
 
-class _Hostile:
-    """`str()` 이 실패하는 redirect_uri — `urlencode` 가 조립 도중 던진다(verifier 는 이미 로컬)."""
+class _Hostile(str):
+    """`str()` 이 실패하는 redirect_uri — `urlencode` 가 조립 도중 던진다(verifier 는 이미 로컬).
+
+    ⚠️ `str` 의 하위 타입이고 값은 절대 URI 다 — redirect_uri 검사(`_internal/redirect_uri.py`)는
+    `str()` 을 부르지 않고 그 값을 읽어 통과시키므로, 실패가 PKCE 생성 **뒤**(`urlencode`)에 난다.
+    `str` 이 아닌 값은 이제 생성 전에 거부된다(R1) — 그러면 이 테스트가 잴 로컬이 없다."""
 
     def __str__(self) -> str:
         raise ValueError("unprintable redirect_uri")
@@ -288,7 +292,7 @@ def test_failed_authorization_url_keeps_the_verifier_out_of_frame_locals(
     else:
         client = _aio_client(monkeypatch, _jwt(_KEY), _JWKS)[0]
 
-    err = _catch(lambda: client.authorization_url(_Hostile()))  # type: ignore[arg-type]
+    err = _catch(lambda: client.authorization_url(_Hostile("https://app/cb")))
 
     assert type(err) is ValueError
     assert _PKCE[0] not in _render(err)

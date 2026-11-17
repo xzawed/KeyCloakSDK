@@ -30,6 +30,7 @@ from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwks_keys import import_usable_keys
 from .._internal.jwt import JwtValidator, TokenKind, check_token_size, refuse_hs_algorithm
 from .._internal.lower import auth_failure, is_lower_failure, summarize
+from .._internal.redirect_uri import check_redirect_uri
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
 from .._internal.token_cap import Answered, answering, cap_openid
@@ -132,7 +133,13 @@ class AsyncAuthClient:
         one unnecessary discovery network round trip is added). This method assembles the URL
         directly from `OidcEndpoints` without a network, removing that round trip — which is
         why, unlike sync, it is not `async def`.
+
+        `redirect_uri` must be an absolute URI (RFC 6749 §3.1.2) without a fragment that
+        Keycloak can parse (RFC 3986 §2) — otherwise `KeycloakConfigError` is raised before
+        anything is generated (the same check as sync). It is sent exactly as given: pass the
+        same string to `exchange_code`.
         """
+        check_redirect_uri(redirect_uri)
         code_verifier, code_challenge = _generate_pkce_pair()
         state = secrets.token_urlsafe(16)
         nonce = secrets.token_urlsafe(16)
