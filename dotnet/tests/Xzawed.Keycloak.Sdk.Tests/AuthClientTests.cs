@@ -332,11 +332,12 @@ public class AuthClientTests : IDisposable
         return new AuthClient(cfg, ep, new JwtValidator(tvp), _http);
     }
 
-    private static string Claims(string issuer, string audJson, string nonce = Nonce, long? expOffset = 300)
+    // `extra` is appended to the claims as written — `,"azp":"c"`.
+    private static string Claims(string issuer, string audJson, string nonce = Nonce, long? expOffset = 300, string extra = "")
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var exp = expOffset is { } offset ? $",\"exp\":{now + offset}" : "";
-        return $$"""{"iss":"{{issuer}}","sub":"u","aud":{{audJson}},"nonce":"{{nonce}}","iat":{{now}}{{exp}}}""";
+        return $$"""{"iss":"{{issuer}}","sub":"u","aud":{{audJson}},"nonce":"{{nonce}}","iat":{{now}}{{exp}}{{extra}}}""";
     }
 
     private static string SignClaims(string payloadJson, SecurityKey? key, string alg = SecurityAlgorithms.RsaSha256)
@@ -349,15 +350,16 @@ public class AuthClientTests : IDisposable
         auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", nonce: nonce);
 
     /// <summary>A1. Keycloak puts the client id in the id_token's aud whatever the access token's audience mapper
-    /// adds (measured on 26.6); with "Add to ID token" on, the override joins it.</summary>
+    /// adds (measured on 26.6); with "Add to ID token" on, the override joins it — and an id_token with several
+    /// audiences names the client in azp too (OIDC Core §3.1.3.7; Keycloak always writes azp).</summary>
     [Theory]
-    [InlineData("\"c\"")]
-    [InlineData("[\"c\",\"extra-api\"]")]
-    public async Task ExchangeCode_under_expected_audience_override_accepts_an_id_token_for_the_client_id(string audJson)
+    [InlineData("\"c\"", "")]
+    [InlineData("[\"c\",\"extra-api\"]", ",\"azp\":\"c\"")]
+    public async Task ExchangeCode_under_expected_audience_override_accepts_an_id_token_for_the_client_id(string audJson, string azp)
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer);
-        StubToken(SignClaims(Claims(issuer, audJson), key));
+        StubToken(SignClaims(Claims(issuer, audJson, extra: azp), key));
         var ts = await Exchange(auth);
         Assert.Equal("AT", ts.AccessToken);
     }
@@ -459,6 +461,61 @@ public class AuthClientTests : IDisposable
         var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth, nonce: "expected-nonce"));
         Assert.Equal("id_token nonce mismatch", refused.Message);
         Assert.Null(refused.InnerException);
+    }
+
+    // ── Token type and authorized party. ValidateAsync refuses a token typed as another kind than an access token
+    // (JwtValidatorTests); the exchange validates an id_token, which Keycloak types "ID", so it does not — it holds the
+    // id_token's azp to the client id instead (OIDC Core §3.1.3.7 steps 4–5). ──
+
+    private static string IssuerOf(KeycloakConfig cfg) => OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
+
+    /// <summary>The id_token Keycloak issues: typed "ID", with the client id as aud and azp.</summary>
+    [Fact]
+    public async Task ExchangeCode_accepts_an_id_token_typed_ID()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        StubToken(SignClaims(Claims(IssuerOf(cfg), "\"c\"", extra: ",\"typ\":\"ID\",\"azp\":\"c\""), key));
+        Assert.Equal("AT", (await Exchange(auth)).AccessToken);
+    }
+
+    [Theory]
+    [InlineData("\"c\"", "")]
+    [InlineData("[\"c\",\"other-client\"]", ",\"azp\":\"c\"")]
+    public async Task ExchangeCode_accepts_an_id_token_whose_authorized_party_is_the_client(string audJson, string azp)
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        StubToken(SignClaims(Claims(IssuerOf(cfg), audJson, extra: azp), key));
+        Assert.Equal("AT", (await Exchange(auth)).AccessToken);
+    }
+
+    /// <summary>An id_token that names this client among its audiences but was issued to another party — the second
+    /// row is the shape a Python repro had accepted (aud ["web","evil"], azp "evil").</summary>
+    [Theory]
+    [InlineData("\"c\"", ",\"azp\":\"evil\"", "azp does not match the client id")]
+    [InlineData("[\"c\",\"evil\"]", ",\"azp\":\"evil\"", "azp does not match the client id")]
+    [InlineData("[\"c\",\"evil\"]", "", "azp is required when aud has more than one value")]
+    public async Task ExchangeCode_refuses_an_id_token_issued_to_another_party(string audJson, string azp, string reason)
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        StubToken(SignClaims(Claims(IssuerOf(cfg), audJson, extra: azp), key));
+        var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth));
+        Assert.Equal("id_token validation failed", refused.Message);
+        var validation = Assert.IsType<KeycloakTokenValidationException>(refused.InnerException);
+        Assert.Equal(reason, validation.Message);
+    }
+
+    /// <summary>The facade's access validation refuses the id_token the exchange accepts above.</summary>
+    [Fact]
+    public async Task ValidateAsync_refuses_an_id_token()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => auth.ValidateAsync(SignClaims(Claims(IssuerOf(cfg), "\"c\"", extra: ",\"typ\":\"ID\",\"azp\":\"c\""), key)));
+        Assert.Equal("not an access token (typ \"ID\")", refused.Message);
     }
 
     // ── A5: one key store. The id_token check must reuse the validator's ConfigurationManager — its JWKS cache,

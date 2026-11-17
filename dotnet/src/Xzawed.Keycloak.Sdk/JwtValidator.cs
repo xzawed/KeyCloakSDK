@@ -16,7 +16,7 @@ public sealed class JwtValidatorOptions
 }
 
 /// <summary>Hardened Keycloak access-token validator: algorithm pinning, none/unsigned rejection,
-/// exact issuer, audience membership, required expiry, bounded clock skew, DoS-safe rate-limited JWKS.</summary>
+/// exact issuer, audience membership, required expiry, bounded clock skew, token type, DoS-safe rate-limited JWKS.</summary>
 public sealed class JwtValidator
 {
     /// <summary>The longest token either validation path accepts — an access token or the id_token of a code exchange.
@@ -124,19 +124,58 @@ public sealed class JwtValidator
         ValidateIssuerSigningKey = true,
     };
 
-    /// <summary>Validates an access token.</summary>
+    /// <summary>The payload <c>typ</c> values Keycloak gives the tokens that are not access tokens
+    /// (<c>org.keycloak.util.TokenUtil</c>): id_token, refresh, offline, back-channel logout and serialized id_token. An
+    /// access token is <c>Bearer</c> or <c>DPoP</c>.</summary>
+    private static readonly HashSet<string> NotAccessTokenTypes = new(StringComparer.Ordinal)
+    {
+        "ID", "Refresh", "Offline", "Logout", "Serialized-ID",
+    };
+
+    /// <summary>Validates an access token. A token whose payload <c>typ</c> names another kind of Keycloak token — an
+    /// id_token (<c>ID</c>), <c>Refresh</c>, <c>Offline</c>, <c>Logout</c> or <c>Serialized-ID</c> — is refused even
+    /// when it passes every other check; any other <c>typ</c>, or none, is not looked at.</summary>
     /// <param name="token">The compact JWT.</param>
     /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/>: at once when it is already cancelled
     /// (nothing is fetched), or while validation waits on the IdP. A discovery or JWKS fetch already under way is not
     /// cancelled with it — it completes and fills the cache.</param>
     public Task<ValidatedToken> ValidateAsync(string token, CancellationToken ct = default)
-        => ValidateCoreAsync(token, _tvp, ct);
+        => ValidateCoreAsync(token, _tvp, RequireAccessToken, ct);
 
     /// <summary>Validates with every check of <see cref="ValidateAsync"/> except the audience, which must contain
     /// <paramref name="audience"/> instead of the configured one. The id_token path: its <c>aud</c> MUST contain the
-    /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to.</summary>
+    /// client id (OIDC Core §2, §3.1.3.7), whatever audience access tokens are held to. The token type is not checked
+    /// (an id_token is typed <c>ID</c>); the authorized party is — see <see cref="RequireAuthorizedParty"/>.</summary>
     internal Task<ValidatedToken> ValidateForAudienceAsync(string token, string audience, CancellationToken ct = default)
-        => ValidateCoreAsync(token, ParametersForAudience(audience), ct);
+        => ValidateCoreAsync(token, ParametersForAudience(audience), jwt => RequireAuthorizedParty(jwt, audience), ct);
+
+    /// <summary>The access path's last check: the payload <c>typ</c>, when it is a string, must not be one of
+    /// <see cref="NotAccessTokenTypes"/> (an exact, case-sensitive match). The value is quoted: it is one of those five.</summary>
+    private static void RequireAccessToken(JsonWebToken jwt)
+    {
+        // The payload claim — JsonWebToken.Typ is the JOSE header's. Only a JSON string is compared: a number, an array
+        // (even ["ID"]) or an object passes as before (Access_validation_accepts_every_other_typ).
+        if (jwt.TryGetPayloadValue<object>("typ", out var typ) && typ is string kind && NotAccessTokenTypes.Contains(kind))
+            throw new KeycloakTokenValidationException($"not an access token (typ \"{kind}\")");
+    }
+
+    /// <summary>The id_token path's last check — OIDC Core §3.1.3.7 steps 4–5: an id_token with more than one audience
+    /// must carry <c>azp</c>, and an <c>azp</c> that is present must be the client id. Not on the access path: an access
+    /// token's <c>azp</c> is the client that requested it and legitimately differs from its audience.</summary>
+    /// <remarks>IdentityModel reads <c>azp</c> as a string and refuses a token whose <c>azp</c> is another JSON type while
+    /// reading it, so a present <c>azp</c> here is a string or JSON null — null is not the client id.</remarks>
+    private static void RequireAuthorizedParty(JsonWebToken jwt, string clientId)
+    {
+        if (jwt.TryGetPayloadValue<object>("azp", out var azp))
+        {
+            if (azp is not string party || !string.Equals(party, clientId, StringComparison.Ordinal))
+                throw new KeycloakTokenValidationException("azp does not match the client id");
+        }
+        else if (jwt.Audiences.Skip(1).Any())
+        {
+            throw new KeycloakTokenValidationException("azp is required when aud has more than one value");
+        }
+    }
 
     /// <summary>A copy of the parameters that differs only in the audience.</summary>
     /// <remarks>⚠️ <c>Clone()</c> keeps the key source by reference, and that is what keeps ONE key store: the copy
@@ -157,7 +196,13 @@ public sealed class JwtValidator
         return tvp;
     }
 
-    private static async Task<ValidatedToken> ValidateCoreAsync(string token, TokenValidationParameters tvp, CancellationToken ct)
+    /// <param name="token">The compact JWT.</param>
+    /// <param name="tvp">The parameters of the path — access or id_token.</param>
+    /// <param name="lastCheck">The path's own check, run once every shared one has passed (<see cref="RequireAccessToken"/>
+    /// or <see cref="RequireAuthorizedParty"/>).</param>
+    /// <param name="ct">See <see cref="ValidateAsync"/>.</param>
+    private static async Task<ValidatedToken> ValidateCoreAsync(
+        string token, TokenValidationParameters tvp, Action<JsonWebToken> lastCheck, CancellationToken ct)
     {
         // IdentityModel's ValidateTokenAsync takes no token (measured: a cancelled one still validated). Check it first so
         // a cancelled call starts nothing, then stop WAITING when it fires — the work itself runs on: a configuration fetch
@@ -182,6 +227,7 @@ public sealed class JwtValidator
             throw new KeycloakTokenValidationException(result.Exception is { } rex ? ErrorCause.MessageOf(rex) : "invalid token", result.Exception);
 
         var jwt = (JsonWebToken)result.SecurityToken;
+        lastCheck(jwt);
         var claims = result.Claims.ToDictionary(kv => kv.Key, kv => (object?)kv.Value); // matches IntrospectAsync projection; no CS8620
         return new ValidatedToken(
             Subject: jwt.Subject,

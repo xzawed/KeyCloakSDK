@@ -35,8 +35,9 @@ public class JwtValidatorTests
         return new JwtValidator(tvp);          // internal test ctor
     }
 
-    private static string PayloadJson(string aud, long expOffset = 300, string iss = Issuer)
-        => $$"""{"iss":"{{iss}}","sub":"user-1","aud":{{aud}},"exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expOffset}},"iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}}""";
+    // `extra` is appended to the claims as written — `,"typ":"ID"`.
+    private static string PayloadJson(string aud, long expOffset = 300, string iss = Issuer, string extra = "")
+        => $$"""{"iss":"{{iss}}","sub":"user-1","aud":{{aud}},"exp":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expOffset}},"iat":{{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}{{extra}}}""";
 
     // 경계 변환(등록부 boundary-exception-conversion-incomplete) — 공개 생성자는 issuer 문자열을 받고 디스커버리 주소를 그 뒤에
     // 붙인다. 쓸 수 없는 주소의 예외(UriFormatException · 상대 주소의 InvalidOperationException)는 첫 검증 때 나고, 검증 경계가
@@ -157,6 +158,115 @@ public class JwtValidatorTests
         var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
             () => v.ValidateForAudienceAsync(Sign(PayloadJson("\"my-api\""), Key), "it-client"));
         Assert.IsType<SecurityTokenInvalidAudienceException>(refused.InnerException);
+    }
+
+    // ── Token type — the access path only. Keycloak writes the kind of token into a payload `typ` claim
+    // (org.keycloak.util.TokenUtil): "Bearer" or "DPoP" on an access token, "ID" on an id_token, "Refresh", "Offline",
+    // "Logout" on a back-channel logout token, "Serialized-ID". All of them are signed by the realm key and can name this
+    // client in aud, so ValidateAsync took an id_token or a logout token for an access token. ──
+
+    [Theory]
+    [InlineData("ID")]
+    [InlineData("Refresh")]
+    [InlineData("Offline")]
+    [InlineData("Logout")]
+    [InlineData("Serialized-ID")]
+    public async Task Access_validation_refuses_a_token_typed_as_another_kind(string typ)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateAsync(Sign(PayloadJson("\"it-client\"", extra: $",\"typ\":\"{typ}\""), Key)));
+        Assert.Equal($"not an access token (typ \"{typ}\")", refused.Message);
+        Assert.Null(refused.InnerException);
+    }
+
+    // Everything else is left as it was: no typ, an access token's (Bearer · DPoP · RFC 9068 at+jwt), any other string —
+    // the comparison is exact and case-sensitive — and a value that is not a string, even one that holds "ID".
+    [Theory]
+    [InlineData("")]
+    [InlineData(",\"typ\":\"Bearer\"")]
+    [InlineData(",\"typ\":\"DPoP\"")]
+    [InlineData(",\"typ\":\"at+jwt\"")]
+    [InlineData(",\"typ\":\"id\"")]
+    [InlineData(",\"typ\":\"ID \"")]
+    [InlineData(",\"typ\":\"Custom\"")]
+    [InlineData(",\"typ\":42")]
+    [InlineData(",\"typ\":true")]
+    [InlineData(",\"typ\":null")]
+    [InlineData(",\"typ\":[\"ID\"]")]
+    [InlineData(",\"typ\":{\"typ\":\"ID\"}")]
+    public async Task Access_validation_accepts_every_other_typ(string typClaim)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var vt = await v.ValidateAsync(Sign(PayloadJson("\"it-client\"", extra: typClaim), Key));
+        Assert.Equal("user-1", vt.Subject);
+    }
+
+    // An access token's azp is the client that asked for it — a resource server's tokens name other clients — so the
+    // access path does not hold it to anything (the id_token path does, below).
+    [Fact]
+    public async Task Access_validation_does_not_check_azp()
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var vt = await v.ValidateAsync(Sign(PayloadJson("[\"it-client\",\"account\"]", extra: ",\"azp\":\"frontend\""), Key));
+        Assert.Equal("frontend", vt.Claims["azp"]);
+    }
+
+    // ── The id_token path (ValidateForAudienceAsync, the code exchange's): no token-type check — an id_token is typed
+    // "ID" — and, after every other check, the authorized party (OIDC Core §3.1.3.7 steps 4–5): several audiences need an
+    // azp, and an azp must be the client id. ──
+
+    [Fact]
+    public async Task Id_token_path_accepts_a_token_typed_ID()
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var idToken = Sign(PayloadJson("\"it-client\"", extra: ",\"typ\":\"ID\",\"azp\":\"it-client\""), Key);
+        Assert.Equal("ID", (await v.ValidateForAudienceAsync(idToken, "it-client")).Claims["typ"]);
+        // Control: the same token is refused on the access path — by its type alone.
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(idToken));
+        Assert.Equal("not an access token (typ \"ID\")", refused.Message);
+    }
+
+    [Theory]
+    [InlineData("\"it-client\"", "")]
+    [InlineData("[\"it-client\"]", "")]
+    [InlineData("\"it-client\"", ",\"azp\":\"it-client\"")]
+    [InlineData("[\"it-client\",\"account\"]", ",\"azp\":\"it-client\"")]
+    public async Task Id_token_path_accepts_the_client_as_authorized_party(string aud, string azp)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var vt = await v.ValidateForAudienceAsync(Sign(PayloadJson(aud, extra: azp), Key), "it-client");
+        Assert.Contains("it-client", vt.Audience);
+    }
+
+    [Theory]
+    [InlineData("\"it-client\"", ",\"azp\":\"someone-else\"", "azp does not match the client id")]
+    [InlineData("\"it-client\"", ",\"azp\":\"It-Client\"", "azp does not match the client id")]
+    [InlineData("\"it-client\"", ",\"azp\":null", "azp does not match the client id")]
+    [InlineData("[\"it-client\",\"evil\"]", ",\"azp\":\"evil\"", "azp does not match the client id")]
+    [InlineData("[\"it-client\",\"evil\"]", "", "azp is required when aud has more than one value")]
+    public async Task Id_token_path_refuses_an_authorized_party_other_than_the_client(string aud, string azp, string reason)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => v.ValidateForAudienceAsync(Sign(PayloadJson(aud, extra: azp), Key), "it-client"));
+        Assert.Equal(reason, refused.Message);
+        Assert.Null(refused.InnerException);
+    }
+
+    // IdentityModel reads azp as a string and refuses the token while reading it when it is another JSON type — on both
+    // paths, before any check of the SDK's. Pinned so the id_token path cannot start accepting one.
+    [Theory]
+    [InlineData(",\"azp\":42")]
+    [InlineData(",\"azp\":[\"it-client\"]")]
+    public async Task Id_token_path_refuses_an_azp_that_is_not_a_string(string azp)
+    {
+        var v = ValidatorWith(new JwtValidatorOptions { Issuer = Issuer, Audiences = new[] { "it-client" } });
+        var token = Sign(PayloadJson("\"it-client\"", extra: azp), Key);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateForAudienceAsync(token, "it-client"));
+        Assert.StartsWith("IDX14101:", refused.Message); // IdentityModel could not read the payload
+        refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => v.ValidateAsync(token));
+        Assert.StartsWith("IDX14101:", refused.Message); // the access path too — no SDK check is involved
     }
 
     [Fact]
