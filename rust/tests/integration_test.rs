@@ -579,6 +579,29 @@ const ALGORITHM_NOT_PINNED: &str = "authorization code exchange failed: invalid 
      token validation error: token verification failed: algorithm not allowed";
 /// 서명이 깨진 refresh token 으로 로그아웃할 때 — Keycloak 26.6 의 상태코드는 실측으로 고정한다.
 const LOGOUT_REFUSED: &str = "authentication error: logout failed (HTTP 400)";
+/// access 검증(`validate()`)이 실서버 id_token 을 거부하는 문구 — Keycloak 은 id_token 의 `typ` 를 `ID` 로 싣는다.
+const NOT_AN_ACCESS_TOKEN_ID: &str = "not an access token (typ ID)";
+
+/// JWT 페이로드를 **아무것도 검증하지 않고** 읽는다 — 서버가 무엇을 실었는지 보는 전제 확인과, 교환이 이미 검증한
+/// id_token 의 클레임 읽기 전용이다. ⚠️ `validate()` 로 읽지 말 것 — access 검증이라 id_token(typ `ID`)을 거부한다.
+fn unverified_claims(jwt: &str) -> serde_json::Value {
+    let payload = jwt.split('.').nth(1).expect("a JWS payload");
+    let raw =
+        base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, payload).unwrap();
+    serde_json::from_slice(&raw).unwrap()
+}
+
+/// 페이로드의 `aud` — 하나면 문자열, 여럿이면 배열이다.
+fn audience_of(claims: &serde_json::Value) -> Vec<String> {
+    match &claims["aud"] {
+        serde_json::Value::String(s) => vec![s.clone()],
+        serde_json::Value::Array(a) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        _ => vec![],
+    }
+}
 
 /// rust 의 인가 요청·교환은 두 짝이다 — config 의 redirect_uri 를 쓰는 짝과 호출마다 받는 짝.
 #[derive(Clone, Copy, Debug)]
@@ -758,17 +781,16 @@ async fn exchange_binds_tokens_to_the_nonce_and_user(env: Arc<Env>, redirect: Re
     assert!(!tokens.access_token.is_empty());
     let refresh_token = tokens.refresh_token.clone().expect("a refresh token");
     let id_token = tokens.id_token.clone().expect("an id_token");
-    let id = kc
-        .auth()
-        .validate(&id_token)
-        .await
-        .expect("the server-signed id_token validates");
-    assert_eq!(
-        id.claims.get("nonce").and_then(|v| v.as_str()),
-        Some(request.nonce.as_str())
-    );
+    // access 검증은 실서버 id_token 을 거부한다 — Keycloak 은 id_token 의 typ 를 `ID` 로 싣는다.
+    match kc.auth().validate(&id_token).await {
+        Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, NOT_AN_ACCESS_TOKEN_ID),
+        other => panic!("validate() must refuse the server-signed id_token, got {other:?}"),
+    }
+    // 클레임은 교환이 검증한(서명 · iss · aud · exp · azp · nonce) 그 id_token 의 것이다.
+    let id = unverified_claims(&id_token);
+    assert_eq!(id["nonce"].as_str(), Some(request.nonce.as_str()));
     // sub 는 **독립 원천**(admin API 로 읽은 alice 의 id)과 대조한다.
-    assert_eq!(id.subject, env.alice_id);
+    assert_eq!(id["sub"].as_str(), Some(env.alice_id.as_str()));
 
     // refresh: 새 접근 토큰을 준다 — 같은 사용자의 활성 토큰이다.
     let refreshed = kc.auth().refresh(&refresh_token).await.expect("refresh");
@@ -837,9 +859,9 @@ async fn exchange_refuses_an_id_token_that_carries_no_nonce(env: Arc<Env>, redir
         .await
         .expect("without an expected nonce the exchange succeeds");
     let id_token = unchecked.id_token.expect("an id_token");
-    let claims = kc.auth().validate(&id_token).await.unwrap().claims;
+    let claims = unverified_claims(&id_token);
     assert!(
-        !claims.contains_key("nonce"),
+        claims.get("nonce").is_none(),
         "precondition: the server signed an id_token without a nonce claim"
     );
 
@@ -908,20 +930,14 @@ async fn exchange_with_the_nonce_succeeds_under_an_expected_audience_override(
         .expect("the id_token carries the client id — the override must not refuse it");
 
     // 전제: id_token 의 aud 는 client id 이고 재정의 값이 **아니다** — 아니면 위 통과가 아무것도 안 잰다.
-    let id = web_client(&env.base, IT_WEB, RS256_ONLY, redirect)
-        .auth()
-        .validate(tokens.id_token.as_deref().expect("an id_token"))
-        .await
-        .expect("the server-signed id_token validates against the client id");
+    // (서명 · aud 는 위 교환이 이미 검증했다 — 여기서는 서버가 실은 값을 본다.)
+    let aud = audience_of(&unverified_claims(
+        tokens.id_token.as_deref().expect("an id_token"),
+    ));
+    assert!(aud.iter().any(|a| a == IT_WEB.0), "precondition: {aud:?}");
     assert!(
-        id.audience.iter().any(|a| a == IT_WEB.0),
-        "precondition: {:?}",
-        id.audience
-    );
-    assert!(
-        !id.audience.iter().any(|a| a == "it-client"),
-        "precondition: {:?}",
-        id.audience
+        !aud.iter().any(|a| a == "it-client"),
+        "precondition: {aud:?}"
     );
 
     // access 검증은 재정의를 그대로 쓴다 — 담지 않은 토큰은 거부하고, 담은 토큰은 통과한다.

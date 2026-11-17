@@ -16,6 +16,42 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 /// ⚠️ 맨 정수 리터럴로 둔다 — 아홉 SDK 가 같은 값을 쓰고 교차언어 가드가 이 줄을 읽는다.
 pub(crate) const JWT_MAX_BYTES: usize = 256_000;
 
+/// Keycloak 이 access 토큰이 **아닌** 토큰에 싣는 `typ` 클레임 값 — `org.keycloak.util.TokenUtil`
+/// (keycloak-client-common-synced 26.0.12)의 상수 일곱 중 access 토큰의 둘(Bearer · DPoP)을 뺀 다섯. 대소문자까지
+/// 정확 일치로만 본다.
+const NOT_ACCESS_TOKEN_TYPES: [&str; 5] = ["ID", "Refresh", "Offline", "Logout", "Serialized-ID"];
+
+type Claims = std::collections::BTreeMap<String, serde_json::Value>;
+
+/// (access) Keycloak 의 다른 종류 토큰을 거부한다 — 서명 · iss · aud · exp 만으로는 id_token 과 백채널 로그아웃 토큰이
+/// `validate()` 를 통과했다(aud 가 client id 라 `expected_audience` 의 기본값과 같다). typ 는 다섯 상수 중 하나일 때만
+/// 문구에 실리므로 토큰 내용이 새지 않는다. 문자열이 아닌 typ · 다섯 밖의 값은 판정하지 않는다.
+fn refuse_non_access_type(claims: &Claims) -> Result<()> {
+    match claims.get("typ").and_then(serde_json::Value::as_str) {
+        Some(typ) if NOT_ACCESS_TOKEN_TYPES.contains(&typ) => Err(KeycloakError::TokenValidation(
+            format!("not an access token (typ {typ})"),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// (id_token) OIDC Core §3.1.3.7 ④⑤ — aud 가 둘 이상이면 azp 가 있어야 하고, 있는 azp 는 `client_id` 와 같은 문자열
+/// 이어야 한다(azp 는 이 id_token 을 받은 클라이언트다). azp 값은 문구에 싣지 않는다.
+fn check_authorized_party(claims: &Claims, client_id: &str) -> Result<()> {
+    match claims.get("azp") {
+        None if matches!(claims.get("aud"), Some(serde_json::Value::Array(a)) if a.len() > 1) => {
+            Err(KeycloakError::TokenValidation(
+                "missing azp claim for multiple audiences".into(),
+            ))
+        }
+        None => Ok(()),
+        Some(azp) if azp.as_str() == Some(client_id) => Ok(()),
+        Some(_) => Err(KeycloakError::TokenValidation(
+            "authorized party (azp) mismatch".into(),
+        )),
+    }
+}
+
 // aud(string 또는 array) → Vec<String>. jsonwebtoken이 aud 포함검사를 하지만 ValidatedToken 매핑용으로 벡터화.
 fn aud_to_vec(v: Option<&serde_json::Value>) -> Vec<String> {
     match v {
@@ -70,22 +106,36 @@ impl JwtValidator {
         })
     }
 
-    /// Validates an access token — the expected aud is `expected_audience` (`client_id` when unset).
+    /// Validates an access token — the expected aud is `expected_audience` (`client_id` when unset). A Keycloak token
+    /// that is not an access token (`typ` claim `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`) is refused.
     pub async fn validate(&self, token: &str) -> Result<ValidatedToken> {
-        self.validate_for_audience(token, &self.audience).await
+        let vt = self.validate_for_audience(token, &self.audience).await?;
+        refuse_non_access_type(&vt.claims)?;
+        Ok(vt)
     }
 
-    /// `validate()` 와 같은 강화 검증을 **호출자가 준 aud** 로 한다 — 코드 교환의 id_token 전용.
+    /// 코드 교환의 id_token 검증 — 공통 검증을 **코드를 교환한 client id** 를 aud 로 한 뒤 azp 를 본다(OIDC Core
+    /// §3.1.3.7 ④⑤). `validate()` 의 typ 검사는 걸지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다.
     ///
     /// ⚠️ id_token 의 `aud` 는 client id 를 담아야 한다(OIDC Core §2 · §3.1.3.7). `expected_audience`
     /// 재정의는 access 토큰의 리소스 서버 제한이라 id_token 에 걸면 진짜 id_token 이 거부된다.
     /// ⚠️ **검증기를 따로 만들지 말 것** — 같은 `&self` 라서 JWKS 캐시·30초 재조회 제한·콜드 실패
     /// 백오프가 하나로 공유된다(`exchange_and_validate_share_*` 테스트).
-    pub(crate) async fn validate_for_audience(
+    pub(crate) async fn validate_id_token(
         &self,
         token: &str,
-        audience: &str,
+        client_id: &str,
     ) -> Result<ValidatedToken> {
+        let vt = self.validate_for_audience(token, client_id).await?;
+        check_authorized_party(&vt.claims, client_id)?;
+        Ok(vt)
+    }
+
+    /// 두 경로의 공통 강화 검증을 **호출자가 준 aud** 로 한다 — 길이 · alg 핀 · 서명 · iss · aud · exp · nbf · 스큐.
+    ///
+    /// ⚠️ 종류별 검사(access 의 typ · id_token 의 azp)는 여기 없다 — 두 진입점(`validate` · `validate_id_token`)이
+    /// 각자 더한다. 그래서 이 모듈 밖에서는 부를 수 없게 둔다(비공개) — 밖에서 이것을 부르면 종류별 검사를 건너뛴다.
+    async fn validate_for_audience(&self, token: &str, audience: &str) -> Result<ValidatedToken> {
         // (0) 길이 상한 — 아래 어느 단계든 토큰을 쪼개거나 디코드하기 전에(`JWT_MAX_BYTES`). `len()` 은 바이트다 — 진짜
         //     JWT 는 ASCII 라 바이트·코드포인트·UTF-16 단위가 모두 같다.
         if token.len() > JWT_MAX_BYTES {
@@ -370,8 +420,9 @@ mod tests {
         ));
     }
 
-    /// id_token 경로(`validate_for_audience`)는 재정의가 걸린 검증기에서도 **넘겨받은 aud** 를 본다 —
-    /// 재정의 값이 아니다(OIDC Core §2 · §3.1.3.7: id_token `aud` 는 client_id 를 담아야 한다).
+    /// id_token 경로의 공통 검증(`validate_for_audience` — `validate_id_token` 이 그 뒤에 azp 를 본다)은 재정의가 걸린
+    /// 검증기에서도 **넘겨받은 aud** 를 본다 — 재정의 값이 아니다(OIDC Core §2 · §3.1.3.7: id_token `aud` 는 client_id 를
+    /// 담아야 한다).
     #[tokio::test]
     async fn validate_for_audience_checks_the_given_audience_not_the_override() {
         let fx = make_key();
@@ -405,8 +456,9 @@ mod tests {
         );
     }
 
-    /// id_token 경로의 나머지 강화는 `validate()` 와 **같은 블록**이다 — 재정의 아래에서도
-    /// iss 정확·alg 핀·exp 필수·스큐(30)·nbf 가 그대로 걸린다. aud 인자만 다르다.
+    /// id_token 경로의 나머지 강화는 `validate()` 와 **같은 블록**(`validate_for_audience`)이다 — 재정의 아래에서도
+    /// iss 정확·alg 핀·exp 필수·스큐(30)·nbf 가 그대로 걸린다. 그 블록에서는 aud 인자만 다르다(종류별 검사 — access 의
+    /// typ · id_token 의 azp — 는 두 진입점이 그 뒤에 더한다).
     #[tokio::test]
     async fn validate_for_audience_keeps_every_other_check_under_an_override() {
         let fx = make_key();
@@ -691,7 +743,7 @@ mod tests {
 
     /// 길이 상한이 HS 거부보다 먼저다 — HS256 을 허용한 설정에서 상한을 넘은 HS256 토큰은 HS 의 문구가 아니라 상한의 문구로,
     /// 헤더 디코드 · `/certs` 요청 전에 거부된다. 토큰은 헤더를 읽을 수 있는 진짜 HS256 토큰이라 HS 거부가 상한보다 앞에 오면
-    /// 그 문구가 나온다. access 와 코드 교환의 id_token 경로(`validate_for_audience`) 둘 다다.
+    /// 그 문구가 나온다. access 와 코드 교환의 id_token 경로(`validate_id_token`) 둘 다다.
     #[tokio::test]
     async fn hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal() {
         let fx = make_key();
@@ -704,7 +756,7 @@ mod tests {
         let (v, server) = validator_and_idp_with(&fx, cfg_with(&["RS256", "HS256"])).await;
         let access = v.validate(&over).await.map(|vt| vt.subject);
         let id_token = v
-            .validate_for_audience(&over, "it-client")
+            .validate_id_token(&over, "it-client")
             .await
             .map(|vt| vt.subject);
         for (name, got) in [("access", access), ("id_token", id_token)] {
@@ -1270,6 +1322,212 @@ mod tests {
                 panic!("a genuine {}-byte token must validate: {e:?}", t.len())
             });
             assert_eq!(vt.subject, "s1");
+        }
+    }
+
+    // ── 토큰 종류 — access 검증은 typ 를, id_token 검증은 azp 를 본다(검증기 칸) ──
+    //
+    // Keycloak 26 이 토큰마다 싣는 `typ` 클레임(`org.keycloak.util.TokenUtil` — keycloak-client-common-synced 26.0.12):
+    // Bearer · DPoP 는 access 토큰이고 ID · Refresh · Offline · Logout · Serialized-ID 는 아니다. 수정 전에는 검증기가
+    // typ 도 azp 도 읽지 않아 id_token(`ID`)·백채널 로그아웃 토큰(`Logout`)이 `validate()` 를 통과했고, aud 가 여럿이고
+    // azp 가 남인 id_token 도 통과했다(실측). 어느 경로가 어느 검사를 거는지(파사드 배선)는 `auth.rs` 의 시험이 잰다.
+
+    const NOT_ACCESS_TYPES: [&str; 5] = ["ID", "Refresh", "Offline", "Logout", "Serialized-ID"];
+
+    /// (A) — 서명 · iss · aud · exp 가 다 맞아도 Keycloak 의 다른 종류 토큰은 `validate()` 를 통과하지 못한다. 클레임
+    /// 실패라 JWKS 를 다시 부르지 않는다.
+    #[tokio::test]
+    async fn validate_refuses_a_keycloak_token_that_is_not_an_access_token() {
+        let fx = make_key();
+        let (v, server) = validator_and_idp(&fx).await;
+        for typ in NOT_ACCESS_TYPES {
+            let mut c = good_claims();
+            c["typ"] = json!(typ);
+            match v.validate(&sign(&fx, c, "test-kid")).await {
+                Err(KeycloakError::TokenValidation(m)) => {
+                    assert_eq!(m, format!("not an access token (typ {typ})"))
+                }
+                other => panic!("typ {typ}: expected TokenValidation, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            certs_requests(server).await,
+            1,
+            "a claims failure must not refetch the JWKS"
+        );
+    }
+
+    /// (A) 대조 — access 토큰의 typ(없음 · Bearer · DPoP · RFC 9068 의 at+jwt)와 다섯 밖의 값은 지금처럼 통과한다. 비교는
+    /// 대소문자까지 정확 일치이고, 문자열이 아닌 typ 는 판정하지 않는다.
+    #[tokio::test]
+    async fn validate_passes_any_other_typ() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        for typ in [
+            None,
+            Some(json!("Bearer")),
+            Some(json!("DPoP")),
+            Some(json!("at+jwt")),
+            Some(json!("id")),
+            Some(json!("Logout ")),
+            Some(json!(null)),
+            Some(json!(["ID"])),
+            Some(json!(1)),
+        ] {
+            let mut c = good_claims();
+            if let Some(t) = &typ {
+                c["typ"] = t.clone();
+            }
+            let vt = v
+                .validate(&sign(&fx, c, "test-kid"))
+                .await
+                .unwrap_or_else(|e| panic!("typ {typ:?}: an access token must pass, got {e:?}"));
+            assert_eq!(vt.subject, "s1");
+        }
+    }
+
+    /// (A) 는 기존 검사가 다 통과한 **뒤**다 — 기존 실패는 지금의 문구 그대로 나온다.
+    #[tokio::test]
+    async fn typ_is_judged_after_the_existing_claim_checks() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        let mut foreign = good_claims();
+        foreign["typ"] = json!("ID");
+        foreign["aud"] = json!(["other-client"]);
+        let mut expired = good_claims();
+        expired["typ"] = json!("ID");
+        expired["exp"] = json!(now() - 100);
+        for (c, want) in [
+            (foreign, "token verification failed: audience mismatch"),
+            (expired, "token verification failed: expired"),
+        ] {
+            match v.validate(&sign(&fx, c, "test-kid")).await {
+                Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, want),
+                other => panic!("{want}: got {other:?}"),
+            }
+        }
+    }
+
+    /// (B) 는 access 경로에 걸리지 않는다 — access 토큰의 azp 는 토큰을 받은 클라이언트라 기대 audience 와 다른 것이
+    /// 정상이고, aud 가 여럿이어도(`good_claims` 가 그렇다) azp 를 요구하지 않는다.
+    #[tokio::test]
+    async fn validate_leaves_azp_alone() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        for azp in [None, Some("frontend")] {
+            let mut c = good_claims();
+            if let Some(a) = azp {
+                c["azp"] = json!(a);
+            }
+            v.validate(&sign(&fx, c, "test-kid"))
+                .await
+                .unwrap_or_else(|e| {
+                    panic!("azp {azp:?}: an access token's azp is not judged, got {e:?}")
+                });
+        }
+    }
+
+    /// (A) 는 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다.
+    #[tokio::test]
+    async fn validate_id_token_leaves_typ_alone() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        let mut c = good_claims();
+        c["aud"] = json!("it-client");
+        c["typ"] = json!("ID");
+        let vt = v
+            .validate_id_token(&sign(&fx, c, "test-kid"), "it-client")
+            .await
+            .expect("an id_token typed ID must pass the id_token check");
+        assert_eq!(vt.claims.get("typ"), Some(&json!("ID")));
+    }
+
+    /// (B) — OIDC Core §3.1.3.7 ④⑤: aud 가 여럿이면 azp 가 있어야 하고, 있는 azp 는 client id 와 같은 문자열이어야
+    /// 한다. 기준은 넘겨받은 client id(코드를 교환한 클라이언트)다. 클레임 실패라 다른 거부와 같은 `TokenValidation` 이다.
+    #[tokio::test]
+    async fn validate_id_token_applies_oidc_azp_rules() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        let mismatch = "authorized party (azp) mismatch";
+        let missing = "missing azp claim for multiple audiences";
+        let cases = [
+            ("single aud, no azp", json!("it-client"), None, None),
+            (
+                "one-element aud array, no azp",
+                json!(["it-client"]),
+                None,
+                None,
+            ),
+            (
+                "single aud, azp is the client",
+                json!("it-client"),
+                Some(json!("it-client")),
+                None,
+            ),
+            (
+                "several auds, azp is the client",
+                json!(["it-client", "other"]),
+                Some(json!("it-client")),
+                None,
+            ),
+            (
+                "single aud, foreign azp",
+                json!("it-client"),
+                Some(json!("evil")),
+                Some(mismatch),
+            ),
+            (
+                "several auds, no azp",
+                json!(["it-client", "evil"]),
+                None,
+                Some(missing),
+            ),
+            (
+                "several auds, foreign azp",
+                json!(["it-client", "evil"]),
+                Some(json!("evil")),
+                Some(mismatch),
+            ),
+            (
+                "null azp",
+                json!("it-client"),
+                Some(json!(null)),
+                Some(mismatch),
+            ),
+            (
+                "azp not a string",
+                json!("it-client"),
+                Some(json!(["it-client"])),
+                Some(mismatch),
+            ),
+        ];
+        for (name, aud, azp, want) in cases {
+            let mut c = good_claims();
+            c["aud"] = aud;
+            if let Some(a) = azp {
+                c["azp"] = a;
+            }
+            match (
+                want,
+                v.validate_id_token(&sign(&fx, c, "test-kid"), "it-client")
+                    .await,
+            ) {
+                (None, Ok(vt)) => assert_eq!(vt.subject, "s1", "{name}"),
+                (Some(w), Err(KeycloakError::TokenValidation(m))) => assert_eq!(m, w, "{name}"),
+                (want, got) => panic!("{name}: want {want:?}, got {got:?}"),
+            }
+        }
+        // (B) 도 기존 검사가 다 통과한 뒤다 — client id 가 aud 에 없으면 azp 가 없어도 지금의 문구다.
+        let mut c = good_claims();
+        c["aud"] = json!(["evil", "other"]);
+        match v
+            .validate_id_token(&sign(&fx, c, "test-kid"), "it-client")
+            .await
+        {
+            Err(KeycloakError::TokenValidation(m)) => {
+                assert_eq!(m, "token verification failed: audience mismatch")
+            }
+            other => panic!("foreign audiences: want the audience refusal, got {other:?}"),
         }
     }
 }
