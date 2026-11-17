@@ -253,11 +253,11 @@ class HostilePathMatrixTest {
       certsDown = down;
     }
 
-    /** 토큰 응답의 id_token — nonce 가 보편 인자라 nonce 를 받는 교환이 검증까지 통과한다. */
+    /** 토큰 응답의 id_token — nonce 가 보편 인자라 nonce 를 받는 교환이 검증까지 통과한다(Keycloak 처럼 typ "ID"). */
     private synchronized String idToken() throws JOSEException {
       String t = idTokens.get(universal);
       if (t == null) {
-        t = sign(key, "k1", iss(), Map.of("nonce", universal));
+        t = sign(key, "k1", iss(), Map.of("nonce", universal, "typ", "ID"));
         idTokens.put(universal, t);
       }
       return t;
@@ -1560,10 +1560,11 @@ class HostilePathMatrixTest {
   }
 
   /**
-   * (b) 서명에 nonce 파라미터가 있는 교환 행 — 대조(맞는 id_token)와 일곱. 다른 키로 서명할 때 kid 가 k1 이면 캐시된 키로
+   * (b) 서명에 nonce 파라미터가 있는 교환 행 — 대조(맞는 id_token)와 여덟. 다른 키로 서명할 때 kid 가 k1 이면 캐시된 키로
    * 서명 검증이 실패하고, k2 면 키를 못 찾는다(둘 다 재야 서명 생략을 잡는다 — Go 변이 7). 대조는 성공해야 하고, id_token
    * 이 서명돼 있는 변형은 검증기까지 가야 한다(콜드 캐시 JWKS 조회 ≥ 1). 서명 없는(alg=none) 것은 JWKS 앞에서 거부되는
-   * 것이 맞다.
+   * 것이 맞다. id_token 은 전부 Keycloak 처럼 typ "ID" 를 싣는다 — 변형마다 제 검사로 거부되게(id_token 검증기는 그 밖의 typ 을
+   * 거부한다). 「typ≠ID」 는 그 종류 검사를 교환 계급 전부에 붙인다(공개 validateIdToken 과 같은 검사다).
    *
    * <p>⚠️ nonce 파라미터에는 <b>다른 문자열 인자와 다른 값</b>({@link #NONCE_ARG})을 넘기고 id_token 도 그 값으로 서명한다.
    * 보편 인자 하나를 모든 문자열에 넣었더니 nonce 를 code 와 대조하는 새 교환이 대조까지 통과했다(Grok 레그 주장 5, 실측
@@ -1583,10 +1584,13 @@ class HostilePathMatrixTest {
       new NonceVariant("id_token없음", null, false, null, true, false, CLIENT_ID, "reject"),
       new NonceVariant("nonce클레임없음", "k1", false, Map.of(), false, false, CLIENT_ID, "reject"),
       new NonceVariant("alg=none", null, false, null, false, true, CLIENT_ID, "reject"),
-      new NonceVariant("aud≠", "k1", false, null, false, false, "someone-else", "reject"));
+      new NonceVariant("aud≠", "k1", false, null, false, false, "someone-else", "reject"),
+      new NonceVariant("typ≠ID", "k1", false, Map.of("nonce", NONCE_ARG, "typ", "Bearer"), false, false, CLIENT_ID,
+          "reject"));
 
   private String idTokenFor(NonceVariant nv, Idp idp) throws JOSEException {
-    Map<String, Object> claims = nv.claims() == null ? Map.of("nonce", NONCE_ARG) : nv.claims();
+    Map<String, Object> claims = new HashMap<>(nv.claims() == null ? Map.of("nonce", NONCE_ARG) : nv.claims());
+    claims.putIfAbsent("typ", "ID"); // Keycloak 의 id_token 종류 — 변형이 typ 을 정하면(typ≠ID) 그것이 이긴다
     if (nv.unsigned()) {
       JWTClaimsSet.Builder b = new JWTClaimsSet.Builder().issuer(idp.iss()).subject("u1").audience(nv.aud())
           .expirationTime(new Date(System.currentTimeMillis() + 300_000)).issueTime(new Date());

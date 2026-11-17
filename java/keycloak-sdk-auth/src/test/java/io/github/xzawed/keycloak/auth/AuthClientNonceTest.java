@@ -339,6 +339,20 @@ class AuthClientNonceTest {
     assertRefusedForAzp(assertRefusedAsInvalidIdToken(client));
   }
 
+  // 교환의 id_token 검사는 공개 validateIdToken 과 같은 함수다 — 종류 규칙(typ 이 정확히 "ID")도 교환에 걸린다. 아래 토큰은
+  // 종류 말고는 전부 맞다(서명 · iss · aud = azp = client id · exp · nonce 일치). 거부는 다른 id_token 거부와 같은 꼴(「invalid
+  // id_token」 + 원인 TokenValidationException)이고, 원인 메시지가 종류를 말한다(상수 — 토큰의 typ 값을 싣지 않는다).
+  @ParameterizedTest
+  @ValueSource(strings = {"absent", "Bearer"})
+  void exchangeCode_refusesAnIdTokenThatIsNotTypedId(String typ) throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    JWTClaimsSet.Builder claims = accessClaims("app").claim("nonce", NONCE).claim("azp", "app");
+    String idToken = sign(key, JWSAlgorithm.RS256, (typ.equals("absent") ? claims : claims.claim("typ", typ)).build());
+
+    KeycloakAuthException refused = assertRefusedAsInvalidIdToken(clientServingToken(key, idToken));
+    assertEquals("not an id_token (typ is not \"ID\")", refused.getCause().getMessage());
+  }
+
   // JSON null 인 azp 도 「있는」 azp 다 — 문자열이 아니므로 거부한다(없는 것으로 읽으면 aud 하나에서 통과한다).
   @Test void exchangeCode_refusesAnIdTokenWhoseAzpIsJsonNull() throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
@@ -350,12 +364,14 @@ class AuthClientNonceTest {
   }
 
   private static JWTClaimsSet.Builder typedId(List<String> audience, Object azpOrNull) {
-    JWTClaimsSet.Builder claims = idClaims(audience.toArray(String[]::new)).claim("typ", "ID");
+    JWTClaimsSet.Builder claims = idClaims(audience.toArray(String[]::new));
     return azpOrNull == null ? claims : claims.claim("azp", azpOrNull);
   }
 
+  // Keycloak 의 id_token 모양 — typ "ID" 를 싣는다(id_token 검증기는 그 밖의 typ 을 거부한다). 다른 검사를 재는 시험이 종류
+  // 거부로 공허하게 통과하지 않게, 거부 시험의 토큰도 이것으로 만든다.
   private static JWTClaimsSet.Builder idClaims(String... audience) {
-    return accessClaims(audience).claim("nonce", NONCE);
+    return accessClaims(audience).claim("nonce", NONCE).claim("typ", "ID");
   }
 
   private static JWTClaimsSet.Builder accessClaims(String... audience) {
@@ -414,11 +430,13 @@ class AuthClientNonceTest {
     return new AuthClient(cfg, OidcMetadata.forRealm(cfg), v);
   }
 
+  // typ "ID" — Keycloak 의 id_token 이 싣는 값(id_token 검증기는 그 밖의 typ 을 거부한다 — nonce 거부 시험이 종류 거부로 공허하게
+  // 통과하지 않게 여기서 싣는다).
   private static String signIdToken(RSAKey key, String issuer, String audience, String nonce)
       throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience(audience).claim("nonce", nonce)
+        new JWTClaimsSet.Builder().issuer(issuer).audience(audience).claim("nonce", nonce).claim("typ", "ID")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();
