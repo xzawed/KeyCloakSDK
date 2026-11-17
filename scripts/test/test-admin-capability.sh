@@ -60,6 +60,35 @@ sed -i.bak 's/pub async fn update_user/pub async fn update_user_REMOVED_BY_TEST/
 rm -f "$FAKE/rust/src/admin.rs.bak"
 assert_fails node "$GUARD" "$FAKE" --doc="$DOC"
 
+# ---------------------------------------------------------------------------
+# ⚠️ **선언을 세는가, 글자를 세는가**(등록부 `guard-probes-count-mentions-not-declarations`).
+# 한 언어의 update 선언 줄을 주석으로 바꾸면 선언은 사라지고 그 글자는 남는다 — 가드는 그 언어의 다섯 셀을
+# 「소스에 없음」으로 내야 한다. 실측(2026-11-17, 고치기 전): node 는 `async` 가 선택이라 호출 · 주석의 `update(`
+# 한 글자로도 선언으로 셌다(probe.sh: 선언 이름을 바꾸고 주석에 `raw().users.update(` 를 남긴 변이 SILENT, 남기지
+# 않으면 CAUGHT). 파일 목록은 가드가 낸다(--print-sources) — 언어는 경로의 첫 조각이다.
+# ---------------------------------------------------------------------------
+# ⚠️ 소스는 한 번만 복사하고 언어마다 `cp -R` 하나 · `sed` 하나로 바꾼다 — 언어마다 파일을 하나씩 복사하면 Windows 에서
+# 이 시험 하나가 5 분이었다(프로세스 생성이 비싸다, 실측 2026-11-17).
+node "$GUARD" "$ROOT" --print-sources > "$TMP/sources"
+cut -d/ -f1 "$TMP/sources" | sort -u > "$TMP/langs"
+assert_eq "9" "$(grep -c . "$TMP/langs")" "--print-sources 가 아홉 언어 디렉터리를 낸다(전제)"
+BASE="$TMP/base"
+while IFS= read -r rel; do
+  mkdir -p "$BASE/$(dirname "$rel")"
+  cp "$ROOT/$rel" "$BASE/$rel"
+done < "$TMP/sources"
+while IFS= read -r L; do
+  CM='//'
+  case "$L" in python | ruby) CM='#' ;; esac
+  M="$TMP/mention-$L"
+  cp -R "$BASE" "$M"
+  grep "^$L/" "$TMP/sources" | sed "s#^#$M/#" |
+    xargs sed -i.bak -E "s@^([[:space:]]*)(.*[Uu]pdate[A-Za-z_]*[[:space:]]*\\()@\\1$CM \\2@"
+  _o="$(node "$GUARD" "$M" --doc="$DOC" 2>&1)" && _rc=0 || _rc=$?
+  assert_eq "fail 5" "$([ "$_rc" -ne 0 ] && echo fail || echo pass) $(printf '%s\n' "$_o" | grep -c 'source=absent')" \
+    "$L: 선언 줄을 주석으로 바꾸면 그 언어의 다섯 U 셀이 「소스에 없음」이다(주석 속 글자를 선언으로 세면 안 된다)"
+done < "$TMP/langs"
+
 # 대조군: U가 아닌 C 열만 뒤집으면 이 가드는 통과해야 한다(스코프가 U뿐임을 고정).
 node "$DIR/fixtures/admin-capability/flip-c.mjs" "$DOC" "Java" > "$TMP/java-c-absent.md"
 assert_ok node "$GUARD" "$ROOT" --doc="$TMP/java-c-absent.md"

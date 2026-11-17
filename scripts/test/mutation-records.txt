@@ -29,6 +29,55 @@ TEST:test-check-hp-attest-wiring.sh
 JUDGE:check-canaries-ran.mjs
 WHY:픽스처 워크플로 YAML 안의 글자다
 
+### capab-php-unanchored
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:        at(`php/src/Admin/${P}Resource.php`, /^\s*public function update\s*\(/m, `php ${resource}`),
+NEW:        at(`php/src/Admin/${P}Resource.php`, /public function update\s*\(/, `php ${resource}`), // PROBE-REC php
+SITE:// PROBE-REC php
+
+### capab-go-unanchored
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:          new RegExp(`^func \\([^)]*\\*${P}Resource\\) Update\\s*\\(`, "m"),
+NEW:          new RegExp(`func \\([^)]*\\*${P}Resource\\) Update\\s*\\(`), // PROBE-REC go
+SITE:// PROBE-REC go
+
+### capab-rust-unanchored
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:          new RegExp(`^\\s*pub async fn update_${s}\\s*\\(`, "m"),
+NEW:          new RegExp(`pub async fn update_${s}\\s*\\(`), // PROBE-REC rust
+SITE:// PROBE-REC rust
+
+### capab-java-unanchored
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:          /^\s*public\s+\S+\s+update\s*\(/m,
+NEW:          /public\s+\S+\s+update\s*\(/, // PROBE-REC java
+SITE:// PROBE-REC java
+
+### capab-kotlin-unanchored
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:          /^\s*public suspend fun update\s*\(/m,
+NEW:          /public suspend fun update\s*\(/, // PROBE-REC kotlin
+SITE:// PROBE-REC kotlin
+
+### capab-node-mention
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:      return [at(`node/src/admin/${resource}.ts`, /^\s*async update\s*\(/m, `node ${resource}`)];
+NEW:      return [at(`node/src/admin/${resource}.ts`, /(?:async\s+)?update\s*\(/, `node ${resource}`)]; // PROBE-REC node
+SITE:// PROBE-REC node
+
+### capab-dotnet-unanchored
+FILE:scripts/check-admin-capability.mjs
+TEST:scripts/test/test-admin-capability.sh
+OLD:          /^\s*public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+UpdateAsync\s*\(/m,
+NEW:          /public\s+(?:async\s+)?Task(?:<[^>]+>)?\s+UpdateAsync\s*\(/, // PROBE-REC dotnet
+SITE:// PROBE-REC dotnet
+
 ### exclude-wiring-attest
 TEST:test-check-hp-attest-wiring.sh
 JUDGE:check-hp-attest.mjs
