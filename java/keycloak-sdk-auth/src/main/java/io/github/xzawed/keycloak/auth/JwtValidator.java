@@ -36,8 +36,8 @@ public final class JwtValidator {
   private final Set<JWSAlgorithm> allowedAlgs;
   private final Duration skew;
   // id_token 검증기인가(AuthClient.validateIdToken · 코드 교환) — withAudience 가 만든 것만 참이다. 참이면 액세스 토큰의 typ 거부
-  // 목록 대신 azp(requireAuthorizedParty)와 typ 허용 목록(requireIdTokenType — 정확히 "ID")을 본다. 거짓(forRealm · withStaticJwks ·
-  // withJwkSource)이면 typ 거부 목록(rejectNonAccessToken)만 본다.
+  // 목록 대신 typ 허용 목록(requireIdTokenType — 정확히 "ID")을, 그다음 azp(requireAuthorizedParty)를 본다. 거짓(forRealm ·
+  // withStaticJwks · withJwkSource)이면 typ 거부 목록(rejectNonAccessToken)만 본다.
   private final boolean idToken;
   private JwtValidator(JWKSource<SecurityContext> jwkSource, String issuer, String audience,
                        Set<JWSAlgorithm> allowedAlgs, Duration skew, boolean idToken) {
@@ -109,7 +109,7 @@ public final class JwtValidator {
     return jwkSource;
   }
   // id_token 검증기(AuthClient.validateIdToken · 교환) — 요구 aud 를 client id 로 바꾸고(OIDC Core §2·§3.1.3.7: id_token 의 aud
-  // 는 client id 를 담는다) 종류를 id_token 으로 바꾼다: 액세스 토큰의 typ 거부 목록 대신 azp 와 typ 허용 목록("ID")을 본다. 키
+  // 는 client id 를 담는다) 종류를 id_token 으로 바꾼다: 액세스 토큰의 typ 거부 목록 대신 typ 허용 목록("ID")과 그다음 azp 를 본다. 키
   // 원천·iss·alg 핀·skew·필수 exp 는 이 검증기 것 그대로다. ⚠️ 여기서 forRealm 을 다시 부르면 키 저장소가 둘이 되어 교환 뒤
   // 첫 validate() 가 JWKS 를 다시 받고 장애 때 창당 상한이 두 배다(IdTokenAudienceJwksSharingTest).
   // 네트워크 I/O 없이 처리기만 새로 만든다. 패키지 전용 — 공개 입구는 AuthClient.validateIdToken 이다.
@@ -120,8 +120,8 @@ public final class JwtValidator {
   // Nimbus 타입을 노출하지 않는다.
   // id_token 검증(AuthClient.validateIdToken — 교환의 requireValidNonce 도 그것을 부른다 → withAudience(..).validate)도 이
   // 메서드라 상한 검사는 여기 하나다. 서명·iss·aud·exp 를 통과한 뒤 종류별 검사가 있다 — 액세스 검증기는 typ 거부 목록
-  // (rejectNonAccessToken), id_token 검증기는 azp(requireAuthorizedParty) 다음 typ 허용 목록(requireIdTokenType). 종류가 두
-  // 길 모두 마지막이다. 전부 try 밖이라 메시지가 그대로 나간다.
+  // (rejectNonAccessToken), id_token 검증기는 typ 허용 목록(requireIdTokenType) 다음 azp(requireAuthorizedParty). 종류가
+  // 먼저다 — id_token 이라는 것이 azp 규칙의 전제다(아홉 언어 같은 순서). 전부 try 밖이라 메시지가 그대로 나간다.
   public ValidatedToken validate(String accessToken) {
     // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에. try 밖이라 이 메시지가 그대로 나간다. null 은 지금까지처럼 아래로 간다.
     if (accessToken != null && accessToken.length() > JWT_MAX_BYTES) {
@@ -145,8 +145,8 @@ public final class JwtValidator {
     catch (Exception e) { throw new TokenValidationException("JWT validation failed", e); }
     // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다.
     if (idToken) {
-      requireAuthorizedParty(claims);
       requireIdTokenType(claims);
+      requireAuthorizedParty(claims);
     } else {
       rejectNonAccessToken(claims);
     }
@@ -155,8 +155,9 @@ public final class JwtValidator {
 
   // id_token 자리에 온 다른 토큰을 거부한다 — 허용 목록이다: 페이로드 typ 이 정확히(대소문자 구분) 문자열 "ID" 여야 한다. 부재 ·
   // 문자열이 아닌 값(숫자 · 배열 · JSON null …) · 그 밖의 문자열은 거부다. 액세스 토큰(typ "Bearer" — 클라이언트 설정에 따라 소문자
-  // "bearer")도 aud 에 client id 를, azp 에 그 client 를 담을 수 있어 위 검사를 전부 지난다 — 거부 목록이면 "bearer" 같은 변형을
-  // 놓친다. 메시지는 상수다 — typ 은 토큰이 고른 문자열이라 싣지 않는다(azp 를 싣지 않는 것과 같은 이유).
+  // "bearer")도 aud 에 client id 를, azp 에 그 client 를 담을 수 있어 위 검사와 azp 를 전부 지난다 — 거부 목록이면 "bearer" 같은
+  // 변형을 놓친다. azp(requireAuthorizedParty)보다 먼저 본다 — id_token 이라는 것이 azp 규칙의 전제라, 두 규칙에 다 걸리는 토큰은
+  // 이 메시지다. 메시지는 상수다 — typ 은 토큰이 고른 문자열이라 싣지 않는다(azp 를 싣지 않는 것과 같은 이유).
   private static void requireIdTokenType(JWTClaimsSet claims) {
     if (!ID_TOKEN_TYPE.equals(claims.getClaim("typ"))) {
       throw new TokenValidationException("not an id_token (typ is not \"ID\")", null);

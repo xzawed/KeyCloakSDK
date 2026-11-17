@@ -45,9 +45,9 @@ public class AuthClient {
 
   // id_token 검증 — 코드 교환이 nonce 를 대조하기 전에 돌리는 바로 그 검사다(requireValidNonce 가 이것을 부른다 — 사본이 없다):
   // 서명(validate() 와 같은 키 원천) · alg 핀과 HS 거부 · 길이 상한 · iss 정확일치 · aud 에 **clientId**(expectedAudience 가 아니다 —
-  // 그것은 액세스 토큰이 향하는 리소스 서버의 값이다, OIDC Core §2·§3.1.3.7) · exp 필수 · skew · azp(§3.1.3.7 4·5) · 페이로드 typ 이
-  // 정확히 "ID". nonce 는 보지 않는다(교환의 몫 — 돌려준 클레임의 nonce 는 호출자가 대조한다). 실패는 validate() 와 같은
-  // TokenValidationException 이다. 반환 타입은 SDK 소유의 ValidatedToken (I.1).
+  // 그것은 액세스 토큰이 향하는 리소스 서버의 값이다, OIDC Core §2·§3.1.3.7) · exp 필수 · skew · 페이로드 typ 이 정확히 "ID" ·
+  // 그다음 azp(§3.1.3.7 4·5). nonce 는 보지 않는다(교환의 몫 — 돌려준 클레임의 nonce 는 호출자가 대조한다). 실패는 validate() 와
+  // 같은 TokenValidationException 이다. 반환 타입은 SDK 소유의 ValidatedToken (I.1).
   public ValidatedToken validateIdToken(String idToken) {
     return validator().withAudience(config.getClientId()).validate(idToken);
   }
@@ -167,8 +167,8 @@ public class AuthClient {
     return tokenSet;
   }
 
-  // id_token의 nonce 클레임을 대조하기 전에 공개 validateIdToken 과 같은 검사(그 메서드다)로 서명·iss·aud(= clientId)·exp·azp·
-  // typ "ID" 까지 검증한다. 키 원천은 validate() 의 것 하나다(withAudience — 두 번째 키 저장소를 만들지 않는다).
+  // id_token의 nonce 클레임을 대조하기 전에 공개 validateIdToken 과 같은 검사(그 메서드다)로 서명·iss·aud(= clientId)·exp·
+  // typ "ID"·azp 까지 검증한다. 키 원천은 validate() 의 것 하나다(withAudience — 두 번째 키 저장소를 만들지 않는다).
   // forRealm 의 TokenValidationException 도 「invalid id_token」으로 가도록 호출은 try 안에 둔다.
   // 패키지 가시성: 토큰 엔드포인트 send() 없이 nonce 로직을 단위 테스트로 검증하기 위함
   // (buildExchangeCodeRequest/buildLogoutRequest와 동일 패턴).
