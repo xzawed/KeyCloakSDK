@@ -116,10 +116,14 @@ final class JwtValidatorTest extends TestCase
         return $otherPriv;
     }
 
-    /** @return array<string,mixed> */
+    /**
+     * Keycloak 이 내는 모양 — azp 는 토큰을 요청한 클라이언트다. aud 가 여럿인 id_token 은 azp 가 있어야 한다(OIDC Core §3.1.3.7).
+     *
+     * @return array<string,mixed>
+     */
     private function goodClaims(): array
     {
-        return ['sub' => 's1', 'iss' => $this->iss, 'aud' => ['it-client', 'account'], 'exp' => time() + 300, 'iat' => time()];
+        return ['sub' => 's1', 'iss' => $this->iss, 'aud' => ['it-client', 'account'], 'azp' => 'it-client', 'exp' => time() + 300, 'iat' => time()];
     }
 
     public function testValidTokenPasses(): void
@@ -199,6 +203,7 @@ final class JwtValidatorTest extends TestCase
     {
         $c = $this->goodClaims();
         $c['aud'] = 'web-client';
+        $c['azp'] = 'web-client';
         self::assertSame(['web-client'], $this->validator()->validateIdToken($this->sign($c), 'web-client')->audience);
 
         $this->expectException(TokenValidationError::class);
@@ -288,6 +293,146 @@ final class JwtValidatorTest extends TestCase
 
         (new JwtValidator($cfg, $endpoints, new JwksStore($endpoints->jwks(), $http, new HttpFactory())))->validate($this->sign($access));
         self::assertSame(2, $http->hits, 'a second key store fetches again, and this counter sees it');
+    }
+
+    // ── 토큰 종류 — 액세스 경로(validate)만. Keycloak 은 토큰의 종류를 페이로드 `typ` 클레임에 적는다
+    // (org.keycloak.util.TokenUtil): 액세스 토큰은 Bearer · DPoP, id_token 은 ID, 그 밖에 Refresh · Offline · Logout(백채널
+    // 로그아웃 토큰) · Serialized-ID. 모두 realm 키로 서명되고 aud 에 이 클라이언트를 담을 수 있어, validate() 가 id_token 이나
+    // 로그아웃 토큰을 액세스 토큰으로 받았다. ──
+
+    /** @return iterable<string, array{string}> */
+    public static function notAccessTokenTypes(): iterable
+    {
+        yield 'an id_token' => ['ID'];
+        yield 'a refresh token' => ['Refresh'];
+        yield 'an offline token' => ['Offline'];
+        yield 'a back-channel logout token' => ['Logout'];
+        yield 'a serialized id_token' => ['Serialized-ID'];
+    }
+
+    #[DataProvider('notAccessTokenTypes')]
+    public function testValidateRefusesATokenTypedAsAnotherKind(string $typ): void
+    {
+        $c = $this->goodClaims();
+        $c['typ'] = $typ;
+        try {
+            $this->validator()->validate($this->sign($c));
+            self::fail("a token typed {$typ} must be refused as an access token");
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame(sprintf('not an access token (typ "%s")', $typ), $refused->getMessage());
+        self::assertNull($refused->getPrevious());
+    }
+
+    /**
+     * 그 밖은 지금처럼 통과한다 — typ 없음(testValidTokenPasses) · 액세스 토큰의 것(Bearer · DPoP · RFC 9068 at+jwt) · 다른 문자열
+     * (대조는 대소문자까지 정확히 같아야 한다) · 문자열이 아닌 값("ID" 를 담고 있어도).
+     *
+     * @return iterable<string, array{mixed}>
+     */
+    public static function otherTypValues(): iterable
+    {
+        yield 'Bearer' => ['Bearer'];
+        yield 'DPoP' => ['DPoP'];
+        yield 'at+jwt' => ['at+jwt'];
+        yield 'a lower-case id' => ['id'];
+        yield 'ID and a space' => ['ID '];
+        yield 'another string' => ['Custom'];
+        yield 'a number' => [42];
+        yield 'true' => [true];
+        yield 'null' => [null];
+        yield 'a list holding ID' => [['ID']];
+        yield 'an object holding ID' => [['typ' => 'ID']];
+    }
+
+    #[DataProvider('otherTypValues')]
+    public function testValidateAcceptsAnyOtherTyp(mixed $typ): void
+    {
+        $c = $this->goodClaims();
+        $c['typ'] = $typ;
+        self::assertSame('s1', $this->validator()->validate($this->sign($c))->subject);
+    }
+
+    /** 액세스 토큰의 azp 는 그것을 요청한 클라이언트다 — 리소스 서버가 받는 토큰은 다른 클라이언트를 담는다. 액세스 경로는 보지 않는다. */
+    public function testValidateDoesNotCheckAzp(): void
+    {
+        $c = $this->goodClaims();
+        $c['azp'] = 'frontend';
+        self::assertSame('frontend', $this->validator()->validate($this->sign($c))->claims['azp']);
+        unset($c['azp']);   // aud 가 여럿이고 azp 가 없다
+        self::assertSame(['it-client', 'account'], $this->validator()->validate($this->sign($c))->audience);
+    }
+
+    // ── validateIdToken — 종류를 보지 않고(id_token 은 typ "ID" 다), 다른 검사를 모두 지난 뒤 권한 부여 당사자를 본다
+    // (OIDC Core §3.1.3.7 4–5 단계): aud 가 여럿이면 azp 가 있어야 하고, azp 가 있으면 client id 여야 한다. ──
+
+    public function testValidateIdTokenAcceptsATokenTypedId(): void
+    {
+        $c = $this->goodClaims();
+        $c['typ'] = 'ID';
+        $idToken = $this->sign($c);
+        self::assertSame('ID', $this->validator('my-api')->validateIdToken($idToken, 'it-client')->claims['typ']);
+
+        // 대조 — 같은 토큰을 액세스 경로는 종류 하나로 거부한다.
+        $this->expectException(TokenValidationError::class);
+        $this->expectExceptionMessage('not an access token (typ "ID")');
+        $this->validator()->validate($idToken);
+    }
+
+    /** @return array<string,mixed> azp 를 뺀 goodClaims() */
+    private function claimsWithoutAzp(): array
+    {
+        $c = $this->goodClaims();
+        unset($c['azp']);
+
+        return $c;
+    }
+
+    /**
+     * 덮어쓸 클레임 — 없는 키는 claimsWithoutAzp() 그대로다(azp 를 적지 않은 칸은 azp 가 없다).
+     *
+     * @return iterable<string, array{array<string,mixed>}>
+     */
+    public static function authorizedPartiesOfTheClient(): iterable
+    {
+        yield 'one audience, no azp' => [['aud' => 'it-client']];
+        yield 'a one-element aud list, no azp' => [['aud' => ['it-client']]];
+        yield 'one audience, azp the client' => [['aud' => 'it-client', 'azp' => 'it-client']];
+        yield 'several audiences, azp the client' => [['aud' => ['it-client', 'account'], 'azp' => 'it-client']];
+    }
+
+    /** @param array<string,mixed> $claims */
+    #[DataProvider('authorizedPartiesOfTheClient')]
+    public function testValidateIdTokenAcceptsTheClientAsAuthorizedParty(array $claims): void
+    {
+        $vt = $this->validator()->validateIdToken($this->sign($claims + $this->claimsWithoutAzp()), 'it-client');
+        self::assertContains('it-client', $vt->audience);
+    }
+
+    /** @return iterable<string, array{array<string,mixed>, string}> */
+    public static function authorizedPartiesOtherThanTheClient(): iterable
+    {
+        $mismatch = 'azp does not match the client id';
+        yield 'one audience, azp another client' => [['aud' => 'it-client', 'azp' => 'someone-else'], $mismatch];
+        yield 'one audience, azp the client in another case' => [['aud' => 'it-client', 'azp' => 'It-Client'], $mismatch];
+        yield 'one audience, azp null' => [['aud' => 'it-client', 'azp' => null], $mismatch];
+        yield 'one audience, azp a number' => [['aud' => 'it-client', 'azp' => 42], $mismatch];
+        yield 'one audience, azp a list naming the client' => [['aud' => 'it-client', 'azp' => ['it-client']], $mismatch];
+        yield 'several audiences, azp another client' => [['aud' => ['it-client', 'evil'], 'azp' => 'evil'], $mismatch];
+        yield 'several audiences, no azp' => [['aud' => ['it-client', 'evil']], 'azp is required when aud has more than one value'];
+    }
+
+    /** @param array<string,mixed> $claims */
+    #[DataProvider('authorizedPartiesOtherThanTheClient')]
+    public function testValidateIdTokenRefusesAnAuthorizedPartyOtherThanTheClient(array $claims, string $reason): void
+    {
+        try {
+            $this->validator()->validateIdToken($this->sign($claims + $this->claimsWithoutAzp()), 'it-client');
+            self::fail('an id_token issued to another party must be refused');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame($reason, $refused->getMessage());
+        self::assertNull($refused->getPrevious());
     }
 
     public function testRejectsExpired(): void

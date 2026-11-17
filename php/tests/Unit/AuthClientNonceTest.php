@@ -145,6 +145,7 @@ final class AuthClientNonceTest extends TestCase
 
     /**
      * (A1) 재정의해도 aud 에 client id 를 담은 id_token 의 교환은 통과한다 — 예전에는 재정의 값을 찾아 거부했다.
+     * azp 는 Keycloak 이 늘 적는 그대로 client id 다(aud 가 여럿인 id_token 은 그것이 있어야 한다 — OIDC Core §3.1.3.7).
      *
      * @param string|list<string> $aud
      */
@@ -152,7 +153,7 @@ final class AuthClientNonceTest extends TestCase
     public function testExchangeCodeUnderAnAudienceOverrideAcceptsAnIdTokenIssuedToTheClient(string|array $aud): void
     {
         $hits = new JwksHitCounter();
-        $idToken = $this->sign($this->idTokenClaims('server-nonce', ['aud' => $aud]));
+        $idToken = $this->sign($this->idTokenClaims('server-nonce', ['aud' => $aud, 'azp' => 'it-client']));
         $ts = $this->authWithTokenBody($this->tokenBody($idToken), jwksHits: $hits, expectedAudience: self::OVERRIDE)
             ->exchangeCode('code', 'verifier', 'server-nonce');
         self::assertSame($idToken, $ts->idToken);
@@ -239,6 +240,75 @@ final class AuthClientNonceTest extends TestCase
         $ts = $this->authWithTokenBody($this->tokenBody($idToken), expectedAudience: self::OVERRIDE)
             ->exchangeCode('code', 'verifier', 'server-nonce');
         self::assertSame($idToken, $ts->idToken);
+    }
+
+    // ── id_token 의 종류와 권한 부여 당사자 — validate() 는 액세스 토큰이 아닌 종류(typ)를 거부한다(JwtValidatorTest). 교환은
+    // id_token 을 검증하고 Keycloak 은 그것을 "ID" 로 적으므로 종류를 보지 않는다 — 대신 azp 를 client id 로 대조한다
+    // (OIDC Core §3.1.3.7 4–5 단계). ──
+
+    /** Keycloak 이 내는 id_token — typ "ID", aud 와 azp 가 client id 다. */
+    public function testExchangeCodeAcceptsAnIdTokenTypedId(): void
+    {
+        $idToken = $this->sign($this->idTokenClaims('server-nonce', ['typ' => 'ID', 'azp' => 'it-client']));
+        $ts = $this->authWithTokenBody($this->tokenBody($idToken))->exchangeCode('code', 'verifier', 'server-nonce');
+        self::assertSame($idToken, $ts->idToken);
+    }
+
+    /** @return iterable<string, array{array<string,mixed>}> */
+    public static function idTokenPartiesNamingTheClient(): iterable
+    {
+        yield 'one audience, no azp' => [[]];
+        yield 'several audiences, azp the client' => [['aud' => ['it-client', 'other-client'], 'azp' => 'it-client']];
+    }
+
+    /** @param array<string,mixed> $changes */
+    #[DataProvider('idTokenPartiesNamingTheClient')]
+    public function testExchangeCodeAcceptsAnIdTokenWhoseAuthorizedPartyIsTheClient(array $changes): void
+    {
+        $idToken = $this->sign($this->idTokenClaims('server-nonce', $changes));
+        $ts = $this->authWithTokenBody($this->tokenBody($idToken))->exchangeCode('code', 'verifier', 'server-nonce');
+        self::assertSame($idToken, $ts->idToken);
+    }
+
+    /**
+     * aud 에 이 클라이언트를 담았지만 다른 당사자에게 발급된 id_token — 둘째 칸은 python 재현이 통과시킨 모양이다
+     * (aud ["web","evil"] · azp "evil").
+     *
+     * @return iterable<string, array{array<string,mixed>, string}>
+     */
+    public static function idTokenPartiesOtherThanTheClient(): iterable
+    {
+        yield 'one audience, azp another client' => [['azp' => 'evil'], 'azp does not match the client id'];
+        yield 'several audiences, azp another client' => [['aud' => ['it-client', 'evil'], 'azp' => 'evil'], 'azp does not match the client id'];
+        yield 'several audiences, no azp' => [['aud' => ['it-client', 'evil']], 'azp is required when aud has more than one value'];
+    }
+
+    /** @param array<string,mixed> $changes */
+    #[DataProvider('idTokenPartiesOtherThanTheClient')]
+    public function testExchangeCodeRefusesAnIdTokenIssuedToAnotherParty(array $changes, string $reason): void
+    {
+        $idToken = $this->sign($this->idTokenClaims('server-nonce', $changes));
+        try {
+            $this->authWithTokenBody($this->tokenBody($idToken))->exchangeCode('code', 'verifier', 'server-nonce');
+            self::fail('an id_token issued to another party must be refused');
+        } catch (KeycloakAuthError $refused) {
+        }
+        self::assertSame('authorization code exchange failed: invalid id_token: ' . $reason, $refused->getMessage());
+        $cause = $refused->getPrevious();
+        self::assertInstanceOf(TokenValidationError::class, $cause);
+        self::assertSame($reason, $cause->getMessage());
+    }
+
+    /** 파사드의 validate() 는 위 교환이 받는 그 id_token 을 거부한다. */
+    public function testValidateRefusesAnIdToken(): void
+    {
+        $idToken = $this->sign($this->idTokenClaims('server-nonce', ['typ' => 'ID', 'azp' => 'it-client']));
+        try {
+            $this->authWithTokenBody([])->validate($idToken);
+            self::fail('validate() checks access tokens — an id_token must be refused');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame('not an access token (typ "ID")', $refused->getMessage());
     }
 
     /**
