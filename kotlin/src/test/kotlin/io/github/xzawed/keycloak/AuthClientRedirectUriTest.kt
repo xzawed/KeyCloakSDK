@@ -77,6 +77,23 @@ internal class AuthClientRedirectUriTest {
         assertIs<URISyntaxException>(e.cause)
     }
 
+    /**
+     * 등록부 redirect-uri-r3-narrower-than-keycloak — 다른 언어가 R4 로 거부하는 모양(경로의 `[` · scheme 뒤 빈 값)은 여기서 이미
+     * 거부된다: 파싱이 Keycloak 이 redirect_uri 를 읽는 것과 같은 `java.net.URI` 라 그 파서의 거부가 그대로 오늘의 파싱 메시지
+     * (`invalid redirect_uri: <reason>`)다. 그래서 Kotlin 에는 R4 를 더하지 않는다 — 이 시험이 그 판정을 고정한다. 요청도 0 이다.
+     */
+    @Test
+    fun `java net URI already refuses the shapes R4 adds elsewhere`() {
+        for ((value, reason) in listOf("https://app/c[b" to "Illegal character in path", "https:" to "Expected scheme-specific part")) {
+            for (auth in clients()) {
+                val e = assertFailsWith<KeycloakConfigException>(value) { auth.createAuthorizationRequest(value) }
+                assertEquals("invalid redirect_uri: $reason", e.message)
+                assertIs<URISyntaxException>(e.cause)
+            }
+        }
+        assertEquals(0, hits())
+    }
+
     @Test
     fun `refusal does not echo the input`() {
         val e =
