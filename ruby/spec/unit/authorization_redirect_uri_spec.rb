@@ -23,6 +23,21 @@ module AuthzRedirectUriSpec
   SPACE_SEPARATORS = [0x1680, *0x2000..0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000].freeze
   R3_CHARS = ([*0x00..0x20, *0x7F..0xA0, *SPACE_SEPARATORS].map { |c| c.chr(Encoding::UTF_8) } +
               %w[" < > \\ ^ ` { | }]).freeze
+
+  # `to_s` 가 그 값인 객체 — rack-oauth2 는 값을 `to_s` 로 실었다(그래서 `URI(...)` 가 동작했다).
+  Shown = Struct.new(:shown) do
+    def to_s = shown
+  end
+
+  # 값은 절대 URI 지만 `to_s` 는 상대 URI 다 — 조립이 싣는 것은 `to_s` 다.
+  class ShowsRelative < String
+    def to_s = "cb"
+  end
+
+  # 값은 상대 URI 지만 `to_s` 는 절대 URI 다.
+  class ShowsAbsolute < String
+    def to_s = "https://app/shown"
+  end
 end
 
 RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_uri" do
@@ -54,10 +69,39 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
 
   # `cb#f` · `cb\xFF` 는 순서의 증명이다 — R1 이 R2·R3 보다 앞이다.
   [*["", "cb", "/cb", "//app/cb", "not a url", "cb#f", "cb\xFF"].map { |v| [v.inspect, v] },
-   ["nil", nil], ["the Integer 42", 42], ["a Symbol", :"https://app/cb"], ["a URI object", URI("https://app/cb")],
    ["a UTF-16 String", "https://app/cb".encode("UTF-16LE")]].each do |what, value|
     it "refuses #{what} as not an absolute URI" do
       expect(refusal(value)).to eq(not_absolute)
+    end
+  end
+
+  # 값은 rack-oauth2 가 하던 대로 `to_s` 로 바꾼 그 문자열로 검사한다 — 검사한 것이 곧 싣는 것이다. nil 은 "" 가 된다
+  # (예전에는 redirect_uri 없는 URL 이 나갔다 — 실측).
+  [["nil", nil, AuthzRedirectUriSpec::NOT_ABSOLUTE],
+   ["the Integer 42", 42, AuthzRedirectUriSpec::NOT_ABSOLUTE],
+   ["an object whose to_s is relative", AuthzRedirectUriSpec::Shown.new("cb"), AuthzRedirectUriSpec::NOT_ABSOLUTE],
+   ["an object whose to_s is not a String", AuthzRedirectUriSpec::Shown.new(42), AuthzRedirectUriSpec::NOT_ABSOLUTE],
+   ["an object whose to_s has a fragment", AuthzRedirectUriSpec::Shown.new("https://app/cb#f"),
+    AuthzRedirectUriSpec::FRAGMENT],
+   ["an object whose to_s has a space", AuthzRedirectUriSpec::Shown.new("https://app/c b"),
+    AuthzRedirectUriSpec::NOT_VALID],
+   ["a String whose to_s is relative", AuthzRedirectUriSpec::ShowsRelative.new("https://app/cb"),
+    AuthzRedirectUriSpec::NOT_ABSOLUTE]].each do |what, value, message|
+    it "checks #{what} as the string the URL would carry" do
+      expect(refusal(value)).to eq(message)
+    end
+  end
+
+  # URI 객체·Symbol 은 예전에도 실렸다(`to_s`). `to_s` 가 String 하위 타입을 돌려주면 그 값 자체를 평범한 String 으로
+  # 만들어 검사하고 싣는다 — 하위 타입의 `to_s` 를 조립이 다시 부르면 검사하지 않은 값이 나간다.
+  [["a URI object", URI("https://app/cb"), "https://app/cb"],
+   ["a Symbol", :"https://app/cb", "https://app/cb"],
+   ["a String whose to_s is absolute", AuthzRedirectUriSpec::ShowsAbsolute.new("cb"), "https://app/shown"],
+   ["an object whose to_s is such a String",
+    AuthzRedirectUriSpec::Shown.new(AuthzRedirectUriSpec::ShowsRelative.new("https://app/cb")),
+    "https://app/cb"]].each do |what, value, sent|
+    it "carries #{what} as its string" do
+      expect(sent_redirect_uri(value)).to eq([sent])
     end
   end
 

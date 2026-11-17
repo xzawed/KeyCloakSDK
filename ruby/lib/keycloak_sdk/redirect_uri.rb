@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 module KeycloakSdk
-  # The `redirect_uri` an authorization request may carry — checked, never rewritten: the URL carries the caller's
-  # String exactly as given, and the code exchange sends that same String (RFC 6749 §4.1.3 wants the two to match, so
-  # normalising one of them breaks the flow). Three rules, in this order:
+  # The `redirect_uri` an authorization request may carry — checked, never rewritten. The value is turned into a String
+  # with `to_s`, as rack-oauth2 always did (a `URI` object worked, so it still does), and that String is what is
+  # checked and what the URL carries; the code exchange sends the caller's value verbatim (RFC 6749 §4.1.3 wants the
+  # two to match, so normalising one of them breaks the flow). Checking the converted String also keeps a String
+  # subclass whose `to_s` differs from its value from sending something that was never checked. Three rules, in order:
   #
-  # - R1 absolute (RFC 6749 §3.1.2): a scheme, then `:`. A value that is not a String — nil included — is not an
-  #   absolute URI either.
+  # - R1 absolute (RFC 6749 §3.1.2): a scheme, then `:`. nil becomes "", which is not an absolute URI.
   # - R2 no fragment (RFC 6749 §3.1.2): no `#` anywhere; `https://app/cb#` has an empty one.
   # - R3 a URI Keycloak can read (RFC 3986 §2): Keycloak parses `redirect_uri` with `java.net.URI.create` and refuses
   #   the request when that throws — for every character in U+0000-U+0020 and U+007F-U+00A0, for the Unicode space
@@ -30,16 +31,22 @@ module KeycloakSdk
                   | %(?![0-9A-Fa-f]{2})/x
     private_constant :NOT_ABSOLUTE, :FRAGMENT, :NOT_VALID, :SCHEME, :UNREADABLE
 
-    # Raises ConfigError unless `value` passes R1, R2 and R3; returns nil.
+    # Returns the String the URL carries — `value.to_s` as a plain String — once it passes R1, R2 and R3; otherwise
+    # raises ConfigError. A plain String, because a `to_s` may return a String subclass whose own `to_s` (which the URL
+    # builder calls again) would send something that was never checked.
     def self.check!(value)
-      bytes = value.b if value.is_a?(String)
-      raise ConfigError, NOT_ABSOLUTE unless bytes&.match?(SCHEME)
+      shown = value.to_s
+      raise ConfigError, NOT_ABSOLUTE unless shown.is_a?(String)
+
+      sent = String.new(shown)
+      bytes = sent.b
+      raise ConfigError, NOT_ABSOLUTE unless bytes.match?(SCHEME)
       raise ConfigError, FRAGMENT if bytes.include?("#")
 
       text = bytes.force_encoding(Encoding::UTF_8)
       raise ConfigError, NOT_VALID unless text.valid_encoding? && !text.match?(UNREADABLE)
 
-      nil
+      sent
     end
   end
 end
