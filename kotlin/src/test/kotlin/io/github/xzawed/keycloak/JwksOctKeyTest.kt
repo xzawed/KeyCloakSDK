@@ -218,6 +218,7 @@ internal class JwksOctKeyTest {
     ): JWTClaimsSet =
         JWTClaimsSet
             .Builder()
+            .claim("typ", "Bearer")
             .issuer(endpoints.issuer)
             .audience("app")
             .subject(sub)

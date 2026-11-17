@@ -93,6 +93,7 @@ internal class JwksEmptyKeysetTest {
                 JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.keyID).build(),
                 JWTClaimsSet
                     .Builder()
+                    .claim("typ", "Bearer")
                     .issuer(endpoints.issuer)
                     .audience("app")
                     .subject(sub)

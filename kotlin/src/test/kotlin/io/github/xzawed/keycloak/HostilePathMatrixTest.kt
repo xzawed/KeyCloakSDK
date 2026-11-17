@@ -350,7 +350,9 @@ private class HpIdP(
 
     // 모든 문자열 인자에 넣는 값이다. ⚠️ 평문이면 토큰을 받는 멤버(validate 둘)가 JWS 파싱에서 요청 없이 실패해
     // UNDETERMINED 가 되고 JWKS_FETCH 가 빈다 — 그래서 이 IdP 키로 서명한 **유효한 JWS** 다(URL·폼에 안전한 글자뿐).
-    val universal: String = hpSign(key, key.keyID, iss, emptyMap())
+    // 액세스 토큰 모양(typ "Bearer") — validate 가 이것을 받아 ValidatedToken 수신자를 만든다(액세스 검증기는 Bearer · DPoP 만
+    // 받는다 — 없으면 그 게터 행이 수신자 없이 UNDETERMINED 가 된다).
+    val universal: String = hpSign(key, key.keyID, iss, mapOf("typ" to "Bearer"))
 
     // 토큰 응답의 id_token — nonce 가 보편 인자라 exchangeCode 의 nonce 검증까지 통과한다(Keycloak 처럼 typ "ID").
     val idToken: String = hpSign(key, key.keyID, iss, mapOf("nonce" to universal, "typ" to "ID"))
