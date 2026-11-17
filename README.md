@@ -1,4 +1,7 @@
-<!-- doc-budget: max-bytes=12837 -->
+<!-- doc-budget: max-bytes=13044 -->
+<!-- 12837 → 13044 (2026-11-17, +207B). 규약 (1) — 교환: Status 의 「nonce 를 생략하면 아홉 모두 id_token 검증을
+     건너뛴다」와 검사 목록(signature·iss·aud·exp)이 거짓이다. Node 는 nonce 를 실은 id_token 교환을 거부하고,
+     검사는 typ "ID"·azp 를 포함하며, nonce 대조 없는 공개 입구는 validateIdToken 류다. -->
 <!-- 12549 → 12837 (2026-11-14, +288B). 규약 (1) — 교환: §4 계약의 거짓 둘을 고쳤다 — 「nonce 를 생략하면 아홉 모두
      id_token 검증을 건너뛴다」(node 는 교환이 실패한다) · 「예외는 representation 과 raw()」(Rust 의 reqwest · Jwk 가
      빠졌다). 증가분을 test-readme-contract.sh 가 lib.rs 재노출 · node 시험과 대조한다. -->
@@ -161,7 +164,7 @@ Secrets and tokens are masked in logs and serialization, and TLS verification is
 
 ## Status
 
-All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI). Logic modules are held to a line ≥ 90% coverage gate; six languages also gate branch ≥ 85% (Go, PHP and Rust measure lines only). Security cores were reviewed adversarially. Configurable JWT signature algorithms and dependency CVE audits apply across all nine. OIDC nonce / `id_token` replay protection is in **all nine**: `create*` always issues a nonce and puts it on the authorization URL; `exchange*` fully validates the `id_token` (signature · `iss` · `aud` · `exp`) and compares the nonce claim when the caller passes that value back. Omitting the nonce argument still skips id_token validation — that opt-out is the shared pattern, not a Ruby-only exception.
+All nine SDKs are feature-complete and merged to `main`. Each is verified against a **real Keycloak 26.6 server** (Testcontainers; PHP and Ruby shell out to the docker CLI). Logic modules are held to a line ≥ 90% coverage gate; six languages also gate branch ≥ 85% (Go, PHP and Rust measure lines only). Security cores were reviewed adversarially. Configurable JWT signature algorithms and dependency CVE audits apply across all nine. OIDC nonce / `id_token` replay protection is in **all nine**: `create*` always issues a nonce and puts it on the authorization URL; `exchange*` checks the `id_token` (signature, exact `iss`, client-id `aud`, `exp`, `typ` exactly `ID`, `azp`) and then the nonce when the caller passes that value back. Omit the nonce and eight skip that check; Node fails the exchange when the id_token carries a nonce. Without the nonce compare, call `validateIdToken` (Go `ValidateIDToken`, .NET `ValidateIdTokenAsync`, Python · Rust · Ruby `validate_id_token`) — not `validate`, which accepts only access-token `typ` `Bearer` or `DPoP`.
 
 All nine have shipped a stable release to a public registry, each behind a human tag gate, and each preceded by a release candidate that stays on its registry. Commands are under [Install](#install); the exact version each language shipped, with the libraries it wraps, is the [compatibility table](docs/reference/compatibility.md#compatibility). See [DEPLOY.md](DEPLOY.md) for the release procedure, and [SECURITY.md](SECURITY.md) for the security policy and what `1.0` means here.
 

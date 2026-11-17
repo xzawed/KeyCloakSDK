@@ -1,4 +1,6 @@
-<!-- doc-budget: max-bytes=11282 -->
+<!-- doc-budget: max-bytes=11301 -->
+<!-- 11282 → 11301 (2026-11-17, +19B). 규약 (1) — 교환: 「nonce 를 생략하면 아홉 모두 id_token 검증을 건너뛴다」가
+     거짓이다. Node 는 nonce 를 실은 id_token 의 교환을 거부한다. -->
 <!-- 11211 → 11282 (2026-10-29, +71B). 규약 (1) — 교환: 「eight languages refetch only on an unresolved key id」 가 JWKS
      키 집합 300 초 수명(판정 2026-10-29 — 가드 1h) 뒤로 무조건 문장으로는 거짓이 되어 고쳤다. -->
 
@@ -45,8 +47,8 @@ not limited to:
   on all nine: the authorization request always issues a nonce and `exchange*`
   fully validates the `id_token` (signature · `iss` · `aud` · `azp` · `typ` · `exp`) against it
   when the caller passes that nonce back. The exchange-side argument is
-  optional on all nine — omit it and id_token validation is skipped (custom
-  no-nonce flows). State is returned to the caller on all nine (the SDK is
+  optional on all nine — omit it and eight skip the id_token check; Node fails
+  the exchange when the id_token carries a nonce. State is returned to the caller on all nine (the SDK is
   stateless; the caller compares it).
 - **Secret handling** — client-secret and token masking in the default string /
   debug representation of every value type, on all nine languages. Some

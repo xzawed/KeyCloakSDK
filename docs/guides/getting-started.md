@@ -1,4 +1,6 @@
-<!-- doc-budget: max-bytes=43553 -->
+<!-- doc-budget: max-bytes=43629 -->
+<!-- 43553 → 43629 (2026-11-17, +76B). 규약 (1) — 교환: PHP·Ruby 퀵스타트의 「matching the other eight
+     languages」(nonce 생략 시 id_token 검사를 아홉이 건너뛴다)가 거짓이다. Node 는 nonce 를 실은 id_token 을 거부한다. -->
 <!-- 44110 → 43553 (2026-10-28): 검사 8e — 그사이 줄어든 557B 를 상한에서도 뺐다(여유 상한 300B). -->
 <!-- 44032 → 44110 (2026-09-23). 규약 (1) — **함대 정렬 분기가 뒤집혔다.** JVM 짝이
      `1.0.1` 로 가면서 「아홉이 모두 1.0.0」이 거짓이 되고, `test-publication-claims.sh` 가
@@ -491,7 +493,7 @@ echo "created userId={$userId}\n";
 
 > Error handling: admin failures are classified as `KeycloakNotFoundError`/`KeycloakConflictError`/`KeycloakForbiddenError` (all of which carry `KeycloakAdminError::getStatusCode()`), or `KeycloakTransportError` on a network failure. `admin()->raw()` is the escape hatch to the underlying `Fschmtt\Keycloak\Keycloak` typed client.
 
-> **Authorization code (PKCE) flow**: `$req = $client->auth()->createAuthorizationRequest()` always issues a nonce (on `$req->nonce` and on the authorization URL). Exchange with `$client->auth()->exchangeCode($code, $req->codeVerifier, $req->nonce)` so the `id_token` is signature-verified and the nonce claim is checked. The third argument is optional — omit it and id_token validation is skipped, matching the other eight languages. Both methods take an optional trailing `$redirectUri` for apps with more than one callback URL (multi-tenant, per-environment); pass the **same** value to both, as OAuth requires the token request's `redirect_uri` to match the one used for authorization.
+> **Authorization code (PKCE) flow**: `$req = $client->auth()->createAuthorizationRequest()` always issues a nonce (on `$req->nonce` and on the authorization URL). Exchange with `$client->auth()->exchangeCode($code, $req->codeVerifier, $req->nonce)` so the `id_token` is signature-verified and the nonce claim is checked. The third argument is optional — omit it and id_token validation is skipped, as on seven other languages; Node refuses an id_token that carries a nonce. Both methods take an optional trailing `$redirectUri` for apps with more than one callback URL (multi-tenant, per-environment); pass the **same** value to both, as OAuth requires the token request's `redirect_uri` to match the one used for authorization.
 
 ## Rust
 
@@ -628,7 +630,7 @@ client.close
 
 > Error handling: admin failures are classified as `KeycloakSdk::NotFoundError`/`ConflictError`/`ForbiddenError` (all of which carry `AdminError#status`), or `KeycloakSdk::TransportError` on a network failure. `admin.raw` is the escape hatch to the underlying `Faraday::Connection`.
 
-> **Authorization code (PKCE) flow**: `req = client.auth.create_authorization_request(redirect_uri: …)` always issues a nonce (on `req.nonce` and on the authorization URL). Exchange with `client.auth.exchange_code(code:, code_verifier: req.code_verifier, redirect_uri:, expected_nonce: req.nonce)` so the `id_token` is signature-verified and the nonce claim is checked. `expected_nonce:` remains optional — omit it and id_token validation is skipped, matching the other eight languages.
+> **Authorization code (PKCE) flow**: `req = client.auth.create_authorization_request(redirect_uri: …)` always issues a nonce (on `req.nonce` and on the authorization URL). Exchange with `client.auth.exchange_code(code:, code_verifier: req.code_verifier, redirect_uri:, expected_nonce: req.nonce)` so the `id_token` is signature-verified and the nonce claim is checked. `expected_nonce:` remains optional — omit it and id_token validation is skipped, as on seven other languages; Node refuses an id_token that carries a nonce.
 
 ---
 
