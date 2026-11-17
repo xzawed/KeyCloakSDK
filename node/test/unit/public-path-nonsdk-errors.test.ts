@@ -27,17 +27,21 @@ import {
 interface Fake {
   url: string
   seen: string[]
+  /** 받은 요청 본문(UTF-8) — `seen` 과 같은 순서. */
+  bodies: string[]
   reply: (method: string, url: string) => { status: number; headers?: Record<string, string> }
   close: () => Promise<void>
 }
 
 async function fake(): Promise<Fake> {
-  const f: Partial<Fake> = { seen: [] }
+  const f: Partial<Fake> = { seen: [], bodies: [] }
   f.reply = () => ({ status: 204 })
   const server: Server = createServer((req, res) => {
     f.seen!.push(`${req.method} ${req.url}`)
-    req.resume()
+    const chunks: Buffer[] = []
+    req.on('data', (c: Buffer) => chunks.push(c))
     req.on('end', () => {
+      f.bodies!.push(Buffer.concat(chunks).toString('utf8'))
       const r = f.reply!(req.method ?? '', req.url ?? '')
       res.writeHead(r.status, r.headers ?? {})
       res.end()
@@ -134,6 +138,101 @@ describe('admin 쓰기 — JSON 으로 쓸 수 없는 표현', () => {
       await admin.users.update('u1', { username: 'x' })
       expect(tokens.n - before).toBe(1)
       expect(srv.seen).toEqual(['PUT /admin/realms/r/users/u1'])
+    } finally {
+      await srv.close()
+    }
+  })
+})
+
+/**
+ * JSON 이 그대로 싣지 못하는 수 — 등록부 `admin-unencodable-body-residuals`.
+ *
+ * `JSON.stringify` 는 NaN · ±Infinity 를 던지지 않고 `null` 로 쓴다(ECMA-262 SerializeJSONProperty — 감싼 `Number` 객체도
+ * 수로 풀어 같다). 호출자가 보내지 않은 값이 admin 요청에 실렸다. 그런 본문은 순환 · BigInt 와 같은 계약이다 — 같은
+ * {@link KeycloakTransportError} · 같은 문구이고 토큰 · admin 요청이 없다. 받은 본문을 먼저 단언해 무엇이 나갔는지 보인다.
+ */
+describe('admin 쓰기 — JSON 이 그대로 싣지 못하는 수(NaN · ±Infinity)', () => {
+  const NON_FINITE: ReadonlyArray<readonly [string, unknown]> = [
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+    ['-Infinity', -Infinity],
+    ['new Number(NaN)', new Number(NaN)],
+  ]
+  /** 쓰기 하나를 돌려 그 결과를 돌려준다 — 성공도 값으로 남긴다(받은 본문 단언이 먼저 온다). */
+  const settle = async (p: Promise<unknown>): Promise<{ error?: unknown }> => {
+    try {
+      await p
+      return {}
+    } catch (e) {
+      return { error: e }
+    }
+  }
+  const refused = async (call: (a: AdminClient) => Promise<unknown>): Promise<void> => {
+    const srv = await fake()
+    const tokens = { n: 0 }
+    try {
+      const admin = await adminOn(srv.url, tokens)
+      const before = tokens.n
+      srv.seen.length = 0
+      srv.bodies.length = 0
+      const outcome = await settle(call(admin))
+      expect(srv.bodies).toEqual([])
+      expect(srv.seen).toEqual([])
+      expect(tokens.n - before).toBe(0)
+      expect(outcome.error).toBeInstanceOf(KeycloakTransportError)
+      expect((outcome.error as Error).message).toBe(
+        'admin request failed: the request body could not be encoded as JSON',
+      )
+      expect(((outcome.error as Error).cause as Error).name).toBe('TypeError')
+    } finally {
+      await srv.close()
+    }
+  }
+
+  // 자유 형식 칸 — 다섯 리소스 모두 `attributes` 가 있다.
+  for (const [label, call] of WRITES) {
+    for (const [kind, value] of NON_FINITE) {
+      it(`${label}: attributes 의 ${kind} 는 KeycloakTransportError 이고 토큰 · admin 요청이 없다`, () =>
+        refused((a) => call(a, { name: 'x', attributes: { n: [value] } })))
+    }
+  }
+
+  // 수 칸 — 선언된 number 필드.
+  for (const [label, call] of [
+    ['users.update notBefore', (a: AdminClient) => a.users.update('u1', { notBefore: NaN })],
+    ['clients.create notBefore', (a: AdminClient) => a.clients.create({ notBefore: -Infinity })],
+    [
+      'realms.update accessTokenLifespan',
+      (a: AdminClient) => a.realms.update('r', { accessTokenLifespan: Infinity }),
+    ],
+  ] as const) {
+    it(`${label} 는 KeycloakTransportError 이고 토큰 · admin 요청이 없다`, () => refused(call))
+  }
+
+  it('대조 — 유한한 수는 그대로 실린다', async () => {
+    const srv = await fake()
+    try {
+      const admin = await adminOn(srv.url, { n: 0 })
+      await admin.users.update('u1', {
+        notBefore: Number.MAX_VALUE,
+        attributes: { n: [1.5, -2, new Number(3)] },
+      })
+      expect(srv.seen).toEqual(['PUT /admin/realms/r/users/u1'])
+      expect(srv.bodies).toEqual([
+        '{"notBefore":1.7976931348623157e+308,"attributes":{"n":[1.5,-2,3]}}',
+      ])
+    } finally {
+      await srv.close()
+    }
+  })
+
+  it('대조 — 짝 없는 서로게이트는 JSON.stringify 가 이스케이프로 그대로 싣는다(받는다)', async () => {
+    const srv = await fake()
+    try {
+      const admin = await adminOn(srv.url, { n: 0 })
+      await admin.users.update('u1', { username: 'x\ud800', attributes: { k: ['\udc00y'] } })
+      expect(srv.seen).toEqual(['PUT /admin/realms/r/users/u1'])
+      expect(srv.bodies).toEqual(['{"username":"x\\ud800","attributes":{"k":["\\udc00y"]}}'])
     } finally {
       await srv.close()
     }
