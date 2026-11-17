@@ -410,7 +410,8 @@ final class HostilePathMatrixTest extends TestCase
         $iss = self::iss();
         // 문자열 인자 자리에 들어갈 보편 인자 — ⚠️ 평문이면 토큰을 받는 메서드(validate 둘·getKeyByKid)가 요청 없이 실패해
         // JWKS_FETCH 가 빈다(Go 판 실측). 그래서 이 IdP 키로 서명한 **유효한 JWS** 다. URL·폼에 안전한 문자만 쓴다.
-        self::$universal = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time()]);
+        // typ "Bearer" — 접근 토큰의 종류다(validate 는 Bearer · DPoP 만 받는다). 없으면 validate 행의 분류 실행이 종류에서 거부된다.
+        self::$universal = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'u1', 'aud' => 'c', 'typ' => 'Bearer', 'exp' => time() + 300, 'iat' => time()]);
         // typ "ID" — Keycloak 이 모든 id_token 에 싣는 값이고, id_token 검사(validateIdToken · 교환)는 그 밖을 거부한다.
         self::$idToken = self::sign(self::$priv, 'k1', ['iss' => $iss, 'sub' => 'u1', 'aud' => 'c', 'exp' => time() + 300, 'iat' => time(), 'nonce' => self::$universal, 'typ' => 'ID']);
         // fschmtt 는 access_token·refresh_token 을 **JWT 로 파싱**한다 — 평문이면 admin 이 요청 앞에서 실패한다. exp 를 짧게
