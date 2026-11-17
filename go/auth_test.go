@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -201,7 +202,8 @@ func TestExchangeCodeAndRefresh(t *testing.T) {
 }
 
 // signIDToken produces an RS256-signed id_token carrying a nonce claim, for the
-// ExchangeCode nonce-replay tests.
+// ExchangeCode nonce-replay tests. Its payload typ is "ID", as on every id_token
+// Keycloak issues — the id_token check refuses any other.
 func signIDToken(t *testing.T, key *rsa.PrivateKey, kid, iss, aud, nonce string) string {
 	t.Helper()
 	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key},
@@ -211,7 +213,7 @@ func signIDToken(t *testing.T, key *rsa.PrivateKey, kid, iss, aud, nonce string)
 	}
 	std := jwt.Claims{Subject: "user1", Issuer: iss, Audience: jwt.Audience{aud},
 		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}
-	b := jwt.Signed(sig).Claims(std)
+	b := jwt.Signed(sig).Claims(std).Claims(map[string]any{"typ": "ID"})
 	if nonce != "" { // "" means the token carries no nonce claim at all
 		b = b.Claims(map[string]any{"nonce": nonce})
 	}
@@ -357,8 +359,22 @@ func (p *audIdP) claims(aud ...string) jwt.Claims {
 		Expiry: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)), IssuedAt: jwt.NewNumericDate(time.Now())}
 }
 
-// sign serialises cl signed by key under alg with header kid; an empty nonce leaves the claim out.
+// sign serialises cl signed by key under alg with header kid; an empty nonce leaves the claim out. It sets no typ — an
+// access token's shape here; an id_token is signID.
 func (p *audIdP) sign(t *testing.T, key *rsa.PrivateKey, alg jose.SignatureAlgorithm, kid string, cl jwt.Claims, nonce string) string {
+	t.Helper()
+	return p.signTyped(t, key, alg, kid, cl, nonce, "")
+}
+
+// signID is sign for an id_token: its payload typ is "ID", as on every id_token Keycloak issues — the id_token check
+// (ValidateIDToken, and the exchange through it) refuses any other typ.
+func (p *audIdP) signID(t *testing.T, key *rsa.PrivateKey, alg jose.SignatureAlgorithm, kid string, cl jwt.Claims, nonce string) string {
+	t.Helper()
+	return p.signTyped(t, key, alg, kid, cl, nonce, "ID")
+}
+
+// signTyped is sign and signID: an empty nonce or typ leaves that claim out.
+func (p *audIdP) signTyped(t *testing.T, key *rsa.PrivateKey, alg jose.SignatureAlgorithm, kid string, cl jwt.Claims, nonce, typ string) string {
 	t.Helper()
 	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
@@ -368,6 +384,9 @@ func (p *audIdP) sign(t *testing.T, key *rsa.PrivateKey, alg jose.SignatureAlgor
 	b := jwt.Signed(sig).Claims(cl)
 	if nonce != "" {
 		b = b.Claims(map[string]any{"nonce": nonce})
+	}
+	if typ != "" {
+		b = b.Claims(map[string]any{"typ": typ})
 	}
 	s, err := b.Serialize()
 	if err != nil {
@@ -379,7 +398,7 @@ func (p *audIdP) sign(t *testing.T, key *rsa.PrivateKey, alg jose.SignatureAlgor
 // idToken is a genuine id_token for the given audiences, carrying nonce "n".
 func (p *audIdP) idToken(t *testing.T, aud ...string) string {
 	t.Helper()
-	return p.sign(t, p.priv, jose.RS256, "k1", p.claims(aud...), "n")
+	return p.signID(t, p.priv, jose.RS256, "k1", p.claims(aud...), "n")
 }
 
 // signWith signs cl with the realm key under kid k1, extra merged into the payload (nonce, typ, azp …).
@@ -431,7 +450,7 @@ func TestExchangeCodeIDTokenAudienceIsTheClientIDUnderAnOverride(t *testing.T) {
 	// A1: the id_token names the client, alone or beside other audiences — the exchange passes. Its azp is the client,
 	// as on a Keycloak id_token; with several audiences OIDC Core §3.1.3.7 step 4 requires one.
 	for _, aud := range [][]string{{audClientID}, {audOverride, audClientID}} {
-		idt := p.signWith(t, p.claims(aud...), map[string]any{"nonce": "n", "azp": audClientID})
+		idt := p.signWith(t, p.claims(aud...), map[string]any{"nonce": "n", "azp": audClientID, "typ": "ID"})
 		if err := p.exchange(c, idt, "n"); err != nil {
 			t.Fatalf("A1: id_token aud=%v must pass under ExpectedAudience=%q: %v", aud, audOverride, err)
 		}
@@ -467,7 +486,7 @@ func TestExchangeCodeIDTokenChecksUnchangedUnderAnOverride(t *testing.T) {
 	withClaims := func(edit func(*jwt.Claims)) string {
 		cl := p.claims(audClientID)
 		edit(&cl)
-		return p.sign(t, p.priv, jose.RS256, "k1", cl, "n")
+		return p.signID(t, p.priv, jose.RS256, "k1", cl, "n")
 	}
 
 	// iss: exact match.
@@ -478,11 +497,11 @@ func TestExchangeCodeIDTokenChecksUnchangedUnderAnOverride(t *testing.T) {
 	}
 
 	// Algorithm pin: RS512 by the realm's own key is a valid signature, but not a pinned algorithm.
-	requireIDTokenRefused(t, p.exchange(c, p.sign(t, p.priv, jose.RS512, "k1", p.claims(audClientID), "n"), "n"),
+	requireIDTokenRefused(t, p.exchange(c, p.signID(t, p.priv, jose.RS512, "k1", p.claims(audClientID), "n"), "n"),
 		"parse: ", "RS512 id_token")
 
 	// Signature: a key outside the JWKS under the realm's kid.
-	requireIDTokenRefused(t, p.exchange(c, p.sign(t, p.other, jose.RS256, "k1", p.claims(audClientID), "n"), "n"),
+	requireIDTokenRefused(t, p.exchange(c, p.signID(t, p.other, jose.RS256, "k1", p.claims(audClientID), "n"), "n"),
 		"signature: ", "foreign key")
 
 	// exp and its 30s skew: inside the skew passes, past it and absent are refused.
@@ -504,7 +523,7 @@ func TestExchangeCodeIDTokenChecksUnchangedUnderAnOverride(t *testing.T) {
 	// Nonce: compared after validation — a mismatch and an absent claim are both refused.
 	for what, idt := range map[string]string{
 		"mismatched nonce": p.idToken(t, audClientID),
-		"absent nonce":     p.sign(t, p.priv, jose.RS256, "k1", p.claims(audClientID), ""),
+		"absent nonce":     p.signID(t, p.priv, jose.RS256, "k1", p.claims(audClientID), ""),
 	} {
 		var ae *AuthError
 		if err := p.exchange(c, idt, "m"); !errors.As(err, &ae) || ae.Msg != "authorization code exchange failed: unexpected nonce" {
@@ -558,7 +577,7 @@ func TestExchangeCodeAndValidateShareOneKeyStore(t *testing.T) {
 		p := newAudIdP(t)
 		c := p.client(t)
 		opts := c.Auth.val.opts
-		opts.audience = audClientID
+		opts.audience, opts.kind = audClientID, kindIDToken
 		if _, err := newValidator(opts).Validate(ctx, p.idToken(t, audClientID)); err != nil {
 			t.Fatalf("control id_token: %v", err)
 		}
@@ -582,7 +601,7 @@ func TestExchangeCodeAndValidateShareOneKeyStore(t *testing.T) {
 		if n := p.certs.Load(); n != 2 {
 			t.Fatalf("Validate's unknown kid must force one refetch, got /certs=%d", n)
 		}
-		idt := p.sign(t, p.priv, jose.RS256, "rotated-too", p.claims(audClientID), "n")
+		idt := p.signID(t, p.priv, jose.RS256, "rotated-too", p.claims(audClientID), "n")
 		tve := requireIDTokenRefused(t, p.exchange(c, idt, "n"), "key: ", "unknown kid inside the window")
 		if !strings.Contains(tve.Msg, "rate-limited") {
 			t.Fatalf("the exchange's unknown kid must hit Validate's window, got %v", tve)
@@ -610,15 +629,51 @@ func TestExchangeCodeAndValidateShareOneKeyStore(t *testing.T) {
 			t.Fatalf("Validate inside the exchange's backoff must not fetch, got /certs=%d", n)
 		}
 	})
+
+	// The public id_token check is the exchange's, so it shares the same store: no second cold load and no window of
+	// its own. ControlASecondStoreIsCounted above is what proves the count sees a second store.
+	t.Run("ValidateIDTokenSharesTheColdLoad", func(t *testing.T) {
+		p := newAudIdP(t)
+		c := p.client(t)
+		if _, err := c.Auth.ValidateIDToken(ctx, p.idToken(t, audClientID)); err != nil {
+			t.Fatalf("ValidateIDToken: %v", err)
+		}
+		if _, err := c.Auth.Validate(ctx, access(p, "k1")); err != nil {
+			t.Fatalf("validate: %v", err)
+		}
+		if n := p.certs.Load(); n != 1 {
+			t.Fatalf("ValidateIDToken followed by Validate must cost one JWKS fetch, got /certs=%d", n)
+		}
+	})
+
+	t.Run("ValidateIDTokenSharesTheForcedRefetchWindow", func(t *testing.T) {
+		p := newAudIdP(t)
+		c := p.client(t)
+		if _, err := c.Auth.Validate(ctx, access(p, "k1")); err != nil { // cold load: 1
+			t.Fatalf("validate: %v", err)
+		}
+		if _, err := c.Auth.Validate(ctx, access(p, "rotated")); err == nil { // forced refetch: 2
+			t.Fatal("an unknown kid must not validate")
+		}
+		_, err := c.Auth.ValidateIDToken(ctx, p.signID(t, p.priv, jose.RS256, "rotated-too", p.claims(audClientID), "n"))
+		var tve *TokenValidationError
+		if !errors.As(err, &tve) || !strings.HasPrefix(tve.Msg, "key: ") || !strings.Contains(tve.Msg, "rate-limited") {
+			t.Fatalf("ValidateIDToken's unknown kid must hit Validate's window, got %v", err)
+		}
+		if n := p.certs.Load(); n != 2 {
+			t.Fatalf("ValidateIDToken must share Validate's forced-refetch window, got /certs=%d", n)
+		}
+	})
 }
 
 // ── typ and azp: the two checks that differ between the paths (facade wiring) ──
 //
 // (A) Validate refuses a Keycloak token that is not an access token (typ ID, Refresh, Offline, Logout, Serialized-ID).
-// (B) The id_token of a nonce-checked ExchangeCode meets OIDC Core §3.1.3.7 steps 4–5: with several audiences azp
-// must be present, and a present azp is the client id. Neither check applies on the other path. The validator cells
-// (all five types, edge values) are in jwt_test.go. The client is built by New with ExpectedAudience overridden, so a
-// check against the client id and one against the override are told apart.
+// (B) The id_token of ValidateIDToken — and so of a nonce-checked ExchangeCode — meets OIDC Core §3.1.3.7 steps 4–5:
+// with several audiences azp must be present, and a present azp is the client id. Neither check applies on the other
+// path; the id_token path has its own typ rule instead (exactly "ID" — the ValidateIDToken tests below). The validator
+// cells (all five types, edge values) are in jwt_test.go. The client is built by New with ExpectedAudience overridden,
+// so a check against the client id and one against the override are told apart.
 
 // TestAuthValidateJudgesTypNotAzp pins (A) on the facade: an id_token, a back-channel logout token and a refresh
 // token are refused by Validate even with the access-token audience — and (B) stays off Validate.
@@ -647,7 +702,8 @@ func TestAuthValidateJudgesTypNotAzp(t *testing.T) {
 	}
 }
 
-// TestExchangeCodeAcceptsAnIDTokenTypedID: (A) never applies to the exchange's id_token — Keycloak types it "ID".
+// TestExchangeCodeAcceptsAnIDTokenTypedID: (A) never applies to the exchange's id_token — Keycloak types it "ID", which
+// is exactly what the id_token path requires.
 func TestExchangeCodeAcceptsAnIDTokenTypedID(t *testing.T) {
 	p := newAudIdP(t)
 	c := p.client(t)
@@ -657,8 +713,10 @@ func TestExchangeCodeAcceptsAnIDTokenTypedID(t *testing.T) {
 	}
 }
 
-// TestExchangeCodeAppliesOIDCAzpRulesToTheIDToken pins (B) on the facade. A refusal has the shape of every other
-// id_token refusal: the invalid-id_token AuthError, caused by a TokenValidationError from the claims stage.
+// TestExchangeCodeAppliesOIDCAzpRulesToTheIDToken pins (B) on the facade, through both entry points: the exchange and
+// ValidateIDToken run the one check. An exchange refusal has the shape of every other id_token refusal: the
+// invalid-id_token AuthError, caused by a TokenValidationError from the claims stage — ValidateIDToken returns that
+// TokenValidationError itself.
 func TestExchangeCodeAppliesOIDCAzpRulesToTheIDToken(t *testing.T) {
 	p := newAudIdP(t)
 	c := p.client(t)
@@ -677,16 +735,108 @@ func TestExchangeCodeAppliesOIDCAzpRulesToTheIDToken(t *testing.T) {
 		// The client id, not ExpectedAudience: azp naming the override is another client.
 		{"azp is the override", []string{audClientID, audOverride}, map[string]any{"azp": audOverride}, mismatch},
 	} {
-		tc.extra["nonce"] = "n"
-		err := p.exchange(c, p.signWith(t, p.claims(tc.aud...), tc.extra), "n")
+		tc.extra["nonce"], tc.extra["typ"] = "n", "ID" // a Keycloak id_token — the typ rule has its own tests below
+		idt := p.signWith(t, p.claims(tc.aud...), tc.extra)
+		err := p.exchange(c, idt, "n")
+		_, direct := c.Auth.ValidateIDToken(context.Background(), idt)
 		if tc.want == "" {
-			if err != nil {
-				t.Fatalf("%s: the exchange must pass, got %v", tc.name, err)
+			if err != nil || direct != nil {
+				t.Fatalf("%s: the exchange and ValidateIDToken must pass, got %v / %v", tc.name, err, direct)
 			}
 			continue
 		}
 		if tve := requireIDTokenRefused(t, err, "claims: ", tc.name); tve.Msg != tc.want {
 			t.Fatalf("%s: got Msg=%q, want %q", tc.name, tve.Msg, tc.want)
+		}
+		var tve *TokenValidationError
+		if !errors.As(direct, &tve) || tve.Msg != tc.want || tve.Cause != nil {
+			t.Fatalf("%s: ValidateIDToken: want Msg=%q and no cause, got %v", tc.name, tc.want, direct)
+		}
+	}
+}
+
+// ── ValidateIDToken: the id_token check, public (registry id-token-validator-not-public) ──
+//
+// The exchange's id_token check used to be reachable only through a nonce-checked ExchangeCode (forIDToken is
+// unexported), and Validate refuses typ "ID" — so a consumer holding an id_token had no way to verify it with this
+// SDK. ValidateIDToken is that check: the exchange calls it before it compares the nonce. It takes no nonce, and it
+// accepts only typ "ID" (the validator cells are TestIDTokenValidatorAcceptsOnlyTypID in jwt_test.go).
+
+// TestValidateIDTokenAcceptsAKeycloakIDToken: an id_token as Keycloak issues it — typ "ID", aud and azp the client id —
+// passes under an ExpectedAudience override it does not carry, and comes back with its claims.
+func TestValidateIDTokenAcceptsAKeycloakIDToken(t *testing.T) {
+	p := newAudIdP(t)
+	c := p.client(t)
+	extra := map[string]any{"typ": "ID", "azp": audClientID, "nonce": "n", "sid": "s1"}
+	vt, err := c.Auth.ValidateIDToken(context.Background(), p.signWith(t, p.claims(audClientID), extra))
+	if err != nil {
+		t.Fatalf("a Keycloak id_token must pass ValidateIDToken: %v", err)
+	}
+	if vt.Subject != "user1" || vt.Issuer != p.srv.URL+"/realms/test" || !slices.Equal(vt.Audience, []string{audClientID}) ||
+		vt.ExpiresAt == 0 || vt.IssuedAt == 0 {
+		t.Fatalf("validated id_token: %+v", vt)
+	}
+	for k, want := range extra {
+		if vt.Claims[k] != want {
+			t.Errorf("claim %s = %v, want %v", k, vt.Claims[k], want)
+		}
+	}
+}
+
+// TestValidateIDTokenRefusesATokenNotTypedID: a token whose payload typ is not exactly "ID" is refused with the constant
+// message however right the rest of it is. The first row is the hole the rule closes — an access token Keycloak issued
+// to this very client (an audience mapper puts the client id in aud, azp is the client) passes every other id_token
+// check. The last is a back-channel logout token: aud the client id, no azp, exp present.
+func TestValidateIDTokenRefusesATokenNotTypedID(t *testing.T) {
+	ctx := context.Background()
+	p := newAudIdP(t)
+	c := p.client(t)
+	logout := map[string]any{"http://schemas.openid.net/event/backchannel-logout": map[string]any{}}
+	for name, extra := range map[string]map[string]any{
+		"access token, typ Bearer": {"typ": "Bearer", "azp": audClientID, "scope": "openid"},
+		"no typ":                   {"azp": audClientID, "nonce": "n"},
+		"typ bearer (lowercase)":   {"typ": "bearer", "azp": audClientID},
+		"typ a number":             {"typ": 1, "azp": audClientID},
+		"typ null":                 {"typ": nil, "azp": audClientID},
+		"typ an array":             {"typ": []string{"ID"}, "azp": audClientID},
+		"logout token":             {"typ": "Logout", "sid": "s1", "events": logout},
+	} {
+		_, err := c.Auth.ValidateIDToken(ctx, p.signWith(t, p.claims(audClientID), extra))
+		var tve *TokenValidationError
+		if !errors.As(err, &tve) || tve.Msg != msgNotAnIDToken || tve.Cause != nil {
+			t.Errorf("%s: want Msg=%q and no cause, got %v", name, msgNotAnIDToken, err)
+		}
+	}
+	if n := p.certs.Load(); n != 1 {
+		t.Fatalf("a claims refusal must not refetch the JWKS: /certs=%d, want 1", n)
+	}
+}
+
+// TestValidateIDTokenAudienceIsTheClientIDUnderAnOverride: aud must name the client id. An id_token whose aud holds only
+// Config.ExpectedAudience — the audience Validate looks for — is refused by the audience check.
+func TestValidateIDTokenAudienceIsTheClientIDUnderAnOverride(t *testing.T) {
+	p := newAudIdP(t)
+	c := p.client(t)
+	_, err := c.Auth.ValidateIDToken(context.Background(),
+		p.signWith(t, p.claims(audOverride), map[string]any{"typ": "ID", "azp": audClientID}))
+	var tve *TokenValidationError
+	if !errors.As(err, &tve) || !strings.HasPrefix(tve.Msg, "claims: ") || !errors.Is(err, jwt.ErrInvalidAudience) {
+		t.Fatalf("aud = the ExpectedAudience override only: want the audience refusal, got %v", err)
+	}
+}
+
+// TestExchangeCodeRefusesAnIDTokenNotTypedID: the exchange checks its id_token with ValidateIDToken, so the typ rule holds
+// there too — refused before the nonce is compared, with the exchange's own invalid-id_token refusal.
+func TestExchangeCodeRefusesAnIDTokenNotTypedID(t *testing.T) {
+	p := newAudIdP(t)
+	c := p.client(t)
+	for name, extra := range map[string]map[string]any{
+		"no typ":     {"nonce": "n", "azp": audClientID},
+		"typ Bearer": {"nonce": "n", "azp": audClientID, "typ": "Bearer"},
+	} {
+		tve := requireIDTokenRefused(t, p.exchange(c, p.signWith(t, p.claims(audClientID), extra), "n"), "claims: ", name)
+		if tve.Msg != msgNotAnIDToken || tve.Cause != nil {
+			t.Fatalf("%s: want Msg=%q and no cause, got Msg=%q Cause=%v", name, msgNotAnIDToken, tve.Msg, tve.Cause)
 		}
 	}
 }

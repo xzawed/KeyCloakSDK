@@ -43,7 +43,8 @@ func New(cfg Config) (*Client, error) {
 	v := newValidator(validatorOptions{
 		// withDefaults has already resolved ExpectedAudience to ClientID when unset.
 		jwksURI: ep.jwks, issuer: ep.issuer, audience: cfg.ExpectedAudience,
-		// The access validator Validate uses — ExchangeCode derives its id_token validator with forIDToken.
+		// The access validator Validate uses — ValidateIDToken (and ExchangeCode through it) derives the id_token
+		// validator with forIDToken, sharing this one's key store.
 		kind:        kindAccess,
 		allowedAlgs: cfg.signatureAlgorithms(), clockSkewSec: cfg.ClockSkew,
 		minRefetch: time.Duration(cfg.JwksMinRefetch) * time.Second,

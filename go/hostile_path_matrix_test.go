@@ -178,7 +178,8 @@ func newHPIdP(t *testing.T, key *rsa.PrivateKey) *hpIdP {
 	}))
 	t.Cleanup(idp.srv.Close)
 	idp.universal = hpSign(t, key, idp.iss(), nil)
-	idp.idToken = hpSign(t, key, idp.iss(), map[string]any{"nonce": idp.universal})
+	// typ "ID" — Keycloak 이 모든 id_token 에 싣는 값이고, id_token 검사(ValidateIDToken · 교환)는 그 밖을 거부한다.
+	idp.idToken = hpSign(t, key, idp.iss(), map[string]any{"nonce": idp.universal, "typ": "ID"})
 	return idp
 }
 
@@ -1165,7 +1166,7 @@ func hpRunVariantsA(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMeth
 var hpNonceVariants = []struct {
 	code, kid string
 	otherKey  bool
-	claims    map[string]any // nil 이면 {"nonce": 보편 인자(=호출에 넘긴 nonce)}
+	claims    map[string]any // nil 이면 {"nonce": 보편 인자(=호출에 넘긴 nonce)} — 어느 쪽이든 typ "ID" 가 더해진다
 	noIDToken bool
 	want      string // ok=성공해야 한다 · reject=거부해야 한다 · measure=측정만
 }{
@@ -1195,12 +1196,18 @@ func hpRunNonceB(t *testing.T, key *rsa.PrivateKey, methods map[string]hpMethod,
 			sent, panicked, err := hpCell0(t, key, methods[label], builderOf, nil, func(p *hpIdP) *hostileResp {
 				body := `"access_token":"hp-access","token_type":"Bearer","expires_in":300,"refresh_token":"hp-refresh"`
 				if !nv.noIDToken {
-					signer, claims := key, nv.claims
+					signer := key
 					if nv.otherKey {
 						signer = other
 					}
-					if claims == nil {
-						claims = map[string]any{"nonce": p.universal}
+					// 변형마다 typ "ID" 를 싣는다 — 없으면 id_token 검사가 종류(typ)에서 먼저 거부해, nonce 변형이 nonce 가
+					// 아닌 이유로 「거부」를 통과하고 대조는 실패한다(실측: 대조 FAIL · nonce≠·nonce클레임없음의 원인이 typ).
+					claims := map[string]any{"typ": "ID"}
+					if nv.claims == nil {
+						claims["nonce"] = p.universal
+					}
+					for k, v := range nv.claims {
+						claims[k] = v
 					}
 					body += fmt.Sprintf(`,"id_token":%q`, hpSignKid(t, signer, nv.kid, p.iss(), claims))
 				}

@@ -922,16 +922,22 @@ func (f *jwtFixture) signPadded(t *testing.T, target int) string {
 	}
 }
 
-// ── Token kinds: the access path judges typ, the id_token path judges azp (validator cells) ──
+// ── Token kinds: the access path refuses five typ values, the id_token path accepts only typ "ID" and judges azp
+// (validator cells) ──
 //
 // The typ claim Keycloak 26 puts on each token (org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
 // Bearer and DPoP are access tokens; ID, Refresh, Offline, Logout and Serialized-ID are not. Before the fix the
 // validator read neither typ nor azp, so an id_token ("ID") and a back-channel logout token ("Logout") passed Validate,
-// and so did an id_token with several audiences whose azp was another client (measured). Which path applies which
-// check is pinned on the facade in auth_test.go.
+// and so did an id_token with several audiences whose azp was another client (measured). The id_token path then judged
+// no typ at all, so an access token whose aud and azp both name the client passed it. Which path applies which check
+// is pinned on the facade in auth_test.go.
 
 // nonAccessTypes are the five Keycloak token types that are not access tokens.
 var nonAccessTypes = []string{"ID", "Refresh", "Offline", "Logout", "Serialized-ID"}
+
+// msgNotAnIDToken is the id_token path's refusal of a payload typ that is not exactly "ID". It is constant: typ is
+// whatever the token's minter chose, so it is never quoted (azp is not either).
+const msgNotAnIDToken = `claims: not an id_token (typ is not "ID")`
 
 // signWith signs cl with the fixture's key under kid k1, extra merged into the payload (typ, azp, a replaced aud …).
 func (f *jwtFixture) signWith(t *testing.T, cl jwt.Claims, extra map[string]any) string {
@@ -1027,8 +1033,13 @@ func TestValidateLeavesAzpAlone(t *testing.T) {
 	}
 }
 
-// TestIDTokenValidatorLeavesTypAlone: (A) never applies to the id_token ExchangeCode checks — Keycloak types it "ID".
-func TestIDTokenValidatorLeavesTypAlone(t *testing.T) {
+// TestIDTokenValidatorAcceptsOnlyTypID pins the id_token path's kind rule: the payload typ must be exactly the string
+// "ID" — what Keycloak 26.6 puts on every id_token it issues (TokenManager.AccessTokenResponseBuilder.generateIDToken).
+// An allow-list, where the access path has a deny-list: an access token may be typed "bearer" in lowercase (the client
+// option "use lower-case bearer type"), which a deny-list of "Bearer" would miss. Any other typ — another string,
+// another case, absent, not a string — is refused with one constant message, as a claims failure: no cause, and no
+// JWKS refetch.
+func TestIDTokenValidatorAcceptsOnlyTypID(t *testing.T) {
 	f := newJWTFixture(t)
 	v := f.validator(t, time.Minute).forIDToken("my-client")
 	cl := claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(5*time.Minute))
@@ -1038,6 +1049,50 @@ func TestIDTokenValidatorLeavesTypAlone(t *testing.T) {
 	}
 	if vt.Claims["typ"] != "ID" {
 		t.Fatalf("typ claim: %v", vt.Claims["typ"])
+	}
+	for name, extra := range map[string]map[string]any{
+		"absent":         {},
+		"Bearer":         {"typ": "Bearer"},
+		"bearer":         {"typ": "bearer"},
+		"DPoP":           {"typ": "DPoP"},
+		"at+jwt":         {"typ": "at+jwt"},
+		"Refresh":        {"typ": "Refresh"},
+		"Offline":        {"typ": "Offline"},
+		"Logout":         {"typ": "Logout"},
+		"Serialized-ID":  {"typ": "Serialized-ID"},
+		"case-sensitive": {"typ": "id"},
+		"exact match":    {"typ": "ID "},
+		"empty":          {"typ": ""},
+		"null":           {"typ": nil},
+		"array":          {"typ": []string{"ID"}},
+		"number":         {"typ": 1},
+		"boolean":        {"typ": true},
+		"object":         {"typ": map[string]any{"typ": "ID"}},
+	} {
+		_, err := v.Validate(context.Background(), f.signWith(t, cl, extra))
+		var tve *TokenValidationError
+		if !errors.As(err, &tve) || tve.Msg != msgNotAnIDToken || tve.Cause != nil {
+			t.Errorf("typ %s: want Msg=%q and no cause, got %v", name, msgNotAnIDToken, err)
+		}
+	}
+	if n := atomic.LoadInt32(f.fetches); n != 1 {
+		t.Fatalf("a claims failure must not refetch the JWKS: /certs=%d, want 1", n)
+	}
+}
+
+// TestIDTokenValidatorJudgesTypAfterTheSharedChecks: the kind rule runs once every shared check has passed — a token
+// that fails one of them keeps that check's refusal, whatever its typ.
+func TestIDTokenValidatorJudgesTypAfterTheSharedChecks(t *testing.T) {
+	f := newJWTFixture(t)
+	v := f.validator(t, time.Minute).forIDToken("my-client")
+	typBearer := map[string]any{"typ": "Bearer"}
+	for want, tok := range map[error]string{
+		jwt.ErrInvalidAudience: f.signWith(t, claims(jwt.Audience{"other-client"}, testISS, time.Now().Add(5*time.Minute)), typBearer),
+		jwt.ErrExpired:         f.signWith(t, claims(jwt.Audience{"my-client"}, testISS, time.Now().Add(-5*time.Minute)), typBearer),
+	} {
+		if _, err := v.Validate(context.Background(), tok); !errors.Is(err, want) {
+			t.Errorf("want the shared check's refusal (%v), got %v", want, err)
+		}
 	}
 }
 
@@ -1064,6 +1119,7 @@ func TestIDTokenValidatorAppliesOIDCAzpRules(t *testing.T) {
 		{"null azp", jwt.Audience{"my-client"}, map[string]any{"azp": nil}, mismatch},
 		{"azp not a string", jwt.Audience{"my-client"}, map[string]any{"azp": []string{"my-client"}}, mismatch},
 	} {
+		tc.extra["typ"] = "ID" // a Keycloak id_token — the typ rule is TestIDTokenValidatorAcceptsOnlyTypID
 		_, err := v.Validate(context.Background(), f.signWith(t, claims(tc.aud, testISS, exp), tc.extra))
 		if tc.want == "" {
 			if err != nil {
@@ -1078,7 +1134,7 @@ func TestIDTokenValidatorAppliesOIDCAzpRules(t *testing.T) {
 	}
 	// (B) runs once the shared checks have passed: an id_token that does not name the client keeps the audience
 	// refusal, azp or not.
-	tok := f.signWith(t, claims(jwt.Audience{"evil", "other"}, testISS, exp), map[string]any{})
+	tok := f.signWith(t, claims(jwt.Audience{"evil", "other"}, testISS, exp), map[string]any{"typ": "ID"})
 	if _, err := v.Validate(context.Background(), tok); !errors.Is(err, jwt.ErrInvalidAudience) {
 		t.Errorf("foreign audiences: want the audience refusal, got %v", err)
 	}
