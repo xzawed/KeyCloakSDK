@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "openssl"
 require "socket"
 require "timeout"
@@ -113,4 +114,23 @@ module KeycloakSdk
       QUOTE_FREE.any? { |k| origin.is_a?(k) } ? error.message : error.class.name
     end
   end
+
+  # An admin write body JSON cannot carry faithfully — refused with the nine languages' common text (registry
+  # admin-unencodable-body-residuals). The admin connection's json request middleware writes the body with
+  # `JSON.generate` before BearerAuth runs, so when the generator refuses it no grant and no admin request has gone
+  # out: `JSON::GeneratorError` for NaN · Infinity · -Infinity and for text that is not valid UTF-8 (Ruby's encoder
+  # raises where .NET and Go replace), `JSON::NestingError` (a ParserError, not a GeneratorError) for nesting deeper
+  # than it writes. The admin boundary's last rescue used to call that "admin transport error: JSON::GeneratorError".
+  # A JSON error that a response raises reaches the boundary inside a `Faraday::ParsingError`, never bare.
+  # Only a RedactedCause is attached — json's `GeneratorError#invalid_object` holds the offending value.
+  module UnencodableBody
+    MESSAGE = "admin request failed: the request body could not be encoded as JSON"
+
+    def self.refuse!(err)
+      return unless err.is_a?(JSON::GeneratorError) || err.is_a?(JSON::NestingError)
+
+      raise TransportError, MESSAGE, cause: RedactedCause.new(err)
+    end
+  end
+  private_constant :UnencodableBody
 end
