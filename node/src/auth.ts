@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto'
 import * as oidc from 'openid-client'
 import type { KeycloakConfig } from './config.js'
-import { KeycloakAuthError, KeycloakConfigError, KeycloakTransportError } from './errors.js'
+import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
+import { redirectUrl } from './redirect-uri.js'
 import {
   fetchTokenEndpointBounded,
   responseTooLarge,
@@ -100,19 +101,6 @@ function failure(message: string, e: unknown): KeycloakAuthError | KeycloakTrans
   return responseTooLarge(e) !== undefined || transportInChain(e)
     ? new KeycloakTransportError(reason, { cause: e })
     : new KeycloakAuthError(reason, { cause: e })
-}
-
-/**
- * `exchangeCode` 의 redirect URI — URL 로 읽히지 않으면 요청 전에(discovery 도 부르지 않고) `KeycloakConfigError`
- * (`invalid redirect_uri: <사유>`)다. rust `redirect_url` · kotlin `redirectUri` 와 같은 분류다. 전에는 `new URL` 의
- * `TypeError` 가 SDK 오류 계층 밖으로 나갔다(§4 — 등록부 `node-nonsdk-error-escapes`).
- */
-function redirectUrl(value: string): URL {
-  try {
-    return new URL(value)
-  } catch (e) {
-    throw new KeycloakConfigError(`invalid redirect_uri: ${(e as Error).message}`, { cause: e })
-  }
 }
 
 /**
