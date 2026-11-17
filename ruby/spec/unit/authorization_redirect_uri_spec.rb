@@ -18,8 +18,11 @@ module AuthzRedirectUriSpec
   NOT_ABSOLUTE = "invalid redirect_uri: not an absolute URI (RFC 6749 §3.1.2)"
   FRAGMENT = "invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)"
   NOT_VALID = "invalid redirect_uri: not a valid URI (RFC 3986 §2)"
-  # R3 의 글자 — U+0000-U+0020, U+007F-U+00A0, 그리고 아홉 개(33 + 34 + 9).
-  R3_CHARS = ([*0x00..0x20, *0x7F..0xA0].map { |c| c.chr(Encoding::UTF_8) } + %w[" < > \\ ^ ` { | }]).freeze
+  # R3 의 글자 — U+0000-U+0020, U+007F-U+00A0, java.net.URI 가 거부하는 유니코드 공백 구분자 열일곱, 그리고 아홉 개
+  # (33 + 34 + 17 + 9).
+  SPACE_SEPARATORS = [0x1680, *0x2000..0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000].freeze
+  R3_CHARS = ([*0x00..0x20, *0x7F..0xA0, *SPACE_SEPARATORS].map { |c| c.chr(Encoding::UTF_8) } +
+              %w[" < > \\ ^ ` { | }]).freeze
 end
 
 RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_uri" do
@@ -66,7 +69,8 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
   end
 
   [*["https://app/c b", "https://app/cb\n", "https://app/c\\b", "https://app/c%zz", "https://app/c\u{A0}b",
-     "https://app/c%2", "https://app/c%", "https://app/c%g0", "https://app/c\xFFb"].map { |v| [v.inspect, v] },
+     "https://app/c%2", "https://app/c%", "https://app/c%g0", "https://app/c\xFFb", "https://app/c\u{3000}b",
+     "https://app/c\u{2028}b"].map { |v| [v.inspect, v] },
    ["a binary String whose bytes are not UTF-8", "https://app/c\xFFb".b],
    ["an ISO-8859-1 String (its bytes are not UTF-8)", "https://app/c\xFCb".dup.force_encoding("ISO-8859-1")]]
     .each do |what, value|
@@ -77,7 +81,7 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
 
   it "refuses every character Keycloak refuses (R3), both ends of each range included" do
     chars = AuthzRedirectUriSpec::R3_CHARS
-    expect(chars.size).to eq(76) # 빈 집합이면 아래 단언이 공허하게 통과한다
+    expect(chars.size).to eq(93) # 빈 집합이면 아래 단언이 공허하게 통과한다
     missed = chars.reject { |ch| refusal("https://app/c#{ch}b") == not_valid }
     expect(missed.map { |ch| format("U+%04X", ch.ord) }).to eq([])
   end
@@ -96,7 +100,8 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
 
   ["https://app/cb", "https://app/cb?x=1", "myapp:/cb", "com.example.app:/oauth2redirect", "HTTP://LOCALHOST/cb",
    "https://app/c%20b", "https://app/c\u{FC}b", "https://app/cb?x=[1]", "https://app/c'b", "https://app/c+*!b",
-   "https://app/c~b", "https://app/c\u{A1}b", "https://app/c%2Fb"].each do |value|
+   "https://app/c~b", "https://app/c\u{A1}b", "https://app/c%2Fb", "https://app/c\u{200B}b",
+   "https://app/c\u{3001}b"].each do |value|
     it "carries #{value.inspect} exactly as given" do
       expect(sent_redirect_uri(value)).to eq([value])
     end
