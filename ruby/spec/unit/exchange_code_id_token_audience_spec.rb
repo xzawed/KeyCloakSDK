@@ -58,8 +58,9 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
       expect(exchange(sign(claims)).access_token).to eq("AT")
     end
 
+    # aud 가 여럿인 id_token 은 azp 가 client_id 여야 한다(OIDC Core §3.1.3.7) — Keycloak 은 azp 를 늘 적는다.
     it "accepts an id_token whose aud lists the client_id beside the override" do
-      expect(exchange(sign(claims("aud" => %w[my-api app]))).access_token).to eq("AT")
+      expect(exchange(sign(claims("aud" => %w[my-api app], "azp" => "app"))).access_token).to eq("AT")
     end
 
     it "rejects an id_token whose aud is only the override" do

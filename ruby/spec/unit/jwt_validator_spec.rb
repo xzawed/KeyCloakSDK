@@ -98,7 +98,7 @@ RSpec.describe KeycloakSdk::JwtValidator do
           .to raise_error(KeycloakSdk::TokenValidationError)
       end
 
-      # id_token 경로 — OIDC Core §2·§3.1.3.7 의 `aud` 는 client_id 다. 재정의는 액세스 토큰(리소스 서버)의 것이다.
+      # 호출별 audience 는 재정의를 그 호출에서만 바꾼다(접근 토큰 검증 그대로 — id_token 은 `validate_id_token` 이다).
       it "checks a per-call audience instead of the override" do
         expect(validator.validate(sign(base_claims), audience: audience).audience).to eq([audience])
         expect { validator.validate(sign(base_claims("aud" => api_audience)), audience: audience) }
@@ -120,6 +120,107 @@ RSpec.describe KeycloakSdk::JwtValidator do
       it "raises ConfigError for audience: #{blank.inspect} before any JWKS request" do
         token = sign(base_claims("aud" => "someone-else"))
         expect { validator.validate(token, audience: blank) }.to raise_error(KeycloakSdk::ConfigError, /audience/)
+        expect(a_request(:get, jwks_url)).not_to have_been_made
+      end
+    end
+  end
+
+  # 토큰 종류 — 접근 토큰 경로(`validate`)만. Keycloak 은 토큰의 종류를 페이로드 `typ` 클레임에 적는다
+  # (org.keycloak.util.TokenUtil): 접근 토큰은 Bearer · DPoP, id_token 은 ID, 그 밖에 Refresh · Offline · Logout(백채널
+  # 로그아웃 토큰) · Serialized-ID. 모두 realm 키로 서명되고 aud 에 이 클라이언트를 담을 수 있어 `validate` 가 id_token
+  # 이나 로그아웃 토큰을 접근 토큰으로 받았다.
+  describe "token type (access tokens only)" do
+    %w[ID Refresh Offline Logout Serialized-ID].each do |typ|
+      it "refuses a token typed #{typ}" do
+        want = "JWT validation failed: not an access token (typ \"#{typ}\")"
+        expect { validator.validate(sign(base_claims("typ" => typ))) }
+          .to raise_error(KeycloakSdk::TokenValidationError, want) { |e| expect(e.cause).to be_nil }
+      end
+    end
+
+    it "refuses it under a per-call audience too" do
+      expect { validator.validate(sign(base_claims("typ" => "ID")), audience: audience) }
+        .to raise_error(KeycloakSdk::TokenValidationError, 'JWT validation failed: not an access token (typ "ID")')
+    end
+
+    it "accepts a token without typ" do
+      expect(base_claims).not_to have_key("typ")
+      expect(validator.validate(sign(base_claims)).subject).to eq("user-1")
+    end
+
+    # 그 밖은 지금처럼 통과한다 — 접근 토큰의 것(Bearer · DPoP · RFC 9068 at+jwt), 다른 문자열(대소문자까지 정확히
+    # 견준다), 문자열이 아닌 값("ID" 를 담고 있어도).
+    ["Bearer", "DPoP", "at+jwt", "id", "ID ", "Custom", 42, true, nil, ["ID"], { "typ" => "ID" }].each do |typ|
+      it "accepts typ #{typ.inspect}" do
+        expect(validator.validate(sign(base_claims("typ" => typ))).subject).to eq("user-1")
+      end
+    end
+
+    # 접근 토큰의 azp 는 그것을 요청한 클라이언트다 — 리소스 서버가 받는 토큰은 다른 클라이언트를 담는다.
+    it "does not check azp" do
+      several = [audience, "account"]
+      vt = validator.validate(sign(base_claims("aud" => several, "azp" => "frontend")))
+      expect(vt.claims["azp"]).to eq("frontend")
+      expect(validator.validate(sign(base_claims("aud" => several))).audience).to eq(several)
+    end
+  end
+
+  # id_token 경로(`validate_id_token` — 코드 교환이 쓴다). 종류를 보지 않고(id_token 은 typ "ID" 다), 다른 검사를 모두
+  # 지난 뒤 권한 부여 당사자를 본다(OIDC Core §3.1.3.7 4–5 단계): aud 가 여럿이면 azp 가 있어야 하고, azp 가 있으면
+  # client_id 여야 한다. `audience` 는 "app" 이다 — 아래 표는 `let` 밖이라 그 값을 그대로 적는다.
+  describe "#validate_id_token" do
+    it "accepts a token typed ID (control: the access path refuses the same token)" do
+      token = sign(base_claims("typ" => "ID", "azp" => audience))
+      expect(validator.validate_id_token(token, client_id: audience).claims["typ"]).to eq("ID")
+      expect { validator.validate(token) }
+        .to raise_error(KeycloakSdk::TokenValidationError, 'JWT validation failed: not an access token (typ "ID")')
+    end
+
+    {
+      "one audience, no azp" => { "aud" => "app" },
+      "a one-element aud list, no azp" => { "aud" => ["app"] },
+      "one audience, azp the client_id" => { "aud" => "app", "azp" => "app" },
+      "several audiences, azp the client_id" => { "aud" => %w[app account], "azp" => "app" }
+    }.each do |name, claims|
+      it "accepts #{name}" do
+        vt = validator.validate_id_token(sign(base_claims(**claims)), client_id: audience)
+        expect(vt.audience).to include(audience)
+      end
+    end
+
+    {
+      "one audience, azp another client" => [{ "azp" => "someone-else" }, "azp does not match the client id"],
+      "one audience, azp the client_id in another case" => [{ "azp" => "App" }, "azp does not match the client id"],
+      "one audience, azp null" => [{ "azp" => nil }, "azp does not match the client id"],
+      "one audience, azp a number" => [{ "azp" => 42 }, "azp does not match the client id"],
+      "one audience, azp a list naming the client_id" => [{ "azp" => ["app"] }, "azp does not match the client id"],
+      "several audiences, azp another client" => [{ "aud" => %w[app evil], "azp" => "evil" },
+                                                  "azp does not match the client id"],
+      "several audiences, no azp" => [{ "aud" => %w[app evil] }, "azp is required when aud has more than one value"]
+    }.each do |name, (claims, reason)|
+      it "refuses #{name}" do
+        expect { validator.validate_id_token(sign(base_claims(**claims)), client_id: audience) }
+          .to raise_error(KeycloakSdk::TokenValidationError, "JWT validation failed: #{reason}") { |e|
+            expect(e.cause).to be_nil
+          }
+      end
+    end
+
+    it "holds aud to the client_id it is given, not the configured audience" do
+      expect { validator.validate_id_token(sign(base_claims), client_id: "other-client") }
+        .to raise_error(KeycloakSdk::TokenValidationError, /Invalid audience\. Expected other-client,/)
+    end
+
+    it "shares the key cache with validate" do
+      validator.validate(sign(base_claims))
+      validator.validate_id_token(sign(base_claims("typ" => "ID")), client_id: audience)
+      expect(a_request(:get, jwks_url)).to have_been_made.once
+    end
+
+    [nil, "", "  "].each do |blank|
+      it "raises ConfigError for client_id: #{blank.inspect} before any JWKS request" do
+        expect { validator.validate_id_token(sign(base_claims), client_id: blank) }
+          .to raise_error(KeycloakSdk::ConfigError, /client_id/)
         expect(a_request(:get, jwks_url)).not_to have_been_made
       end
     end

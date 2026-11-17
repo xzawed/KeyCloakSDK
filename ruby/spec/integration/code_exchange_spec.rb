@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "jwt"
 require "uri"
 require_relative "../support/keycloak_container"
 require_relative "../support/browser_login"
@@ -25,6 +26,18 @@ module CodeExchangeIT
   def self.web_config(base, client_id = "it-web", **overrides)
     KeycloakSdk::Config.new(server_url: base, realm: "it-realm", client_id: client_id,
                             client_secret: WEB_CLIENT_SECRETS.fetch(client_id), **overrides)
+  end
+
+  # id_token 은 교환이 쓰는 경로(`JwtValidator#validate_id_token`)로 검증한다 — `validate` 는 접근 토큰 검증이라 id_token 을
+  # typ("ID")으로 거부한다. 배선은 `KeycloakClient#initialize` 의 것과 같다(검증에는 시크릿이 필요 없다).
+  def self.validated_id_token(base, id_token, client_id = "it-web")
+    config = KeycloakSdk::Config.new(server_url: base, realm: "it-realm", client_id: client_id)
+    http = KeycloakSdk::Http.build(config) { |f| f.response :json, content_type: /\bjson$/ }
+    store = KeycloakSdk::JwksStore.new(jwks_url: KeycloakSdk::OidcEndpoints.from_config(config).jwks, http: http)
+    KeycloakSdk::JwtValidator.from_config(config: config, jwks_store: store)
+                             .validate_id_token(id_token, client_id: client_id)
+  ensure
+    http.close if http.respond_to?(:close)
   end
 
   # 인가 URL 에서 `nonce` 만 뺀다 — 서버가 nonce 클레임 **없는** id_token 을 서명하게 한다.
@@ -109,7 +122,10 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     request, code = login(kc)
     tokens = exchange(kc, request, code)
     expect([tokens.access_token, tokens.refresh_token, tokens.id_token]).to all(match(/\A\S+\z/))
-    id_claims = kc.auth.validate(tokens.id_token).claims
+    # 접근 토큰 검증은 서버의 id_token 을 거부한다 — 서명·iss·aud·exp 를 다 지나도 typ 이 "ID" 다.
+    expect { kc.auth.validate(tokens.id_token) }
+      .to raise_error(KeycloakSdk::TokenValidationError, 'JWT validation failed: not an access token (typ "ID")')
+    id_claims = CodeExchangeIT.validated_id_token(@base, tokens.id_token).claims
     expect(id_claims["nonce"]).to eq(request.nonce)
     expect(id_claims["sub"]).to eq(@alice_id)
     # 교환이 돌려준 접근 토큰도 서버가 발급한 그 사용자의 활성 토큰이다(Grok 레그: 자리표시자로 바꿔도 통과했다).
@@ -142,7 +158,7 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     kc = new_client
     request, code = login(kc)
     tokens = exchange(kc, request, code, nonce: nil)
-    expect(kc.auth.validate(tokens.id_token).claims["nonce"]).to eq(request.nonce)
+    expect(CodeExchangeIT.validated_id_token(@base, tokens.id_token).claims["nonce"]).to eq(request.nonce)
   end
 
   # `expected_audience` 재정의는 액세스 토큰의 것이다 — id_token `aud` 는 client_id 로 검사한다(OIDC Core §3.1.3.7).
@@ -151,7 +167,7 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     request, code = login(kc)
     tokens = exchange(kc, request, code)
     # 전제: 서버의 id_token `aud` 에 재정의 값은 없다(audience 매퍼는 access 전용) — 통과가 client_id 덕임을 보인다.
-    id_token = new_client.auth.validate(tokens.id_token)
+    id_token = CodeExchangeIT.validated_id_token(@base, tokens.id_token)
     expect([id_token.audience, id_token.claims["nonce"]]).to eq([["it-web"], request.nonce])
     # 접근 토큰 검증은 재정의를 쓴다 — 이 토큰은 client_id(it-web)는 담지만 it-client 는 담지 않는다.
     expect(new_client.auth.validate(tokens.access_token).audience).to include("it-web")
@@ -163,8 +179,10 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
   it "refuses an id_token whose aud lacks the client_id even when it equals the override" do
     kc = new_client("it-web-foreign-aud", expected_audience: "it-client")
     request, code = login(kc)
-    # 전제: 서명·iss·exp 는 멀쩡하고 `aud` 만 재정의 값이다 — 접근 토큰 규칙(재정의)으로는 통과한다.
-    expect(kc.auth.validate(exchange(kc, request, code, nonce: nil).id_token).audience).to eq(["it-client"])
+    # 전제: `aud` 는 재정의 값뿐이다 — 서명을 보지 않고 읽는다. `validate`(접근 토큰 규칙)는 이제 id_token 을 typ("ID")으로
+    # 거부해 이 전제를 잴 수 없다. 서명은 아래 교환이 잰다.
+    unchecked = exchange(kc, request, code, nonce: nil).id_token
+    expect(Array(JWT.decode(unchecked, nil, false).first["aud"])).to eq(["it-client"])
 
     request, code = login(kc)
     expect { exchange(kc, request, code) }.to raise_error(KeycloakSdk::AuthError) { |e|
@@ -188,7 +206,7 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     # 전제: 서버가 정말 nonce 없이 서명한다(아니면 아래는 부재가 아니라 불일치를 잰다).
     _, code = login(kc, request)
     unchecked = exchange(kc, request, code, nonce: nil)
-    expect(kc.auth.validate(unchecked.id_token).claims).not_to have_key("nonce")
+    expect(CodeExchangeIT.validated_id_token(@base, unchecked.id_token).claims).not_to have_key("nonce")
 
     _, code = login(kc, request)
     expect { exchange(kc, request, code) }
