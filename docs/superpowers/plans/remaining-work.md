@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=129703 max-raw-bytes=140593 -->
+<!-- doc-budget: max-bytes=129245 max-raw-bytes=140387 -->
+<!-- max-bytes 129703 → 129245 · max-raw-bytes 140593 → 140387: 묶음 마감 — 넷 닫음(#1133–#1136) · 새 항목 둘. 닫힌 줄은 한 줄로 줄였고
+     경위는 PR 본문이 갖는다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-bytes 131601 → 129703 · max-raw-bytes 142667 → 140593: 묶음 마감 — 다섯 닫음(#1127–#1131) · 새 항목 넷. probe 항목의
      하위 서사 일곱 줄(손 프로브 함정 · 되살릴 조건 · 2차 기본값 자리 — 그 축은 가드의 파생 반쪽이 받는다)은 3ce519b1 의 이 파일로
      보냈다. 검사 8e 가 이 인하를 강제했다. -->
@@ -76,7 +78,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `317`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `319`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -247,21 +249,23 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 154건 (열림 40)
+## C. 품질 부채 — 156건 (열림 38)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 88
+### 9언어 소스 — 90
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
 - [x] `jwks-refetch-budget-overclaimed` **[M/M · 닫힘 2026-09-07]** JWKS 재조회 예산 문서가 실제보다 강하게 약속했다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
 - [x] `jwks-response-not-validated` **[M/M · 닫힘 2026-09-07 #440]** JWKS 응답을 검증 없이 신뢰했다 — JVM 둘의 본문 크기 무제한은 #400 이 `DEFAULT_HTTP_SIZE_LIMIT` 를 되살려 닫았고, **Rust 의 상태코드 미확인은 #440 이 닫았다**(그 전 실측: `error_for_status`·`.status()` **0건**) · `rust/src/jwks.rs:34`
-- [x] `authcode-flow-verification-defeated` **[M/L · 닫힘 2026-11-17 #1131]** 세 갈래 — 공유 검증기의 한 면(id_token 에 액세스 audience)은 #663–#671, 반대 면(기본 audience = client id 에서 액세스 검증이 id_token · 로그아웃 토큰을 받음)은 액세스 자리의 `typ` 거부로, `azp` 는 OIDC Core §3.1.3.7 4·5 로 아홉 언어에서 닫음(변이 27/27) · node 의 iss 자기주입은 검증이 아니라고 주석을 바로잡음(아홉 다 인가 응답의 iss 를 받지 않는다) · 잔여 아래 둘
-- [ ] `access-token-typ-deny-list` **[L/S · 신규 2026-11-17]** 액세스 검증의 `typ` 은 거부 목록(Keycloak 비-액세스 종류 다섯)이다 — `typ` 없는 토큰 · DPoP 결합 토큰(증명 미검증) · 페이로드 `typ` 없이 헤더만 `logout+jwt` 일 수 있는 백채널 로그아웃 토큰(Grok 레그)은 통과. 되살릴 조건: RFC 9068 헤더 옵션 · 경량 액세스 토큰 · DPoP · 로그아웃 토큰의 클레임 `typ` 을 실서버로 재고, 맞으면 허용 목록(없음 거부)으로 · `.claude/rules/security.md`
-- [ ] `id-token-validator-not-public` **[M/M · 신규 2026-11-17]** #1131 뒤 액세스 `validate` 는 id_token 을 거부하는데, 공개 id_token 검증기는 PHP `validateIdToken` · Ruby `validate_id_token` 뿐이다 — 나머지 일곱에서 id_token 을 따로 검증하던 소비자는 갈 길이 없다(SDK 의 통합 시험 아홉이 그렇게 쓰고 있었다). 릴리스 전에 일곱에 같은 진입점을 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java`
-- [ ] `python-admin-unencodable-body-message-false` **[L/S · 신규 2026-11-17]** 직렬화 못 하는 admin 본문(set · 순환 · bytes)이 `KeycloakTransportError("Keycloak admin API returned an unusable response (TypeError)")` — 본문은 나가지도 않았다(실측: 도달 불가 서버에서도 같은 문구) · `python/src/keycloak_sdk/admin/_translate.py:112`
-- [ ] `node-authz-request-redirect-unvalidated` **[L/S · 신규 2026-11-17]** node `createAuthorizationRequest('not a url')` 가 오류 없이 인가 URL 을 만든다(실측) — java · kotlin · rust 는 만들 때 `invalid redirect_uri` 로 거부하고 node `exchangeCode` 도 이제 거부한다(#1129). 나머지 다섯은 안 쟀다 · `node/src/auth.ts`
+- [x] `authcode-flow-verification-defeated` **[M/L · 닫힘 2026-11-17 #1131]** 세 갈래 — 공유 검증기의 한 면(id_token 에 액세스 audience)은 #663–#671, 반대 면(기본 audience = client id 에서 액세스 검증이 id_token · 로그아웃 토큰을 받음)은 액세스 자리의 `typ` 거부로, `azp` 는 OIDC Core §3.1.3.7 4·5 로 아홉 언어에서 닫음(변이 27/27) · node 의 iss 자기주입은 검증이 아니라고 주석을 바로잡음(아홉 다 인가 응답의 iss 를 받지 않는다) · 잔여 둘은 아래(#1135 · #1136)
+- [x] `access-token-typ-deny-list` **[L/S · 닫힘 2026-11-17 #1136]** Keycloak 의 허용 목록으로 — `typ` 이 `Bearer` · `DPoP`(ASCII 대소문자 무시)일 때만; 거부 목록은 `typ` 없는 JARM 응답 JWT 를 받았다
+- [x] `id-token-validator-not-public` **[M/M · 닫힘 2026-11-17 #1135]** 아홉 언어 `validateIdToken` 류 · id_token 경로는 `typ` 이 정확히 `ID`
+- [x] `python-admin-unencodable-body-message-false` **[L/S · 닫힘 2026-11-17 #1134]** 같은 인코더로 먼저 써 보고 node 와 같은 문구
+- [x] `node-authz-request-redirect-unvalidated` **[L/S · 닫힘 2026-11-17 #1133]** 두 요청이 같은 정규형 `redirect_uri` 를 싣는다(갈려서 Keycloak 이 교환을 거부했다) · 쿼리 · fragment 거부
+- [ ] `authz-request-redirect-unvalidated` **[L/S · 신규 2026-11-17]** python · php · ruby · .NET 의 인가 요청이 URL 이 아닌 redirect URI 를 그대로 싣는다(Keycloak 이 브라우저에서 거절) · go 는 오류를 돌려줄 수 없다 — 새 API 가 필요 · `go/auth.go`
+- [ ] `php-admin-unencodable-body-class` **[L/S · 신규 2026-11-17]** 인코딩 못 하는 representation 이 토큰 · serverinfo 뒤 `KeycloakAdminError`(상태 없음) — node · python 은 요청 전 `KeycloakTransportError` · `php/src/Admin/ErrorTranslation.php`
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** rust·python·ruby·php·dotnet 이 비었거나 문자열이 아닌 `access_token` 으로 TokenSet 을 만들었다 — 불변식(그런 응답은 TokenSet 이 아니다)을 `test-security-defaults.sh` 축 1c 가 집행한다, 변이 7/7 CAUGHT · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
   - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다. 셋째 자리(java 레그 2026-10-05): admin 토큰 400·응답 없는 전송 실패의 원인 사슬에 jakarta `ProcessingException` 이 남는다(토큰 인용 없음).
