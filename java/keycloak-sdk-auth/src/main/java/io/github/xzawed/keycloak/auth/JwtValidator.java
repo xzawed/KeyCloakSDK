@@ -22,8 +22,12 @@ public final class JwtValidator {
   // 아니라 그 조회를 부른 검증이 **시작한** 때부터(그만큼 짧다), monotonic 이 아니라 벽시계(System.currentTimeMillis)로
   // 센다 — 시계를 뒤로 돌리면 그만큼 길어진다(JwksMaxAgeTest 머리 주석).
   static final int JWKS_MAX_AGE_SECONDS = 300;
-  // 액세스 토큰이 아닌 Keycloak 토큰의 typ 클레임 값 — org.keycloak.util.TokenUtil(keycloak-client-common-synced 26.0.12)의
-  // TOKEN_TYPE_* 중 액세스 토큰의 둘(Bearer · DPoP)을 뺀 다섯이다. 액세스 검증기의 validate() 가 거부한다(rejectNonAccessToken).
+  // 액세스 토큰의 typ 클레임 값 — org.keycloak.util.TokenUtil(keycloak-client-common-synced 26.0.12)의 TOKEN_TYPE_* 중 액세스
+  // 토큰의 둘이고, Keycloak 의 자원 쪽 검사가 받는 둘이다(DPoPUtil.withDPoPVerifier). 액세스 검증기의 validate() 는 이 허용 목록만
+  // 받는다(requireAccessTokenType — ASCII 대소문자 무시).
+  static final List<String> ACCESS_TOKEN_TYPES = List.of("Bearer", "DPoP");
+  // 액세스 토큰이 아닌 Keycloak 토큰의 typ 클레임 값 — 같은 TOKEN_TYPE_* 중 나머지 다섯. 허용 목록 밖이라 거부되는 것 중 이 다섯과
+  // 정확히 같은 값만 그 값을 메시지에 싣는다(requireAccessTokenType — 실리는 것은 이 다섯 상수뿐이다).
   static final Set<String> NON_ACCESS_TOKEN_TYPES = Set.of("ID", "Refresh", "Offline", "Logout", "Serialized-ID");
   // id_token 의 typ — Keycloak 은 id_token 을 한 곳(TokenManager.AccessTokenResponseBuilder.generateIDToken)에서만 만들고 늘 이 값을
   // 싣는다(실서버 통합 실측도 "ID"). id_token 검증기는 이것과 정확히 같은 문자열만 받는다(허용 목록 — requireIdTokenType).
@@ -35,9 +39,9 @@ public final class JwtValidator {
   private final String audience;
   private final Set<JWSAlgorithm> allowedAlgs;
   private final Duration skew;
-  // id_token 검증기인가(AuthClient.validateIdToken · 코드 교환) — withAudience 가 만든 것만 참이다. 참이면 액세스 토큰의 typ 거부
-  // 목록 대신 typ 허용 목록(requireIdTokenType — 정확히 "ID")을, 그다음 azp(requireAuthorizedParty)를 본다. 거짓(forRealm ·
-  // withStaticJwks · withJwkSource)이면 typ 거부 목록(rejectNonAccessToken)만 본다.
+  // id_token 검증기인가(AuthClient.validateIdToken · 코드 교환) — withAudience 가 만든 것만 참이다. 참이면 액세스 토큰의 typ 허용
+  // 목록 대신 id_token 의 typ 허용 목록(requireIdTokenType — 정확히 "ID")을, 그다음 azp(requireAuthorizedParty)를 본다. 거짓(forRealm ·
+  // withStaticJwks · withJwkSource)이면 액세스 토큰의 typ 허용 목록(requireAccessTokenType — Bearer · DPoP)만 본다.
   private final boolean idToken;
   private JwtValidator(JWKSource<SecurityContext> jwkSource, String issuer, String audience,
                        Set<JWSAlgorithm> allowedAlgs, Duration skew, boolean idToken) {
@@ -109,7 +113,7 @@ public final class JwtValidator {
     return jwkSource;
   }
   // id_token 검증기(AuthClient.validateIdToken · 교환) — 요구 aud 를 client id 로 바꾸고(OIDC Core §2·§3.1.3.7: id_token 의 aud
-  // 는 client id 를 담는다) 종류를 id_token 으로 바꾼다: 액세스 토큰의 typ 거부 목록 대신 typ 허용 목록("ID")과 그다음 azp 를 본다. 키
+  // 는 client id 를 담는다) 종류를 id_token 으로 바꾼다: 액세스 토큰의 typ 허용 목록 대신 typ "ID" 와 그다음 azp 를 본다. 키
   // 원천·iss·alg 핀·skew·필수 exp 는 이 검증기 것 그대로다. ⚠️ 여기서 forRealm 을 다시 부르면 키 저장소가 둘이 되어 교환 뒤
   // 첫 validate() 가 JWKS 를 다시 받고 장애 때 창당 상한이 두 배다(IdTokenAudienceJwksSharingTest).
   // 네트워크 I/O 없이 처리기만 새로 만든다. 패키지 전용 — 공개 입구는 AuthClient.validateIdToken 이다.
@@ -119,9 +123,10 @@ public final class JwtValidator {
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1): 이 SDK의 공개 API는 어떤 시그니처에서도
   // Nimbus 타입을 노출하지 않는다.
   // id_token 검증(AuthClient.validateIdToken — 교환의 requireValidNonce 도 그것을 부른다 → withAudience(..).validate)도 이
-  // 메서드라 상한 검사는 여기 하나다. 서명·iss·aud·exp 를 통과한 뒤 종류별 검사가 있다 — 액세스 검증기는 typ 거부 목록
-  // (rejectNonAccessToken), id_token 검증기는 typ 허용 목록(requireIdTokenType) 다음 azp(requireAuthorizedParty). 종류가
-  // 먼저다 — id_token 이라는 것이 azp 규칙의 전제다(아홉 언어 같은 순서). 전부 try 밖이라 메시지가 그대로 나간다.
+  // 메서드라 상한 검사는 여기 하나다. 서명·iss·aud·exp 를 통과한 뒤 종류별 검사가 있다 — 액세스 검증기는 typ 허용 목록
+  // (requireAccessTokenType — Bearer · DPoP), id_token 검증기는 typ 허용 목록(requireIdTokenType — "ID") 다음 azp
+  // (requireAuthorizedParty). 종류가 먼저다 — id_token 이라는 것이 azp 규칙의 전제다(아홉 언어 같은 순서). 전부 try 밖이라
+  // 메시지가 그대로 나간다.
   public ValidatedToken validate(String accessToken) {
     // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에. try 밖이라 이 메시지가 그대로 나간다. null 은 지금까지처럼 아래로 간다.
     if (accessToken != null && accessToken.length() > JWT_MAX_BYTES) {
@@ -148,7 +153,7 @@ public final class JwtValidator {
       requireIdTokenType(claims);
       requireAuthorizedParty(claims);
     } else {
-      rejectNonAccessToken(claims);
+      requireAccessTokenType(claims);
     }
     return ValidatedToken.from(claims);
   }
@@ -164,14 +169,25 @@ public final class JwtValidator {
     }
   }
 
-  // 액세스 토큰 자리에 온 다른 Keycloak 토큰을 거부한다. id_token 과 back-channel logout 토큰도 같은 realm 키로 서명되고
-  // iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(expectedAudience = clientId)의 aud 검사까지 지난다 — typ
-  // 클레임만이 그것을 가른다. 문자열이고 NON_ACCESS_TOKEN_TYPES 의 하나와 정확히(대소문자 구분) 같을 때만 거부한다 — 부재 ·
-  // Bearer · DPoP · at+jwt · 그 밖의 문자열 · 문자열이 아닌 값은 지금처럼 통과다. 메시지에 싣는 값은 그 다섯 상수 중 하나다.
-  private static void rejectNonAccessToken(JWTClaimsSet claims) {
-    if (claims.getClaim("typ") instanceof String typ && NON_ACCESS_TOKEN_TYPES.contains(typ)) {
-      throw new TokenValidationException("not an access token (typ \"" + typ + "\")", null);
+  // 액세스 토큰 자리의 종류 — 허용 목록이다(등록부 access-token-typ-deny-list). id_token · back-channel logout 토큰 · JARM 인가
+  // 응답(AuthorizationResponseToken — typ 이 없고 iss = realm · aud = client id · exp)도 같은 realm 키로 서명되고, 기본 설정
+  // (expectedAudience = clientId)의 aud 검사까지 지난다 — typ 클레임만이 그것을 가른다. Keycloak 의 자원 쪽 검사와 같게 본다:
+  // TokenVerifier.TokenTypeCheck 는 equalsIgnoreCase 로 대조하고 typ 이 없으면 거부하며, DPoPUtil.withDPoPVerifier 는 Bearer · DPoP
+  // 를 받는다. 그래서 typ 이 문자열이고 대소문자를 무시해 ACCESS_TOKEN_TYPES 의 하나와 같을 때만 받는다 — Keycloak 은 클라이언트
+  // 옵션 「use lower-case bearer type in token responses」 아래 "bearer" 로 쓴다(TokenManager.formatTokenType). equalsIgnoreCase 는
+  // Keycloak 의 그 비교이고, 이 두 낱말에서는 ASCII 대소문자 무시와 같다(그 글자로 대소문자가 바뀌는 비 ASCII 글자가 없다).
+  // 메시지: typ 이 알려진 다섯(NON_ACCESS_TOKEN_TYPES)과 정확히 같으면 지금까지의 메시지(실리는 값은 그 다섯 상수 중 하나다), 그 밖
+  // (부재 · 문자열 아님 · 다른 문자열)은 상수 메시지 — 토큰이 고른 typ 은 싣지 않는다.
+  private static void requireAccessTokenType(JWTClaimsSet claims) {
+    if (claims.getClaim("typ") instanceof String typ) {
+      if (ACCESS_TOKEN_TYPES.stream().anyMatch(typ::equalsIgnoreCase)) {
+        return;
+      }
+      if (NON_ACCESS_TOKEN_TYPES.contains(typ)) {
+        throw new TokenValidationException("not an access token (typ \"" + typ + "\")", null);
+      }
     }
+    throw new TokenValidationException("not an access token (typ is not Bearer or DPoP)", null);
   }
 
   // id_token 의 azp — OIDC Core §3.1.3.7 4·5. aud 가 둘 이상이면 azp 가 있어야 하고, azp 가 있으면(JSON null 도 있는 것이다)

@@ -23,7 +23,7 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis()+60000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -88,7 +88,7 @@ class JwtValidatorTest {
 
     SignedJWT hs256Jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.HS256).build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     hs256Jwt.sign(new MACSigner(secret));
 
@@ -106,7 +106,7 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer)
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer)
             .audience(List.of("app", "realm-management"))
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
@@ -126,7 +126,7 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer)
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer)
             .audience(List.of("someone-else"))
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
@@ -147,7 +147,7 @@ class JwtValidatorTest {
             .serverUrl(SERVER_URL).realm("r").clientId("app").build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -166,7 +166,7 @@ class JwtValidatorTest {
             .serverUrl(SERVER_URL).realm("r").clientId("app").build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience(API_AUDIENCE)
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience(API_AUDIENCE)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -188,7 +188,7 @@ class JwtValidatorTest {
             .expectedAudience(API_AUDIENCE).build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience(API_AUDIENCE)
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience(API_AUDIENCE)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -209,7 +209,7 @@ class JwtValidatorTest {
             .expectedAudience(API_AUDIENCE).build();
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -227,7 +227,7 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() - 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -244,7 +244,7 @@ class JwtValidatorTest {
     String realIssuer = "https://kc.example.com/realms/r";
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer("https://evil.example.com/realms/r").audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer("https://evil.example.com/realms/r").audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -262,7 +262,7 @@ class JwtValidatorTest {
     String issuer = "https://kc.example.com/realms/r";
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(signingKey)); // signingKey로 서명
     JwtValidator v = JwtValidator.withStaticJwks(
@@ -284,7 +284,7 @@ class JwtValidatorTest {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
         // expirationTime을 넣지 않는다 — 나머지 클레임은 전부 정상이라, 거부된다면 그 이유는 exp 부재뿐이다.
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app").build());
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app").build());
     jwt.sign(new RSASSASigner(key));
     JwtValidator v = JwtValidator.withStaticJwks(
         new JWKSet(key.toPublicJWK()), issuer, "app",
@@ -317,7 +317,7 @@ class JwtValidatorTest {
       throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() - secondsAgo * 1000)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();
@@ -470,7 +470,7 @@ class JwtValidatorTest {
   private static SignedJWT signWith(RSAKey key, String issuer, String kid) throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(kid).build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt;
@@ -489,7 +489,7 @@ class JwtValidatorTest {
     for (int i = 0; i < attempts; i++) {
       SignedJWT jwt = new SignedJWT(
           new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("forged-" + i).build(), // 매번 다른 미해결 kid
-          new JWTClaimsSet.Builder().issuer(md.getIssuer()).audience("app")
+          new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(md.getIssuer()).audience("app")
               .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
       jwt.sign(new RSASSASigner(signingKey));
       final String serialized = jwt.serialize();
@@ -525,7 +525,7 @@ class JwtValidatorTest {
   private static String signedFor(RSAKey key, String issuer, String audience) throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience(audience)
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience(audience)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();
@@ -620,19 +620,24 @@ class JwtValidatorTest {
   private static String signedPadded(RSAKey key, String issuer, int pad) throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        new JWTClaimsSet.Builder().issuer(issuer).audience("app")
+        new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000))
             .claim("pad", "x".repeat(pad)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();
   }
 
-  // ── (A) 액세스 토큰 자리에 온 다른 Keycloak 토큰 — 페이로드의 typ 클레임 ──
+  // ── (A) 액세스 토큰 자리의 종류 — 페이로드의 typ 클레임 ──
   // Keycloak 은 typ 클레임에 토큰의 종류를 적는다(org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
   // 액세스 토큰은 Bearer · DPoP, 그 밖은 ID · Refresh · Offline · Logout · Serialized-ID. id_token 과 back-channel logout
   // 토큰도 같은 realm 키로 서명되고 iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(expectedAudience =
-  // clientId)의 aud 검사까지 지난다 — 그래서 validate() 가 그것을 액세스 토큰으로 받아 줬다. 다섯을 거부하고 나머지는 받는다.
+  // clientId)의 aud 검사까지 지난다. 그래서 validate() 는 허용 목록으로 본다 — Keycloak 의 자원 쪽 검사와 같다
+  // (TokenVerifier.TokenTypeCheck 는 equalsIgnoreCase · 없으면 거부, DPoPUtil.withDPoPVerifier 는 Bearer · DPoP): typ 이 문자열이고
+  // ASCII 대소문자를 무시해 Bearer 또는 DPoP 와 같을 때만 받는다(Keycloak 은 클라이언트 옵션 「use lower-case bearer type in token
+  // responses」 아래 "bearer" 로 쓴다 — TokenManager.formatTokenType). 다섯은 지금의 메시지로, 그 밖은 상수 메시지로 거부한다.
   private static final String ISSUER = "https://kc.example.com/realms/r";
+  /** 다섯이 아닌 거부의 메시지 — 상수다. 토큰이 고른 typ 값은 싣지 않는다. */
+  private static final String NOT_BEARER_OR_DPOP = "not an access token (typ is not Bearer or DPoP)";
 
   @ParameterizedTest
   @ValueSource(strings = {"ID", "Refresh", "Offline", "Logout", "Serialized-ID"})
@@ -646,32 +651,84 @@ class JwtValidatorTest {
     assertEquals("not an access token (typ \"" + typ + "\")", e.getMessage());
   }
 
-  /** 다섯 값과 정확히(대소문자 · 공백까지) 같은 문자열만 거부된다 — 액세스 토큰의 값 · 그 밖의 문자열 · 문자열 아닌 값 · 부재는 통과. */
-  static Stream<Arguments> typClaimsThatPass() {
+  /** 액세스 토큰의 typ — Bearer · DPoP 를 ASCII 대소문자를 무시해 받는다(Keycloak 은 옵션에 따라 "bearer" 로 쓴다). */
+  @ParameterizedTest
+  @ValueSource(strings = {"Bearer", "bearer", "BEARER", "DPoP", "dpop", "DPOP"})
+  void validate_acceptsATokenTypedBearerOrDPoP_ignoringAsciiCase(String typ) throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String token = signedFor(key, ISSUER, List.of("app"), c -> c.claim("typ", typ));
+
+    assertEquals(typ, staticValidator(key, "app").validate(token).getClaims().get("typ"));
+  }
+
+  /**
+   * Bearer · DPoP 가 아닌 typ — 부재 · 다른 문자열(RFC 9068 at+jwt · 다섯의 다른 대소문자 · 공백 붙은 값 · 빈 문자열 · 임의의 문자열) ·
+   * 문자열이 아닌 값. 전부 같은 상수 메시지다 — 토큰이 고른 값을 싣지 않는다.
+   */
+  static Stream<Arguments> typClaimsThatAreNotBearerOrDPoP() {
     return Stream.of(
         Arguments.of("absent", null),
-        Arguments.of("Bearer", "Bearer"),
-        Arguments.of("DPoP", "DPoP"),
         Arguments.of("at+jwt", "at+jwt"),
+        Arguments.of("an arbitrary string", "hp-chosen-kind-7Qx"),
         Arguments.of("id in lower case", "id"),
         Arguments.of("logout in lower case", "logout"),
-        Arguments.of("ID with a trailing space", "ID "),
+        Arguments.of("Bearer with a trailing space", "Bearer "),
         Arguments.of("empty string", ""),
-        Arguments.of("array holding ID", List.of("ID")),
-        Arguments.of("number", 1L),
-        Arguments.of("boolean", true),
-        Arguments.of("object", Map.of("typ", "ID")));
+        Arguments.of("a number", 1L),
+        Arguments.of("a boolean", true),
+        Arguments.of("an array holding Bearer", List.of("Bearer")),
+        Arguments.of("an object holding Bearer", Map.of("typ", "Bearer")));
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("typClaimsThatPass")
-  void validate_acceptsAnyOtherTypClaim(String name, Object typ) throws Exception {
+  @MethodSource("typClaimsThatAreNotBearerOrDPoP")
+  void validate_refusesATokenWhoseTypIsNotBearerOrDPoP(String name, Object typ) throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
-    String token = signedFor(key, ISSUER, List.of("app"), c -> typ == null ? c : c.claim("typ", typ));
+    String token = signedFor(key, ISSUER, List.of("app"), c -> c.claim("typ", typ));
+    // 전제: 토큰이 정말 그 값을 실었다(되읽은 값 — null 은 직렬화가 빼서 부재다) — 아니면 이 경우는 아무것도 재지 않는다.
+    assertEquals(typ, SignedJWT.parse(token).getJWTClaimsSet().getClaim("typ"), name);
 
-    ValidatedToken validated = staticValidator(key, "app").validate(token);
-    // 토큰이 정말 그 값을 실었는지(되읽은 값) — 직렬화가 값을 바꿨다면 이 경우는 아무것도 재지 않는다.
-    assertEquals(typ, validated.getClaims().get("typ"), name);
+    TokenValidationException e =
+        assertThrows(TokenValidationException.class, () -> staticValidator(key, "app").validate(token), name);
+    assertEquals(NOT_BEARER_OR_DPOP, e.getMessage(), name);
+  }
+
+  // JSON null 인 typ — 「있지만 문자열이 아닌」 값. 부재와 따로 친다(전제로 정말 "typ":null 을 실었는지 본다).
+  @Test void validate_refusesATokenWhoseTypIsJsonNull() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String token = signedFor(key, ISSUER, List.of("app"), c -> c.serializeNullClaims(true).claim("typ", null));
+    assertTrue(SignedJWT.parse(token).getPayload().toString().contains("\"typ\":null"));
+
+    assertEquals(NOT_BEARER_OR_DPOP,
+        assertThrows(TokenValidationException.class, () -> staticValidator(key, "app").validate(token)).getMessage());
+  }
+
+  // 토큰이 고른 typ 은 메시지 어디에도 실리지 않는다 — 다섯(SDK 가 아는 상수)만 실린다.
+  @Test void validate_neverEchoesATokenChosenTyp() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String canary = "hp-typ-canary-0123456789";
+    String token = signedFor(key, ISSUER, List.of("app"), c -> c.claim("typ", canary));
+
+    TokenValidationException e =
+        assertThrows(TokenValidationException.class, () -> staticValidator(key, "app").validate(token));
+    assertFalse(e.toString().contains(canary), e.toString());
+  }
+
+  // JARM 인가 응답(Keycloak AuthorizationResponseToken — OIDCRedirectUriBuilder 가 만든다): typ 이 없고 iss = realm · aud = client
+  // id · exp 를 싣고 realm 키로 서명된다. response_mode=query.jwt 면 브라우저 URL 로 다닌다. 기본 기대 audience(= client id)의 aud
+  // 검사까지 다 지나 — 종류만이 그것을 가른다.
+  @Test void validate_refusesAJarmAuthorizationResponse() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    SignedJWT jarm = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        new JWTClaimsSet.Builder().audience("app").issuer(ISSUER)
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000))
+            .claim("code", "auth-code-1").claim("state", "state-1").build());
+    jarm.sign(new RSASSASigner(key));
+    String token = jarm.serialize();
+    assertNull(SignedJWT.parse(token).getJWTClaimsSet().getClaim("typ"), "전제: JARM 응답에는 typ 이 없다");
+
+    assertEquals(NOT_BEARER_OR_DPOP,
+        assertThrows(TokenValidationException.class, () -> staticValidator(key, "app").validate(token)).getMessage());
   }
 
   // typ 은 서명 · iss · aud · exp 가 통과한 **뒤에** 본다 — 검증 전 클레임으로 판정하지 않는다. typ="ID" 를 실은 위조 서명 ·
@@ -706,7 +763,7 @@ class JwtValidatorTest {
   }
 
   // withAudience 가 주는 것은 id_token 검증기다(AuthClient.validateIdToken · 코드 교환). Keycloak 의 id_token 은 typ "ID" 라 (A)
-  // 거부 목록을 걸지 않고, 대신 typ 허용 목록(정확히 "ID" — AuthClientValidateIdTokenTest)과 그다음 (B) azp 규칙을 건다. 같은
+  // 허용 목록(Bearer · DPoP)을 걸지 않고, 대신 typ 허용 목록(정확히 "ID" — AuthClientValidateIdTokenTest)과 그다음 (B) azp 규칙을 건다. 같은
   // 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고, 파생이 원본을 바꾸지
   // 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다). (B) 는 aud 가 둘인데 azp 가 없는 토큰으로 본다: 원본은 액세스 토큰 모양(typ
   // "Bearer")을 받고, 파생은 id_token 모양(typ "ID")을 azp 로 거부한다 — 종류가 azp 보다 먼저라, 파생에 주는 것은 typ "ID" 여야
@@ -733,12 +790,16 @@ class JwtValidatorTest {
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
   }
 
-  /** iss · aud · exp(1분 뒤)가 맞는 RS256(kid k1) 토큰 — more 가 클레임을 더한다. */
+  /**
+   * iss · aud · exp(1분 뒤)가 맞는 RS256(kid k1) 액세스 토큰 — typ 은 Keycloak 의 액세스 토큰처럼 "Bearer" 다(이 파일의 다른 액세스
+   * 토큰도 같다 — 액세스 검증기는 Bearer · DPoP 만 받아, 다른 검사를 재는 시험이 종류로 공허하게 거부되지 않게). more 가 클레임을
+   * 더하거나 바꾼다(typ 을 바꾸면 그것이 이긴다 · null 이면 빠진다).
+   */
   private static String signedFor(RSAKey key, String issuer, List<String> audience,
       java.util.function.UnaryOperator<JWTClaimsSet.Builder> more) throws Exception {
     SignedJWT jwt = new SignedJWT(
         new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
-        more.apply(new JWTClaimsSet.Builder().issuer(issuer).audience(audience)
+        more.apply(new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience(audience)
             .expirationTime(new Date(System.currentTimeMillis() + 60_000))).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();

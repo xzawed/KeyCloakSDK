@@ -221,7 +221,7 @@ class JwksMaxAgeTest {
   private record Rig(JwtValidator validator, String issuer) {
     String token(RSAKey key) throws Exception {
       SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
-          new JWTClaimsSet.Builder().issuer(issuer).audience("app").subject(key.getKeyID())
+          new JWTClaimsSet.Builder().claim("typ", "Bearer").issuer(issuer).audience("app").subject(key.getKeyID())
               .expirationTime(new Date(System.currentTimeMillis() + 600_000)).build());
       jwt.sign(new RSASSASigner(key));
       return jwt.serialize();

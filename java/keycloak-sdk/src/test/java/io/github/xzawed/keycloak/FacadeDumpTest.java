@@ -213,7 +213,7 @@ class FacadeDumpTest {
     TokenSet refreshed = kc.auth().refresh(REFRESH);
     IntrospectionResult ir = kc.auth().introspect(ACCESS);
     String issuer = idp.url() + "/realms/r";
-    String jwt = jwt(key, issuer, "u1", 60);
+    String jwt = accessJwt(key, issuer, "u1", 60);
     ValidatedToken vt = kc.auth().validate(jwt);
     kc.auth().logout(REFRESH);
     ClientCredentialsTokenProvider provider =
@@ -251,7 +251,7 @@ class FacadeDumpTest {
         .serverUrl("http://127.0.0.1:" + closedPort).realm("r").clientId(CLIENT_ID)
         .clientSecret(SECRET.toCharArray()).connectTimeout(Duration.ofMillis(500)).build());
     closers.add(down);
-    String expired = jwt(key, issuer, "u1", -600);
+    String expired = accessJwt(key, issuer, "u1", -600);
     UserRepresentation dup = new UserRepresentation();
     dup.setUsername("dup");
     CredentialRepresentation pw = new CredentialRepresentation();
@@ -336,9 +336,20 @@ class FacadeDumpTest {
   }
 
   private static String jwt(RSAKey key, String issuer, String subject, long expiresInSeconds) throws JOSEException {
+    return jwt(key, issuer, subject, expiresInSeconds, null);
+  }
+
+  // validate() 에 주는 액세스 토큰 — Keycloak 처럼 typ "Bearer"(액세스 검증기는 Bearer · DPoP 만 받는다).
+  private static String accessJwt(RSAKey key, String issuer, String subject, long expiresInSeconds)
+      throws JOSEException {
+    return jwt(key, issuer, subject, expiresInSeconds, "Bearer");
+  }
+
+  private static String jwt(RSAKey key, String issuer, String subject, long expiresInSeconds, String typOrNull)
+      throws JOSEException {
     long exp = System.currentTimeMillis() + expiresInSeconds * 1000;
     SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
-        new JWTClaimsSet.Builder().issuer(issuer).subject(subject).audience(CLIENT_ID)
+        new JWTClaimsSet.Builder().issuer(issuer).subject(subject).audience(CLIENT_ID).claim("typ", typOrNull)
             .issueTime(new Date(exp - 300_000)).expirationTime(new Date(exp)).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();

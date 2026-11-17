@@ -347,7 +347,9 @@ class AuthClientNonceTest {
   void exchangeCode_refusesAnIdTokenThatIsNotTypedId(String typ) throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
     JWTClaimsSet.Builder claims = accessClaims("app").claim("nonce", NONCE).claim("azp", "app");
-    String idToken = sign(key, JWSAlgorithm.RS256, (typ.equals("absent") ? claims : claims.claim("typ", typ)).build());
+    // 「absent」 는 typ 을 뺀다(null 은 직렬화가 뺀다) — accessClaims 의 Bearer 를 지운다.
+    String idToken = sign(key, JWSAlgorithm.RS256, claims.claim("typ", typ.equals("absent") ? null : typ).build());
+    assertEquals(typ.equals("absent") ? null : typ, SignedJWT.parse(idToken).getJWTClaimsSet().getClaim("typ"), "전제");
 
     KeycloakAuthException refused = assertRefusedAsInvalidIdToken(clientServingToken(key, idToken));
     assertEquals("not an id_token (typ is not \"ID\")", refused.getCause().getMessage());
@@ -374,8 +376,10 @@ class AuthClientNonceTest {
     return accessClaims(audience).claim("nonce", NONCE).claim("typ", "ID");
   }
 
+  // Keycloak 의 액세스 토큰 모양 — typ "Bearer"(액세스 검증기는 Bearer · DPoP 만 받는다). idClaims 는 그 위에 typ 을 "ID" 로 바꾼다.
   private static JWTClaimsSet.Builder accessClaims(String... audience) {
-    return new JWTClaimsSet.Builder().issuer(ISSUER).audience(List.of(audience)).expirationTime(secondsFromNow(60));
+    return new JWTClaimsSet.Builder().issuer(ISSUER).audience(List.of(audience)).expirationTime(secondsFromNow(60))
+        .claim("typ", "Bearer");
   }
 
   private static Date secondsFromNow(int seconds) {
