@@ -8,6 +8,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
+from ...admin._translate import encodable
 from ._translate import acall, awrite_call
 
 
@@ -19,6 +20,7 @@ class AsyncRolesResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> None:
+        encodable(rep)
         await awrite_call(self._admin.a_create_realm_role(rep))
 
     async def get(self, name: str) -> dict[str, Any] | None:
@@ -32,6 +34,7 @@ class AsyncRolesResource:
     async def update(self, name: str, rep: dict[str, Any]) -> None:
         """Updates the role, addressed by its current name (path/body kept separate — rename
         possible)."""
+        encodable(rep)
         await awrite_call(self._admin.a_update_realm_role(name, rep))
 
     async def delete(self, name: str) -> None:

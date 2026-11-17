@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, write_call
+from ._translate import call, encodable, write_call
 
 
 class GroupsResource:
@@ -21,6 +21,7 @@ class GroupsResource:
         # skip_exists=True and the group already exists; we call with the
         # default skip_exists=False, which raises instead — so this always
         # yields the new group's id in practice).
+        encodable(rep)
         return cast(str, write_call(lambda: self._admin.create_group(rep)))
 
     def get(self, group_id: str) -> dict[str, Any] | None:
@@ -36,6 +37,7 @@ class GroupsResource:
 
         Do not merge the path (`group_id`) and the body (`rep`).
         """
+        encodable(rep)
         write_call(lambda: self._admin.update_group(group_id, rep))
 
     def delete(self, group_id: str) -> None:
