@@ -8,7 +8,8 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <c>authz-request-redirect-unvalidated</c>). R1 — RFC 6749 §3.1.2 의 절대 URI(<c>^[A-Za-z][A-Za-z0-9+.-]*:</c> — null 도 여기다) ·
 /// R2 — fragment 성분이 없다(빈 fragment <c>#</c> 도 성분이다) · R3 — Keycloak 이 받는 URI 문자열이다(RFC 3986 §2 — Keycloak 의
 /// <c>RedirectUtils.toUri</c> 는 <c>java.net.URI.create</c> 가 던지면 어느 클라이언트 등록에서든 거부한다: U+0000–U+0020 ·
-/// U+007F–U+00A0 · <c>" &lt; &gt; \ ^ ` { | }</c> · 뒤에 16진 두 자리가 없는 <c>%</c>). 순서는 R1 → R2 → R3 이고, 메시지는 셋 다
+/// U+007F–U+00A0 · <c>" &lt; &gt; \ ^ ` { | }</c> · 뒤에 16진 두 자리가 없는 <c>%</c> — 그리고 짝 없는 서로게이트, Duende 가 U+FFFD 로
+/// 바꿔 쓰는 것). 순서는 R1 → R2 → R3 이고, 메시지는 셋 다
 /// 고정 문구라 입력을 싣지 않는다.
 /// </summary>
 /// <remarks>검사만 하고 고치지 않는다 — URL 의 <c>redirect_uri</c> 는 호출자 문자열 그대로다. 코드 교환이 그 문자열을 그대로
@@ -88,6 +89,37 @@ public sealed class AuthClientRedirectUriTests : IDisposable
         var c = (char)codePoint;
         AssertRefused("https://app/c" + c + "b", NotUri);
         AssertRefused("https://app/cb" + c, NotUri);
+    }
+
+    /// <summary>R3 — 짝 없는 서로게이트(뒤에 낮은 것이 없는 높은 것 · 앞에 높은 것이 없는 낮은 것). 고치기 전에는 Duende 의 인코더가
+    /// 그것을 U+FFFD 로 바꿔 썼다(실측 <c>…c%EF%BF%BDb</c>) — 값을 고친 것이다. 코드 단위로 잇는다(가운데 · 끝).</summary>
+    [Theory]
+    [InlineData(0xD800)]
+    [InlineData(0xDBFF)]
+    [InlineData(0xDC00)]
+    [InlineData(0xDFFF)]
+    public void Unpaired_surrogate_is_refused(int codeUnit)
+    {
+        var s = (char)codeUnit;
+        AssertRefused("https://app/c" + s + "b", NotUri);
+        AssertRefused("https://app/cb" + s, NotUri);
+    }
+
+    [Fact]
+    public void Surrogates_out_of_order_are_refused()
+    {
+        AssertRefused("https://app/c" + (char)0xDC00 + (char)0xD800 + "b", NotUri);               // 낮은 것이 먼저
+        AssertRefused("https://app/c" + (char)0xD800 + (char)0xD800 + (char)0xDC00 + "b", NotUri);  // 높은 것 둘 — 첫째는 짝이 없다
+    }
+
+    // 대조군 — 짝을 이룬 아스트랄 문자(U+1F600)는 한 문자다: 가운데 · 끝 · 둘 잇따라.
+    [Fact]
+    public void Paired_astral_character_is_carried_verbatim()
+    {
+        var pair = char.ConvertFromUtf32(0x1F600);
+        AssertCarried("https://app/c" + pair + "b");
+        AssertCarried("https://app/cb" + pair);
+        AssertCarried("https://app/c" + pair + pair + "b");
     }
 
     [Fact]
