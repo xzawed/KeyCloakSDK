@@ -155,6 +155,18 @@ def refused_grant(exc: KeycloakAuthError) -> KeycloakAuthError:
     return KeycloakAuthError(str(exc), exc.error)
 
 
+def refused_send(exc: BaseException) -> KeycloakAuthError | None:
+    """보내는 순간의 bearer 거부(`_internal/admin_guard.py` — REST 세션의 `send`)면 같은
+    타입·메시지로 새로 만든다, 아니면 `None`.
+
+    그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 `KeycloakConnectionError("Can't
+    connect to server")` 의 원인으로 감싼다 — 그대로 두면 거부가 연결 실패로 보고된다. 세션 안에서
+    `KeycloakAuthError` 를 던지는 자리는 그 검사뿐이다. 원본은 요청 헤더를 쥔 requests·httpx
+    프레임을 지나왔으므로 사슬로 달지 않는다(호출자가 `except` 밖에서 던진다)."""
+    signal = exc.__cause__
+    return refused_grant(signal) if isinstance(signal, KeycloakAuthError) else None
+
+
 def refused_guard(exc: KeycloakConfigError) -> KeycloakConfigError:
     """요청 직전에 살아 있는 연결을 무장하지 못한 거부(`_internal/admin_guard.py`)를 새로 만든다 —
     python-keycloak 의 admin 메서드 프레임 안(보낼 representation 을 쥔다)에서 났기 때문이다."""
@@ -173,10 +185,11 @@ def call(fn: Callable[[], T]) -> T:
     """`fn`을 실행하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
     python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
-    admin 하드닝의 거부(그랜트·bearer 검사, 연결 무장 실패)는 같은 타입으로 새로 만든다
-    (`refused_grant`·`refused_guard`). 원본은 `except` **밖에서** 다시 던져 `__context__` 로도
-    닿지 않게 한다. 파사드 호출임을 표시해(`facade`) 그 요청의 3xx 를 결과로 넘기지 않고, 받은
-    마지막 응답을 `answer` 에 둔다(`admin_failure` 가 읽는다).
+    admin 하드닝의 거부(그랜트·bearer 검사 — 보내는 순간의 것은 python-keycloak 이 감싼 채 온다
+    (`refused_send`) — , 연결 무장 실패)는 같은 타입으로 새로 만든다(`refused_grant`·
+    `refused_guard`). 원본은 `except` **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
+    파사드 호출임을 표시해(`facade`) 그 요청의 3xx 를 결과로 넘기지 않고, 받은 마지막 응답을
+    `answer` 에 둔다(`admin_failure` 가 읽는다).
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
@@ -191,5 +204,9 @@ def call(fn: Callable[[], T]) -> T:
     except Exception as e:
         if not is_lower_failure(e):
             raise
-        error, cause = admin_failure(e, answer), summarize(e)
+        refused = refused_send(e)
+        if refused is not None:
+            error, cause = refused, None
+        else:
+            error, cause = admin_failure(e, answer), summarize(e)
     raise error from cause

@@ -17,10 +17,10 @@ python-keycloak 7.1.1 · requests 2.34.2 · httpx 0.28.1 · h11 0.16.0): 기준�
   메시지).
 
 Python 은 규칙의 두 자리를 다 맡는다 — **받는 자리**(그랜트 래퍼가 세터 앞에서
-판정하고 다듬은 값을 넘긴다 — python-keycloak 의 401 재시도는 보내는 자리를 거치지
-않고 세터가 실은 값을 다시 보낸다)와 **보내는 자리**(그랜트를 거치지 않고 실린
-bearer — 주입된 `KeycloakAdmin(token=…)`·토큰 세터. 소비자가 토큰을 넣을 수 있다).
-그래서 lf·crlf·lead-tab 은 다듬어 보낸다.
+판정하고 다듬은 값을 넘긴다 — 거부한 토큰은 캐시하지 않는다)와 **보내는 자리**(그랜트를
+거치지 않고 실린 bearer — 주입된 `KeycloakAdmin(token=…)`·토큰 세터. 소비자가 토큰을 넣을
+수 있다). 그래서 lf·crlf·lead-tab 은 다듬어 보낸다. 보내는 자리가 갱신 뒤 검사와 송신 자리
+둘인 이유(401 재시도 · 철자 · 세션 기본값)는 `test_admin_guard_send_time.py`.
 
 기대는 시험이 따로 쓴 규칙(`_rule`)에서 온다 — SDK 의 정규식을 빌리지 않는다. 그 규칙은 스펙의 정본
 표와 대조된다(`test_the_rule_oracle_agrees_with_the_canonical_table`). 서버는 받은 `Authorization`

@@ -77,6 +77,7 @@ from urllib3.util.ssltransport import SSLTransport
 
 from ..exceptions import KeycloakConfigError
 from .deadline import _late
+from .openid_watch import watch
 
 #: 응답 하나가 본문 상한 밖으로 실어도 되는 틀의 바이트 — 상태 줄·헤더·청크 크기 줄·
 #: 트레일러·1xx. ruby 의 응답당 틀 예산(`MAX_FRAMING_BYTES`)·.NET 의 헤더+트레일러
@@ -358,9 +359,15 @@ def read_hooks(session: Any, where: str) -> list[Hook]:
     return hooks
 
 
+def _bound_connection_reads(conn: Any) -> None:
+    # 세션이 없으면 어댑터 표를 읽지 못한 것과 같은 거부다(`read_hooks`).
+    for target, name, wrap, where in read_hooks(getattr(conn, "_s", None), "connection._s"):
+        _wrap(target, name, wrap, f"{where}.{name}")
+
+
 def bound_reads(openid: Any) -> None:
     """auth 레인의 `KeycloakOpenID` — sync 세션(`connection._s`)의 응답 읽기에 마감과
-    예산을 건다(생성 때 한 번 — `forbid_retries` 와 같은 자리). `connection._s` 의 존재는
-    먼저 부르는 `harden_openid` 가 강제한다."""
-    for target, name, wrap, where in read_hooks(openid.connection._s, "connection._s"):
-        _wrap(target, name, wrap, f"{where}.{name}")
+    예산을 건다(생성 때, 그리고 공개 세터로 나중에 끼우는 연결도 끼우기 전에 — `forbid_retries` 와
+    같은 자리, `openid_watch.py`)."""
+    _bound_connection_reads(openid.connection)
+    watch(openid, _bound_connection_reads, "auth back-channel")
