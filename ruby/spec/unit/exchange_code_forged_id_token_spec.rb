@@ -32,9 +32,10 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code with a forged RS256 id_t
     via.auth.exchange_code(code: "c", code_verifier: "v", redirect_uri: "https://app/cb", expected_nonce: "n-abc")
   end
 
+  # Keycloak 의 id_token 모양(typ "ID") — 아래 거부가 종류가 아니라 키 · 길이 · 알고리즘 때문이게.
   def id_token(key, kid, alg: "RS256", **extra)
     now = Time.now.to_i
-    claims = { "sub" => "user-1", "iss" => "https://kc.example.com/realms/demo", "aud" => "app",
+    claims = { "sub" => "user-1", "iss" => "https://kc.example.com/realms/demo", "aud" => "app", "typ" => "ID",
                "exp" => now + 300, "iat" => now, "nonce" => "n-abc" }.merge(extra.transform_keys(&:to_s))
     JWT.encode(claims, key, alg, { kid: kid })
   end

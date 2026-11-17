@@ -42,11 +42,17 @@ module HostHttpConfigSpec
 
   module_function
 
-  def id_token
+  # realm 키로 서명한 토큰. 토큰 엔드포인트가 내는 id_token 은 Keycloak 처럼 typ "ID" 다 — 교환이 그것을 검증해야 그
+  # 레인이 JWKS 까지 간다. 접근 토큰 레인(`validate`)에는 typ "Bearer" 를 준다 — 접근 경로는 typ "ID" 를 거부한다.
+  def token(typ)
     now = Time.now.to_i
-    JWT.encode({ "sub" => "user-1", "iss" => "#{SERVER}/realms/demo", "aud" => "app", "exp" => now + 300,
-                 "iat" => now, "nonce" => "n-abc" }, REALM_KEY, "RS256", { kid: "realm-key" })
+    JWT.encode({ "sub" => "user-1", "iss" => "#{SERVER}/realms/demo", "aud" => "app", "typ" => typ,
+                 "exp" => now + 300, "iat" => now, "nonce" => "n-abc" }, REALM_KEY, "RS256", { kid: "realm-key" })
   end
+
+  def id_token = token("ID")
+
+  def access_token = token("Bearer")
 
   def outcome
     [:ok, yield]
@@ -102,7 +108,7 @@ RSpec.describe KeycloakSdk::KeycloakClient do
 
       HostHttpConfigSpec::LANES.each do |lane, (call, want)|
         it "runs #{lane} without building rack-oauth2's connection", :aggregate_failures do
-          expect(call.call(client, spec.id_token)).to eq(want)
+          expect(call.call(client, spec.access_token)).to eq(want)
           expect(host_runs).to be_empty
           expect(Rack::OAuth2).not_to have_received(:http_client)
         end
