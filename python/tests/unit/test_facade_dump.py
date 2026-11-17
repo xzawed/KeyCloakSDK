@@ -23,6 +23,16 @@
 「공개 API 에서 닿았다」로 세이면 대조가 거짓이 된다). 프레임은 `f_locals` 만 걷고 `f_back`·
 `f_globals` 는 걷지 않는다.
 
+⚠️ 비밀 이름의 필드가 빈 값으로만 닿으면 실패한다
+(등록부 `facade-dump-reached-empty-secret-field`). 카나리아 검사는 뿌리가 채운 값만
+본다 — 아무 뿌리도 채우지 않는 새 비밀 필드는 빈 값으로 찍혀 아무것도 증명하지 못한
+채 초록이었다. 그래서 걷기가 SDK 타입이 선언한 필드마다 「비지 않은 값을 쥔 인스턴스를
+한 번이라도 봤는가」를 적고(`_Walker._record`), 이름이 비밀을 뜻하는데(`_secret_named`)
+닿은 인스턴스가 전부 빈 값이면 실패한다 — 뿌리에서 카나리아로 채우거나
+`EMPTY_SECRET_EXEMPT` 에 이유와 함께 적는다. 한계: 비밀 이름의 필드가 비지 않은
+자리표시 값을 쥐면, 비밀이 순한 이름의 필드에 들면, 인코딩된(base64 등) 비밀이면
+이 검사는 못 본다.
+
 ⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. 새 타입이 이 뿌리들이 안 밟는
 경로로 비밀을 받으면 그 비밀은 여기 없다 — 그때는 그 경로를 뿌리에 더한다. Python 에는 소비자가
 주입하는 토큰 provider 가 없다(admin 이 토큰을 자체 소유한다, CLAUDE.md §4). `AdminClient(config,
@@ -40,8 +50,12 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import functools
+import inspect
 import json
 import pprint
+import re
+import textwrap
 import threading
 import time
 import types
@@ -119,6 +133,11 @@ EXEMPT: dict[str, str] = {
 #: 알려진 누출 — `"뿌리|카나리아"` → 사유. ⚠️ 고쳐져 더 안 새면 **여기서 지워야 통과한다**
 #: (낡은 항목 검사).
 KNOWN_LEAKS: dict[str, str] = {}
+
+#: 비밀 이름인데 닿은 인스턴스가 전부 빈 값이어도 되는 필드 — `"<타입>.<필드>"` → 이유.
+#: ⚠️ 이유 없는 면제는 넣지 않는다. 더는 「닿고 · 빈 값만」이 아니면(비지 않은 값이
+#: 보였거나 닿지 않으면) 낡은 면제다.
+EMPTY_SECRET_EXEMPT: dict[str, str] = {}
 
 _OC = "/protocol/openid-connect"
 #: JWKS 바이트 상한(`_internal/jwks_fetch.py` 의 51 200)을 넘는 본문 — `_TooBig` 경로를 연다.
@@ -503,6 +522,105 @@ def _children(obj: object) -> Iterator[tuple[str, object]]:
         yield ".__traceback__", obj.__traceback__
 
 
+#: 규칙 1 — 이 낱말 하나라도 있으면 비밀 이름이다(낱말 전체로만 — `keycloak` 은 `key` 가 아니다).
+_SECRET_WORDS = frozenset(
+    {
+        "secret",
+        "password",
+        "passwd",
+        "passphrase",
+        "token",
+        "credential",
+        "verifier",
+        "private",
+        "key",
+        "bearer",
+    }
+)
+#: 대소문자 경계 — 대문자 묶음(약어)은 다음 대문자 낱말 앞에서 끝난다(`IDToken` → `ID`·`Token`).
+_WORD = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
+
+
+def _words(name: str) -> list[str]:
+    """필드 이름의 낱말 — `_`·`-`·`$`·`.`·`@`·`#` 와 대소문자 경계로 자르고, 소문자로 바꿔 끝의 `s`
+    하나를 뗀다."""
+    words = [w.lower() for part in re.split(r"[_\-$.@#]+", name) for w in _WORD.findall(part)]
+    return [w[:-1] if w.endswith("s") else w for w in words]
+
+
+def _secret_named(name: str) -> bool:
+    return any(word in _SECRET_WORDS for word in _words(name))
+
+
+def _is_empty(value: object) -> bool:
+    """규칙 3 — `None`, 길이 0 인 문자열·바이트·컨테이너. 불리언·숫자·그 밖의 객체는 비지 않았다."""
+    if value is None:
+        return True
+    containers = (str, bytes, bytearray, list, tuple, set, frozenset, dict, deque)
+    return isinstance(value, containers) and len(value) == 0
+
+
+@functools.cache
+def _declared_fields(cls: type) -> frozenset[str]:
+    """`cls` 가 **스스로** 선언한 인스턴스 필드 — 자기 클래스 주석(데이터클래스 필드)·
+    `__slots__`, 그리고 자기 메서드 안의 `self.<이름> = …`(`ast`, 이름 맹글링 반영)."""
+    names = set(inspect.get_annotations(cls))
+    slots = cls.__dict__.get("__slots__", ())
+    names.update((slots,) if isinstance(slots, str) else slots)
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(cls)))
+    except (OSError, TypeError, SyntaxError):  # 소스가 없는 클래스 — 주석·슬롯만 쓴다
+        return frozenset(names)
+    node = tree.body[0]
+    methods = [
+        m
+        for m in getattr(node, "body", [])
+        if isinstance(m, ast.FunctionDef | ast.AsyncFunctionDef)
+    ]
+    for method in methods:
+        if not method.args.args:
+            continue
+        me = method.args.args[0].arg
+        for sub in ast.walk(method):
+            targets = sub.targets if isinstance(sub, ast.Assign) else []
+            if isinstance(sub, ast.AnnAssign | ast.AugAssign):
+                targets = [sub.target]
+            for leaf in (n for t in targets for n in ast.walk(t)):
+                if (
+                    isinstance(leaf, ast.Attribute)
+                    and isinstance(leaf.value, ast.Name)
+                    and leaf.value.id == me
+                ):
+                    names.add(leaf.attr)
+    private = {n for n in names if n.startswith("__") and not n.endswith("__")}
+    return frozenset(names - private | {f"_{cls.__name__.lstrip('_')}{n}" for n in private})
+
+
+def _own_fields(obj: object) -> Iterator[tuple[str, str, object]]:
+    """규칙 2 — (선언한 SDK 타입, 필드, 값). `__dict__` 의 키는 그것을 선언한 가장 가까운
+    SDK 클래스에, 슬롯은 그것을 둔 클래스에 돌린다. 어느 SDK 클래스도 선언하지 않은 키
+    (내장 기반이 붙인 `__notes__` 따위)는 세지 않는다. 비어 있는 슬롯은 빈 값이다."""
+    mro = [c for c in type(obj).__mro__ if _is_own(c)]
+    try:
+        instance_dict = object.__getattribute__(obj, "__dict__")
+    except AttributeError:
+        instance_dict = {}
+    for name, value in list(instance_dict.items()) if isinstance(instance_dict, dict) else []:
+        owner = next((c for c in mro if name in _declared_fields(c)), None)
+        if owner is not None:
+            yield _type_name(owner), name, value
+    for cls in mro:
+        slots = cls.__dict__.get("__slots__", ())
+        for slot in (slots,) if isinstance(slots, str) else slots:
+            if slot in ("__dict__", "__weakref__"):
+                continue
+            mangled = f"_{cls.__name__.lstrip('_')}{slot}" if slot.startswith("__") else slot
+            try:
+                yield _type_name(cls), slot, object.__getattribute__(obj, mangled)
+            except AttributeError:
+                yield _type_name(cls), slot, None
+
+
 class _Walker:
     def __init__(self, canaries: Mapping[str, str]) -> None:
         self._canaries = canaries
@@ -513,6 +631,8 @@ class _Walker:
         self.leaks: list[str] = []
         self.known_seen: set[str] = set()
         self.foreign_visits = 0
+        #: `"<선언 타입>.<필드>"` → 닿은 인스턴스 하나라도 비지 않은 값을 쥐었는가(`_record`).
+        self.fields: dict[str, bool] = {}
 
     def walk(self, start: object, root: str) -> None:
         stack: list[tuple[object, str, int]] = [(start, root, _FOREIGN_LAYERS)]
@@ -542,7 +662,18 @@ class _Walker:
             self._layers[id(obj)] = layers
             stack.extend((child, path + label, layers) for label, child in _children(obj))
 
+    def _record(self, obj: object) -> None:
+        """SDK 타입이 선언한 필드마다 이 인스턴스가 비지 않은 값을 쥐었는가.
+
+        판정은 테스트가 한다(`_empty_secret_problems`)."""
+        for owner, name, value in _own_fields(obj):
+            key = f"{owner}.{name}"
+            self.fields[key] = self.fields.get(key, False) or not _is_empty(value)
+
     def _render(self, obj: object, path: str, root: str) -> None:
+        # ⚠️ 기록은 여기서 한다 — 적대 경로 행렬은 이 걷기를 쓰되 `_render` 를 덮어 찍지 않으므로
+        # 기록도 하지 않는다(행렬의 동작·출력은 그대로다).
+        self._record(obj)
         outs = {
             "repr": repr(obj),
             "str": str(obj),
@@ -670,6 +801,23 @@ def _reconcile(decl: _Declarations, reached: Mapping[str, type]) -> tuple[list[s
     return problems, derived
 
 
+def _empty_secret_problems(fields: Mapping[str, bool]) -> list[str]:
+    """규칙 4·5 — 비밀 이름인데 닿은 인스턴스가 전부 빈 값을 쥔 필드, 그리고 낡은 면제."""
+    problems = [
+        f"{key}: secret-named but every reached instance holds an empty value — fill it from a "
+        "root with a canary, or exempt it with a reason"
+        for key, seen in sorted(fields.items())
+        if not seen and _secret_named(key.rsplit(".", 1)[-1]) and key not in EMPTY_SECRET_EXEMPT
+    ]
+    problems += [
+        f"{key}: EMPTY_SECRET_EXEMPT 에 있지만 더는 「닿고 · 빈 값만」이 아니다"
+        "(비지 않은 값이 보였거나 닿지 않는다) — 낡은 면제다"
+        for key in sorted(EMPTY_SECRET_EXEMPT)
+        if fields.get(key, True)
+    ]
+    return problems
+
+
 # --- 테스트 --------------------------------------------------------------------------------
 
 
@@ -716,9 +864,30 @@ def test_reachable_objects_do_not_render_secrets() -> None:
     assert len(decl.classes) >= 30, f"선언을 거의 못 찾았다 — 파생이 공허하다({decl.classes})"
     problems, derived = _reconcile(decl, walker.reached)
     assert not problems, "\n".join(problems)
+
+    secret_named = sorted(key for key in walker.fields if _secret_named(key.rsplit(".", 1)[-1]))
+    assert len(secret_named) >= 5, (
+        f"비밀 이름의 필드를 거의 못 봤다 — 기록이 공허하다({secret_named})"
+    )
+    empty = _empty_secret_problems(walker.fields)
+    assert not empty, "\n".join(empty)
     print(
         f"facade-dump: declared={len(decl.classes)} reached={len(walker.reached)} "
         f"derived={derived} exempt={sorted(EXEMPT)} known_leaks={sorted(KNOWN_LEAKS)} "
         f"foreign_transit={walker.foreign_visits}"
     )
     print("reached:", *sorted(walker.reached), sep="\n  ")
+    print("secret-named fields:", *secret_named, sep="\n  ")
+
+
+def test_secret_name_words() -> None:
+    """규칙 1 의 낱말 자르기 — 약어 묶음은 다음 대문자 낱말 앞에서 끝나고, 낱말 전체로만
+    대조한다."""
+    assert _words("IDToken") == ["id", "token"]
+    assert _words("client_secret") == ["client", "secret"]
+    assert _words("_jwks_keys") == ["jwk", "key"]  # 끝의 s 하나를 뗀다
+    assert _secret_named("IDToken")
+    assert _secret_named("codeVerifier")
+    assert not _secret_named("keycloak")  # `key` 가 아니다
+    assert not _secret_named("monkey")
+    assert not _secret_named("expected_audience")

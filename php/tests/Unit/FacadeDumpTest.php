@@ -40,6 +40,13 @@ use Xzawed\Keycloak\OidcEndpoints;
  * ⚠️ 예외는 `var_dump` 가 **트레이스 인자까지** 찍는다 — `#[\SensitiveParameter]` 가 빠진 자리가 여기서도
  * 드러난다(`zend.exception_ignore_args=0` 에서 잰다. 운영 php.ini 는 1 이라 인자를 안 모은다).
  *
+ * ⚠️ 비밀 이름의 프로퍼티가 빈 값으로만 닿으면 실패한다(등록부 `facade-dump-reached-empty-secret-field`). 카나리아 검사는
+ * 뿌리가 채운 값만 본다 — 아무 뿌리도 채우지 않는 새 비밀 프로퍼티는 빈 값으로 찍혀 아무것도 증명하지 못한 채 초록이었다.
+ * 그래서 걷기가 SDK 클래스가 선언한 프로퍼티마다(`\Exception` 같은 SDK 밖 조상의 것은 빼고) 「비지 않은 값을 쥔 인스턴스를
+ * 봤는가」를 적고(`record`, 초기화되지 않은 타입 프로퍼티는 빈 값), 이름이 비밀을 뜻하는데 닿은 인스턴스가 전부 빈 값이면
+ * 실패한다 — 뿌리에서 카나리아로 채우거나 `EMPTY_SECRET_EXEMPT` 에 이유와 함께 적는다. 한계: 비밀 이름의 프로퍼티가 비지 않은
+ * 자리표시 값을 쥐면, 비밀이 순한 이름의 프로퍼티에 들면, 인코딩된(base64 등) 비밀이면 이 검사는 못 본다.
+ *
  * ⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. `var_export` 는 `__debugInfo` 를 타지 않아
  * 여기서 재지 않는다(`php/README.md` 가 그 경계를 적는다).
  */
@@ -91,6 +98,97 @@ final class FacadeDumpTest extends TestCase
         return self::KNOWN_LEAKS;
     }
 
+    /**
+     * 비밀 이름인데 닿은 인스턴스가 전부 빈 값이어도 되는 프로퍼티 — `"<클래스>.<프로퍼티>"` => 이유. ⚠️ 이유 없는 면제는 넣지
+     * 않는다. 더는 「닿고 · 빈 값만」이 아니면(비지 않은 값이 보였거나 닿지 않으면) 낡은 면제다.
+     *
+     * @var array<string, string>
+     */
+    private const EMPTY_SECRET_EXEMPT = [];
+
+    /** @return array<string, string> `knownLeaks()` 와 같은 이유로 접근자를 거친다. */
+    private static function emptySecretExempt(): array
+    {
+        return self::EMPTY_SECRET_EXEMPT;
+    }
+
+    /** 규칙 1 — 이 낱말 하나라도 있으면 비밀 이름이다(낱말 전체로만 — `keycloak` 은 `key` 가 아니다). */
+    private const SECRET_WORDS = ['secret', 'password', 'passwd', 'passphrase', 'token', 'credential', 'verifier', 'private', 'key', 'bearer'];
+
+    /**
+     * 필드 이름의 낱말 — `_`·`-`·`$`·`.`·`@`·`#` 와 대소문자 경계(대문자 묶음은 다음 대문자 낱말 앞에서 끝난다: `IDToken` →
+     * `ID`·`Token`)로 자르고, 소문자로 바꿔 끝의 `s` 하나를 뗀다.
+     *
+     * @return list<string>
+     */
+    private static function words(string $name): array
+    {
+        $words = [];
+        $parts = preg_split('/[_\-$.@#]+/', $name);
+        foreach ($parts === false ? [] : $parts as $part) {
+            preg_match_all('/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/', $part, $m);
+            foreach ($m[0] as $w) {
+                $w = strtolower($w);
+                $words[] = str_ends_with($w, 's') ? substr($w, 0, -1) : $w;
+            }
+        }
+
+        return $words;
+    }
+
+    private static function secretNamed(string $name): bool
+    {
+        return array_intersect(self::words($name), self::SECRET_WORDS) !== [];
+    }
+
+    /** 규칙 3 — null, 빈 문자열, 빈 배열. 불리언·숫자·열거형·그 밖의 객체는 비지 않았다. */
+    private static function emptyValue(mixed $v): bool
+    {
+        return $v === null || $v === '' || $v === [];
+    }
+
+    /**
+     * SDK 클래스가 선언한 프로퍼티마다 이 인스턴스가 비지 않은 값을 쥐었는가 — 판정은 테스트가 한다. 규칙 2: 선언한 클래스가 이
+     * SDK(`Xzawed\Keycloak\`)의 것인 프로퍼티만 센다(`\Exception` 의 message·trace 따위는 빼고). 초기화되지 않은 타입
+     * 프로퍼티는 빈 값이다.
+     */
+    private static function record(object $o): void
+    {
+        for ($c = new \ReflectionClass($o); $c !== false; $c = $c->getParentClass()) {
+            if (!str_starts_with($c->getName(), 'Xzawed\\Keycloak\\')) {
+                continue;
+            }
+            foreach ($c->getProperties() as $p) {
+                if ($p->isStatic() || $p->getDeclaringClass()->getName() !== $c->getName()) {
+                    continue;
+                }
+                $key = $c->getName() . '.' . $p->getName();
+                $nonEmpty = $p->isInitialized($o) && !self::emptyValue($p->getValue($o));
+                self::$fields[$key] = (self::$fields[$key] ?? false) || $nonEmpty;
+            }
+        }
+    }
+
+    /** @return list<string> 비밀 이름인데 닿은 인스턴스가 전부 빈 값을 쥔 프로퍼티, 그리고 낡은 면제(규칙 4·5). */
+    private static function emptySecretProblems(): array
+    {
+        $problems = [];
+        foreach (self::$fields as $key => $seen) {
+            $prop = substr($key, (int) strrpos($key, '.') + 1);
+            if (!$seen && self::secretNamed($prop) && !array_key_exists($key, self::emptySecretExempt())) {
+                $problems[] = "$key: secret-named but every reached instance holds an empty value — fill it from a root with a canary, or exempt it with a reason";
+            }
+        }
+        foreach (array_keys(self::emptySecretExempt()) as $key) {
+            if ((self::$fields[$key] ?? true) === true) {
+                $problems[] = "$key: EMPTY_SECRET_EXEMPT 에 있지만 더는 「닿고 · 빈 값만」이 아니다(비지 않은 값이 보였거나 닿지 않는다) — 낡은 면제다";
+            }
+        }
+        sort($problems);
+
+        return $problems;
+    }
+
     /** @var array<string, true> */
     private static array $knownSeen = [];
 
@@ -103,6 +201,8 @@ final class FacadeDumpTest extends TestCase
     private static array $visited = [];
     /** @var list<string> */
     private static array $leaks = [];
+    /** @var array<string, bool> `"<선언 클래스>.<프로퍼티>"` => 닿은 인스턴스 하나라도 비지 않은 값을 쥐었는가(`record`) */
+    private static array $fields = [];
 
     protected function setUp(): void
     {
@@ -111,6 +211,7 @@ final class FacadeDumpTest extends TestCase
         self::$knownSeen = [];
         self::$visited = [];
         self::$leaks = [];
+        self::$fields = [];
     }
 
     /** @return array{priv:string,jwk:array<string,mixed>} */
@@ -285,10 +386,12 @@ final class FacadeDumpTest extends TestCase
     /** @param \SplObjectStorage<object, mixed> $seen */
     private static function walk(mixed $v, string $path, \SplObjectStorage $seen): void
     {
+        // ⚠️ 기록은 이 방문 함수에서 한다 — `reach()` 는 적대 경로 행렬과 함께 쓰므로 그대로 둔다(행렬의 동작·출력은 그대로다).
         self::reach($v, $path, $seen, static function (object $o, string $p): void {
             for ($c = new \ReflectionClass($o); $c !== false; $c = $c->getParentClass()) {
                 self::$visited[$c->getName()] = true;
             }
+            self::record($o);
             self::render($o, $p);
         });
     }
@@ -379,5 +482,21 @@ final class FacadeDumpTest extends TestCase
             }
         }
         self::assertSame([], $problems, implode("\n", $problems));
+
+        $named = array_filter(array_keys(self::$fields), static fn (string $key): bool => self::secretNamed(substr($key, (int) strrpos($key, '.') + 1)));
+        self::assertGreaterThanOrEqual(5, count($named), '비밀 이름의 프로퍼티를 거의 못 봤다 — 기록이 공허하다');
+        $empty = self::emptySecretProblems();
+        self::assertSame([], $empty, implode("\n", $empty));
+    }
+
+    /** 규칙 1 의 낱말 자르기 — 약어 묶음은 다음 대문자 낱말 앞에서 끝나고, 낱말 전체로만 대조한다. */
+    public function testSecretNameWordSplitting(): void
+    {
+        self::assertSame(['id', 'token'], self::words('IDToken'));
+        self::assertSame(['client', 'secret'], self::words('clientSecret'));
+        self::assertSame(['jwk', 'key'], self::words('jwksKeys'));   // 끝의 s 하나를 뗀다
+        self::assertTrue(self::secretNamed('codeVerifier'));
+        self::assertFalse(self::secretNamed('keycloak'));   // `key` 가 아니다
+        self::assertFalse(self::secretNamed('expectedAudience'));
     }
 }

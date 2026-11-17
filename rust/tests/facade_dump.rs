@@ -13,10 +13,17 @@
 //!    함께 면제한다. 바닥이 없는 공개 선언 타입은 전부 프로브 표에 올라 「바닥 없음」이 컴파일 수준에서
 //!    단언돼야 한다. 파사드 넷(`AuthClient`·`KeycloakClient`·`AdminClient`·`ClientCredentialsTokenProvider`)
 //!    에 `derive(Debug)` 한 줄이 붙으면 — 안의 필드가 스스로 가려 누출이 없더라도 — 여기서 떨어진다.
+//! 4. **비밀 이름 필드** — 렌더는 뿌리가 카나리아로 채운 인스턴스만 증명한다. 아무 뿌리도 안 채우는 새 비밀 필드는
+//!    빈 값으로 닿아 공허하게 통과한다(등록부 `facade-dump-reached-empty-secret-field`). rust 는 필드를 런타임에 열거할
+//!    수 없으므로 선언으로 간다 — 판독기가 `rust/src` 의 이름 있는 필드를 모으고, 이름이 비밀 낱말(SECRET_WORDS)인
+//!    필드마다 [`secret_fields`] 에 **증명**(도달한 뿌리에서 공개 접근자로 읽어 비어 있지 않음을 보이는 클로저) 또는
+//!    **면제 이유**가 있어야 한다. 표와 판독이 하나씩 맞아야 한다(빠짐 · 낡음 둘 다 실패).
 //!
 //! ⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. 부분 노출은 8자 조각부터 본다(앞 4자만
 //! 보이는 마스킹은 우연 일치와 구분할 수 없다). `macro_rules!` 가 찍어 내는 타입과 `Serialize` 경로는 파생이
-//! 보지 않는다(지금 SDK 타입 중 `Serialize` 를 가진 것은 없다).
+//! 보지 않는다(지금 SDK 타입 중 `Serialize` 를 가진 것은 없다). 4 는 이름과 빈 값만 본다 — 비밀 이름 필드가 비어 있지
+//! 않은 자리표시자(`"x"` · `"***"`)를 쥐면 증명이 통과하고, 평범한 이름(`data` · `blob`)의 필드나 인코딩된(base64 등)
+//! 비밀은 이름으로도 카나리아로도 못 잡는다.
 
 mod source_scan;
 
@@ -97,6 +104,134 @@ const KNOWN_LEAKS: &[(&str, &str)] = &[];
 
 /// 뿌리가 낼 수 없는 **열거형 변형**(`"타입::변형"`)과 그 이유. ⚠️ 이유 없는 면제는 넣지 않는다.
 const EXEMPT_VARIANTS: &[(&str, &str)] = &[];
+
+// ── 비밀 이름 필드(4) ─────────────────────────────────────────────────────────────────────────
+
+/// 비밀 이름의 낱말(등록부 facade-dump-reached-empty-secret-field 의 규칙 1).
+const SECRET_WORDS: &[&str] = &[
+    "secret",
+    "password",
+    "passwd",
+    "passphrase",
+    "token",
+    "credential",
+    "verifier",
+    "private",
+    "key",
+    "bearer",
+];
+
+/// 필드 이름 → 낱말. 낙타 표기 경계(약어 묶음은 다음 대문자 낱말 앞에서 끝난다 — `IDToken` → id · token)와 `_` `-`
+/// `$` `.`. 낱말마다 소문자로 바꾸고 끝의 s 하나를 뗀다.
+fn secret_words(name: &str) -> Vec<String> {
+    let cs: Vec<char> = name.chars().collect();
+    let mut words = Vec::new();
+    let mut cur = String::new();
+    let mut flush = |cur: &mut String| {
+        if !cur.is_empty() {
+            let w = cur.to_lowercase();
+            words.push(w.strip_suffix('s').map_or(w.clone(), str::to_string));
+            cur.clear();
+        }
+    };
+    for (i, &c) in cs.iter().enumerate() {
+        if matches!(c, '_' | '-' | '$' | '.') {
+            flush(&mut cur);
+            continue;
+        }
+        if i > 0 && c.is_uppercase() {
+            let prev = cs[i - 1];
+            let next_lower = cs.get(i + 1).is_some_and(|n| n.is_lowercase());
+            if prev.is_lowercase() || prev.is_ascii_digit() || (prev.is_uppercase() && next_lower) {
+                flush(&mut cur);
+            }
+        }
+        cur.push(c);
+    }
+    flush(&mut cur);
+    words
+}
+
+/// 낱말 하나라도 비밀 낱말이면 비밀 이름이다(낱말 전체만 — `keycloak` 은 `key` 가 아니다).
+fn secret_named(name: &str) -> bool {
+    secret_words(name)
+        .iter()
+        .any(|w| SECRET_WORDS.contains(&w.as_str()))
+}
+
+/// 비밀 이름 필드 하나의 판정.
+enum SecretField {
+    /// 도달한 뿌리에서 공개 접근자로 읽어 **하나라도** 비어 있지 않으면 참.
+    Proof(fn(&Fixture) -> bool),
+    /// 면제 이유. ⚠️ 이유 없는 면제는 넣지 않는다.
+    Exempt(&'static str),
+}
+
+/// 비밀 이름 필드(`타입.필드`, 열거형 구조체 변형이면 `타입::변형.필드`)마다 증명 또는 면제 — 판독기의 비밀 이름 필드와
+/// 하나씩 맞아야 한다(빠지면 · 낡으면 실패).
+fn secret_fields() -> Vec<(&'static str, SecretField)> {
+    vec![
+        (
+            "KeycloakConfig.client_secret",
+            SecretField::Proof(|fx| {
+                fx.cfg
+                    .client_secret
+                    .as_deref()
+                    .is_some_and(|s| !s.is_empty())
+            }),
+        ),
+        (
+            "TokenSet.access_token",
+            SecretField::Proof(|fx| fx.tokens.iter().any(|(_, t)| !t.access_token.is_empty())),
+        ),
+        (
+            "TokenSet.token_type",
+            SecretField::Proof(|fx| fx.tokens.iter().any(|(_, t)| !t.token_type.is_empty())),
+        ),
+        (
+            "TokenSet.refresh_token",
+            SecretField::Proof(|fx| {
+                fx.tokens
+                    .iter()
+                    .any(|(_, t)| t.refresh_token.as_deref().is_some_and(|s| !s.is_empty()))
+            }),
+        ),
+        (
+            "TokenSet.id_token",
+            SecretField::Proof(|fx| {
+                fx.tokens
+                    .iter()
+                    .any(|(_, t)| t.id_token.as_deref().is_some_and(|s| !s.is_empty()))
+            }),
+        ),
+        (
+            "AuthorizationRequest.code_verifier",
+            SecretField::Proof(|fx| fx.requests.iter().any(|(_, r)| !r.code_verifier.is_empty())),
+        ),
+        (
+            "AdminClient.token_provider",
+            SecretField::Exempt(
+                "비공개 필드라 공개 접근자가 없다. `Arc<dyn TokenProvider>` 는 늘 null 아닌 객체다(규칙 3 — 비어 있을 수 \
+                 없다). 그것이 내는 캐시된 액세스 토큰은 fixture 의 흐름 검사(`default+injected admin cached token`)가 \
+                 카나리아 Bearer 로 나갔음을 본다",
+            ),
+        ),
+        (
+            "ClientCredentialsTokenProvider.token_url",
+            SecretField::Exempt(
+                "토큰 엔드포인트 URL 이다 — 낱말 `token` 이 겹친 이름뿐인 일치이고 비밀이 아니다. 비공개 필드라 공개 \
+                 접근자가 없다",
+            ),
+        ),
+        (
+            "RawSet.keys",
+            SecretField::Exempt(
+                "JwksStore 의 JWKS 응답을 원소마다 풀려고 fetch 안에서만 사는 지역 역직렬화 틀이다 — 도달 가능한 값이 \
+                 쥐지 않고, 담는 것은 JWKS 문서의 **공개** 키다",
+            ),
+        ),
+    ]
+}
 
 // ── 바닥 프로브(autoref 특수화) ─────────────────────────────────────────────────────────────
 // `(&Floor(v)).debug_floor()` 는 `T: Debug` 이면 by-value 단계에서 `Floor<T>` impl 을, 아니면 autoref
@@ -1086,6 +1221,54 @@ fn reconcile_foreign(w: &Walker, sc: &Scan) -> Vec<String> {
     out
 }
 
+/// (4) 비밀 이름 필드 = 표. 판독기가 모은 필드 중 비밀 이름인 것과 [`secret_fields`] 가 하나씩 맞고, 증명은 참이어야 한다.
+fn reconcile_secret_fields(fx: &Fixture, sc: &Scan) -> Vec<String> {
+    let table = secret_fields();
+    let declared: BTreeSet<String> = sc
+        .fields
+        .iter()
+        .filter(|f| secret_named(&f.name))
+        .map(|f| f.key())
+        .collect();
+    let listed: BTreeSet<&str> = table.iter().map(|(k, _)| *k).collect();
+    let mut out = Vec::new();
+    for key in &declared {
+        if !listed.contains(key.as_str()) {
+            out.push(format!(
+                "{key}: 비밀 이름 필드인데 secret_fields() 에 없다 — 도달한 뿌리에서 공개 접근자로 읽어 비어 있지 않음을 \
+                 보이는 증명을 더하거나, 이유와 함께 면제하라"
+            ));
+        }
+    }
+    let mut only_empty = Vec::new();
+    for (key, verdict) in &table {
+        let reason = match verdict {
+            SecretField::Proof(_) => "증명",
+            SecretField::Exempt(reason) => reason,
+        };
+        if !declared.contains(*key) {
+            out.push(format!(
+                "secret_fields()[{key}]: 낡은 항목이다 — 판독기가 그런 비밀 이름 필드를 더는 모으지 않는다({reason})"
+            ));
+        } else if reason.trim().is_empty() {
+            out.push(format!(
+                "secret_fields()[{key}]: 이유 없는 면제다 — 이유를 적거나 증명으로 바꿔라"
+            ));
+        } else if let SecretField::Proof(proof) = verdict
+            && !proof(fx)
+        {
+            only_empty.push(format!(
+                "{key}: secret-named but every reached instance holds an empty value — fill it from a root with a \
+                 canary, or exempt it with a reason"
+            ));
+        }
+    }
+    if !only_empty.is_empty() {
+        out.push(only_empty.join("\n"));
+    }
+    out
+}
+
 // ── 시험 ─────────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -1140,7 +1323,21 @@ async fn reachable_objects_do_not_render_secrets() {
     problems.extend(reconcile_variants(&w, &sc));
     problems.extend(reconcile_floorless(&w, &sc));
     problems.extend(reconcile_foreign(&w, &sc));
+    problems.extend(reconcile_secret_fields(&fx, &sc));
     assert!(problems.is_empty(), "{}", problems.join("\n"));
+    let secret_keys: Vec<String> = sc
+        .fields
+        .iter()
+        .filter(|f| secret_named(&f.name))
+        .map(|f| f.key())
+        .collect();
+    assert!(
+        sc.fields.len() >= 20 && !secret_keys.is_empty(),
+        "필드 판독이 거의 못 모았다(필드 {} · 비밀 이름 {}) — 대조가 공허하다",
+        sc.fields.len(),
+        secret_keys.len()
+    );
+    eprintln!("필드 {} · 비밀 이름 필드 {secret_keys:?}", sc.fields.len());
     eprintln!(
         "선언 {} · 바닥 {floored} → 찍음 {:?} · 변형 {:?} · 걷기가 닿은 무바닥 {:?} · foreign 재노출 {} · 카나리아 {}",
         sc.decls.len(),
@@ -1224,4 +1421,82 @@ fn scanner_reads_the_shapes_the_reconcile_relies_on() {
         ("b".into(), "#[derive(Debug)] pub struct Same;".into()),
     ]);
     assert_eq!(dup.unreadable.len(), 1, "{:?}", dup.unreadable);
+
+    // (4) 이름 있는 필드 — 위 조각: A.x · D.s · V::Struct.a(튜플 G · 변형 Tuple · cfg(test) 의 E 는 이름이 없거나 빠진다).
+    let fields: Vec<String> = sc.fields.iter().map(|f| f.key()).collect();
+    assert_eq!(fields, ["A.x", "D.s", "V::Struct.a"]);
+}
+
+/// (4) 필드 판독이 기대는 모양 — 제네릭 · `where` 절 · 필드 속성 · `pub(crate)` · 꺾쇠 안 쉼표 · fn 포인터 타입 · 튜플 ·
+/// 단위 · 열거형 구조체 변형 · fn 몸통 안의 지역 구조체 · cfg(test) 모듈.
+#[test]
+fn scanner_reads_named_fields() {
+    let src = r##"
+        pub struct S<'a, T> where T: Into<String> {
+            #[serde(rename = "x")]
+            pub client_secret: Option<String>,
+            pub(crate) map: std::collections::HashMap<String, Vec<u8>>,
+            f: fn(u8, u8) -> u8,
+            r: &'a str,
+            t: T,
+        }
+        pub struct Tuple(pub String, u8);
+        pub struct Unit;
+        pub enum E { A, B(String), C { token: String, n: u8 } }
+        fn body() { struct Local { keys: Vec<u8> } }
+        #[cfg(test)]
+        mod tests { struct Hidden { password: String } }
+    "##;
+    let sc = scan(&[("lib".into(), src.into())]);
+    let got: Vec<String> = sc.fields.iter().map(|f| f.key()).collect();
+    assert_eq!(
+        got,
+        [
+            "S.client_secret",
+            "S.map",
+            "S.f",
+            "S.r",
+            "S.t",
+            "E::C.token",
+            "E::C.n",
+            "Local.keys"
+        ]
+    );
+}
+
+/// (4) 비밀 이름 판정(규칙 1) — 낱말 경계 · 약어 묶음 · 끝 s · 낱말 전체만.
+#[test]
+fn secret_named_splits_whole_words() {
+    for (name, want) in [
+        ("client_secret", true),
+        ("access_token", true),
+        ("token_type", true),
+        ("id_token", true),
+        ("code_verifier", true),
+        ("token_provider", true),
+        ("keys", true),
+        ("IDToken", true),
+        ("apiKey", true),
+        ("API_KEY", true),
+        ("x$credentials", true),
+        ("bearer-value", true),
+        ("a.passphrase", true),
+        ("passwd", true),
+        ("private_keys", true),
+        ("keycloak_url", false),
+        ("Keycloak", false),
+        ("oauth_error", false),
+        ("jwks_uri", false),
+        ("secretary", false),
+        ("tokenizer", false),
+        ("monkey", false),
+    ] {
+        assert_eq!(
+            secret_named(name),
+            want,
+            "{name}: words {:?}",
+            secret_words(name)
+        );
+    }
+    assert_eq!(secret_words("IDToken"), ["id", "token"]);
 }

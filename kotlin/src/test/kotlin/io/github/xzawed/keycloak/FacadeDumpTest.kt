@@ -34,14 +34,17 @@ import java.util.Base64
 import java.util.Collections
 import java.util.Date
 import java.util.IdentityHashMap
+import java.util.Locale
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import java.lang.reflect.Array as ReflectArray
 
 // 바닥 계약(기본 문자열 표현이 비밀을 찍지 않는다)을 **손으로 고른 값 타입이 아니라 도달 가능한 객체 전부**에
 // 건다. `TokensTest`·`ConfigTest` 는 값 타입의 toString 을 하나씩 재는데, 자매 Go·PHP·.NET 에서는 그 밖의
@@ -66,6 +69,10 @@ import kotlin.time.Duration.Companion.seconds
 // JDK 모듈의 보관 자리는 공개 API 로 여는 것만 열린다(Map·Collection·배열·Throwable 원인·AtomicReference·Optional·
 // 동적 프록시 핸들러) — ThreadLocal·Reference·Future 에만 매달린 SDK 객체는 못 본다. 프록시 핸들러를 열자 방문이
 // 4887 → 8320 으로 늘었다(admin-client 리소스가 JDK 프록시다 — 독립 레그 Grok 의 지적을 실측으로 확인).
+//
+// ⚠️ SDK 클래스가 선언한 비밀 이름 필드([secretWords] · [DUMP_SECRET_WORDS])가 닿은 인스턴스마다 빈 값이면 실패한다 — 그 렌더링은
+// 아무것도 증명하지 않는다(등록부 facade-dump-reached-empty-secret-field, 면제 [DUMP_EMPTY_SECRET_EXEMPT]). 남은 빈틈(구현하지
+// 않는다): 비밀 이름 필드가 빈 값 아닌 자리표시자만 쥐는 것 · 평범한 이름의 필드에 든 비밀 · 인코딩된(base64 등) 비밀.
 
 private const val DUMP_PKG = "io.github.xzawed.keycloak."
 private const val DUMP_OIDC = "/realms/r/protocol/openid-connect"
@@ -122,6 +129,16 @@ private val DUMP_EXEMPT: Map<String, String> =
  */
 private val DUMP_KNOWN_LEAKS: Map<String, String> = emptyMap()
 
+/**
+ * 비밀 이름 필드가 빈 값으로만 닿아도 되는 `선언 클래스(패키지 뒤 이름).필드` 와 그 이유(등록부 facade-dump-reached-empty-secret-field).
+ * ⚠️ 이유 없는 면제는 넣지 않는다. 더는 「닿았고 빈 값뿐」이 아니면(채워졌거나 · 안 닿거나 · 선언이 없어지면) 낡은 면제로 실패한다.
+ */
+private val DUMP_EMPTY_SECRET_EXEMPT: Map<String, String> = emptyMap()
+
+// 비밀 낱말 — 낱말 단위로만 맞춘다(`keycloak` 은 `key` 가 아니다). 아홉 언어가 같은 집합이다.
+private val DUMP_SECRET_WORDS =
+    setOf("secret", "password", "passwd", "passphrase", "token", "credential", "verifier", "private", "key", "bearer")
+
 internal class FacadeDumpTest {
     @Test
     fun `reachable objects do not render secrets on the floor paths`() =
@@ -143,20 +160,37 @@ internal class FacadeDumpTest {
 
                 val declared = declaredTypes(own, KeycloakConfig::class.java.classLoader)
                 assertTrue(declared.size >= 20, "main 클래스에서 선언을 거의 못 찾았다(${declared.size}) — 파생이 공허하다")
-                val problems = reconcile(declared, walker.reached)
+                // 비밀 이름 필드가 닿은 인스턴스마다 빈 값이면 그 렌더링은 아무것도 증명하지 않는다(등록부
+                // facade-dump-reached-empty-secret-field) — 같은 실패 메시지에 싣는다.
+                val problems = reconcile(declared, walker.reached) + emptySecretFields(walker.ownFields)
                 assertTrue(problems.isEmpty(), problems.joinToString("\n"))
                 val byRule = declared.filter { it.name !in walker.reached && !holdsInstanceState(it) }
                 println(
                     "FacadeDumpTest: 뿌리 ${roots.size} · 방문 ${walker.visited} · " +
                         "도달한 선언 타입 ${declared.count { it.name in walker.reached }}/${declared.size} · " +
                         "상태 없음 규칙으로 빠짐 ${byRule.map { it.name.removePrefix(DUMP_PKG) }} · " +
-                        "들어가지 않은 하네스 객체 ${walker.harnessSkipped}",
+                        "들어가지 않은 하네스 객체 ${walker.harnessSkipped} · " +
+                        "비밀 이름 필드 ${walker.ownFields.keys.count { isSecretNamed(it.substringAfterLast('.')) }}" +
+                        "(빈 값뿐 면제 ${DUMP_EMPTY_SECRET_EXEMPT.size})",
                 )
             } finally {
                 closing.forEach { it.close() }
                 server.stop()
             }
         }
+
+    /** 비밀 이름 판정의 경계 — 낱말 단위다(`keycloak` 은 `key` 가 아니다). */
+    @Test
+    fun `secret name rule matches whole words only`() {
+        assertEquals(listOf("id", "token"), secretWords("IDToken"))
+        assertEquals(listOf("client", "secret"), secretWords("<ClientSecret>k__BackingField"))
+        assertEquals(listOf("refresh", "token"), secretWords("refreshToken\$delegate"))
+        val yes = "clientSecret accessToken IDToken password passwd passphrase credentials codeVerifier privateKey keys"
+        val alsoYes = "bearer api_secret x-token a.token @token #token SECRETS"
+        for (n in "$yes $alsoYes".split(' ')) assertTrue(isSecretNamed(n), n)
+        val no = listOf("keycloak", "keycloakUrl", "monkey", "tokenizer", "secretary", "keystore", "scope", "expiresAt", "this\$0")
+        for (n in no) assertFalse(isSecretNamed(n), n)
+    }
 }
 
 // `internal` 인 것(DumpRoots·dumpRoots·DumpWalker·declaredTypes)은 적대 경로 행렬(`HostilePathMatrixTest`)이 같은
@@ -394,6 +428,13 @@ internal class DumpWalker(
     /** 들어가지 않은 하네스 객체의 클래스 — 위생 규칙이 무엇을 막았는지 사람이 대조할 수 있게 남긴다. */
     val harnessSkipped: MutableSet<String> = sortedSetOf()
 
+    /**
+     * SDK 클래스가 선언한 (원시값 아닌) 필드마다 — `선언 클래스 이진 이름.필드` → 닿은 인스턴스 가운데 하나라도 빈 값이 아니었는가.
+     * 비밀 이름 필드가 빈 값으로만 닿았는지를 [emptySecretFields] 가 가른다(등록부 facade-dump-reached-empty-secret-field).
+     * 기록만 한다 — 걷기와 적대 경로 행렬의 결과는 바뀌지 않는다.
+     */
+    val ownFields: MutableMap<String, Boolean> = sortedMapOf()
+
     var visited: Int = 0
         private set
 
@@ -494,13 +535,16 @@ internal class DumpWalker(
         var c: Class<*>? = obj.javaClass
         while (c != null && c != Any::class.java) {
             if (!c.module.isNamed) {
+                val declaredByOwn = sourceOf(c) == own
                 for (f in c.declaredFields) {
                     if (Modifier.isStatic(f.modifiers) || f.type.isPrimitive) continue
                     if (!f.trySetAccessible()) {
                         unmeasured += "$path.${f.name} (${c.name}): 필드를 열 수 없다"
                         continue
                     }
-                    add(f.get(obj), "$path.${f.name}")
+                    val value = f.get(obj)
+                    if (declaredByOwn) ownFields.merge("${c.name}.${f.name}", !isEmptyValue(value)) { a, b -> a || b }
+                    add(value, "$path.${f.name}")
                 }
             }
             c = c.superclass
@@ -569,6 +613,54 @@ private fun reconcile(
     val names = declared.map { it.name.removePrefix(DUMP_PKG) }.toSet()
     for (name in DUMP_EXEMPT.keys - names) {
         problems += "$name: 면제 표에 있지만 선언이 없다 — 낡은 면제다"
+    }
+    return problems
+}
+
+// 빈 값 — null · 길이 0 문자열 · 길이 0 배열(CharArray·ByteArray 포함) · 빈 컬렉션 · 빈 Map. 그 밖의 null 아닌 값(참·거짓 · 수 ·
+// 열거값 · 객체)은 비지 않았다.
+private fun isEmptyValue(v: Any?): Boolean =
+    when {
+        v == null -> true
+        v is CharSequence -> v.isEmpty()
+        v.javaClass.isArray -> ReflectArray.getLength(v) == 0
+        v is Collection<*> -> v.isEmpty()
+        v is Map<*, *> -> v.isEmpty()
+        else -> false
+    }
+
+/**
+ * 필드 이름 → 낱말: camel·Pascal 경계(대문자 연속은 다음 대문자 낱말 앞에서 끝난다 — `IDToken` → id · token) · `_ - $ .` ·
+ * 앞의 `@`·`#`. .NET `<X>k__BackingField` → X · Kotlin `x$delegate` → x. 낱말마다 소문자로 바꾸고 끝의 s 하나를 뗀다.
+ */
+private fun secretWords(field: String): List<String> {
+    var n = Regex("<(.+)>k__BackingField").matchEntire(field)?.groupValues?.get(1) ?: field
+    n = n.removeSuffix("\$delegate")
+    if (n.startsWith("@") || n.startsWith("#")) n = n.substring(1)
+    return n
+        .split(Regex("[_\\-\$.]+"))
+        .flatMap { it.split(Regex("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")) }
+        .filter { it.isNotEmpty() }
+        .map { it.lowercase(Locale.ROOT).let { w -> if (w.endsWith("s")) w.dropLast(1) else w } }
+}
+
+private fun isSecretNamed(field: String): Boolean = secretWords(field).any { it in DUMP_SECRET_WORDS }
+
+// 비밀 이름 필드마다 — 닿은 인스턴스 전부가 빈 값이면 실패, 면제는 [DUMP_EMPTY_SECRET_EXEMPT] 에 이유와 함께. 면제가 더는
+// 「닿았고 빈 값뿐」이 아니면 낡은 것으로 실패한다.
+private fun emptySecretFields(fields: Map<String, Boolean>): List<String> {
+    val byName = fields.mapKeys { it.key.removePrefix(DUMP_PKG) }
+    val problems = mutableListOf<String>()
+    for ((key, anyNonEmpty) in byName) {
+        if (anyNonEmpty || key in DUMP_EMPTY_SECRET_EXEMPT || !isSecretNamed(key.substringAfterLast('.'))) continue
+        problems +=
+            "$key: secret-named but every reached instance holds an empty value — fill it from a root with a canary, " +
+            "or exempt it with a reason"
+    }
+    for ((key, reason) in DUMP_EMPTY_SECRET_EXEMPT) {
+        if (byName[key] != false) {
+            problems += "$key: 면제 표에 있지만 더는 「닿았고 빈 값뿐」이 아니다(채워졌거나 · 안 닿거나 · 선언이 없다) — 낡은 면제다($reason)"
+        }
     }
     return problems
 }

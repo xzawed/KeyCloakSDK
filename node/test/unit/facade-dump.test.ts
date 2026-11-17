@@ -20,11 +20,17 @@
  *
  * ⚠️ 한계 (1) ES `#private` 필드는 리플렉션이 못 본다 — 걷기가 그리로 내려가지 못하므로, 그런 자리에만
  * 사는 객체는 공개 API 뿌리로 따로 세운다(`JwtValidator.forJwksUri`·`new ClientCredentialsTokenProvider`).
- * 바닥 경로도 `#private` 을 찍지 않으므로 그 필드가 바닥으로 새는 길은 없다. (2) 카나리아는 뿌리를 만드는
+ * 바닥 경로도 `#private` 을 찍지 않으므로 그 필드가 바닥으로 새는 길은 없다. 비밀 이름인 `#private` 필드 선언은 `node/src` 를 훑어
+ * (`privateFieldDeclarations`) 그 흐름을 재는 시험이 적힌 표(`PRIVATE_SECRET_FIELDS`)와 양쪽으로 대조한다. (2) 카나리아는 뿌리를 만드는
  * 호출이 흘려 넣은 비밀뿐이다 — 새 타입이 이 뿌리들이 안 밟는 경로로 비밀을 받으면 그 경로를 뿌리에 더한다.
  * (3) 선언 파생은 정규식이다 — 놓치지 않는지는 배럴의 클래스 export 전부가 파생 집합에 드는지로 대조한다.
  * (4) 공개되지 않은 클래스(`MaskedAuthorizationRequest`)는 이름으로만 식별한다 — 같은 이름의 남의 클래스는
  * 구분하지 못한다. 공개된 클래스는 배럴의 생성자와 **동일성**으로 식별한다.
+ *
+ * ⚠️ SDK 클래스 인스턴스의 비밀 이름 프로퍼티(`secretWords` · `SECRET_WORDS`)가 닿은 인스턴스마다 빈 값이면 실패한다 — 그
+ * 렌더링은 아무것도 증명하지 않는다(등록부 facade-dump-reached-empty-secret-field, 면제 `EMPTY_SECRET_EXEMPT`). 프로퍼티는 가장
+ * 가까운 SDK 클래스의 것으로 센다(런타임에는 어느 생성자가 달았는지 모른다). 남은 빈틈(구현하지 않는다): 비밀 이름 필드가 빈 값
+ * 아닌 자리표시자만 쥐는 것 · 평범한 이름의 필드에 든 비밀(예: `ClientCredentialsTokenProvider` 의 `#cached`) · 인코딩된(base64 등) 비밀.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import {
@@ -44,6 +50,7 @@ import {
   dumpRoots,
   isClass,
   newWalk,
+  privateFieldDeclarations,
   REFRESH,
   visit,
   type Declared,
@@ -75,6 +82,59 @@ const EXEMPT: Readonly<Record<string, string>> = {
  * 남아 「더 안 샌다」를 잰다.
  */
 const KNOWN_LEAKS: Readonly<Record<string, string>> = {}
+
+/**
+ * 비밀 이름 필드가 빈 값으로만 닿아도 되는 `클래스.프로퍼티` 와 그 이유(등록부 facade-dump-reached-empty-secret-field).
+ * ⚠️ 이유 없는 면제는 넣지 않는다. 더는 「닿았고 빈 값뿐」이 아니면(채워졌거나 · 안 닿거나 · 선언이 없어지면) 낡은 면제로 실패한다.
+ */
+const EMPTY_SECRET_EXEMPT: Readonly<Record<string, string>> = {}
+
+/**
+ * 비밀 이름인 ES `#private` 필드(`파일:#이름`)와 그 이유 — 걷기가 못 보는 자리라, 그 필드의 흐름을 재는 시험을 적는다.
+ * `privateFieldDeclarations()` 의 선언 파생과 양쪽으로 대조한다(표에 없는 선언 · 선언이 없는 표 항목 둘 다 실패).
+ */
+const PRIVATE_SECRET_FIELDS: Readonly<Record<string, string>> = {
+  'auth.ts:#idTokenValidator':
+    'AuthClient 가 지연 파생해 쥐는 id_token 검증기(JwtValidator — 비밀 값이 아니다, 이름의 token 은 id_token 의 것)다. 걷기가 못 ' +
+    '보는 ES #private 이라, 그 흐름(공개 validateIdToken 과 nonce 를 받는 exchangeCode 가 함께 쓰는 #validateIdToken)은 ' +
+    "auth.test.ts 의 'validateIdToken — 공개 id_token 검증' 과 auth-id-token-signature.test.ts 의 exchangeCode 시험이 잰다",
+}
+
+/** 비밀 낱말 — 낱말 단위로만 맞춘다(`keycloak` 은 `key` 가 아니다). 아홉 언어가 같은 집합이다. */
+const SECRET_WORDS: ReadonlySet<string> = new Set([
+  'secret',
+  'password',
+  'passwd',
+  'passphrase',
+  'token',
+  'credential',
+  'verifier',
+  'private',
+  'key',
+  'bearer',
+])
+
+/**
+ * 필드 이름 → 낱말: camel·Pascal 경계(대문자 연속은 다음 대문자 낱말 앞에서 끝난다 — `IDToken` → id · token) · `_ - $ .` ·
+ * 앞의 `@`·`#`. .NET `<X>k__BackingField` → X · Kotlin `x$delegate` → x. 낱말마다 소문자로 바꾸고 끝의 s 하나를 뗀다.
+ */
+function secretWords(field: string): string[] {
+  let n = /^<(.+)>k__BackingField$/.exec(field)?.[1] ?? field
+  if (n.endsWith('$delegate')) n = n.slice(0, -'$delegate'.length)
+  if (n.startsWith('@') || n.startsWith('#')) n = n.slice(1)
+  return n
+    .split(/[_$.-]+/)
+    .flatMap((part) => part.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/))
+    .filter((w) => w.length > 0)
+    .map((w) => {
+      const lower = w.toLowerCase()
+      return lower.endsWith('s') ? lower.slice(0, -1) : lower
+    })
+}
+
+function isSecretNamed(field: string): boolean {
+  return secretWords(field).some((w) => SECRET_WORDS.has(w))
+}
 
 let idp: FakeIdp | undefined
 let walk: Walk
@@ -174,5 +234,59 @@ describe('도달 가능한 객체 전부의 기본 표현이 비밀을 찍지 �
         problems.push(`${name}: 면제 표에 있지만 선언이 없다 — 낡은 면제다`)
     }
     expect(problems, problems.join('\n')).toEqual([])
+  })
+
+  it('비밀 이름 필드가 닿은 인스턴스마다 빈 값이지 않다 — 빈 렌더링은 아무것도 증명하지 않는다', () => {
+    const fieldOf = (key: string): string => key.slice(key.indexOf('.') + 1)
+    // 기록이 공허하지 않은가 — 카나리아로 채운 필드가 비밀 이름 필드로 잡혀야 한다.
+    expect([...walk.ownFields.keys()].filter((k) => isSecretNamed(fieldOf(k)))).toContain(
+      'TokenSet.accessToken',
+    )
+    const problems: string[] = []
+    for (const [key, anyNonEmpty] of walk.ownFields) {
+      if (anyNonEmpty || key in EMPTY_SECRET_EXEMPT || !isSecretNamed(fieldOf(key))) continue
+      problems.push(
+        `${key}: secret-named but every reached instance holds an empty value — fill it from a root with a canary, or exempt it with a reason`,
+      )
+    }
+    for (const [key, reason] of Object.entries(EMPTY_SECRET_EXEMPT)) {
+      if (walk.ownFields.get(key) !== false)
+        problems.push(
+          `${key}: 면제 표에 있지만 더는 「닿았고 빈 값뿐」이 아니다(채워졌거나 · 안 닿거나 · 선언이 없다) — 낡은 면제다(${reason})`,
+        )
+    }
+    expect(problems, problems.join('\n')).toEqual([])
+  })
+
+  it('비밀 이름인 ES #private 필드 선언 전부가 이유와 함께 표에 있다 — 걷기가 못 보는 자리', () => {
+    const all = privateFieldDeclarations()
+    expect(all.length, '#private 필드 선언을 하나도 못 찾았다 — 파생이 공허하다').toBeGreaterThan(0)
+    const secret = all.filter((d) => isSecretNamed(d.slice(d.indexOf(':') + 1)))
+    const problems: string[] = []
+    for (const d of secret) {
+      if (!(d in PRIVATE_SECRET_FIELDS))
+        problems.push(
+          `${d}: 비밀 이름인 #private 필드다 — 걷기가 못 본다. 그 흐름을 재는 시험을 이유와 함께 PRIVATE_SECRET_FIELDS 에 적어라`,
+        )
+    }
+    for (const k of Object.keys(PRIVATE_SECRET_FIELDS)) {
+      if (!secret.includes(k))
+        problems.push(`${k}: 표에 있지만 비밀 이름인 #private 필드 선언이 없다 — 낡은 항목이다`)
+    }
+    expect(problems, problems.join('\n')).toEqual([])
+  })
+
+  it('비밀 이름 판정은 낱말 단위다 — keycloak 은 key 가 아니다', () => {
+    expect(secretWords('IDToken')).toEqual(['id', 'token'])
+    expect(secretWords('<ClientSecret>k__BackingField')).toEqual(['client', 'secret'])
+    expect(secretWords('refreshToken$delegate')).toEqual(['refresh', 'token'])
+    const yes =
+      'clientSecret accessToken IDToken password passwd passphrase credentials codeVerifier privateKey keys'
+    for (const n of `${yes} bearer api_secret x-token a.token @token #token SECRETS`.split(' '))
+      expect(isSecretNamed(n), n).toBe(true)
+    for (const n of 'keycloak keycloakUrl monkey tokenizer secretary keystore scope expiresAt this$0'.split(
+      ' ',
+    ))
+      expect(isSecretNamed(n), n).toBe(false)
   })
 })

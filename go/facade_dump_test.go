@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 	"unsafe"
 
 	jose "github.com/go-jose/go-jose/v4"
@@ -43,8 +45,15 @@ import (
 // (2) 이 패키지 소스를 파싱해 얻은 **구조체 타입 전수**가 그 걷기에 걸렸는지를 대조한다 — 새 타입은
 // 걷기에 닿거나 아래 면제 표에 이유와 함께 적혀야 통과한다.
 //
+// (3) 비밀 이름 필드가 **빈 값으로만** 닿으면 실패한다(등록부 `facade-dump-reached-empty-secret-field`). 렌더는 뿌리가
+// 카나리아로 채운 인스턴스만 증명하므로, 아무 뿌리도 안 채우는 새 비밀 필드는 빈 값으로 닿아 공허하게 통과했다. 걷기가
+// 이 패키지 구조체의 필드 중 이름이 비밀 낱말(dumpSecretWordSet)인 것마다 「닿은 인스턴스 하나라도 비어 있지 않았나」를
+// 남기고, 끝까지 비어 있던 필드는 카나리아로 채우는 뿌리를 더하거나 dumpEmptySecretExempt 에 이유와 함께 적어야 한다.
+//
 // ⚠️ 한계: 카나리아는 뿌리를 만드는 호출이 흘려 넣은 비밀뿐이다. 새 타입이 이 뿌리들이 안 밟는 경로로
-// 비밀을 받으면 그 비밀은 여기 없다 — 그때는 그 경로를 뿌리에 더한다.
+// 비밀을 받으면 그 비밀은 여기 없다 — 그때는 그 경로를 뿌리에 더한다. (3) 은 이름과 빈 값만 본다 — 비밀 이름 필드가
+// 비어 있지 않은 자리표시자(`"x"` · `"***"`)를 쥐면 통과하고, 평범한 이름(`data` · `blob`)의 필드나 인코딩된(base64 등)
+// 비밀은 이름으로도 카나리아로도 못 잡는다.
 
 const (
 	dumpCanarySecret  = "CANARY-DUMP-CLIENT-SECRET"
@@ -264,6 +273,74 @@ type dumpWalker struct {
 	// found 가 있으면 타입마다 처음 닿은 값을 남긴다 — hostile_path_matrix_test.go 가 그 타입의 메서드
 	// 집합과 수신자를 이 걷기에서 얻는다(두 번째 걷기를 두면 둘이 갈라진다).
 	found map[string]reflect.Value
+	// secrets 가 있으면 이 패키지 구조체의 비밀 이름 필드(dumpSecretNamed)마다 「닿은 인스턴스 하나라도 비어 있지 않은
+	// 값을 쥐었나」를 남긴다 — 키는 `타입.필드`. 행렬(hpWalk)은 이것을 켜지 않는다 — 그 걷기와 출력은 그대로다.
+	secrets map[string]bool
+}
+
+// dumpSecretWordSet 은 비밀 이름의 낱말이다(등록부 facade-dump-reached-empty-secret-field 의 규칙 1).
+var dumpSecretWordSet = map[string]bool{
+	"secret": true, "password": true, "passwd": true, "passphrase": true, "token": true,
+	"credential": true, "verifier": true, "private": true, "key": true, "bearer": true,
+}
+
+// 빈 값으로만 닿아도 되는 비밀 이름 필드(`타입.필드`)와 그 이유. **이유 없는 면제는 넣지 않는다.** 더는 「닿았고 빈
+// 값뿐」이 아닌 항목(이제 비어 있지 않게 닿거나, 닿지 않거나, 선언이 없다)은 낡은 면제로 실패한다.
+var dumpEmptySecretExempt = map[string]string{}
+
+// dumpSecretWords 는 필드 이름을 낱말로 가른다 — 낙타 표기 경계(약어 묶음은 다음 대문자 낱말 앞에서 끝난다: `IDToken` →
+// id · token)와 `_` `-` `$` `.`. 낱말마다 소문자로 바꾸고 끝의 s 하나를 뗀다.
+func dumpSecretWords(name string) []string {
+	var words []string
+	var cur []rune
+	flush := func() {
+		if len(cur) > 0 {
+			words = append(words, strings.TrimSuffix(strings.ToLower(string(cur)), "s"))
+			cur = nil
+		}
+	}
+	rs := []rune(name)
+	for i, r := range rs {
+		if r == '_' || r == '-' || r == '$' || r == '.' {
+			flush()
+			continue
+		}
+		if i > 0 && unicode.IsUpper(r) {
+			prev := rs[i-1]
+			nextLower := i+1 < len(rs) && unicode.IsLower(rs[i+1])
+			if unicode.IsLower(prev) || unicode.IsDigit(prev) || (unicode.IsUpper(prev) && nextLower) {
+				flush()
+			}
+		}
+		cur = append(cur, r)
+	}
+	flush()
+	return words
+}
+
+// dumpSecretNamed — 낱말 하나라도 비밀 낱말이면 비밀 이름이다(낱말 전체만 — `keycloak` 은 `key` 가 아니다).
+func dumpSecretNamed(name string) bool {
+	for _, w := range dumpSecretWords(name) {
+		if dumpSecretWordSet[w] {
+			return true
+		}
+	}
+	return false
+}
+
+// dumpEmpty — nil · 길이 0 인 문자열·배열·슬라이스·맵. 불리언·수·nil 아닌 그 밖의 값(구조체 포함)은 비어 있지 않다.
+func dumpEmpty(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Invalid:
+		return true
+	case reflect.Pointer, reflect.Interface, reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		return v.IsNil()
+	case reflect.Map, reflect.Slice:
+		return v.IsNil() || v.Len() == 0
+	case reflect.String, reflect.Array:
+		return v.Len() == 0
+	}
+	return false
 }
 
 // 비공개 필드도 읽는다 — fmt 가 바로 그 필드를 찍기 때문이다.
@@ -302,7 +379,12 @@ func (w *dumpWalker) visit(v reflect.Value, path string) {
 			w.render(v, path+"(값)")
 		}
 		for i := 0; i < v.NumField(); i++ {
-			w.visit(dumpExpose(v.Field(i)), path+"."+v.Type().Field(i).Name)
+			name, fv := v.Type().Field(i).Name, dumpExpose(v.Field(i))
+			if w.secrets != nil && dumpSecretNamed(name) {
+				key := v.Type().Name() + "." + name
+				w.secrets[key] = w.secrets[key] || !dumpEmpty(fv)
+			}
+			w.visit(fv, path+"."+name)
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
@@ -383,9 +465,32 @@ func dumpDeclaredStructs(t *testing.T) []string {
 
 func TestReachableObjectsDoNotRenderSecrets(t *testing.T) {
 	roots, canaries := dumpRoots(t)
-	w := &dumpWalker{t: t, canaries: canaries, seen: map[uintptr]bool{}, types: map[string]bool{}}
+	w := &dumpWalker{t: t, canaries: canaries, seen: map[uintptr]bool{}, types: map[string]bool{},
+		secrets: map[string]bool{}}
 	for _, r := range roots {
 		w.visit(reflect.ValueOf(r.v), r.name)
+	}
+
+	// (3) 비밀 이름 필드가 빈 값으로만 닿았는가 — 그 필드의 렌더는 아무것도 증명하지 않는다.
+	if len(w.secrets) == 0 {
+		t.Fatal("비밀 이름 필드를 하나도 못 만났다 — 기록이 공허하다")
+	}
+	keys := slices.Sorted(maps.Keys(w.secrets))
+	t.Logf("비밀 이름 필드 %d: %v", len(keys), keys)
+	var onlyEmpty []string
+	for _, key := range keys {
+		if _, exempt := dumpEmptySecretExempt[key]; !w.secrets[key] && !exempt {
+			onlyEmpty = append(onlyEmpty, key+": secret-named but every reached instance holds an empty value — "+
+				"fill it from a root with a canary, or exempt it with a reason")
+		}
+	}
+	if len(onlyEmpty) > 0 {
+		t.Errorf("비밀 이름 필드가 빈 값으로만 닿았다(%d):\n%s", len(onlyEmpty), strings.Join(onlyEmpty, "\n"))
+	}
+	for key, reason := range dumpEmptySecretExempt {
+		if filled, reached := w.secrets[key]; !reached || filled {
+			t.Errorf("dumpEmptySecretExempt[%s]: 낡은 면제다 — 더는 「닿았고 빈 값뿐」이 아니다(%s)", key, reason)
+		}
 	}
 
 	declared := dumpDeclaredStructs(t)
@@ -405,5 +510,23 @@ func TestReachableObjectsDoNotRenderSecrets(t *testing.T) {
 		if !slices.Contains(declared, name) {
 			t.Errorf("%s: 면제 표에 있지만 선언이 없다 — 낡은 면제다", name)
 		}
+	}
+}
+
+// 비밀 이름 판정(규칙 1)을 고정한다 — 낱말 경계 · 약어 묶음 · 끝 s · 낱말 전체만.
+func TestDumpSecretNamedSplitsWholeWords(t *testing.T) {
+	for name, want := range map[string]bool{
+		"ClientSecret": true, "AccessToken": true, "IDToken": true, "TokenType": true, "CodeVerifier": true,
+		"token": true, "tokens": true, "apiKey": true, "API_KEY": true, "privateKeys": true, "passwd": true,
+		"x$credentials": true, "bearer-value": true, "a.passphrase": true,
+		"keycloakURL": false, "Keycloak": false, "OAuthError": false, "jwksURI": false, "secretary": false,
+		"tp": false, "Tokenizer": false, "monkey": false,
+	} {
+		if got := dumpSecretNamed(name); got != want {
+			t.Errorf("dumpSecretNamed(%q) = %v, want %v (words %v)", name, got, want, dumpSecretWords(name))
+		}
+	}
+	if got := dumpSecretWords("IDToken"); !slices.Equal(got, []string{"id", "token"}) {
+		t.Errorf("IDToken → %v, want [id token]", got)
 	}
 }
