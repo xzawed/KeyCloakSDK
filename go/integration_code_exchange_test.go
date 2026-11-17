@@ -59,9 +59,19 @@ func webClient(t *testing.T, serverURL, clientID string, tune func(*Config)) *Cl
 	return kc
 }
 
+// authzRequest builds the authorization request through the SDK's checked entry point.
+func authzRequest(t *testing.T, kc *Client) AuthorizationRequest {
+	t.Helper()
+	req, err := kc.Auth.BuildAuthorizationRequest(itRedirectURI)
+	if err != nil {
+		t.Fatalf("authorization request: %v", err)
+	}
+	return req
+}
+
 func aliceLogin(t *testing.T, kc *Client) (AuthorizationRequest, string) {
 	t.Helper()
-	req := kc.Auth.CreateAuthorizationRequest(itRedirectURI)
+	req := authzRequest(t, kc)
 	return req, browserLogin(t, req, itRedirectURI, itAlice, itAlicePassword)
 }
 
@@ -333,7 +343,7 @@ func TestE2ECodeExchange(t *testing.T) {
 	})
 
 	t.Run("RefusesAnIDTokenThatCarriesNoNonce", func(t *testing.T) {
-		req := stripNonce(t, kc.Auth.CreateAuthorizationRequest(itRedirectURI))
+		req := stripNonce(t, authzRequest(t, kc))
 		// Precondition: the server really signs without a nonce (else the refusal below measures a
 		// mismatch, not an absence). An empty expectedNonce skips the id_token check by contract.
 		code := browserLogin(t, req, itRedirectURI, itAlice, itAlicePassword)
@@ -425,7 +435,7 @@ func TestE2ECodeExchange(t *testing.T) {
 			t.Skipf("the daemon host %q has no second loopback spelling to authorize through", u.Hostname())
 		}
 		viaAlias := func() (AuthorizationRequest, string) {
-			req := kc.Auth.CreateAuthorizationRequest(itRedirectURI)
+			req := authzRequest(t, kc)
 			req.URL = strings.Replace(req.URL, "://"+u.Host+"/", "://"+alias+":"+u.Port()+"/", 1)
 			return req, browserLogin(t, req, itRedirectURI, itAlice, itAlicePassword)
 		}

@@ -105,9 +105,10 @@ type IntrospectionResult struct {
 	Claims   map[string]any
 }
 
-// AuthorizationRequest is returned by CreateAuthorizationRequest to start a
-// PKCE authorization-code flow. The caller stores CodeVerifier/State/Nonce
-// until the callback (the SDK is stateless).
+// AuthorizationRequest is returned by BuildAuthorizationRequest (and the
+// deprecated CreateAuthorizationRequest) to start a PKCE authorization-code
+// flow. The caller stores CodeVerifier/State/Nonce until the callback (the SDK
+// is stateless).
 type AuthorizationRequest struct {
 	URL          string
 	CodeVerifier string
@@ -116,7 +117,7 @@ type AuthorizationRequest struct {
 }
 
 // ⚠️ For a long time this type had no String() — so `fmt.Printf("%v", req)` printed the PKCE
-// CodeVerifier verbatim, and since CreateAuthorizationRequest returns a **value**, that is the very
+// CodeVerifier verbatim, and since BuildAuthorizationRequest returns a **value**, that is the very
 // value the consumer holds. CodeVerifier is the proof-of-possession secret of the code exchange, so an
 // attacker who stole the authorization code completes the flow if they obtain this value from a log.
 // URL/State/Nonce are not masked — isomorphic with Rust's Debug impl (only code_verifier is masked

@@ -66,7 +66,7 @@ func loginRoundTrip(t *testing.T, browser *http.Client, req *http.Request) (*htt
 	return resp, string(body)
 }
 
-// browserLogin logs username in through req (the SDK's CreateAuthorizationRequest result) and returns
+// browserLogin logs username in through req (the SDK's BuildAuthorizationRequest result) and returns
 // the authorization code the server issued.
 func browserLogin(t *testing.T, req AuthorizationRequest, redirectURI, username, password string) string {
 	t.Helper()
