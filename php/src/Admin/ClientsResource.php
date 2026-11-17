@@ -8,6 +8,7 @@ use Fschmtt\Keycloak\Keycloak;
 use Fschmtt\Keycloak\Http\Criteria;
 use Fschmtt\Keycloak\Representation\Client;
 use Fschmtt\Keycloak\Collection\ClientCollection;
+use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class ClientsResource
 {
@@ -31,6 +32,7 @@ final class ClientsResource
      */
     public function import(#[\SensitiveParameter] Client $client): Client
     {
+        EncodableBody::check($client);
         return ErrorTranslation::call(fn (): Client => $this->kc->clients()->import($this->realm, $client));
     }
 
@@ -58,6 +60,7 @@ final class ClientsResource
      */
     public function update(string $clientUuid, #[\SensitiveParameter] Client $client): void
     {
+        EncodableBody::check($client);
         ErrorTranslation::call(fn () => $this->kc->clients()->update($this->realm, $clientUuid, $client));
     }
 }

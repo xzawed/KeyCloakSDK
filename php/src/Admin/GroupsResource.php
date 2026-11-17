@@ -7,6 +7,7 @@ namespace Xzawed\Keycloak\Admin;
 use Fschmtt\Keycloak\Keycloak;
 use Fschmtt\Keycloak\Representation\Group;
 use Fschmtt\Keycloak\Collection\GroupCollection;
+use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class GroupsResource
 {
@@ -25,6 +26,7 @@ final class GroupsResource
     /** ⚠️ The representation being sent is hidden (update too) — so it is not printed as a trace argument of a failure error (the same rule as `UsersResource::create`). */
     public function create(#[\SensitiveParameter] Group $group): void
     {
+        EncodableBody::check($group);
         ErrorTranslation::call(fn () => $this->kc->groups()->create($this->realm, $group));
     }
 
@@ -46,6 +48,7 @@ final class GroupsResource
     /** void — fschmtt Groups::update is void too. Isomorphic with the sister languages. */
     public function update(string $groupId, #[\SensitiveParameter] Group $group): void
     {
+        EncodableBody::check($group);
         ErrorTranslation::call(fn () => $this->kc->groups()->update($this->realm, $groupId, $group));
     }
 }
