@@ -115,7 +115,7 @@ module KeycloakSdk
     end
   end
 
-  # An admin write body JSON cannot carry faithfully — refused with the nine languages' common text (registry
+  # An admin write body JSON cannot carry faithfully — refused with the text the sister SDKs use (registry
   # admin-unencodable-body-residuals). The admin connection's json request middleware writes the body with
   # `JSON.generate` before BearerAuth runs, so when the generator refuses it no grant and no admin request has gone
   # out: `JSON::GeneratorError` for NaN · Infinity · -Infinity and for text that is not valid UTF-8 (Ruby's encoder
