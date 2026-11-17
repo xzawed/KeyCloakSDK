@@ -1,5 +1,13 @@
+import { KeycloakAdminError, KeycloakTransportError } from '../errors.js'
 import { sendableBearer, type TokenProvider } from '../token-provider.js'
 import { readCapped, TOKEN_RESPONSE_MAX_BYTES } from '../token-response-cap.js'
+
+/** A write whose representation `JSON.stringify` refuses (a cycle, a BigInt) — .NET's message for the same failure. */
+export const UNENCODABLE_BODY =
+  'admin request failed: the request body could not be encoded as JSON'
+/** A path argument `encodeURIComponent` refuses (an unpaired surrogate). */
+export const UNENCODABLE_SEGMENT =
+  'admin request failed: a path segment holds an unpaired surrogate'
 
 /**
  * Where the facade's requests go — `AdminClient.create` builds it once and the five resources share it. It holds
@@ -15,16 +23,20 @@ export interface AdminHttp {
 /**
  * One path segment — the same as url-template 3.1.1's simple expansion (`{id}`): everything outside the
  * unreserved characters (A–Z a–z 0–9 `-` `.` `_` `~`) is percent-encoded (including the `!'()*` that
- * `encodeURIComponent` leaves). An empty string and a JS caller's `null`/`undefined` are an empty segment, and an
- * unpaired surrogate is a `URIError` — the same as admin-client.
+ * `encodeURIComponent` leaves). An empty string and a JS caller's `null`/`undefined` are an empty segment.
+ * ⚠️ An unpaired surrogate is a {@link KeycloakTransportError} ({@link UNENCODABLE_SEGMENT}, the `URIError` as its
+ * cause) before any request — admin-client throws the `URIError` raw, which left the SDK's error hierarchy (§4).
  */
 export function segment(value: string): string {
   const v: unknown = value
   if (v === undefined || v === null) return ''
-  return encodeURIComponent(String(v)).replace(
-    /[!'()*]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
-  )
+  let encoded: string
+  try {
+    encoded = encodeURIComponent(String(v))
+  } catch (e) {
+    throw new KeycloakTransportError(UNENCODABLE_SEGMENT, { cause: e })
+  }
+  return encoded.replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 }
 
 /**
@@ -68,8 +80,10 @@ function search(query: ReadonlyArray<readonly [string, unknown]>): string {
  * `joinPath` 처럼 이어 `pathname` 에 넣는다 — 점 조각도 URL 이 같게 정규화한다), 리다이렉트는 따르지 않고 기한은
  * 요청마다다. 같은지는 `test/unit/admin-response-body.test.ts` 가 와이어로 대조한다.
  *
- * 토큰을 먼저 얻는다 — admin-client 도 주소를 짓기 전에 얻는다. Bearer 는 {@link sendableBearer} 가 돌려준 값이다
- * (앞뒤 SP·HTAB·CR·LF 를 뗀 값 · `b64token` 이 아니면 요청 전에 거부).
+ * 본문을 먼저 JSON 으로 쓴다 — 쓸 수 없는 표현(순환 · BigInt)은 {@link UNENCODABLE_BODY} 의 {@link KeycloakTransportError}
+ * 이고 토큰도 받지 않는다(python · ruby 도 토큰 전에 인코딩한다). admin-client 는 `JSON.stringify` 의 `TypeError` 를
+ * 그대로 던져 SDK 오류 계층 밖으로 나갔다(§4). 그다음 토큰을 얻는다 — admin-client 도 주소를 짓기 전에 얻는다. Bearer
+ * 는 {@link sendableBearer} 가 돌려준 값이다(앞뒤 SP·HTAB·CR·LF 를 뗀 값 · `b64token` 이 아니면 요청 전에 거부).
  */
 async function send(
   http: AdminHttp,
@@ -78,11 +92,16 @@ async function send(
   query: ReadonlyArray<readonly [string, unknown]> = [],
   body?: unknown,
 ): Promise<Response> {
+  let json: string | undefined
+  try {
+    json = body === undefined ? undefined : (JSON.stringify(body) as string | undefined)
+  } catch (e) {
+    throw new KeycloakTransportError(UNENCODABLE_BODY, { cause: e })
+  }
   const headers = new Headers([
     ['authorization', `Bearer ${sendableBearer(await http.tokenProvider.getAccessToken())}`],
     ['accept', 'application/json, text/plain, */*'],
   ])
-  const json = body === undefined ? undefined : (JSON.stringify(body) as string | undefined)
   if (json !== undefined) headers.set('content-type', 'application/json')
   const url = new URL(http.serverUrl)
   // admin-client 의 `joinPath(url.pathname, path)` — `path` 는 늘 `/` 로 시작하므로 앞 조각의 끝 `/` 만 뗀다.
@@ -202,8 +221,8 @@ export async function write(
 
 /**
  * Create — the 2xx body is not read; the last segment of `Location` is returned. A missing `Location` or an empty
- * last segment is the same `Error` as admin-client's (the same message — and, as then, it is not wrapped in an
- * SDK error).
+ * last segment is a {@link KeycloakAdminError} carrying that response's status, with admin-client's message — whose
+ * own bare `Error` left the SDK's error hierarchy (§4).
  */
 export async function create(http: AdminHttp, path: string, body: unknown): Promise<string> {
   const res = await send(http, 'POST', path, [], body)
@@ -211,11 +230,16 @@ export async function create(http: AdminHttp, path: string, body: unknown): Prom
   await discard(res)
   const location = res.headers.get('location')
   if (typeof location !== 'string') {
-    throw new Error(`location header is not found in request: ${res.url}`)
+    throw new KeycloakAdminError(`location header is not found in request: ${res.url}`, {
+      status: res.status,
+    })
   }
   const id = location.split('/').pop()
   if (!id) {
-    throw new Error(`resourceId is not found in Location header from request: ${res.url}`)
+    throw new KeycloakAdminError(
+      `resourceId is not found in Location header from request: ${res.url}`,
+      { status: res.status },
+    )
   }
   return id
 }

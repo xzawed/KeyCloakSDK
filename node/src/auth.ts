@@ -5,6 +5,7 @@ import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
+import { redirectUrl } from './redirect-uri.js'
 import {
   fetchTokenEndpointBounded,
   responseTooLarge,
@@ -201,8 +202,8 @@ export class AuthClient {
     codeVerifier: string,
     nonce?: string,
   ): Promise<TokenSet> {
+    const currentUrl = redirectUrl(redirectUri)
     const config = await this.#discover()
-    const currentUrl = new URL(redirectUri)
     currentUrl.searchParams.set('code', code)
     // RFC 9207: Keycloak은 인가 응답에 iss를 포함하며 openid-client가 이를 검증한다.
     currentUrl.searchParams.set('iss', this.#endpoints.issuer)
