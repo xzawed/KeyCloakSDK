@@ -111,12 +111,12 @@ public sealed class AuthClient : ITokenSource
         }
         var tokens = ToTokenSet(resp, "Authorization code exchange failed", issuedAt, _cfg.ClientSecret, code, codeVerifier);
 
-        // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it
-        // (signature/alg pin/iss/exp on the hardened validator's one ConfigurationManager — the same JWKS
-        // cache, refresh gate and backoff as ValidateAsync — but aud against ClientId, never
-        // KeycloakConfig.ExpectedAudience: an id_token's aud MUST contain the client_id (OIDC Core §2,
-        // §3.1.3.7), and ExpectedAudience restricts access tokens only; azp against ClientId too, and no
-        // access-token typ check — an id_token is typed "ID")
+        // NONCE: Duende does not auto-validate the id_token (unlike openid-client). Fully validate it with
+        // ValidateIdTokenAsync — the one id_token check, public too (signature/alg pin/iss/exp on the hardened
+        // validator's one ConfigurationManager — the same JWKS cache, refresh gate and backoff as ValidateAsync —
+        // but aud against ClientId, never KeycloakConfig.ExpectedAudience: an id_token's aud MUST contain the
+        // client_id (OIDC Core §2, §3.1.3.7), and ExpectedAudience restricts access tokens only; typ exactly "ID"
+        // instead of the access-token typ deny-list, and then azp against ClientId too)
         // and then check the nonce claim. Fails CLOSED when a nonce was supplied
         // (CreateAuthorizationRequest always issues one), matching the Node posture —
         // a missing id_token must throw, NOT silently skip validation (an attacker could otherwise strip
@@ -126,7 +126,7 @@ public sealed class AuthClient : ITokenSource
             if (tokens.IdToken is not { } idToken)
                 throw new KeycloakAuthException("id_token missing for nonce validation");
             ValidatedToken idt;
-            try { idt = await _validator.ValidateForAudienceAsync(idToken, _cfg.ClientId, ct).ConfigureAwait(false); }
+            try { idt = await ValidateIdTokenAsync(idToken, ct).ConfigureAwait(false); }
             catch (KeycloakTokenValidationException ex) { throw new KeycloakAuthException("id_token validation failed", ex); }
             if (!idt.Claims.TryGetValue("nonce", out var n) || n as string != nonce)
                 throw new KeycloakAuthException("id_token nonce mismatch");
@@ -244,6 +244,20 @@ public sealed class AuthClient : ITokenSource
     /// <see cref="JwtValidator.ValidateAsync(string, CancellationToken)"/>.</param>
     public Task<ValidatedToken> ValidateAsync(string accessToken, CancellationToken ct = default)
         => _validator.ValidateAsync(accessToken, ct);
+
+    /// <summary>Validates an id_token with exactly the checks <see cref="ExchangeCodeAsync"/> runs on one before it compares
+    /// the nonce: the signature against the key store <see cref="ValidateAsync"/> uses (one JWKS cache, refetch gate and
+    /// backoff), the algorithm pin (an HS algorithm is refused), the length cap, the exact issuer, an <c>aud</c> that contains
+    /// <see cref="KeycloakConfig.ClientId"/> — not <see cref="KeycloakConfig.ExpectedAudience"/>, which holds access tokens
+    /// only — a required <c>exp</c> within the clock skew, a payload <c>typ</c> of exactly <c>ID</c>, and then the authorized
+    /// party (OIDC Core §3.1.3.7 steps 4–5: several audiences need an <c>azp</c>, and an <c>azp</c> must be the client id).
+    /// The nonce is not compared — that stays in the exchange; the claims returned carry it.</summary>
+    /// <param name="idToken">The compact JWT.</param>
+    /// <param name="ct">Ends the call with <see cref="OperationCanceledException"/> — see
+    /// <see cref="JwtValidator.ValidateAsync(string, CancellationToken)"/>.</param>
+    /// <exception cref="KeycloakTokenValidationException">The token failed one of those checks.</exception>
+    public Task<ValidatedToken> ValidateIdTokenAsync(string idToken, CancellationToken ct = default)
+        => _validator.ValidateForAudienceAsync(idToken, _cfg.ClientId, ct);
 
     private static TokenSet ToTokenSet(TokenResponse resp, string failureMessage, long issuedAtSeconds, params string?[] sent)
     {

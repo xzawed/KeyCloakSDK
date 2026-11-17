@@ -118,6 +118,30 @@ RSpec.describe KeycloakSdk::AuthClient do
     end
   end
 
+  # 공개 id_token 검증 — 교환과 같은 `JwtValidator#validate_id_token` 하나에 설정의 client_id 로 위임한다(실물 검증기로 재는
+  # 판정은 `validate_id_token_spec.rb`). `expected_audience` 재정의는 id_token 에 걸리지 않는다.
+  describe "#validate_id_token" do
+    it "delegates to JwtValidator#validate_id_token with the configured client_id" do
+      vt = instance_double(KeycloakSdk::ValidatedToken)
+      allow(jwt_validator).to receive(:validate_id_token).with("id-tok", client_id: "app").and_return(vt)
+      expect(auth.validate_id_token("id-tok")).to be(vt)
+    end
+
+    it "uses the client_id even when expected_audience is overridden" do
+      overridden = KeycloakSdk::Config.new(server_url: "https://kc.example.com", realm: "demo", client_id: "app",
+                                           client_secret: "sekret", expected_audience: "my-api")
+      vt = instance_double(KeycloakSdk::ValidatedToken)
+      allow(jwt_validator).to receive(:validate_id_token).with("id-tok", client_id: "app").and_return(vt)
+      expect(described_class.new(config: overridden, http: http, jwt_validator: jwt_validator)
+                            .validate_id_token("id-tok")).to be(vt)
+    end
+
+    it "lets the validator's TokenValidationError through unchanged (the type validate raises)" do
+      allow(jwt_validator).to receive(:validate_id_token).and_raise(KeycloakSdk::TokenValidationError, "nope")
+      expect { auth.validate_id_token("id-tok") }.to raise_error(KeycloakSdk::TokenValidationError, "nope")
+    end
+  end
+
   describe "#exchange_code" do
     it "populates id_token and scope from the token response" do
       stub_request(:post, token_url)

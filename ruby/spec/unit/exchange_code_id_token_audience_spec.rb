@@ -27,10 +27,16 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
     "https://kc.example.com/realms/demo/protocol/openid-connect/certs"
   end
 
+  # Keycloak 의 id_token 모양 — typ "ID"(id_token 경로는 종류를 허용 목록으로 본다). 접근 토큰은 `access_claims` 다.
   def claims(**over)
     now = Time.now.to_i
-    { "sub" => "user-1", "iss" => "https://kc.example.com/realms/demo", "aud" => "app",
+    { "sub" => "user-1", "iss" => "https://kc.example.com/realms/demo", "aud" => "app", "typ" => "ID",
       "exp" => now + 300, "iat" => now, "nonce" => "n-abc" }.merge(over.transform_keys(&:to_s))
+  end
+
+  # 접근 토큰 모양 — Keycloak 의 typ "Bearer"(접근 경로는 typ "ID" 를 거부한다).
+  def access_claims(**over)
+    claims("typ" => "Bearer", **over)
   end
 
   def sign(payload, kid: "realm-key")
@@ -74,8 +80,8 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
 
   describe "access token validation keeps the override" do
     it "accepts the override's audience and rejects a token for the client_id only" do
-      expect(client.auth.validate(sign(claims("aud" => "my-api"))).audience).to eq(["my-api"])
-      expect { client.auth.validate(sign(claims)) }
+      expect(client.auth.validate(sign(access_claims("aud" => "my-api"))).audience).to eq(["my-api"])
+      expect { client.auth.validate(sign(access_claims)) }
         .to raise_error(KeycloakSdk::TokenValidationError, /Invalid audience\. Expected my-api,/)
     end
   end
@@ -120,14 +126,14 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
   describe "one JWKS cache, refetch limit and backoff for both tokens" do
     it "adds no JWKS fetch when an access token is validated after the exchange" do
       exchange(sign(claims))
-      client.auth.validate(sign(claims("aud" => "my-api")))
+      client.auth.validate(sign(access_claims("aud" => "my-api")))
       expect(a_request(:get, certs_url)).to have_been_made.once
     end
 
     it "builds exactly one JwksStore" do
       allow(KeycloakSdk::JwksStore).to receive(:new).and_call_original
       exchange(sign(claims))
-      client.auth.validate(sign(claims("aud" => "my-api")))
+      client.auth.validate(sign(access_claims("aud" => "my-api")))
       expect(KeycloakSdk::JwksStore).to have_received(:new).once
     end
 
@@ -135,14 +141,14 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
     it "fetches twice when a second store exists (control)" do
       other = KeycloakSdk::KeycloakClient.new(config)
       exchange(sign(claims))
-      other.auth.validate(sign(claims("aud" => "my-api")))
+      other.auth.validate(sign(access_claims("aud" => "my-api")))
       expect(a_request(:get, certs_url)).to have_been_made.twice
     ensure
       other&.close
     end
 
     it "shares the unresolved-kid refetch window between validate and the exchange" do
-      expect { client.auth.validate(sign(claims("aud" => "my-api"), kid: "rotated-1")) }
+      expect { client.auth.validate(sign(access_claims("aud" => "my-api"), kid: "rotated-1")) }
         .to raise_error(KeycloakSdk::TokenValidationError)
       expect { exchange(sign(claims, kid: "rotated-2")) }.to invalid_id_token("Could not find public key for kid")
       expect(a_request(:get, certs_url)).to have_been_made.twice # 콜드 로드 + 창 안의 재조회 1건
@@ -157,7 +163,7 @@ RSpec.describe KeycloakSdk::AuthClient, "#exchange_code under an expected_audien
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(1000.0)
       stub_request(:get, certs_url).to_return(status: 503)
       expect { exchange(sign(claims)) }.to raise_error(KeycloakSdk::TransportError, /HTTP 503/)
-      expect { client.auth.validate(sign(claims("aud" => "my-api"))) }
+      expect { client.auth.validate(sign(access_claims("aud" => "my-api"))) }
         .to raise_error(KeycloakSdk::TransportError, /backing off/)
       expect(a_request(:get, certs_url)).to have_been_made.once
       # 스텁이 실제로 읽혔는가 — 저장소가 인자 둘의 꼴로 읽으면 스텁을 비켜 가 실시간으로 돌아간다(실측: 그 변이에

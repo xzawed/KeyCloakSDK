@@ -58,8 +58,8 @@ final readonly class KeycloakConfig implements \JsonSerializable
         /**
          * The value the token's aud must contain (default null = clientId). A stock realm does not put clientId in a
          * client-credentials token's aud, so either set the resource/audience the realm actually issues, or add an
-         * audience mapper to the Keycloak client. It applies only to access tokens (`validate()`) — the id_token aud in
-         * `exchangeCode()` is always checked against clientId (OIDC Core §3.1.3.7).
+         * audience mapper to the Keycloak client. It applies only to access tokens (`validate()`) — an id_token's aud
+         * (`validateIdToken()`, and the one `exchangeCode()` checks) is always checked against clientId (OIDC Core §3.1.3.7).
          */
         public ?string $expectedAudience = null,
     ) {

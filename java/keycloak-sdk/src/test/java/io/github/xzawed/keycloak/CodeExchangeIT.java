@@ -2,10 +2,10 @@ package io.github.xzawed.keycloak;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.nimbusds.jwt.SignedJWT;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import io.github.xzawed.keycloak.auth.AuthClient;
 import io.github.xzawed.keycloak.auth.AuthorizationUrlRequest;
-import io.github.xzawed.keycloak.auth.IdTokenPath;
 import io.github.xzawed.keycloak.auth.IntrospectionResult;
 import io.github.xzawed.keycloak.auth.ValidatedToken;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
@@ -86,7 +86,7 @@ class CodeExchangeIT {
   }
 
   @Test
-  void exchangeCode_bindsTokensToTheNonceAndUser() {
+  void exchangeCode_bindsTokensToTheNonceAndUser() throws Exception {
     try (KeycloakClient kc = KeycloakClient.create(webConfig("it-web"))) {
       AuthClient auth = kc.auth();
       AuthorizationUrlRequest request = auth.createAuthorizationRequest(REDIRECT_URI);
@@ -96,10 +96,17 @@ class CodeExchangeIT {
       assertNotBlank(tokens.getAccessToken());
       assertNotBlank(tokens.getRefreshToken());
       assertNotBlank(tokens.getIdToken());
-      // id_token 의 클레임은 교환이 그것을 검증하는 길(IdTokenPath — 서명·iss·aud = client id·exp·azp)로 읽는다.
-      Map<String, Object> idClaims = IdTokenPath.validate(webConfig("it-web"), tokens.getIdToken()).getClaims();
+      // id_token 의 클레임은 교환이 그것을 검증하는 길(공개 validateIdToken — 서명·iss·aud = client id·exp·azp·typ "ID")로 읽는다.
+      Map<String, Object> idClaims = auth.validateIdToken(tokens.getIdToken()).getClaims();
       assertEquals(request.getNonce(), idClaims.get("nonce"));
       assertEquals(aliceId, idClaims.get("sub"));
+      // 서버의 액세스 토큰은 공개 id_token 검증이 거부한다. 무엇으로 거부할지는 그 페이로드가 정한다 — 검증 없이 읽는다(기대값을
+      // 고르는 전제일 뿐이다): aud 에 client id 가 있으면(it-web 의 audience 매퍼) 다른 검사를 다 지나 종류로, 없으면 aud 로.
+      List<String> accessAudience = SignedJWT.parse(tokens.getAccessToken()).getJWTClaimsSet().getAudience();
+      TokenValidationException notId =
+          assertThrows(TokenValidationException.class, () -> auth.validateIdToken(tokens.getAccessToken()));
+      assertEquals(accessAudience.contains("it-web") ? "not an id_token (typ is not \"ID\")" : "JWT validation failed",
+          notId.getMessage(), "access token aud=" + accessAudience);
       // 서버가 서명한 id_token 은 typ "ID" 다(실서버 측정) — validate() 는 그것을 액세스 토큰 자리에서 거부한다. 이 클라이언트의
       // 기대 audience 는 client id(it-web)라 aud 검사는 지나고, typ 만이 가른다.
       assertEquals("ID", idClaims.get("typ"));
@@ -181,7 +188,7 @@ class CodeExchangeIT {
       String first = BrowserLogin.login(withoutNonce, request.getState(), REDIRECT_URI, USERNAME, PASSWORD);
       TokenSet unchecked = auth.exchangeCode(first, REDIRECT_URI, request.getCodeVerifier());
       assertNotBlank(unchecked.getIdToken());
-      assertFalse(IdTokenPath.validate(webConfig("it-web"), unchecked.getIdToken()).getClaims().containsKey("nonce"));
+      assertFalse(auth.validateIdToken(unchecked.getIdToken()).getClaims().containsKey("nonce"));
 
       String second = BrowserLogin.login(withoutNonce, request.getState(), REDIRECT_URI, USERNAME, PASSWORD);
       KeycloakAuthException refused = assertThrows(KeycloakAuthException.class,
@@ -296,9 +303,9 @@ class CodeExchangeIT {
 
       TokenSet tokens = auth.exchangeCode(code, REDIRECT_URI, request.getCodeVerifier(), request.getNonce());
       assertNotBlank(tokens.getIdToken());
-      // 교환이 받아들인 것은 서버가 client id 에게 낸 id_token 이다 — 재정의 값은 aud 에 없다. 클레임은 교환의 id_token 길로
-      // 읽는다(재정의한 이 설정 그대로 — 그 길은 재정의를 쓰지 않는다).
-      ValidatedToken idClaims = IdTokenPath.validate(overridden, tokens.getIdToken());
+      // 교환이 받아들인 것은 서버가 client id 에게 낸 id_token 이다 — 재정의 값은 aud 에 없다. 클레임은 공개 validateIdToken 으로
+      // 읽는다(재정의한 이 클라이언트 그대로 — 그 길은 재정의를 쓰지 않는다).
+      ValidatedToken idClaims = auth.validateIdToken(tokens.getIdToken());
       assertEquals(request.getNonce(), idClaims.getClaims().get("nonce"));
       assertEquals(aliceId, idClaims.getSubject());
       assertTrue(idClaims.getAudience().contains("it-web"));

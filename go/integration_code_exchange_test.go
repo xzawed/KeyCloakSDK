@@ -25,6 +25,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 const (
@@ -254,8 +256,8 @@ func TestE2ECodeExchange(t *testing.T) {
 				tve.Msg != "claims: not an access token (typ ID)" {
 				t.Fatalf("Validate must refuse the server-signed id_token as not an access token, got %v", err)
 			}
-			// Its claims, verified the way ExchangeCode verified them: the id_token sibling (forIDToken).
-			idToken, err := kc.Auth.val.forIDToken(kc.Auth.cfg.ClientID).Validate(ctx, tokens.IDToken)
+			// Its claims, verified the way ExchangeCode verified them: the public id_token check.
+			idToken, err := kc.Auth.ValidateIDToken(ctx, tokens.IDToken)
 			if err != nil {
 				t.Fatalf("validate the id_token: %v", err)
 			}
@@ -264,6 +266,19 @@ func TestE2ECodeExchange(t *testing.T) {
 			}
 			if idToken.Subject != alice {
 				t.Fatalf("id_token sub: got %q, want alice %q", idToken.Subject, alice)
+			}
+			// The public id_token check refuses the server's access token: by its typ when its aud names this client
+			// (everything else about it would pass — azp is this client too), else by the audience check.
+			_, err = kc.Auth.ValidateIDToken(ctx, tokens.AccessToken)
+			if !errors.As(err, &tve) {
+				t.Fatalf("ValidateIDToken must refuse the server's access token with a TokenValidationError, got %v", err)
+			}
+			if slices.Contains(audienceClaim(unverifiedPayload(t, tokens.AccessToken)["aud"]), "it-web") {
+				if tve.Msg != msgNotAnIDToken {
+					t.Fatalf("access token (aud names it-web): want %q, got %q", msgNotAnIDToken, tve.Msg)
+				}
+			} else if !strings.HasPrefix(tve.Msg, "claims: ") || !errors.Is(err, jwt.ErrInvalidAudience) {
+				t.Fatalf("access token (aud without it-web): want the audience refusal, got %v", err)
 			}
 
 			// refresh: a new access token, active for the same user.
@@ -326,8 +341,8 @@ func TestE2ECodeExchange(t *testing.T) {
 		if err != nil || unchecked.IDToken == "" {
 			t.Fatalf("precondition exchange: %v %v", unchecked, err)
 		}
-		// Verified as an id_token (forIDToken) — the access-token Validate refuses an id_token (typ "ID").
-		claims, err := kc.Auth.val.forIDToken(kc.Auth.cfg.ClientID).Validate(ctx, unchecked.IDToken)
+		// Verified as an id_token (ValidateIDToken) — the access-token Validate refuses an id_token (typ "ID").
+		claims, err := kc.Auth.ValidateIDToken(ctx, unchecked.IDToken)
 		if err != nil {
 			t.Fatalf("precondition validate: %v", err)
 		}
@@ -379,6 +394,10 @@ func TestE2ECodeExchange(t *testing.T) {
 		if aud := audienceClaim(unverifiedPayload(t, tokens.IDToken)["aud"]); !slices.Contains(aud, "it-web") ||
 			slices.Contains(aud, "not-it-web") {
 			t.Fatalf("precondition: id_token aud = %v, want it-web and not the override", aud)
+		}
+		// The public id_token check of the same client agrees: the override does not apply to an id_token.
+		if _, err := other.Auth.ValidateIDToken(ctx, tokens.IDToken); err != nil {
+			t.Fatalf("ValidateIDToken under ExpectedAudience=not-it-web: %v", err)
 		}
 		// The override still governs Validate: the access token (aud it-web, from the realm's audience mapper)
 		// is refused by the audience check.

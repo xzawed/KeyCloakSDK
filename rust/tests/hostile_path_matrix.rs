@@ -193,7 +193,8 @@ impl Keys {
         m.entry(iss.to_string())
             .or_insert_with(|| {
                 let u = sign(&self.main, "k1", iss, json!({}));
-                let id = sign(&self.main, "k1", iss, json!({"nonce": u}));
+                // typ "ID" — Keycloak 이 모든 id_token 에 싣는 값이고, id_token 검사(validate_id_token · 교환)는 그 밖을 거부한다.
+                let id = sign(&self.main, "k1", iss, json!({"nonce": u, "typ": "ID"}));
                 (u, id)
             })
             .clone()
@@ -817,6 +818,10 @@ fn drivers() -> Vec<Driver> {
             .auth()
             .validate(c.a())
             .await),
+        drv!("AuthClient::validate_id_token", Client, |k, c| k
+            .auth()
+            .validate_id_token(c.a())
+            .await),
         drv!("AuthClient::introspect", Client, |k, c| k
             .auth()
             .introspect(c.a())
@@ -1395,7 +1400,7 @@ struct NonceVariant {
     code: &'static str,
     kid: &'static str,
     other_key: bool,
-    /// `None` 이면 `{"nonce": 보편 인자(= 호출에 넘긴 nonce)}`.
+    /// `None` 이면 `{"nonce": 보편 인자(= 호출에 넘긴 nonce)}` — 어느 쪽이든 typ "ID" 가 더해진다.
     claims: Option<Value>,
     no_id_token: bool,
     want_ok: bool,
@@ -1453,10 +1458,13 @@ async fn run_nonce_b(
                     } else {
                         &keys.main
                     };
-                    let claims = nv
+                    let mut claims = nv
                         .claims
                         .clone()
                         .unwrap_or_else(|| json!({"nonce": idp.universal}));
+                    // 변형마다 typ "ID" 를 싣는다 — 없으면 id_token 검사가 종류(typ)에서 먼저 거부해 대조는 실패하고,
+                    // nonce 변형은 nonce 가 아닌 이유로 「거부」를 통과한다(실측: 대조 FAIL 의 원인이 typ).
+                    claims["typ"] = json!("ID");
                     body["id_token"] = json!(sign(signer, nv.kid, &idp.iss, claims));
                 }
                 Some(Resp::json(body))

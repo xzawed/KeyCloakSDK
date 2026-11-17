@@ -294,7 +294,8 @@ module HostilePathMatrixSpec
       @other = OpenSSL::PKey::RSA.generate(2048)
       # ⚠️ 평문이 아니라 **서명한 JWS** — 토큰을 받는 메서드(validate 둘)가 요청 전에 실패하지 않게.
       @universal = sign(@key, "k1", {})
-      @id_token = sign(@key, "k1", { "nonce" => @universal })
+      # Keycloak 의 id_token 처럼 typ "ID" — id_token 경로는 종류를 허용 목록으로 본다(`JwtValidator#validate_id_token`).
+      @id_token = sign(@key, "k1", { "nonce" => @universal, "typ" => "ID" })
       @jwks = { keys: [JWT::JWK.new(@key, kid: "k1").export] }.to_json
     end
 
@@ -738,14 +739,16 @@ module HostilePathMatrixSpec
     # aud 는 (a)「client_id 로 따로 검증」으로 판정됐으나 아직 구현 전이다(등록부 `id-token-audience-follows-access-audience`,
     # #653) — 그 구현이 단언 테스트를 세우면 이 열을 단언으로 올린다. Grok 레그가 「서명·nonce 만 보고 iss·aud 를 안 보는
     # 새 교환이 다섯을 다 통과한다」를 실측으로 보였다 — 계약을 새로 만들지 않고 드러내 둔다.
+    # id_token 은 전부 Keycloak 처럼 typ "ID" 를 싣는다(`id_token_reply` 의 기본 클레임) — 변형이 대조와 다른 것이 그 칸의
+    # 한 가지뿐이게.
     NonceVariant = Data.define(:code, :kid, :other, :claims, :no_id, :want)
     NONCE_VARIANTS = [
       NonceVariant.new("대조", "k1", false, nil, false, :ok),
-      NonceVariant.new("nonce≠", "k1", false, { "nonce" => "hp-other-nonce" }, false, :reject),
+      NonceVariant.new("nonce≠", "k1", false, { "nonce" => "hp-other-nonce", "typ" => "ID" }, false, :reject),
       NonceVariant.new("key≠·kid=k1", "k1", true, nil, false, :reject),
       NonceVariant.new("key≠·kid=k2", "k2", true, nil, false, :reject),
       NonceVariant.new("id_token없음", nil, false, nil, true, :reject),
-      NonceVariant.new("nonce클레임없음", "k1", false, {}, false, :reject),
+      NonceVariant.new("nonce클레임없음", "k1", false, { "typ" => "ID" }, false, :reject),
       NonceVariant.new("iss≠", "k1", false, { "iss" => "https://evil.test/realms/r" }, false, :measure),
       NonceVariant.new("aud≠", "k1", false, { "aud" => "someone-else" }, false, :measure),
       NonceVariant.new("exp지남", "k1", false, { "exp" => Time.now.to_i - 3600 }, false, :measure)
@@ -806,13 +809,13 @@ module HostilePathMatrixSpec
                why: Why.reach(out, reqs, certs, variant.no_id) + Why.nonce(out, variant.want))
     end
 
-    # 측정 변형은 nonce 가 맞는 채로 한 클레임만 바꾼다 — 거부가 nonce 탓이면 그 칸은 아무것도 재지 않는다.
+    # 측정 변형은 nonce · 종류가 맞는 채로 한 클레임만 바꾼다 — 거부가 nonce · 종류 탓이면 그 칸은 아무것도 재지 않는다.
     def id_token_reply(variant)
       body = WELL_FORMED.dup
       unless variant.no_id
         fixture = @engine.fixture
-        nonce = { "nonce" => fixture.universal }
-        claims = variant.want == :measure ? nonce.merge(variant.claims) : (variant.claims || nonce)
+        base = { "nonce" => fixture.universal, "typ" => "ID" }
+        claims = variant.want == :measure ? base.merge(variant.claims) : (variant.claims || base)
         body[:id_token] = fixture.sign(variant.other ? fixture.other : fixture.key, variant.kid, claims)
       end
       Wire.json(200, body)

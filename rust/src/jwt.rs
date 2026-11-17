@@ -35,6 +35,19 @@ fn refuse_non_access_type(claims: &Claims) -> Result<()> {
     }
 }
 
+/// (id_token) payload `typ` 는 정확히 문자열 `"ID"` 여야 한다 — Keycloak 이 내는 모든 id_token 의 값이다. access 경로의
+/// 거부 목록과 달리 허용 목록인 이유: aud 와 azp 가 이 클라이언트인 access 토큰은 다른 id_token 검사를 전부 지나고, 그
+/// typ 는 소문자 `bearer` 일 수도 있어(클라이언트 옵션) 거부 목록이 놓친다. 문구는 상수다 — typ 는 토큰을 만든 쪽이 고른
+/// 값이라 싣지 않는다.
+fn require_id_token_type(claims: &Claims) -> Result<()> {
+    match claims.get("typ").and_then(serde_json::Value::as_str) {
+        Some("ID") => Ok(()),
+        _ => Err(KeycloakError::TokenValidation(
+            "not an id_token (typ is not \"ID\")".into(),
+        )),
+    }
+}
+
 /// (id_token) OIDC Core §3.1.3.7 ④⑤ — aud 가 둘 이상이면 azp 가 있어야 하고, 있는 azp 는 `client_id` 와 같은 문자열
 /// 이어야 한다(azp 는 이 id_token 을 받은 클라이언트다). azp 값은 문구에 싣지 않는다.
 fn check_authorized_party(claims: &Claims, client_id: &str) -> Result<()> {
@@ -114,26 +127,28 @@ impl JwtValidator {
         Ok(vt)
     }
 
-    /// 코드 교환의 id_token 검증 — 공통 검증을 **코드를 교환한 client id** 를 aud 로 한 뒤 azp 를 본다(OIDC Core
-    /// §3.1.3.7 ④⑤). `validate()` 의 typ 검사는 걸지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다.
+    /// id_token 검증 — `AuthClient::validate_id_token`(그리고 그것을 부르는 코드 교환)의 본체다. 공통 검증을 **코드를
+    /// 교환한 client id** 를 aud 로 한 뒤, typ 가 정확히 `"ID"` 인지 보고 azp 를 본다(OIDC Core §3.1.3.7 ④⑤).
+    /// `validate()` 의 typ 거부 목록은 걸지 않는다 — 이 경로는 허용 목록(`"ID"` 하나)이다.
     ///
     /// ⚠️ id_token 의 `aud` 는 client id 를 담아야 한다(OIDC Core §2 · §3.1.3.7). `expected_audience`
     /// 재정의는 access 토큰의 리소스 서버 제한이라 id_token 에 걸면 진짜 id_token 이 거부된다.
     /// ⚠️ **검증기를 따로 만들지 말 것** — 같은 `&self` 라서 JWKS 캐시·30초 재조회 제한·콜드 실패
-    /// 백오프가 하나로 공유된다(`exchange_and_validate_share_*` 테스트).
+    /// 백오프가 하나로 공유된다(`exchange_and_validate_share_*` · `validate_id_token_and_validate_share_*` 테스트).
     pub(crate) async fn validate_id_token(
         &self,
         token: &str,
         client_id: &str,
     ) -> Result<ValidatedToken> {
         let vt = self.validate_for_audience(token, client_id).await?;
+        require_id_token_type(&vt.claims)?;
         check_authorized_party(&vt.claims, client_id)?;
         Ok(vt)
     }
 
     /// 두 경로의 공통 강화 검증을 **호출자가 준 aud** 로 한다 — 길이 · alg 핀 · 서명 · iss · aud · exp · nbf · 스큐.
     ///
-    /// ⚠️ 종류별 검사(access 의 typ · id_token 의 azp)는 여기 없다 — 두 진입점(`validate` · `validate_id_token`)이
+    /// ⚠️ 종류별 검사(access 의 typ 거부 · id_token 의 typ `"ID"` 와 azp)는 여기 없다 — 두 진입점(`validate` · `validate_id_token`)이
     /// 각자 더한다. 그래서 이 모듈 밖에서는 부를 수 없게 둔다(비공개) — 밖에서 이것을 부르면 종류별 검사를 건너뛴다.
     async fn validate_for_audience(&self, token: &str, audience: &str) -> Result<ValidatedToken> {
         // (0) 길이 상한 — 아래 어느 단계든 토큰을 쪼개거나 디코드하기 전에(`JWT_MAX_BYTES`). `len()` 은 바이트다 — 진짜
@@ -1325,14 +1340,19 @@ mod tests {
         }
     }
 
-    // ── 토큰 종류 — access 검증은 typ 를, id_token 검증은 azp 를 본다(검증기 칸) ──
+    // ── 토큰 종류 — access 검증은 typ 다섯을 거부하고, id_token 검증은 typ `ID` 만 받은 뒤 azp 를 본다(검증기 칸) ──
     //
     // Keycloak 26 이 토큰마다 싣는 `typ` 클레임(`org.keycloak.util.TokenUtil` — keycloak-client-common-synced 26.0.12):
     // Bearer · DPoP 는 access 토큰이고 ID · Refresh · Offline · Logout · Serialized-ID 는 아니다. 수정 전에는 검증기가
     // typ 도 azp 도 읽지 않아 id_token(`ID`)·백채널 로그아웃 토큰(`Logout`)이 `validate()` 를 통과했고, aud 가 여럿이고
-    // azp 가 남인 id_token 도 통과했다(실측). 어느 경로가 어느 검사를 거는지(파사드 배선)는 `auth.rs` 의 시험이 잰다.
+    // azp 가 남인 id_token 도 통과했다(실측). 그 뒤에도 id_token 경로는 typ 를 보지 않아, aud 와 azp 가 이 클라이언트인
+    // access 토큰이 통과했다. 어느 경로가 어느 검사를 거는지(파사드 배선)는 `auth.rs` 의 시험이 잰다.
 
     const NOT_ACCESS_TYPES: [&str; 5] = ["ID", "Refresh", "Offline", "Logout", "Serialized-ID"];
+
+    /// id_token 경로가 typ 가 정확히 `"ID"` 가 아닌 토큰을 거부하는 문구 — 상수다. typ 는 토큰을 만든 쪽이 고른 값이라
+    /// 싣지 않는다(azp 도 싣지 않는다).
+    const NOT_AN_ID_TOKEN: &str = "not an id_token (typ is not \"ID\")";
 
     /// (A) — 서명 · iss · aud · exp 가 다 맞아도 Keycloak 의 다른 종류 토큰은 `validate()` 를 통과하지 못한다. 클레임
     /// 실패라 JWKS 를 다시 부르지 않는다.
@@ -1427,19 +1447,91 @@ mod tests {
         }
     }
 
-    /// (A) 는 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다.
+    /// id_token 경로의 종류 규칙 — payload `typ` 는 정확히 문자열 `"ID"` 여야 한다. Keycloak 26.6 은 모든 id_token 에 그것을
+    /// 싣는다(`TokenManager.AccessTokenResponseBuilder.generateIDToken`). access 경로의 거부 목록과 달리 허용 목록이다 — access
+    /// 토큰은 typ 가 소문자 `bearer` 일 수 있어(클라이언트 옵션 "use lower-case bearer type") 거부 목록이 놓친다. 그 밖의 값
+    /// (다른 문자열 · 대소문자 · 없음 · 문자열 아님)은 상수 문구 하나로 거부하고, 클레임 실패라 JWKS 를 다시 부르지 않는다.
     #[tokio::test]
-    async fn validate_id_token_leaves_typ_alone() {
+    async fn validate_id_token_accepts_only_typ_id() {
         let fx = make_key();
-        let v = validator_for(&fx).await;
-        let mut c = good_claims();
-        c["aud"] = json!("it-client");
-        c["typ"] = json!("ID");
+        let (v, server) = validator_and_idp(&fx).await;
+        let id_claims = |typ: Option<serde_json::Value>| {
+            let mut c = good_claims();
+            c["aud"] = json!("it-client");
+            c["azp"] = json!("it-client");
+            if let Some(t) = typ {
+                c["typ"] = t;
+            }
+            c
+        };
         let vt = v
-            .validate_id_token(&sign(&fx, c, "test-kid"), "it-client")
+            .validate_id_token(
+                &sign(&fx, id_claims(Some(json!("ID"))), "test-kid"),
+                "it-client",
+            )
             .await
             .expect("an id_token typed ID must pass the id_token check");
         assert_eq!(vt.claims.get("typ"), Some(&json!("ID")));
+        for typ in [
+            None,
+            Some(json!("Bearer")),
+            Some(json!("bearer")),
+            Some(json!("DPoP")),
+            Some(json!("at+jwt")),
+            Some(json!("Refresh")),
+            Some(json!("Offline")),
+            Some(json!("Logout")),
+            Some(json!("Serialized-ID")),
+            Some(json!("id")),
+            Some(json!("ID ")),
+            Some(json!("")),
+            Some(json!(null)),
+            Some(json!(["ID"])),
+            Some(json!(1)),
+            Some(json!(true)),
+            Some(json!({"typ": "ID"})),
+        ] {
+            match v
+                .validate_id_token(&sign(&fx, id_claims(typ.clone()), "test-kid"), "it-client")
+                .await
+            {
+                Err(KeycloakError::TokenValidation(m)) => {
+                    assert_eq!(m, NOT_AN_ID_TOKEN, "typ {typ:?}")
+                }
+                other => panic!("typ {typ:?}: expected the not-an-id_token refusal, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            certs_requests(server).await,
+            1,
+            "a claims failure must not refetch the JWKS"
+        );
+    }
+
+    /// id_token 경로의 종류 규칙도 기존 검사가 다 통과한 **뒤**다 — 기존 실패는 typ 와 무관하게 지금의 문구 그대로 나온다.
+    #[tokio::test]
+    async fn validate_id_token_judges_typ_after_the_existing_claim_checks() {
+        let fx = make_key();
+        let v = validator_for(&fx).await;
+        let mut foreign = good_claims();
+        foreign["typ"] = json!("Bearer");
+        foreign["aud"] = json!(["other-client"]);
+        let mut expired = good_claims();
+        expired["typ"] = json!("Bearer");
+        expired["aud"] = json!("it-client");
+        expired["exp"] = json!(now() - 100);
+        for (c, want) in [
+            (foreign, "token verification failed: audience mismatch"),
+            (expired, "token verification failed: expired"),
+        ] {
+            match v
+                .validate_id_token(&sign(&fx, c, "test-kid"), "it-client")
+                .await
+            {
+                Err(KeycloakError::TokenValidation(m)) => assert_eq!(m, want),
+                other => panic!("{want}: got {other:?}"),
+            }
+        }
     }
 
     /// (B) — OIDC Core §3.1.3.7 ④⑤: aud 가 여럿이면 azp 가 있어야 하고, 있는 azp 는 client id 와 같은 문자열이어야
@@ -1504,6 +1596,7 @@ mod tests {
         for (name, aud, azp, want) in cases {
             let mut c = good_claims();
             c["aud"] = aud;
+            c["typ"] = json!("ID"); // Keycloak 의 id_token — typ 규칙은 `validate_id_token_accepts_only_typ_id`
             if let Some(a) = azp {
                 c["azp"] = a;
             }
@@ -1520,6 +1613,7 @@ mod tests {
         // (B) 도 기존 검사가 다 통과한 뒤다 — client id 가 aud 에 없으면 azp 가 없어도 지금의 문구다.
         let mut c = good_claims();
         c["aud"] = json!(["evil", "other"]);
+        c["typ"] = json!("ID");
         match v
             .validate_id_token(&sign(&fx, c, "test-kid"), "it-client")
             .await

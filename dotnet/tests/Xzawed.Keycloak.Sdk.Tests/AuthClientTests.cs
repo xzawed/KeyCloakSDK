@@ -236,11 +236,13 @@ public class AuthClientTests : IDisposable
         return new AuthClient(cfg, ep, new JwtValidator(tvp), _http);
     }
 
+    // typ "ID" — the value Keycloak's id_token carries (the id_token check refuses any other), so a nonce refusal below cannot
+    // pass on the kind instead.
     private static string SignIdToken(string issuer, string audience, string nonce, SecurityKey key)
     {
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var payload = $$"""{"iss":"{{issuer}}","sub":"u","aud":"{{audience}}","nonce":"{{nonce}}","exp":{{now + 300}},"iat":{{now}}}""";
+        var payload = $$"""{"iss":"{{issuer}}","sub":"u","aud":"{{audience}}","nonce":"{{nonce}}","typ":"ID","exp":{{now + 300}},"iat":{{now}}}""";
         return handler.CreateToken(payload, new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
     }
 
@@ -340,6 +342,12 @@ public class AuthClientTests : IDisposable
         return $$"""{"iss":"{{issuer}}","sub":"u","aud":{{audJson}},"nonce":"{{nonce}}","iat":{{now}}{{exp}}{{extra}}}""";
     }
 
+    // The id_token shape: Claims plus typ "ID", as Keycloak writes it — the id_token check refuses any other typ, so a test
+    // of another id_token check cannot pass on the kind instead. (Claims itself also builds access tokens, which must not
+    // carry it.)
+    private static string IdClaims(string issuer, string audJson, string nonce = Nonce, long? expOffset = 300, string extra = "")
+        => Claims(issuer, audJson, nonce, expOffset, ",\"typ\":\"ID\"" + extra);
+
     private static string SignClaims(string payloadJson, SecurityKey? key, string alg = SecurityAlgorithms.RsaSha256)
     {
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
@@ -359,7 +367,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer);
-        StubToken(SignClaims(Claims(issuer, audJson, extra: azp), key));
+        StubToken(SignClaims(IdClaims(issuer, audJson, extra: azp), key));
         var ts = await Exchange(auth);
         Assert.Equal("AT", ts.AccessToken);
     }
@@ -374,7 +382,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer);
-        StubToken(SignClaims(Claims(issuer, audJson), key));
+        StubToken(SignClaims(IdClaims(issuer, audJson), key));
         var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth));
         Assert.Equal("id_token validation failed", refused.Message);
         var validation = Assert.IsType<KeycloakTokenValidationException>(refused.InnerException);
@@ -388,7 +396,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer);
-        StubToken(SignClaims(Claims(issuer, "\"c\""), key));
+        StubToken(SignClaims(IdClaims(issuer, "\"c\""), key));
         await Exchange(auth);
 
         var access = await auth.ValidateAsync(SignClaims(Claims(issuer, "[\"extra-api\",\"account\"]"), key));
@@ -413,12 +421,12 @@ public class AuthClientTests : IDisposable
         var auth = BuildWithOverride(key, out var issuer);
         var idToken = check switch
         {
-            "wrong issuer" => SignClaims(Claims("https://evil.example.com/realms/r", "\"c\""), key),
-            "RS384 outside the RS256 pin" => SignClaims(Claims(issuer, "\"c\""), key, SecurityAlgorithms.RsaSha384),
-            "expired 60s ago, past the 30s skew" => SignClaims(Claims(issuer, "\"c\"", expOffset: -60), key),
-            "no exp" => SignClaims(Claims(issuer, "\"c\"", expOffset: null), key),
-            "unsigned" => SignClaims(Claims(issuer, "\"c\""), key: null),
-            "signed by another key" => SignClaims(Claims(issuer, "\"c\""), new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k2" }),
+            "wrong issuer" => SignClaims(IdClaims("https://evil.example.com/realms/r", "\"c\""), key),
+            "RS384 outside the RS256 pin" => SignClaims(IdClaims(issuer, "\"c\""), key, SecurityAlgorithms.RsaSha384),
+            "expired 60s ago, past the 30s skew" => SignClaims(IdClaims(issuer, "\"c\"", expOffset: -60), key),
+            "no exp" => SignClaims(IdClaims(issuer, "\"c\"", expOffset: null), key),
+            "unsigned" => SignClaims(IdClaims(issuer, "\"c\""), key: null),
+            "signed by another key" => SignClaims(IdClaims(issuer, "\"c\""), new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k2" }),
             _ => throw new ArgumentOutOfRangeException(nameof(check)),
         };
         StubToken(idToken);
@@ -436,7 +444,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer, algorithms: new[] { "RS256", "RS384" });
-        StubToken(SignClaims(Claims(issuer, "\"c\""), key, SecurityAlgorithms.RsaSha384));
+        StubToken(SignClaims(IdClaims(issuer, "\"c\""), key, SecurityAlgorithms.RsaSha384));
         Assert.Equal("AT", (await Exchange(auth)).AccessToken);
     }
 
@@ -446,7 +454,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer);
-        StubToken(SignClaims(Claims(issuer, "\"c\"", expOffset: -10), key));
+        StubToken(SignClaims(IdClaims(issuer, "\"c\"", expOffset: -10), key));
         Assert.Equal("AT", (await Exchange(auth)).AccessToken);
     }
 
@@ -457,15 +465,16 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithOverride(key, out var issuer);
-        StubToken(SignClaims(Claims(issuer, "\"c\"", nonce: "server-nonce"), key));
+        StubToken(SignClaims(IdClaims(issuer, "\"c\"", nonce: "server-nonce"), key));
         var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth, nonce: "expected-nonce"));
         Assert.Equal("id_token nonce mismatch", refused.Message);
         Assert.Null(refused.InnerException);
     }
 
     // ── Token type and authorized party. ValidateAsync refuses a token typed as another kind than an access token
-    // (JwtValidatorTests); the exchange validates an id_token, which Keycloak types "ID", so it does not — it holds the
-    // id_token's azp to the client id instead (OIDC Core §3.1.3.7 steps 4–5). ──
+    // (JwtValidatorTests); the exchange validates an id_token, which Keycloak types "ID", so it does not — it requires typ
+    // to be exactly "ID" instead (ExchangeCode_refuses_an_id_token_that_is_not_typed_ID, below) and then holds the
+    // id_token's azp to the client id (OIDC Core §3.1.3.7 steps 4–5). ──
 
     private static string IssuerOf(KeycloakConfig cfg) => OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
 
@@ -486,7 +495,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithKey(out var cfg, key);
-        StubToken(SignClaims(Claims(IssuerOf(cfg), audJson, extra: azp), key));
+        StubToken(SignClaims(IdClaims(IssuerOf(cfg), audJson, extra: azp), key));
         Assert.Equal("AT", (await Exchange(auth)).AccessToken);
     }
 
@@ -500,7 +509,7 @@ public class AuthClientTests : IDisposable
     {
         var key = NewKey();
         var auth = BuildWithKey(out var cfg, key);
-        StubToken(SignClaims(Claims(IssuerOf(cfg), audJson, extra: azp), key));
+        StubToken(SignClaims(IdClaims(IssuerOf(cfg), audJson, extra: azp), key));
         var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth));
         Assert.Equal("id_token validation failed", refused.Message);
         var validation = Assert.IsType<KeycloakTokenValidationException>(refused.InnerException);
@@ -546,7 +555,7 @@ public class AuthClientTests : IDisposable
         var cfg = OverrideConfig();
         var issuer = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
         StubKeyStore(issuer, key);
-        var idToken = SignClaims(Claims(issuer, "\"c\""), key);
+        var idToken = SignClaims(IdClaims(issuer, "\"c\""), key);
         var accessToken = SignClaims(Claims(issuer, "\"extra-api\""), key);
         StubToken(idToken);
 
@@ -610,7 +619,7 @@ public class AuthClientTests : IDisposable
 
         Assert.Contains(Override, (await auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key))).Audience);
         var warm = Hits(CertsPath);
-        StubToken(SignClaims(Claims(issuer, "\"c\""), attacker));
+        StubToken(SignClaims(IdClaims(issuer, "\"c\""), attacker));
         await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth));
         var afterExchange = await SettledHitsAsync(CertsPath, warm);
         Assert.True(afterExchange > warm, "the forged id_token must reach the store's refetch — else nothing below is shared");
@@ -650,7 +659,7 @@ public class AuthClientTests : IDisposable
         _mock.Given(Request.Create().WithPath(DiscoveryPath).UsingGet())
              .RespondWith(Response.Create().WithStatusCode(503));
         var key = NewKey();
-        StubToken(SignClaims(Claims(ep.Issuer, "\"c\""), key));
+        StubToken(SignClaims(IdClaims(ep.Issuer, "\"c\""), key));
         var accessToken = SignClaims(Claims(ep.Issuer, "\"extra-api\""), key);
         var frozen = new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero);
         using var http = new HttpClient();
@@ -667,5 +676,231 @@ public class AuthClientTests : IDisposable
         // Control: a second store has no window yet and goes out.
         await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => Store().ValidateAsync(accessToken));
         Assert.True(Hits(DiscoveryPath) > afterExchange, "control: a separate store must reach the IdP");
+    }
+
+    // ── Public id_token validation (registry id-token-validator-not-public). ValidateIdTokenAsync is exactly the check the
+    // exchange runs on its id_token before it compares the nonce — ExchangeCodeAsync calls it, one path — plus the kind rule
+    // of the id_token path: the payload typ must be exactly the string "ID" (an allow-list; ValidateAsync keeps its
+    // deny-list). No nonce parameter: the nonce comparison stays in the exchange. ──
+
+    private const string NotAnIdToken = "not an id_token (typ is not \"ID\")";
+
+    /// <summary>The id_token Keycloak issues (typ "ID", aud = azp = the client): the public method returns its claims, the
+    /// nonce among them uncompared — and the same client's access validation refuses the same token: two public paths.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_accepts_the_id_token_Keycloak_issues_and_returns_its_claims()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var idToken = SignClaims(Claims(IssuerOf(cfg), "\"c\"", extra: ",\"typ\":\"ID\",\"azp\":\"c\""), key);
+
+        var vt = await auth.ValidateIdTokenAsync(idToken);
+
+        Assert.Equal("u", vt.Subject);
+        Assert.Equal(IssuerOf(cfg), vt.Issuer);
+        Assert.Equal(new[] { "c" }, vt.Audience);
+        Assert.Equal("ID", vt.Claims["typ"]);
+        Assert.Equal("c", vt.Claims["azp"]);
+        Assert.Equal(Nonce, vt.Claims["nonce"]);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateAsync(idToken));
+        Assert.Equal("not an access token (typ \"ID\")", refused.Message);
+    }
+
+    /// <summary>The hole the kind rule closes: an access token (typ "Bearer") that names the client in aud and azp. Control:
+    /// the same client's access validation accepts it — it passes every other check, so the refusal is the kind alone.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_refuses_an_access_token_that_names_the_client()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var accessToken = SignClaims(Claims(IssuerOf(cfg), "\"c\"", extra: ",\"typ\":\"Bearer\",\"azp\":\"c\""), key);
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(accessToken));
+
+        Assert.Equal(NotAnIdToken, refused.Message);
+        Assert.Null(refused.InnerException);
+        Assert.Equal("c", (await auth.ValidateAsync(accessToken)).Claims["azp"]);
+    }
+
+    /// <summary>A typ that is not exactly the JSON string "ID" — absent, another case, a trailing space, or not a string
+    /// (JSON null included). aud and azp are the client in every row.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(",\"typ\":\"bearer\"")]
+    [InlineData(",\"typ\":\"id\"")]
+    [InlineData(",\"typ\":\"ID \"")]
+    [InlineData(",\"typ\":42")]
+    [InlineData(",\"typ\":null")]
+    [InlineData(",\"typ\":[\"ID\"]")]
+    [InlineData(",\"typ\":{\"typ\":\"ID\"}")]
+    public async Task ValidateIdTokenAsync_refuses_a_token_whose_typ_is_not_exactly_ID(string typClaim)
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var token = SignClaims(Claims(IssuerOf(cfg), "\"c\"", extra: ",\"azp\":\"c\"" + typClaim), key);
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(token));
+        Assert.Equal(NotAnIdToken, refused.Message);
+    }
+
+    /// <summary>A back-channel logout token (OIDC Back-Channel Logout §2.4): Keycloak types it "Logout", its single aud is the
+    /// client and it carries no azp — so the authorized-party rule passes — and it has an exp. Only the kind tells it apart.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_refuses_a_back_channel_logout_token()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var logoutToken = SignClaims(Claims(IssuerOf(cfg), "\"c\"",
+            extra: ",\"typ\":\"Logout\",\"sid\":\"s-1\",\"events\":{\"http://schemas.openid.net/event/backchannel-logout\":{}}"), key);
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(logoutToken));
+        Assert.Equal(NotAnIdToken, refused.Message);
+    }
+
+    /// <summary>The kind comes before the authorized party — being an id_token is the azp rule's premise (the nine languages
+    /// check in this order). A token that breaks both rules (typ "Bearer", two audiences, no azp) gets the kind's constant
+    /// message, not the azp one.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_checks_the_kind_before_the_authorized_party()
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var token = SignClaims(Claims(IssuerOf(cfg), "[\"c\",\"other\"]", extra: ",\"typ\":\"Bearer\""), key);
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(token));
+        Assert.Equal(NotAnIdToken, refused.Message);
+    }
+
+    /// <summary>ExpectedAudience holds access tokens only — the public id_token check holds aud to the client id. An id_token
+    /// that names only the override is refused by the audience check (before the kind); controls: the same client accepts
+    /// an id_token for the client id, and its access validation accepts an access token for the override.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_holds_aud_to_the_client_id_not_the_expected_audience_override()
+    {
+        var key = NewKey();
+        var auth = BuildWithOverride(key, out var issuer);
+        const string typed = ",\"typ\":\"ID\",\"azp\":\"c\"";
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => auth.ValidateIdTokenAsync(SignClaims(Claims(issuer, "\"extra-api\"", extra: typed), key)));
+        Assert.IsType<SecurityTokenInvalidAudienceException>(refused.InnerException);
+        Assert.Equal(new[] { "c" }, (await auth.ValidateIdTokenAsync(SignClaims(Claims(issuer, "\"c\"", extra: typed), key))).Audience);
+        Assert.Contains(Override, (await auth.ValidateAsync(SignClaims(Claims(issuer, "\"extra-api\""), key))).Audience);
+    }
+
+    /// <summary>Every other id_token check of the exchange holds on the public method too (it is the same function), each
+    /// named by its IdentityModel cause; every row is typed "ID" with azp = the client, so no row passes on the kind.</summary>
+    [Theory]
+    [InlineData("wrong issuer", typeof(SecurityTokenInvalidIssuerException))]
+    [InlineData("RS384 outside the RS256 pin", typeof(SecurityTokenInvalidSignatureException))]
+    [InlineData("expired 60s ago, past the 30s skew", typeof(SecurityTokenExpiredException))]
+    [InlineData("no exp", typeof(SecurityTokenNoExpirationException))]
+    [InlineData("unsigned", typeof(SecurityTokenInvalidSignatureException))]
+    [InlineData("signed by another key", typeof(SecurityTokenSignatureKeyNotFoundException))]
+    public async Task ValidateIdTokenAsync_keeps_every_other_id_token_check(string check, Type cause)
+    {
+        var key = NewKey();
+        var auth = BuildWithOverride(key, out var issuer);
+        const string typed = ",\"typ\":\"ID\",\"azp\":\"c\"";
+        var idToken = check switch
+        {
+            "wrong issuer" => SignClaims(Claims("https://evil.example.com/realms/r", "\"c\"", extra: typed), key),
+            "RS384 outside the RS256 pin" => SignClaims(Claims(issuer, "\"c\"", extra: typed), key, SecurityAlgorithms.RsaSha384),
+            "expired 60s ago, past the 30s skew" => SignClaims(Claims(issuer, "\"c\"", expOffset: -60, extra: typed), key),
+            "no exp" => SignClaims(Claims(issuer, "\"c\"", expOffset: null, extra: typed), key),
+            "unsigned" => SignClaims(Claims(issuer, "\"c\"", extra: typed), key: null),
+            "signed by another key" => SignClaims(Claims(issuer, "\"c\"", extra: typed), new RsaSecurityKey(RSA.Create(2048)) { KeyId = "k2" }),
+            _ => throw new ArgumentOutOfRangeException(nameof(check)),
+        };
+
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => auth.ValidateIdTokenAsync(idToken));
+        Assert.IsType(cause, refused.InnerException);
+    }
+
+    /// <summary>The authorized-party rule (OIDC Core §3.1.3.7 steps 4–5) holds on the public method; both tokens are typed "ID".</summary>
+    [Theory]
+    [InlineData("[\"c\",\"other\"]", ",\"typ\":\"ID\"", "azp is required when aud has more than one value")]
+    [InlineData("\"c\"", ",\"typ\":\"ID\",\"azp\":\"evil\"", "azp does not match the client id")]
+    public async Task ValidateIdTokenAsync_applies_the_authorized_party_rule(string audJson, string extra, string reason)
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => auth.ValidateIdTokenAsync(SignClaims(Claims(IssuerOf(cfg), audJson, extra: extra), key)));
+        Assert.Equal(reason, refused.Message);
+    }
+
+    /// <summary>The inbound length cap holds on the public method, before any key store request — on a client built by
+    /// <c>KeycloakClient.Create</c> whose store is cold.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_refuses_a_token_over_the_cap_before_any_key_store_request()
+    {
+        var cfg = OverrideConfig();
+        StubKeyStore(OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer, NewKey());
+
+        using var kc = KeycloakClient.Create(cfg);
+        var refused = await Assert.ThrowsAsync<KeycloakTokenValidationException>(
+            () => kc.Auth.ValidateIdTokenAsync(new string('a', JwtValidator.MaxJwtBytes - 1) + ".."));
+        Assert.Contains("exceeds 256000 bytes", refused.Message);
+        Assert.Equal(0, Hits(DiscoveryPath));
+        Assert.Equal(0, Hits(CertsPath));
+    }
+
+    /// <summary>A5 for the public method, through the facade's own wiring (<c>KeycloakClient.Create</c>): ValidateIdTokenAsync and
+    /// ValidateAsync share the one key store — in either order, one discovery and one JWKS fetch.</summary>
+    [Fact]
+    public async Task ValidateIdTokenAsync_and_ValidateAsync_fetch_the_jwks_once_under_the_override()
+    {
+        var key = NewKey();
+        var cfg = OverrideConfig();
+        var issuer = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
+        StubKeyStore(issuer, key);
+        var idToken = SignClaims(Claims(issuer, "\"c\"", extra: ",\"typ\":\"ID\""), key);
+        var accessToken = SignClaims(Claims(issuer, "\"extra-api\""), key);
+
+        using (var kc = KeycloakClient.Create(cfg))
+        {
+            Assert.Equal(new[] { "c" }, (await kc.Auth.ValidateIdTokenAsync(idToken)).Audience);
+            Assert.Contains(Override, (await kc.Auth.ValidateAsync(accessToken)).Audience);
+            Assert.Equal(1, Hits(CertsPath));
+            Assert.Equal(1, Hits(DiscoveryPath));
+        }
+
+        _mock.ResetLogEntries();
+        using (var kc = KeycloakClient.Create(cfg))
+        {
+            Assert.Contains(Override, (await kc.Auth.ValidateAsync(accessToken)).Audience);
+            Assert.Equal(new[] { "c" }, (await kc.Auth.ValidateIdTokenAsync(idToken)).Audience);
+            Assert.Equal(1, Hits(CertsPath));
+            Assert.Equal(1, Hits(DiscoveryPath));
+        }
+
+        // Control: two clients are two key stores — the same two calls fetch twice.
+        _mock.ResetLogEntries();
+        using (var a = KeycloakClient.Create(cfg))
+        using (var b = KeycloakClient.Create(cfg))
+        {
+            await a.Auth.ValidateIdTokenAsync(idToken);
+            await b.Auth.ValidateAsync(accessToken);
+        }
+        Assert.Equal(2, Hits(CertsPath));
+    }
+
+    /// <summary>The exchange's id_token check is ValidateIdTokenAsync, so the kind rule holds there too. Everything but the
+    /// kind is right (signature, iss, aud = azp = the client, exp, the nonce); the refusal keeps the exchange's mapping and
+    /// its cause names the kind in a constant message.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(",\"typ\":\"Bearer\"")]
+    public async Task ExchangeCode_refuses_an_id_token_that_is_not_typed_ID(string typClaim)
+    {
+        var key = NewKey();
+        var auth = BuildWithKey(out var cfg, key);
+        StubToken(SignClaims(Claims(IssuerOf(cfg), "\"c\"", extra: ",\"azp\":\"c\"" + typClaim), key));
+
+        var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => Exchange(auth));
+        Assert.Equal("id_token validation failed", refused.Message);
+        var validation = Assert.IsType<KeycloakTokenValidationException>(refused.InnerException);
+        Assert.Equal(NotAnIdToken, validation.Message);
     }
 }

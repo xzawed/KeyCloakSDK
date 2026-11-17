@@ -500,22 +500,26 @@ class JwtValidatorTest {
   }
 
   // withAudience 는 요구 aud 만 바꾼 **새** 검증기를 준다 — 원본(validate() 의 액세스 검증기)의 기대값은 그대로다.
-  // 교환이 id_token 을 clientId 로 검증한 뒤에도 액세스 검증이 재정의를 계속 쓰는 근거다.
+  // 교환이 id_token 을 clientId 로 검증한 뒤에도 액세스 검증이 재정의를 계속 쓰는 근거다. id_token 검증기에 주는 토큰은
+  // Keycloak 의 id_token 처럼 typ "ID" 를 싣는다(그 검증기는 그 밖의 typ 을 거부한다) — 두 거부는 aud 검사의 것이다(종류 검사보다
+  // 앞 — 메시지까지 본다).
   @Test void withAudience_changesOnlyTheRequiredAudience_andLeavesTheOriginal() throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
     String issuer = "https://kc.example.com/realms/r";
     JwtValidator access = JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), issuer, API_AUDIENCE,
         Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
     JwtValidator id = access.withAudience("app");
+    String idForApp = signedFor(key, issuer, List.of("app"), c -> c.claim("typ", "ID"));
+    String idForApi = signedFor(key, issuer, List.of(API_AUDIENCE), c -> c.claim("typ", "ID"));
     String forApp = signedFor(key, issuer, "app");
     String forApi = signedFor(key, issuer, API_AUDIENCE);
 
-    assertEquals(List.of("app"), id.validate(forApp).getAudience());
-    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
-        () -> id.validate(forApi));
+    assertEquals(List.of("app"), id.validate(idForApp).getAudience());
+    assertEquals("JWT validation failed", assertThrows(TokenValidationException.class,
+        () -> id.validate(idForApi)).getMessage());
     assertEquals(List.of(API_AUDIENCE), access.validate(forApi).getAudience());
-    assertThrows(io.github.xzawed.keycloak.core.exception.TokenValidationException.class,
-        () -> access.validate(forApp));
+    assertEquals("JWT validation failed", assertThrows(TokenValidationException.class,
+        () -> access.validate(forApp)).getMessage());
   }
 
   private static String signedFor(RSAKey key, String issuer, String audience) throws Exception {
@@ -701,22 +705,26 @@ class JwtValidatorTest {
         v.validate(signedFor(key, ISSUER, List.of("app", "other"), c -> c.claim("azp", 42L))).getClaims().get("azp"));
   }
 
-  // withAudience 가 주는 것은 코드 교환의 id_token 검증기다. Keycloak 의 id_token 은 typ "ID" 라 (A) 를 걸지 않고, 대신 (B) azp
-  // 규칙을 건다. 같은 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고,
-  // 파생이 원본을 바꾸지 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다).
+  // withAudience 가 주는 것은 id_token 검증기다(AuthClient.validateIdToken · 코드 교환). Keycloak 의 id_token 은 typ "ID" 라 (A)
+  // 거부 목록을 걸지 않고, 대신 typ 허용 목록(정확히 "ID" — AuthClientValidateIdTokenTest)과 그다음 (B) azp 규칙을 건다. 같은
+  // 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고, 파생이 원본을 바꾸지
+  // 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다). (B) 는 aud 가 둘인데 azp 가 없는 토큰으로 본다: 원본은 액세스 토큰 모양(typ
+  // "Bearer")을 받고, 파생은 id_token 모양(typ "ID")을 azp 로 거부한다 — 종류가 azp 보다 먼저라, 파생에 주는 것은 typ "ID" 여야
+  // azp 에 닿는다(Bearer 는 종류로 거부된다 — AuthClientValidateIdTokenTest 의 순서 시험).
   @Test void withAudience_isTheIdTokenValidator_typIdPasses_andTheAzpRuleApplies() throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
     JwtValidator access = staticValidator(key, "app");
     JwtValidator id = access.withAudience("app");
     String typedId = signedFor(key, ISSUER, List.of("app"), c -> c.claim("typ", "ID").claim("azp", "app"));
     String twoAudiencesNoAzp = signedFor(key, ISSUER, List.of("app", "other"), c -> c.claim("typ", "Bearer"));
+    String idTwoAudiencesNoAzp = signedFor(key, ISSUER, List.of("app", "other"), c -> c.claim("typ", "ID"));
 
     assertEquals("ID", id.validate(typedId).getClaims().get("typ"));
     assertEquals("not an access token (typ \"ID\")",
         assertThrows(TokenValidationException.class, () -> access.validate(typedId)).getMessage());
 
     assertEquals(List.of("app", "other"), access.validate(twoAudiencesNoAzp).getAudience());
-    TokenValidationException noAzp = assertThrows(TokenValidationException.class, () -> id.validate(twoAudiencesNoAzp));
+    TokenValidationException noAzp = assertThrows(TokenValidationException.class, () -> id.validate(idTwoAudiencesNoAzp));
     assertTrue(noAzp.getMessage().contains("azp"), noAzp.getMessage());
   }
 

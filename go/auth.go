@@ -109,14 +109,14 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // ExchangeCode exchanges an authorization code + PKCE verifier for tokens.
 //
 // When expectedNonce is non-empty (the nonce returned by
-// CreateAuthorizationRequest), the returned id_token is fully signature-
-// validated (iss/aud/exp via the hardened Validator) and its nonce claim is
-// compared against expectedNonce — OIDC nonce replay protection. The id_token's
-// aud must contain Config.ClientID (OIDC Core §3.1.3.7), whatever
-// Config.ExpectedAudience is set to, and its azp must be Config.ClientID when
-// present — and present when aud has several values (§3.1.3.7 steps 4–5). A
-// mismatch, a missing id_token, or a validation failure all fail closed. An
-// empty expectedNonce skips id_token validation (custom no-nonce flows).
+// CreateAuthorizationRequest), the returned id_token is checked by
+// ValidateIDToken — signature, iss, an aud containing Config.ClientID whatever
+// Config.ExpectedAudience is set to, exp, typ "ID" and azp — and its nonce
+// claim is then compared against expectedNonce (OIDC nonce replay protection).
+// A mismatch, a missing id_token, or a validation failure all fail closed; a
+// validation failure is the "invalid id_token" *AuthError, caused by the
+// *TokenValidationError. An empty expectedNonce skips id_token validation
+// (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
 	octx, capped, refused, below := a.oauthCtx(ctx)
 	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
@@ -133,17 +133,14 @@ func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVe
 	return ts, nil
 }
 
-// verifyNonce validates the id_token and checks its nonce claim against
-// expectedNonce. The id_token's aud is the client id, not Config.ExpectedAudience
-// (the access-token audience), so it is checked by a sibling of the access-token
-// Validator that shares its key store — one JWKS cache and one set of refetch gates.
-// The sibling is of the id_token kind: it judges azp, and not the typ that the
-// access-token Validate refuses ("ID" is what a Keycloak id_token carries).
+// verifyNonce validates the id_token with ValidateIDToken — the one id_token
+// check, so the exchange and a consumer's own call cannot drift apart — and then
+// compares its nonce claim with expectedNonce.
 func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce string) error {
 	if idToken == "" {
 		return &AuthError{Msg: "authorization code exchange failed: missing id_token for nonce validation"}
 	}
-	vt, err := a.val.forIDToken(a.cfg.ClientID).Validate(ctx, idToken)
+	vt, err := a.ValidateIDToken(ctx, idToken)
 	if err != nil {
 		return &AuthError{Msg: "authorization code exchange failed: invalid id_token", Cause: err}
 	}
@@ -211,9 +208,23 @@ func (a *AuthClient) Logout(ctx context.Context, refreshToken string) error {
 
 // Validate verifies an access token's signature and hardened claims, and refuses
 // a Keycloak token that is not an access token (typ claim ID, Refresh, Offline,
-// Logout or Serialized-ID).
+// Logout or Serialized-ID). An id_token is ValidateIDToken's.
 func (a *AuthClient) Validate(ctx context.Context, accessToken string) (*ValidatedToken, error) {
 	return a.val.Validate(ctx, accessToken)
+}
+
+// ValidateIDToken verifies an id_token exactly as ExchangeCode does before it
+// compares the nonce: the signature against the key store Validate uses (one
+// JWKS cache, one set of refetch gates), the algorithm pin, the length cap, an
+// exact iss, an aud that contains Config.ClientID — whatever
+// Config.ExpectedAudience says, which names the access-token audience — exp
+// with the clock skew, a payload typ that is exactly "ID" (what Keycloak puts
+// on every id_token), and azp per OIDC Core §3.1.3.7 steps 4–5: required when
+// aud has several values, and equal to Config.ClientID when present. It takes
+// no nonce — comparing one is ExchangeCode's. A failure is a
+// *TokenValidationError, as with Validate.
+func (a *AuthClient) ValidateIDToken(ctx context.Context, idToken string) (*ValidatedToken, error) {
+	return a.val.forIDToken(a.cfg.ClientID).Validate(ctx, idToken)
 }
 
 // Close releases auth resources by draining the idle keep-alive connections held

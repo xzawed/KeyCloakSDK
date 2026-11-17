@@ -28,17 +28,8 @@ module CodeExchangeIT
                             client_secret: WEB_CLIENT_SECRETS.fetch(client_id), **overrides)
   end
 
-  # id_token 은 교환이 쓰는 경로(`JwtValidator#validate_id_token`)로 검증한다 — `validate` 는 접근 토큰 검증이라 id_token 을
-  # typ("ID")으로 거부한다. 배선은 `KeycloakClient#initialize` 의 것과 같다(검증에는 시크릿이 필요 없다).
-  def self.validated_id_token(base, id_token, client_id = "it-web")
-    config = KeycloakSdk::Config.new(server_url: base, realm: "it-realm", client_id: client_id)
-    http = KeycloakSdk::Http.build(config) { |f| f.response :json, content_type: /\bjson$/ }
-    store = KeycloakSdk::JwksStore.new(jwks_url: KeycloakSdk::OidcEndpoints.from_config(config).jwks, http: http)
-    KeycloakSdk::JwtValidator.from_config(config: config, jwks_store: store)
-                             .validate_id_token(id_token, client_id: client_id)
-  ensure
-    http.close if http.respond_to?(:close)
-  end
+  # id_token 은 교환이 쓰는 그 검사 — 공개 `AuthClient#validate_id_token` — 로 검증한다. `validate` 는 접근 토큰 검증이라
+  # id_token 을 typ("ID")으로 거부한다.
 
   # 인가 URL 에서 `nonce` 만 뺀다 — 서버가 nonce 클레임 **없는** id_token 을 서명하게 한다.
   def self.strip_nonce(request)
@@ -125,9 +116,19 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     # 접근 토큰 검증은 서버의 id_token 을 거부한다 — 서명·iss·aud·exp 를 다 지나도 typ 이 "ID" 다.
     expect { kc.auth.validate(tokens.id_token) }
       .to raise_error(KeycloakSdk::TokenValidationError, 'JWT validation failed: not an access token (typ "ID")')
-    id_claims = CodeExchangeIT.validated_id_token(@base, tokens.id_token).claims
+    id_claims = kc.auth.validate_id_token(tokens.id_token).claims
     expect(id_claims["nonce"]).to eq(request.nonce)
     expect(id_claims["sub"]).to eq(@alice_id)
+    expect(id_claims["typ"]).to eq("ID")
+    # 반대 방향: 서버의 접근 토큰은 공개 id_token 검증이 거부한다. aud 에 client_id 가 있으면 종류(typ 이 "ID" 가 아니다)가,
+    # 없으면 aud 가 가른다 — 어느 쪽인지는 서버가 보낸 aud 를 서명 검증 없이 읽어 정한다(전제이지 판정이 아니다).
+    access_aud = Array(JWT.decode(tokens.access_token, nil, false).first["aud"])
+    not_id = if access_aud.include?("it-web")
+               'JWT validation failed: not an id_token (typ is not "ID")'
+             else
+               /Invalid audience\. Expected it-web,/
+             end
+    expect { kc.auth.validate_id_token(tokens.access_token) }.to raise_error(KeycloakSdk::TokenValidationError, not_id)
     # 교환이 돌려준 접근 토큰도 서버가 발급한 그 사용자의 활성 토큰이다(Grok 레그: 자리표시자로 바꿔도 통과했다).
     access = kc.auth.validate(tokens.access_token)
     expect([access.subject, access.audience]).to match([@alice_id, include("it-web")])
@@ -158,7 +159,7 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     kc = new_client
     request, code = login(kc)
     tokens = exchange(kc, request, code, nonce: nil)
-    expect(CodeExchangeIT.validated_id_token(@base, tokens.id_token).claims["nonce"]).to eq(request.nonce)
+    expect(kc.auth.validate_id_token(tokens.id_token).claims["nonce"]).to eq(request.nonce)
   end
 
   # `expected_audience` 재정의는 액세스 토큰의 것이다 — id_token `aud` 는 client_id 로 검사한다(OIDC Core §3.1.3.7).
@@ -167,7 +168,8 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     request, code = login(kc)
     tokens = exchange(kc, request, code)
     # 전제: 서버의 id_token `aud` 에 재정의 값은 없다(audience 매퍼는 access 전용) — 통과가 client_id 덕임을 보인다.
-    id_token = CodeExchangeIT.validated_id_token(@base, tokens.id_token)
+    # 재정의한 이 클라이언트의 공개 id_token 검증으로 잰다 — 그 검사는 재정의를 쓰지 않는다.
+    id_token = kc.auth.validate_id_token(tokens.id_token)
     expect([id_token.audience, id_token.claims["nonce"]]).to eq([["it-web"], request.nonce])
     # 접근 토큰 검증은 재정의를 쓴다 — 이 토큰은 client_id(it-web)는 담지만 it-client 는 담지 않는다.
     expect(new_client.auth.validate(tokens.access_token).audience).to include("it-web")
@@ -206,7 +208,7 @@ RSpec.describe "Authorization code exchange against a real Keycloak", :integrati
     # 전제: 서버가 정말 nonce 없이 서명한다(아니면 아래는 부재가 아니라 불일치를 잰다).
     _, code = login(kc, request)
     unchecked = exchange(kc, request, code, nonce: nil)
-    expect(CodeExchangeIT.validated_id_token(@base, unchecked.id_token).claims).not_to have_key("nonce")
+    expect(kc.auth.validate_id_token(unchecked.id_token).claims).not_to have_key("nonce")
 
     _, code = login(kc, request)
     expect { exchange(kc, request, code) }

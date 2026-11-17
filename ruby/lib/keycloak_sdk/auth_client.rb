@@ -46,10 +46,10 @@ module KeycloakSdk
     end
 
     # When `expected_nonce` is given (the nonce create_authorization_request always returns), the response's id_token
-    # goes through hardened validation against the realm JWKS — signature · iss · aud (client_id) · exp · azp
-    # (client_id) — before its nonce claim is compared: OIDC nonce replay protection. Mismatch, absence and
-    # validation failure are all rejected (fail-closed). When omitted, id_token validation is skipped
-    # (common to the eight languages — exchange does not make the nonce mandatory).
+    # goes through hardened validation against the realm JWKS — signature · iss · aud (client_id) · exp · typ ("ID") ·
+    # azp (client_id), the check `validate_id_token` runs — before its nonce claim is compared: OIDC nonce replay
+    # protection. Mismatch, absence and validation failure are all rejected (fail-closed). When omitted, id_token
+    # validation is skipped (common to the eight languages — exchange does not make the nonce mandatory).
     def exchange_code(code:, code_verifier:, redirect_uri:, expected_nonce: nil)
       token_set = token_request("authorization_code exchange",
                                 { grant_type: "authorization_code", code: code, redirect_uri: redirect_uri,
@@ -112,16 +112,30 @@ module KeycloakSdk
       @jwt_validator.validate(token)
     end
 
+    # Validates an id_token with exactly the check `exchange_code` runs on the id_token before it compares the nonce —
+    # both go through this method. The signature is verified against the realm JWKS through the same key store
+    # `validate` uses (one cache, one refetch limit, one backoff), under the `signature_algorithms` pin (an HS
+    # algorithm is refused even when allowed — a JWKS holds public keys only) and the 256,000-byte length cap. `iss`
+    # must match exactly, `aud` must contain the configured `client_id` (not `expected_audience`, which restricts
+    # access tokens), and `exp` is required, checked with the clock skew. Then the token kind: the payload `typ` must
+    # be exactly the String `"ID"` — a missing, non-String or other value is refused. Last, the authorized party
+    # (OIDC Core §3.1.3.7 steps 4-5): with more than one `aud` an `azp` is required, and an `azp` that is present
+    # (JSON null included) must be `client_id`. The nonce is not compared — that stays in `exchange_code`. A failed
+    # check raises TokenValidationError, as `validate` does (and TransportError when the JWKS cannot be fetched).
+    def validate_id_token(id_token)
+      @jwt_validator.validate_id_token(id_token, client_id: @config.client_id)
+    end
+
     private
 
-    # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp·azp까지 검증한다.
-    # aud·azp 는 `expected_audience` 재정의가 아니라 **client_id** 다(OIDC Core §2·§3.1.3.7) — 재정의는 액세스 토큰의 것.
-    # `validate` 가 아니라 `validate_id_token` 이다 — `validate` 는 접근 토큰이 아닌 종류(typ "ID")를 거부한다.
-    # 검증기(=키 저장소)는 `validate` 와 같은 하나를 쓴다.
+    # id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp·종류(typ "ID")·azp까지 검증한다 —
+    # 공개 `validate_id_token` 과 한 길이다(검사를 둘로 나누지 않는다). aud·azp 는 `expected_audience` 재정의가 아니라
+    # **client_id** 다(OIDC Core §2·§3.1.3.7) — 재정의는 액세스 토큰의 것. `validate` 가 아니다 — `validate` 는 접근 토큰이
+    # 아닌 종류(typ "ID")를 거부한다. 검증기(=키 저장소)는 `validate` 와 같은 하나를 쓴다.
     def verify_nonce!(id_token, expected_nonce)
       raise AuthError, "authorization_code exchange failed: missing id_token for nonce validation" if id_token.nil?
 
-      validated = @jwt_validator.validate_id_token(id_token, client_id: @config.client_id)
+      validated = validate_id_token(id_token)
       return if validated.claims["nonce"] == expected_nonce
 
       raise AuthError, "authorization_code exchange failed: unexpected nonce"

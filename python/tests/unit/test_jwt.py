@@ -496,13 +496,14 @@ def test_an_hs_token_over_the_cap_is_refused_by_the_cap_before_the_hs_refusal():
     )
 
 
-# --- 토큰 종류 — access 는 typ 를, id_token 은 azp 를 본다(검증기 칸) ---------------
+# --- 토큰 종류 — access 는 typ 거부 목록을, id_token 은 typ 허용 목록과 azp 를 본다(검증기 칸) ---
 # Keycloak 26 이 토큰마다 싣는 `typ` 클레임(`org.keycloak.util.TokenUtil` —
 # keycloak-client-common-synced 26.0.12): Bearer · DPoP 는 access 토큰이고
 # ID · Refresh · Offline · Logout · Serialized-ID 는 아니다. 수정 전에는 검증기가 typ 도
 # azp 도 읽지 않아, id_token(`ID`)·백채널 로그아웃 토큰(`Logout`)이 access 검증을
-# 통과했고 aud 가 여럿이고 azp 가 남인 id_token 도 통과했다(실측). 파사드 배선(어느
-# 경로가 어느 검사를 거는가)은 `test_auth.py` · `aio/test_auth.py` 가 잰다.
+# 통과했고 aud 가 여럿이고 azp 가 남인 id_token 도 통과했다(실측). id_token 경로는 (C)
+# typ 가 정확히 `ID` 여야 한다. 파사드 배선(어느 경로가 어느 검사를 거는가)은
+# `test_auth.py` · `aio/test_auth.py` 가 잰다.
 
 _NOT_ACCESS_TYPS = ("ID", "Refresh", "Offline", "Logout", "Serialized-ID")
 _NO_AZP = object()  # azp 클레임 자체가 없다 — None 은 JSON null(있는 azp)이다
@@ -523,6 +524,11 @@ def _typed_claims(**extra: object) -> dict[str, object]:
 
 def _azp_claims(aud: object, azp: object) -> dict[str, object]:
     return _typed_claims(aud=aud) if azp is _NO_AZP else _typed_claims(aud=aud, azp=azp)
+
+
+def _id_token_claims(aud: object, azp: object) -> dict[str, object]:
+    """Keycloak 의 id_token 모양 — typ `ID` 를 싣는다(종류 규칙 (C) 가 azp 판정을 가로채지 않게)."""
+    return {**_azp_claims(aud, azp), "typ": "ID"}
 
 
 @pytest.mark.parametrize("typ", _NOT_ACCESS_TYPS)
@@ -581,14 +587,70 @@ def test_typ_is_judged_after_the_existing_claim_checks():
         assert str(refused.value) == reason
 
 
-def test_id_token_validator_does_not_judge_typ():
-    """(A) 는 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다."""
+def test_id_token_validator_accepts_typ_id():
+    """(A) 의 거부 목록은 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다."""
     key = _rsa_key()
     validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
 
     result = validator.validate(_sign(key, _typed_claims(typ="ID")), KeySet([key]))
 
     assert result.claims["typ"] == "ID"
+
+
+_NOT_ID_TOKEN = 'Token is not an id_token (typ is not "ID")'
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"typ": "Bearer"}, id="Bearer"),
+        pytest.param({"typ": "bearer"}, id="lowercase bearer"),
+        pytest.param({"typ": "id"}, id="case-sensitive"),
+        pytest.param({"typ": "ID "}, id="exact-match"),
+        pytest.param({"typ": "Logout"}, id="Logout"),
+        pytest.param({"typ": 1}, id="number"),
+        pytest.param({"typ": None}, id="null"),
+        pytest.param({"typ": ["ID"]}, id="array"),
+    ],
+)
+def test_id_token_validator_refuses_any_typ_but_id(extra):
+    """(C) 종류 — id_token 경로는 **허용 목록**이다: typ 가 정확히 문자열 `ID` 가 아니면 거부한다
+    (Keycloak 26.6.9 는 id_token 을 한 곳에서 만들고 늘 `ID` 를 싣는다). azp 는 맞춰 둔다 — 거부를
+    가르는 것이 종류뿐이게. 문구는 상수다 — 토큰이 고른 typ 를 싣지 않는다. 클레임 실패라 서명 실패
+    하위 타입이 아니다."""
+    key = _rsa_key()
+    validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
+
+    with pytest.raises(TokenValidationError) as refused:
+        validator.validate(_sign(key, _typed_claims(azp="app", **extra)), KeySet([key]))
+
+    assert type(refused.value) is TokenValidationError
+    assert str(refused.value) == _NOT_ID_TOKEN
+
+
+def test_id_token_kind_is_judged_before_azp():
+    """(C) 가 (B) 보다 먼저다 — 종류도 azp 도 틀린 토큰은 종류의 문구다(그것이 id_token 인지가
+    azp 를 읽을 전제다)."""
+    key = _rsa_key()
+    validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
+    token = _sign(key, _typed_claims(aud=["app", "evil"], typ="Bearer"))
+
+    with pytest.raises(TokenValidationError) as refused:
+        validator.validate(token, KeySet([key]))
+
+    assert str(refused.value) == _NOT_ID_TOKEN
+
+
+def test_id_token_kind_is_judged_after_the_existing_claim_checks():
+    """(C) 도 기존 검사가 다 통과한 **뒤**다 — typ 가 없는 다른 aud 토큰은 지금의 aud 문구다."""
+    key = _rsa_key()
+    validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
+
+    with pytest.raises(TokenValidationError) as refused:
+        validator.validate(_sign(key, _typed_claims(aud="someone-else")), KeySet([key]))
+
+    assert str(refused.value) == "Audience not contained"
 
 
 @pytest.mark.parametrize(
@@ -605,7 +667,7 @@ def test_id_token_validator_accepts_an_azp_that_names_the_client(aud, azp):
     key = _rsa_key()
     validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
 
-    result = validator.validate(_sign(key, _azp_claims(aud, azp)), KeySet([key]))
+    result = validator.validate(_sign(key, _id_token_claims(aud, azp)), KeySet([key]))
 
     assert result.subject == "user-1"
 
@@ -627,7 +689,7 @@ def test_id_token_validator_refuses_an_azp_against_oidc_core(aud, azp, reason):
     validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
 
     with pytest.raises(TokenValidationError) as refused:
-        validator.validate(_sign(key, _azp_claims(aud, azp)), KeySet([key]))
+        validator.validate(_sign(key, _id_token_claims(aud, azp)), KeySet([key]))
 
     assert type(refused.value) is TokenValidationError
     assert str(refused.value) == reason
@@ -640,7 +702,7 @@ def test_azp_is_judged_after_the_existing_claim_checks():
     validator = JwtValidator(issuer=ISSUER, audience="app", kind="id_token")
 
     with pytest.raises(TokenValidationError) as refused:
-        validator.validate(_sign(key, _azp_claims(["evil", "other"], _NO_AZP)), KeySet([key]))
+        validator.validate(_sign(key, _id_token_claims(["evil", "other"], _NO_AZP)), KeySet([key]))
 
     assert str(refused.value) == "Audience not contained"
 

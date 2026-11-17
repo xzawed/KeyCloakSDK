@@ -22,6 +22,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Date;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
@@ -73,15 +74,17 @@ class IdTokenAudienceJwksSharingTest {
     TokenSet ts = client.exchangeCode("c", CALLBACK, VERIFIER, NONCE);
     assertEquals(idToken, ts.getIdToken());
     // A3 — forRealm 경로에서도 validate() 는 재정의를 찾는다: 액세스(aud=api)는 통과, id_token(aud=app)은 거부. 거부는 aud
-    // 검사의 것이다(이 토큰엔 typ 이 없다 — 「not an access token」이 이 자리를 대신 채우지 못하게 메시지까지 본다).
+    // 검사의 것이다(이 토큰은 typ "ID" 지만 typ 은 aud 검사 뒤에야 본다 — 「not an access token」이 이 자리를 대신 채우지
+    // 못하게 메시지까지 본다).
     assertTrue(client.validate(ts.getAccessToken()).getAudience().contains(OVERRIDE));
     assertEquals("JWT validation failed",
         assertThrows(TokenValidationException.class, () -> client.validate(ts.getIdToken())).getMessage());
     int shared = certsHits.get();
 
-    // 대조군: 저장소 둘 — 같은 서버·같은 두 토큰을 각자의 forRealm 검증기로.
+    // 대조군: 저장소 둘 — 같은 서버·같은 두 토큰을 각자의 forRealm 검증기로. id_token(typ "ID")은 id_token 검증기로 본다 — 액세스
+    // 검증기는 typ "ID" 를 거부한다.
     certsHits.set(0);
-    JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), CLIENT_ID).validate(idToken);
+    JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), OVERRIDE).withAudience(CLIENT_ID).validate(idToken);
     JwtValidator.forRealm(md, cfg, Set.of(JWSAlgorithm.RS256), OVERRIDE).validate(accessToken);
     int separate = certsHits.get();
 
@@ -90,21 +93,61 @@ class IdTokenAudienceJwksSharingTest {
         "교환 뒤 validate() 가 JWKS 를 다시 받았다 — id_token 검증기가 제 키 저장소를 가졌다. 실제=" + shared);
   }
 
+  // 공개 id_token 검증(validateIdToken — 교환을 거치지 않는 소비자의 길)도 validate() 와 키 원천 하나를 쓴다. 순서를 둘 다 친다:
+  // 어느 쪽이 먼저 적재하든 다른 쪽은 그 캐시를 쓴다. 대조군은 위 시험과 같다 — 저장소 둘이면 조회도 둘이다.
+  @Test
+  void validateIdTokenAndValidate_underAudienceOverride_fetchTheJwksOnce() throws Exception {
+    start(200);
+    KeycloakConfig cfg = config(null);
+    OidcMetadata md = OidcMetadata.forRealm(cfg);
+
+    AuthClient idFirst = new AuthClient(cfg, md);
+    certsHits.set(0);
+    assertEquals(List.of(CLIENT_ID), idFirst.validateIdToken(idToken).getAudience());
+    assertTrue(idFirst.validate(accessToken).getAudience().contains(OVERRIDE));
+    int sharedIdFirst = certsHits.get();
+
+    AuthClient accessFirst = new AuthClient(cfg, md);
+    certsHits.set(0);
+    assertTrue(accessFirst.validate(accessToken).getAudience().contains(OVERRIDE));
+    assertEquals(List.of(CLIENT_ID), accessFirst.validateIdToken(idToken).getAudience());
+    int sharedAccessFirst = certsHits.get();
+
+    // 대조군: 저장소 둘 — 같은 서버·같은 두 토큰을 클라이언트 둘에 나눠서.
+    certsHits.set(0);
+    new AuthClient(cfg, md).validateIdToken(idToken);
+    new AuthClient(cfg, md).validate(accessToken);
+    int separate = certsHits.get();
+
+    assertEquals(2, separate, "대조군이 저장소 둘을 못 세면 이 테스트는 공허하다 — 실제=" + separate);
+    assertEquals(1, sharedIdFirst,
+        "validateIdToken 뒤 validate() 가 JWKS 를 다시 받았다 — 공개 id_token 검증이 제 키 저장소를 가졌다. 실제=" + sharedIdFirst);
+    assertEquals(1, sharedAccessFirst,
+        "validate() 뒤 validateIdToken 이 JWKS 를 다시 받았다 — 공개 id_token 검증이 제 키 저장소를 가졌다. 실제="
+            + sharedAccessFirst);
+  }
+
   @Test
   void coldCacheOutage_exchangesAndValidations_shareOneRateLimitWindow() throws Exception {
     start(-1);
 
     int shared = flood(config(null));
+    // 공개 id_token 검증과 validate() 를 번갈아도 창 하나다 — 교환 대신 공개 메서드로 같은 프로브.
+    int sharedPublic = floodPublic(config(null));
     // 대조군 1: 창을 풀면(interval 0) 같은 프로브가 폭주를 본다 — 「≤ 2」 가 게이트 덕임을 고정한다.
     int ungated = flood(config(Duration.ZERO));
+    int ungatedPublic = floodPublic(config(Duration.ZERO));
     // 대조군 2: 저장소 둘 — 창도 둘이라 상한을 넘는다. 이것이 공유의 삭제를 보는 눈이다.
     int separate = floodTwoStores(config(null));
 
     assertTrue(ungated >= ROUNDS, "rate-limit 0 에서 폭주를 못 보면 이 프로브는 공허하다 — 실제=" + ungated);
+    assertTrue(ungatedPublic >= ROUNDS, "rate-limit 0 에서 공개 메서드 프로브가 폭주를 못 본다 — 실제=" + ungatedPublic);
     assertTrue(separate > WINDOW_CEILING,
         "저장소 둘이 창 하나의 상한 안에 들면 이 프로브는 공유를 못 가른다 — 실제=" + separate);
     assertTrue(shared <= WINDOW_CEILING, "콜드 캐시 + IdP 503 에서 교환 " + ROUNDS + " + validate " + ROUNDS
         + " 회가 창 하나(" + WINDOW_CEILING + ")를 넘었다 — 실제=" + shared);
+    assertTrue(sharedPublic <= WINDOW_CEILING, "콜드 캐시 + IdP 503 에서 validateIdToken " + ROUNDS + " + validate "
+        + ROUNDS + " 회가 창 하나(" + WINDOW_CEILING + ")를 넘었다 — 실제=" + sharedPublic);
   }
 
   /** 공개 생성자(실코드 경로)로 교환과 validate 를 번갈아 부르고 그동안의 JWKS 요청 수를 돌려준다. */
@@ -115,6 +158,17 @@ class IdTokenAudienceJwksSharingTest {
       KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
           () -> client.exchangeCode("c", CALLBACK, VERIFIER, NONCE));
       assertEquals("Authorization code exchange failed: invalid id_token", e.getMessage());
+      assertThrows(TokenValidationException.class, () -> client.validate(accessToken));
+    }
+    return certsHits.get();
+  }
+
+  /** 공개 생성자로 validateIdToken 과 validate 를 번갈아 부르고 그동안의 JWKS 요청 수를 돌려준다(교환 없이). */
+  private int floodPublic(KeycloakConfig cfg) {
+    AuthClient client = new AuthClient(cfg, OidcMetadata.forRealm(cfg));
+    certsHits.set(0);
+    for (int i = 0; i < ROUNDS; i++) {
+      assertThrows(TokenValidationException.class, () -> client.validateIdToken(idToken));
       assertThrows(TokenValidationException.class, () -> client.validate(accessToken));
     }
     return certsHits.get();
@@ -172,7 +226,8 @@ class IdTokenAudienceJwksSharingTest {
     });
     server.start();
     issuer = "http://127.0.0.1:" + server.getAddress().getPort() + "/realms/r";
-    idToken = sign(signing, new JWTClaimsSet.Builder().audience(CLIENT_ID).claim("nonce", NONCE));
+    // id_token 은 Keycloak 처럼 typ "ID" 를 싣는다 — id_token 검증기는 그 밖의 typ 을 거부한다.
+    idToken = sign(signing, new JWTClaimsSet.Builder().audience(CLIENT_ID).claim("nonce", NONCE).claim("typ", "ID"));
     accessToken = sign(signing, new JWTClaimsSet.Builder().audience(OVERRIDE));
   }
 

@@ -319,6 +319,8 @@ internal class AuthClientTest {
 
     private fun rsaKey(kid: String = "k1"): RSAKey = RSAKeyGenerator(2048).keyID(kid).generate()
 
+    // typ "ID" — Keycloak 의 id_token 이 싣는 값(id_token 검증기는 그 밖의 typ 을 거부한다 — nonce 거부 시험이 종류 거부로 공허하게
+    // 통과하지 않게 여기서 싣는다).
     private fun signedIdToken(
         key: RSAKey,
         issuer: String,
@@ -332,6 +334,7 @@ internal class AuthClientTest {
                 .audience(audience)
                 .subject("user-1")
                 .claim("nonce", nonce)
+                .claim("typ", "ID")
                 .expirationTime(Date(System.currentTimeMillis() + 60_000))
                 .build()
         val header = JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.keyID).build()
@@ -478,6 +481,8 @@ internal class AuthClientTest {
 
     private val apiAudience = "api"
 
+    // Keycloak 의 id_token 모양 — typ "ID" 를 싣는다(id_token 검증기는 그 밖의 typ 을 거부한다). 다른 검사를 재는 시험이 종류
+    // 거부로 공허하게 통과하지 않게, 거부 시험의 토큰도 이것으로 만든다. [extra] 가 typ 을 바꾸거나(null 이면 뺀다) 더한다.
     private fun idToken(
         key: RSAKey,
         aud: List<String>,
@@ -494,6 +499,7 @@ internal class AuthClientTest {
                 .audience(aud)
                 .subject("user-1")
                 .claim("nonce", nonce)
+                .claim("typ", "ID")
         expiresInMillis?.let { claims.expirationTime(Date(System.currentTimeMillis() + it)) }
         claims.extra()
         val jwt = SignedJWT(JWSHeader.Builder(alg).keyID(key.keyID).build(), claims.build())
@@ -560,13 +566,14 @@ internal class AuthClientTest {
             }
         }
 
-    // 교환이 공유 검증기를 바꿔 두지 않는다 — 교환 **뒤**에도 validate() 는 재정의로 본다.
+    // 교환이 공유 검증기를 바꿔 두지 않는다 — 교환 **뒤**에도 validate() 는 재정의로 본다. 액세스 토큰은 Keycloak 처럼 typ
+    // "Bearer" 다(id_token 모양의 typ "ID" 는 validate() 가 거부한다).
     @Test
     fun `validate keeps the expectedAudience override for access tokens after an exchange`() =
         runTest {
             val key = rsaKey()
-            val accessForApi = idToken(key, listOf(apiAudience))
-            val accessForClient = idToken(key, listOf("app"))
+            val accessForApi = idToken(key, listOf(apiAudience)) { claim("typ", "Bearer") }
+            val accessForClient = idToken(key, listOf("app")) { claim("typ", "Bearer") }
             stubExchange(idToken(key, listOf("app")), accessToken = accessForApi)
             val auth = overridden(key)
 
@@ -628,13 +635,13 @@ internal class AuthClientTest {
         return AuthClient(cfg, endpoints, validator)
     }
 
+    // [idToken] 이 이미 typ "ID" 를 싣는다 — 여기서는 azp 만 더한다.
     private fun typedId(
         key: RSAKey,
         aud: List<String>,
         azp: Any? = null,
     ): String =
         idToken(key, aud) {
-            claim("typ", "ID")
             if (azp != null) claim("azp", azp)
         }
 
@@ -697,6 +704,32 @@ internal class AuthClientTest {
                 stubExchange(token)
                 val auth = plain(key)
                 auth.assertRefusedForAzp(case)
+                auth.close()
+            }
+        }
+
+    // 교환의 id_token 검사는 공개 validateIdToken 과 같은 함수다 — 종류 규칙(typ 이 정확히 "ID")도 교환에 걸린다. 아래 토큰은
+    // 종류 말고는 전부 맞다(서명 · iss · aud = azp = client id · exp · nonce 일치). 거부는 다른 id_token 거부와 같은 꼴(「invalid
+    // id_token」 + 원인 TokenValidationException)이고, 원인 메시지가 종류를 말한다(상수 — 토큰의 typ 값을 싣지 않는다).
+    @Test
+    fun `exchangeCode refuses an id_token that is not typed ID`() =
+        runTest {
+            val key = rsaKey()
+            for (typ in listOf(null, "Bearer")) {
+                val token =
+                    idToken(key, listOf("app")) {
+                        claim("azp", "app")
+                        // null 이면 typ 을 싣지 않는다(직렬화가 null 클레임을 뺀다) — 부재다.
+                        claim("typ", typ)
+                    }
+                assertEquals(typ, SignedJWT.parse(token).jwtClaimsSet.getClaim("typ"), "전제: typ=$typ")
+                stubExchange(token)
+                val auth = plain(key)
+
+                val refused = assertFailsWith<KeycloakAuthException>("typ=$typ") { auth.exchange() }
+                assertEquals("Authorization code exchange failed: invalid id_token", refused.message, "typ=$typ")
+                val cause = assertIs<TokenValidationException>(refused.cause, "typ=$typ")
+                assertEquals("not an id_token (typ is not \"ID\")", cause.message, "typ=$typ")
                 auth.close()
             }
         }

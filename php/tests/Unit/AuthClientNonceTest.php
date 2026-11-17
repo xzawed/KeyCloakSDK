@@ -35,6 +35,10 @@ final class AuthClientNonceTest extends TestCase
     /** 리소스 서버 audience — client id(`it-client`)가 아닌 재정의 값. */
     private const OVERRIDE = 'my-api';
     private const AUD_REFUSED = 'authorization code exchange failed: invalid id_token: audience does not contain it-client';
+    /** id_token 경로가 typ 가 정확히 "ID" 가 아닌 토큰을 거부하는 문구 — 상수다(typ 값을 싣지 않는다). */
+    private const NOT_AN_ID_TOKEN = 'not an id_token (typ is not "ID")';
+    /** typ 를 싣지 않는 칸의 표지 — JSON null 인 typ 와 「typ 없음」을 가른다. */
+    private const NO_TYP = "\0no typ";
 
     /** @var array{priv:string,jwk:array<string,mixed>} */
     private array $key;
@@ -243,8 +247,8 @@ final class AuthClientNonceTest extends TestCase
     }
 
     // ── id_token 의 종류와 권한 부여 당사자 — validate() 는 액세스 토큰이 아닌 종류(typ)를 거부한다(JwtValidatorTest). 교환은
-    // id_token 을 검증하고 Keycloak 은 그것을 "ID" 로 적으므로 종류를 보지 않는다 — 대신 azp 를 client id 로 대조한다
-    // (OIDC Core §3.1.3.7 4–5 단계). ──
+    // id_token 을 검증하고 Keycloak 은 그것을 "ID" 로 적으므로 종류는 정확히 "ID" 여야 한다(아래 validateIdToken() 시험) — 그리고
+    // azp 를 client id 로 대조한다(OIDC Core §3.1.3.7 4–5 단계). ──
 
     /** Keycloak 이 내는 id_token — typ "ID", aud 와 azp 가 client id 다. */
     public function testExchangeCodeAcceptsAnIdTokenTypedId(): void
@@ -283,7 +287,11 @@ final class AuthClientNonceTest extends TestCase
         yield 'several audiences, no azp' => [['aud' => ['it-client', 'evil']], 'azp is required when aud has more than one value'];
     }
 
-    /** @param array<string,mixed> $changes */
+    /**
+     * 두 진입점이 **한** 검사를 부른다 — 같은 id_token 을 validateIdToken() 에 직접 넣으면 교환 접두 없이 같은 이유다.
+     *
+     * @param array<string,mixed> $changes
+     */
     #[DataProvider('idTokenPartiesOtherThanTheClient')]
     public function testExchangeCodeRefusesAnIdTokenIssuedToAnotherParty(array $changes, string $reason): void
     {
@@ -297,6 +305,12 @@ final class AuthClientNonceTest extends TestCase
         $cause = $refused->getPrevious();
         self::assertInstanceOf(TokenValidationError::class, $cause);
         self::assertSame($reason, $cause->getMessage());
+        try {
+            $this->authWithTokenBody([])->validateIdToken($idToken);
+            self::fail('validateIdToken() runs the check the exchange runs');
+        } catch (TokenValidationError $direct) {
+        }
+        self::assertSame($reason, $direct->getMessage());
     }
 
     /** 파사드의 validate() 는 위 교환이 받는 그 id_token 을 거부한다. */
@@ -309,6 +323,116 @@ final class AuthClientNonceTest extends TestCase
         } catch (TokenValidationError $refused) {
         }
         self::assertSame('not an access token (typ "ID")', $refused->getMessage());
+    }
+
+    // ── validateIdToken() — 교환이 nonce 를 대조하기 전에 하는 그 id_token 검사를 파사드에 연다(등록부
+    // id-token-validator-not-public). `JwtValidator::validateIdToken()` 은 공개였지만 `KeycloakClient` 가 그 검증기를 안에서
+    // 만들어, 소비자는 두 번째 검증기 · 두 번째 JWKS 저장소를 세워야 했다. nonce 는 받지 않고, typ 는 "ID" 만 받는다(검증기
+    // 칸은 JwtValidatorTest::testValidateIdTokenAcceptsOnlyTypId). ──
+
+    /** Keycloak 이 내는 id_token(typ "ID" · aud 와 azp 가 client id)은 그것을 담지 않은 재정의 아래서도 통과하고 클레임을 돌려준다. */
+    public function testValidateIdTokenAcceptsAKeycloakIdToken(): void
+    {
+        $hits = new JwksHitCounter();
+        $idToken = $this->sign($this->idTokenClaims('n', ['typ' => 'ID', 'azp' => 'it-client', 'sid' => 's1']));
+        $vt = $this->authWithTokenBody([], jwksHits: $hits, expectedAudience: self::OVERRIDE)->validateIdToken($idToken);
+        self::assertSame('u', $vt->subject);
+        self::assertSame($this->iss, $vt->issuer);
+        self::assertSame(['it-client'], $vt->audience);
+        foreach (['typ' => 'ID', 'azp' => 'it-client', 'nonce' => 'n', 'sid' => 's1'] as $claim => $value) {
+            self::assertSame($value, $vt->claims[$claim] ?? null, $claim);
+        }
+        self::assertSame(1, $hits->n, 'the id_token is verified against the JWKS');
+    }
+
+    /**
+     * typ 가 정확히 "ID" 가 아닌 토큰은 나머지가 다 맞아도 상수 문구로 거부한다. 첫 칸이 이 규칙이 닫는 구멍이다 — 이 클라이언트가
+     * 받은 액세스 토큰(audience 매퍼가 aud 에 client id 를 싣고 azp 가 이 클라이언트다)은 다른 id_token 검사를 전부 지난다.
+     * 마지막 칸은 백채널 로그아웃 토큰이다(aud 가 client id · azp 없음 · exp 있음).
+     *
+     * @return iterable<string, array{mixed, array<string,mixed>}>
+     */
+    public static function tokensNotTypedId(): iterable
+    {
+        yield 'an access token, typ Bearer' => ['Bearer', ['azp' => 'it-client', 'scope' => 'openid', 'nonce' => null]];
+        yield 'no typ' => [self::NO_TYP, ['azp' => 'it-client']];
+        yield 'typ bearer in lower case' => ['bearer', ['azp' => 'it-client']];
+        yield 'typ null' => [null, ['azp' => 'it-client']];
+        yield 'typ a number' => [1, ['azp' => 'it-client']];
+        yield 'typ a list holding ID' => [['ID'], ['azp' => 'it-client']];
+        yield 'a back-channel logout token' => ['Logout', ['nonce' => null, 'sid' => 's1', 'events' => ['http://schemas.openid.net/event/backchannel-logout' => new \stdClass()]]];
+    }
+
+    /** @param array<string,mixed> $changes */
+    #[DataProvider('tokensNotTypedId')]
+    public function testValidateIdTokenRefusesATokenNotTypedId(mixed $typ, array $changes): void
+    {
+        $claims = $this->idTokenClaims('n', $changes);
+        unset($claims['typ']);
+        if ($typ !== self::NO_TYP) {
+            $claims['typ'] = $typ;
+        }
+        try {
+            $this->authWithTokenBody([])->validateIdToken($this->sign($claims));
+            self::fail('a token not typed "ID" must be refused as an id_token');
+        } catch (TokenValidationError $refused) {
+        }
+        self::assertSame(self::NOT_AN_ID_TOKEN, $refused->getMessage());
+        self::assertNull($refused->getPrevious());
+    }
+
+    /** aud 는 client id 를 담아야 한다 — 재정의 값(validate() 가 찾는 aud)만 담은 id_token 은 aud 검사에서 거부된다. */
+    public function testValidateIdTokenAudienceIsTheClientIdUnderAnOverride(): void
+    {
+        $idToken = $this->sign($this->idTokenClaims('n', ['typ' => 'ID', 'aud' => self::OVERRIDE, 'azp' => 'it-client']));
+        $this->expectException(TokenValidationError::class);
+        $this->expectExceptionMessage('audience does not contain it-client');
+        $this->authWithTokenBody([], expectedAudience: self::OVERRIDE)->validateIdToken($idToken);
+    }
+
+    /** validateIdToken() 도 validate() 와 **한** JWKS 저장소를 쓴다 — 콜드 로드 하나 · 재조회 게이트 하나(아래 A5 의 대조군이 둘째 저장소를 센다). */
+    public function testValidateIdTokenAndValidateShareOneJwksStore(): void
+    {
+        $hits = new JwksHitCounter();
+        [$auth] = $this->authOverOneClient($hits, self::OVERRIDE);
+        $auth->validateIdToken($this->sign($this->idTokenClaims('n', ['typ' => 'ID'])));
+        self::assertSame(1, $hits->n, 'validateIdToken() loads the key set on a cold cache');
+        $auth->validate($this->sign($this->accessTokenClaims([self::OVERRIDE])));
+        self::assertSame(1, $hits->n, 'validate() after validateIdToken() must reuse its key set');
+        try {
+            $auth->validate($this->sign($this->accessTokenClaims([self::OVERRIDE]), kid: 'rotated-a'));
+            self::fail('an unresolved kid must be refused');
+        } catch (TokenValidationError) {
+        }
+        self::assertSame(2, $hits->n, 'the first unresolved kid spends the refetch');
+        try {
+            $auth->validateIdToken($this->sign($this->idTokenClaims('n', ['typ' => 'ID']), kid: 'rotated-b'));
+            self::fail('an unresolved kid inside the refetch window must be refused');
+        } catch (TokenValidationError $limited) {
+        }
+        self::assertSame('unknown kid "rotated-b" (refetch rate-limited)', $limited->getMessage());
+        self::assertSame(2, $hits->n, 'validateIdToken() must see the refetch validate() already spent');
+    }
+
+    /** 교환은 id_token 을 validateIdToken() 으로 검사한다 — typ 규칙이 교환에도 걸리고, 거부는 nonce 대조 전에 교환 자신의 모양이다. */
+    public function testExchangeCodeRefusesAnIdTokenNotTypedId(): void
+    {
+        foreach ([self::NO_TYP, 'Bearer'] as $typ) {
+            $claims = $this->idTokenClaims('server-nonce', ['azp' => 'it-client']);
+            unset($claims['typ']);
+            if ($typ !== self::NO_TYP) {
+                $claims['typ'] = $typ;
+            }
+            try {
+                $this->authWithTokenBody($this->tokenBody($this->sign($claims)))->exchangeCode('code', 'verifier', 'server-nonce');
+                self::fail('an id_token not typed "ID" must be refused by the exchange');
+            } catch (KeycloakAuthError $refused) {
+            }
+            self::assertSame('authorization code exchange failed: invalid id_token: ' . self::NOT_AN_ID_TOKEN, $refused->getMessage());
+            $cause = $refused->getPrevious();
+            self::assertInstanceOf(TokenValidationError::class, $cause);
+            self::assertSame(self::NOT_AN_ID_TOKEN, $cause->getMessage());
+        }
     }
 
     /**
@@ -453,14 +577,15 @@ final class AuthClientNonceTest extends TestCase
     }
 
     /**
-     * Keycloak 이 내는 모양의 id_token 클레임. `$changes` 의 null 은 그 클레임을 빼고, `exp` 는 지금부터의 초다.
+     * Keycloak 이 내는 모양의 id_token 클레임 — typ "ID" 를 싣는다(id_token 검사가 그 밖을 거부한다). `$changes` 의 null 은
+     * 그 클레임을 빼고, `exp` 는 지금부터의 초다.
      *
      * @param array<string,mixed> $changes
      * @return array<string,mixed>
      */
     private function idTokenClaims(string $nonce, array $changes = []): array
     {
-        $claims = ['sub' => 'u', 'iss' => $this->iss, 'aud' => 'it-client', 'nonce' => $nonce, 'exp' => time() + 300, 'iat' => time()];
+        $claims = ['sub' => 'u', 'iss' => $this->iss, 'aud' => 'it-client', 'nonce' => $nonce, 'typ' => 'ID', 'exp' => time() + 300, 'iat' => time()];
         foreach ($changes as $name => $value) {
             if ($value === null) {
                 unset($claims[$name]);

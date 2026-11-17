@@ -98,14 +98,17 @@ afterAll(async () => {
   await idp.close()
 })
 
-/** JWKS 의 `k1` 로 보이는 RS256 id_token — `key` 가 실제 서명 키다. `extra` 는 더 실을 클레임이다. */
+/**
+ * JWKS 의 `k1` 로 보이는 RS256 id_token — `key` 가 실제 서명 키다. Keycloak 의 id_token 처럼 typ "ID" 를 싣는다(종류 규칙이
+ * 다른 검사의 판정을 가로채지 않게). `extra` 는 더 실을 클레임이다 — `typ: undefined` 는 typ 을 뺀다(JSON 직렬화가 버린다).
+ */
 function idToken(
   key: CryptoKey,
   nonce: string,
   audience: string | string[] = CLIENT_ID,
   extra: Record<string, unknown> = {},
 ): Promise<string> {
-  return new SignJWT({ nonce, ...extra })
+  return new SignJWT({ nonce, typ: 'ID', ...extra })
     .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
     .setIssuer(`${idp.origin}/realms/r`)
     .setSubject('u1')
@@ -266,6 +269,24 @@ describe('exchangeCode — expectedAudience 재정의(진짜 openid-client)', ()
     expect(idp.certsHits).toBe(1)
   })
 
+  // 공개 `validateIdToken` 은 교환의 id_token 검사 그 자체다 — 같은 저장소를 쓴다(둘째 저장소면 아래 대조군처럼 2 다).
+  it('(A6) 공개 validateIdToken 도 같은 저장소다 — 콜드 캐시를 채운 한 번 뒤로 validate · 교환 · validateIdToken 이 /certs 를 늘리지 않는다', async () => {
+    idp.idToken = await idToken(signed, NONCE, CLIENT_ID, { typ: 'ID' })
+    const kc = client(API)
+    idp.certsHits = 0
+    await expect(kc.auth.validateIdToken(idp.idToken)).resolves.toMatchObject({
+      audience: [CLIENT_ID],
+      claims: { typ: 'ID', nonce: NONCE },
+    })
+    expect(idp.certsHits).toBe(1) // 콜드 캐시를 채운 한 번
+    await expect(kc.auth.validate(await accessToken(API))).resolves.toMatchObject({
+      audience: [API],
+    })
+    await exchange(kc)
+    await kc.auth.validateIdToken(idp.idToken)
+    expect(idp.certsHits).toBe(1)
+  })
+
   it('대조군: 저장소가 둘이면 이 계수기가 그것을 본다(2)', async () => {
     // 위 단언이 공허하지 않다는 증거 — 교환과 validate 가 서로 다른 저장소를 쓰면 /certs 가 두 번 불린다.
     idp.idToken = await idToken(signed, NONCE)
@@ -294,6 +315,26 @@ describe('exchangeCode — id_token 의 typ · azp(진짜 openid-client)', () =>
     expect(refused.message).toBe('not an access token (typ "ID")')
   })
 
+  // 종류는 교환과 공개 validateIdToken 의 한 길이다 — openid-client 는 payload typ 을 보지 않으므로 거부는 SDK 검증기의 것이다.
+  it.each([
+    ['typ 없음', { typ: undefined }],
+    ['typ "Bearer"', { typ: 'Bearer' }],
+  ])(
+    '%s 인 id_token 은 SDK 검증기가 거부한다(openid-client 는 typ 을 보지 않는다)',
+    async (_name, extra) => {
+      idp.idToken = await idToken(signed, NONCE, CLIENT_ID, { azp: CLIENT_ID, ...extra })
+      const kc = client()
+      const refused = await refusal(exchange(kc))
+      expect(refused).toBeInstanceOf(KeycloakAuthError)
+      expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
+      expect((refused.cause as Error).message).toBe('not an id_token (typ is not "ID")')
+      // 같은 토큰을 공개 메서드도 같은 문구로 거부한다.
+      const direct = await refusal(kc.auth.validateIdToken(idp.idToken))
+      expect(direct).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(direct.message).toBe('not an id_token (typ is not "ID")')
+    },
+  )
+
   it('aud 가 하나인 id_token 의 azp 가 다른 클라이언트면 SDK 검증기가 거부한다(openid-client 는 보지 않는다)', async () => {
     idp.idToken = await idToken(signed, NONCE, CLIENT_ID, { typ: 'ID', azp: 'evil' })
     const refused = await refusal(exchange())
@@ -303,10 +344,10 @@ describe('exchangeCode — id_token 의 typ · azp(진짜 openid-client)', () =>
   })
 })
 
-/** `pad` 클레임을 덧대 길이가 [length - 8, length] 인, JWKS 의 `k1` 로 서명하고 nonce 가 맞는 id_token. */
+/** `pad` 클레임을 덧대 길이가 [length - 8, length] 인, JWKS 의 `k1` 로 서명하고 nonce 가 맞는 id_token(typ "ID"). */
 async function paddedIdToken(length: number): Promise<string> {
   const make = (n: number) =>
-    new SignJWT({ nonce: NONCE, pad: 'a'.repeat(n) })
+    new SignJWT({ nonce: NONCE, typ: 'ID', pad: 'a'.repeat(n) })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
       .setIssuer(`${idp.origin}/realms/r`)
       .setSubject('u1')

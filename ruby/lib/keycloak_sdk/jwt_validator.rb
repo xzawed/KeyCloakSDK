@@ -7,7 +7,7 @@ module KeycloakSdk
   # RS256 pin (none/confusion rejected structurally) · exact iss · aud membership · exp required · nbf · clock skew.
   # Keys are looked up through the DoS-safe JwksStore (a forged signature triggers no refetch). The header alg is
   # not used to choose the verification algorithm. `validate` takes access tokens only (token type); an id_token goes
-  # through `validate_id_token` (authorized party).
+  # through `validate_id_token` (token type `ID` · authorized party).
   class JwtValidator
     # 받는 토큰의 길이 상한(아홉 언어 공통). Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes` 와 같은 수이고,
     # Keycloak 26.6 기본값이 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
@@ -18,6 +18,13 @@ module KeycloakSdk
     # 백채널 logout · 직렬화된 id_token. 접근 토큰은 Bearer · DPoP 다.
     NOT_ACCESS_TOKEN_TYPES = %w[ID Refresh Offline Logout Serialized-ID].freeze
     private_constant :NOT_ACCESS_TOKEN_TYPES
+
+    # id_token 경로가 받는 유일한 페이로드 `typ` — **허용 목록**이다(접근 토큰 경로는 위 거부 목록이다). Keycloak 26.6.9 는
+    # id_token 을 한 곳(`TokenManager.AccessTokenResponseBuilder.generateIDToken`)에서만 만들고 거기서 늘 "ID" 를 싣는다
+    # (실서버 통합 시험도 "ID" 를 쟀다). 그래서 부재 · 문자열이 아닌 값 · 그 밖의 문자열은 전부 거부다 — aud 에 client_id 가
+    # 있고 azp 가 client_id 인 접근 토큰(typ "Bearer", 소문자 "bearer" 도)이 id_token 검사를 지나던 틈을 닫는다.
+    ID_TOKEN_TYPE = "ID"
+    private_constant :ID_TOKEN_TYPE
 
     # ⚠️ Do not write the `clock_skew` default here as a number — `Config` is its single definition site (the same
     # class of issue as Task D1). This class is public too, so a consumer can construct it directly, and if the two
@@ -53,15 +60,18 @@ module KeycloakSdk
       validated
     end
 
-    # Validates an id_token, the code exchange's path: every check of `validate` with aud held to `client_id` — not to
-    # the configured audience, which restricts access tokens — and no token-type check (an id_token is typed `ID`).
-    # Then the authorized party (OIDC Core §3.1.3.7 steps 4-5): an id_token with more than one audience must carry
-    # `azp`, and an `azp` that is present must be `client_id`. The key store (cache · refetch limit · backoff) is this
-    # instance's single one. ⚠️ nil or blank `client_id` is a ConfigError.
+    # Validates an id_token — the check the code exchange runs before it compares the nonce, and the one
+    # `AuthClient#validate_id_token` exposes: every check of `validate` with aud held to `client_id` — not to the
+    # configured audience, which restricts access tokens. Then the token kind, an allow-list: the payload `typ` must be
+    # exactly the String `"ID"` (Keycloak types its id_tokens so); a missing, non-String or other value is refused
+    # with a constant message. Then the authorized party (OIDC Core §3.1.3.7 steps 4-5): an id_token with more than one
+    # audience must carry `azp`, and an `azp` that is present must be `client_id`. The key store (cache · refetch
+    # limit · backoff) is this instance's single one. ⚠️ nil or blank `client_id` is a ConfigError.
     def validate_id_token(token, client_id:)
       raise ConfigError, "client_id is required" if client_id.nil? || client_id.to_s.strip.empty?
 
       validated = verify(token, client_id)
+      require_id_token_type!(validated.claims) # the kind comes before azp — being an id_token is azp's premise
       require_authorized_party!(validated.claims, client_id)
       validated
     end
@@ -93,6 +103,15 @@ module KeycloakSdk
       return unless typ.is_a?(String) && NOT_ACCESS_TOKEN_TYPES.include?(typ)
 
       raise TokenValidationError, "JWT validation failed: not an access token (typ \"#{typ}\")"
+    end
+
+    # 토큰 종류 — id_token 경로만. 허용 목록이다: String 이고 대소문자까지 "ID" 와 같을 때만 지난다. 값을 인용하지 않는다 —
+    # 토큰이 고른 문자열이다(azp 를 인용하지 않는 것과 같은 이유).
+    def require_id_token_type!(claims)
+      typ = claims["typ"]
+      return if typ.is_a?(String) && typ == ID_TOKEN_TYPE
+
+      raise TokenValidationError, "JWT validation failed: not an id_token (typ is not \"ID\")"
     end
 
     # 권한 부여 당사자 — id_token 경로만. 접근 토큰의 azp 는 그것을 요청한 클라이언트라 aud 와 다른 것이 정상이다.

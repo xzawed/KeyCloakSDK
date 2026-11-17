@@ -54,12 +54,15 @@ _STRANGER = RSAKey.generate_key(2048, {"kid": "not-in-jwks", "use": "sig"})
 
 
 def _jwt(key: RSAKey, **changes: object) -> str:
+    """Keycloak 의 id_token 모양(typ `ID`) — 아니면 「nonce mismatch」 칸이 nonce 대조에 닿기 전에
+    종류 검사에서 거부돼, 토큰 응답이 살아 있는 교환 프레임을 재지 않는다."""
     claims: dict[str, object] = {
         "iss": _ENDPOINTS.issuer,
         "aud": "app",
         "sub": "user-1",
         "exp": int(time.time()) + 60,
         "nonce": NONCE,
+        "typ": "ID",
     }
     claims.update(changes)
     return jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key)
@@ -228,6 +231,35 @@ async def test_failed_validate_keeps_the_token_out_of_frame_locals_aio(
     err = await _acatch(lambda: client.validate(sealed.value))
 
     _assert_shape(err, TokenValidationError, None)
+    assert not _leaked(err, _secrets(token))
+
+
+def test_failed_validate_id_token_keeps_the_token_out_of_frame_locals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """공개 `validate_id_token()` 의 인자도 로컬이다 — 서명은 유효하고 aud 만 다른 id_token."""
+    token = _jwt(_KEY, aud="other")
+    client, _ = _sync_client(monkeypatch, token, _JWKS)
+    sealed = _Sealed(token)
+
+    err = _catch(lambda: client.validate_id_token(sealed.value))
+
+    _assert_shape(err, TokenValidationError, None)
+    assert str(err) == "Audience not contained"
+    assert not _leaked(err, _secrets(token))
+
+
+async def test_failed_validate_id_token_keeps_the_token_out_of_frame_locals_aio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = _jwt(_KEY, aud="other")
+    client, _ = _aio_client(monkeypatch, token, _JWKS)
+    sealed = _Sealed(token)
+
+    err = await _acatch(lambda: client.validate_id_token(sealed.value))
+
+    _assert_shape(err, TokenValidationError, None)
+    assert str(err) == "Audience not contained"
     assert not _leaked(err, _secrets(token))
 
 

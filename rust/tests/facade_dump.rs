@@ -364,8 +364,9 @@ async fn fixture() -> Fixture {
             .extend(extra.as_object().expect("object").clone());
         c
     };
-    // id_token 은 openidconnect 가 JWT 로 파싱하므로 형식이 맞아야 한다 — 그 JWT 문자열 전체가 카나리아다.
-    let id_jwt = sign(&key, &claims(json!({"nonce": "server-nonce"})));
+    // id_token 은 openidconnect 가 JWT 로 파싱하므로 형식이 맞아야 한다 — 그 JWT 문자열 전체가 카나리아다. typ `ID` 라서
+    // 아래 「nonce mismatch」 뿌리는 종류(typ)가 아니라 정말 nonce 대조에서 거부된다.
+    let id_jwt = sign(&key, &claims(json!({"nonce": "server-nonce", "typ": "ID"})));
     let raw_jwt = sign(&key, &claims(json!({})));
     mount_idp(&server, &key, &id_jwt).await;
 

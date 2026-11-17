@@ -433,6 +433,10 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
   })
 
   const now = () => Math.floor(Date.now() / 1000)
+  /**
+   * Keycloak 의 id_token 모양 — typ "ID" 를 싣는다(종류 규칙이 다른 검사의 판정을 가로채지 않게). `extra` 가 덮는다 —
+   * `typ: undefined` 는 클레임을 뺀다(JSON 직렬화가 버린다). 액세스 토큰은 `extra: { typ: 'Bearer' }` 로 만든다.
+   */
   const sign = (
     aud: string | string[],
     {
@@ -441,7 +445,7 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
       extra = {},
     }: { iss?: string; exp?: number | null; extra?: Record<string, unknown> } = {},
   ) => {
-    const jwt = new SignJWT({ sub: 'u', aud, nonce: 'the-nonce', ...extra })
+    const jwt = new SignJWT({ sub: 'u', aud, nonce: 'the-nonce', typ: 'ID', ...extra })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuedAt(now() - 120)
       .setIssuer(iss)
@@ -528,10 +532,11 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
   it('(A3) 교환 뒤에도 액세스 토큰 validate 는 재정의 값을 쓴다', async () => {
     const auth = overridden()
     await exchangeWith(auth, await sign('app'))
-    await expect(auth.validate(await sign('some-api'))).resolves.toMatchObject({
+    const bearer = { extra: { typ: 'Bearer' } } // 액세스 토큰(Keycloak 의 typ)
+    await expect(auth.validate(await sign('some-api', bearer))).resolves.toMatchObject({
       audience: ['some-api'],
     })
-    await expect(auth.validate(await sign('app'))).rejects.toBeInstanceOf(
+    await expect(auth.validate(await sign('app', bearer))).rejects.toBeInstanceOf(
       KeycloakTokenValidationError,
     )
   })
@@ -544,7 +549,7 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
     // 스큐 안(10초 전 만료)은 통과한다 — 스큐가 0 으로 떨어지지 않았다.
     await expect(exchangeWith(auth, await sign('app', { exp: now() - 10 }))).resolves.toBeDefined()
     // alg 핀: 허용 목록(RS256) 밖의 HS256 은 서명이 맞아도 거부한다.
-    const hs = await new SignJWT({ sub: 'u', aud: 'app', nonce: 'the-nonce' })
+    const hs = await new SignJWT({ sub: 'u', aud: 'app', nonce: 'the-nonce', typ: 'ID' })
       .setProtectedHeader({ alg: 'HS256', kid: 'k1' })
       .setIssuedAt()
       .setIssuer(ISSUER)
@@ -594,6 +599,204 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
   ])('(B3) %s → invalid id_token(원인이 azp 를 말한다)', async (_name, aud, azp) => {
     const idToken = await sign(aud, { extra: { typ: 'ID', ...(azp === undefined ? {} : { azp }) } })
     await refusedForAzp(exchangeWith(authWith(), idToken))
+  })
+
+  // (B4) 종류 — 교환의 id_token 검사와 공개 `validateIdToken` 은 한 길이라, payload typ 이 정확히 "ID" 가 아닌 id_token 은 교환도
+  // 거부한다(대응은 지금처럼 invalid id_token). `typ: undefined` 는 클레임을 빼는 것이다(JSON 직렬화가 버린다).
+  it.each([
+    ['typ 없음', { typ: undefined }],
+    ['typ "Bearer"', { typ: 'Bearer' }],
+    ['typ "bearer"(소문자)', { typ: 'bearer' }],
+    ['typ 숫자', { typ: 1 }],
+    ['typ "Logout"', { typ: 'Logout' }],
+  ])('(B4) %s 인 id_token → invalid id_token(원인이 종류를 말한다)', async (_name, extra) => {
+    const idToken = await sign('app', { extra: { azp: 'app', ...extra } })
+    const refused = await refusedAtIdToken(exchangeWith(authWith(), idToken))
+    expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
+    expect((refused.cause as Error).message).toBe('not an id_token (typ is not "ID")')
+  })
+})
+
+/**
+ * `validateIdToken` — 공개 id_token 검증(등록부 id-token-validator-not-public). 교환이 nonce 를 대조하기 **전에** 돌리는 그
+ * 검사다(같은 내부 함수): 서명(`validate` 와 같은 키 저장소) · alg 핀 · 길이 상한 · iss · aud ∋ clientId(`expectedAudience`
+ * 가 아니다) · exp · 스큐 · azp(OIDC Core §3.1.3.7 4·5) · 종류(payload `typ` 이 정확히 "ID"). nonce 는 보지 않는다. 실패는
+ * `validate` 와 같은 `KeycloakTokenValidationError` 다.
+ */
+describe('validateIdToken — 공개 id_token 검증(교환의 id_token 검사 그대로)', () => {
+  const ISSUER = 'https://kc.example.com/realms/demo'
+  /** 종류 거부의 문구 — 상수다(토큰이 고른 typ 를 싣지 않는다). */
+  const NOT_ID_TOKEN = 'not an id_token (typ is not "ID")'
+  let priv: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+  let keys: JWTVerifyGetKey
+
+  beforeAll(async () => {
+    const kp = await generateKeyPair('RS256')
+    priv = kp.privateKey
+    const jwk = await exportJWK(kp.publicKey)
+    keys = createLocalJWKSet({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] })
+  })
+
+  const sign = (claims: Record<string, unknown>, iss = ISSUER) =>
+    new SignJWT({ sub: 'u', ...claims })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuedAt()
+      .setIssuer(iss)
+      .setExpirationTime('5m')
+      .sign(priv)
+
+  /** 로컬 키셋 검증기로 조립한다 — 실제 판정을 네트워크 없이 관찰. `expectedAudience` 가 없으면 재정의 없음. */
+  const authWith = (expectedAudience?: string): AuthClient => {
+    const spy = vi
+      .spyOn(JwtValidator, 'forJwksUri')
+      .mockImplementation((_uri, opts) => JwtValidator.forKeySource(keys, opts))
+    try {
+      return new AuthClient(
+        defineConfig({
+          serverUrl: 'https://kc.example.com',
+          realm: 'demo',
+          clientId: 'app',
+          ...(expectedAudience === undefined ? {} : { expectedAudience }),
+        }),
+      )
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  /** 실패해야 하는 호출의 오류 — 성공하면 그것이 곧 실패다. */
+  const refusal = async (call: Promise<unknown>): Promise<Error> => {
+    const outcome = await call.then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    if (!(outcome instanceof Error)) throw new Error('expected a refusal, got success')
+    return outcome
+  }
+
+  it('Keycloak 모양의 id_token(typ "ID" · aud = azp = clientId)을 받고 그 클레임을 돌려준다', async () => {
+    const token = await sign({ aud: 'app', azp: 'app', typ: 'ID', nonce: 'n' })
+    await expect(authWith().validateIdToken(token)).resolves.toMatchObject({
+      subject: 'u',
+      audience: ['app'],
+      issuer: ISSUER,
+      claims: { typ: 'ID', azp: 'app', nonce: 'n' },
+    })
+  })
+
+  // 이 규칙이 닫는 틈: aud 에 clientId 가 있고 azp = clientId 인 액세스 토큰은 종류 말고는 id_token 검사를 전부 지난다.
+  it('aud ∋ clientId · azp = clientId 인 액세스 모양 토큰(typ "Bearer")을 상수 문구로 거부한다', async () => {
+    const token = await sign({ aud: ['app', 'account'], azp: 'app', typ: 'Bearer' })
+    const auth = authWith()
+    // 전제: 같은 토큰을 액세스 검증은 받는다 — 거부를 가르는 것은 종류뿐이다.
+    await expect(auth.validate(token)).resolves.toMatchObject({ audience: ['app', 'account'] })
+    const refused = await refusal(auth.validateIdToken(token))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe(NOT_ID_TOKEN)
+  })
+
+  it.each([
+    ['typ 없음', {}],
+    ['typ "bearer"(소문자)', { typ: 'bearer' }],
+    ['typ "id"(소문자)', { typ: 'id' }],
+    ['typ "ID "(뒤 공백)', { typ: 'ID ' }],
+    ['typ 빈 문자열', { typ: '' }],
+    ['typ 숫자', { typ: 1 }],
+    ['typ null', { typ: null }],
+    ['typ ["ID"]', { typ: ['ID'] }],
+    ['typ {typ:"ID"}', { typ: { typ: 'ID' } }],
+    ['typ "Refresh"', { typ: 'Refresh' }],
+    ['typ "Serialized-ID"', { typ: 'Serialized-ID' }],
+    ['토큰이 고른 문자열', { typ: 'CANARY-TYP-0f3a' }],
+  ])('%s → 거부(문구는 상수 — typ 값을 싣지 않는다)', async (_name, extra) => {
+    const token = await sign({ aud: 'app', azp: 'app', ...extra })
+    const refused = await refusal(authWith().validateIdToken(token))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe(NOT_ID_TOKEN)
+    expect(refused.cause).toBeUndefined()
+  })
+
+  it('back-channel logout 토큰 모양(typ "Logout" · aud = clientId · azp 없음 · exp 있음)을 거부한다', async () => {
+    const token = await sign({
+      aud: 'app',
+      typ: 'Logout',
+      sid: 'session-1',
+      events: { 'http://schemas.openid.net/event/backchannel-logout': {} },
+    })
+    const refused = await refusal(authWith().validateIdToken(token))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe(NOT_ID_TOKEN)
+  })
+
+  it('expectedAudience 재정의 아래에서 aud 가 재정의 값뿐인 id_token 은 거부한다 — 기대 aud 는 clientId 다', async () => {
+    const auth = authWith('some-api')
+    const refused = await refusal(auth.validateIdToken(await sign({ aud: 'some-api', typ: 'ID' })))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe('JWT validation failed: unexpected "aud" claim value')
+    // 대조: 같은 재정의 아래 aud = clientId 인 id_token 은 받는다(재정의가 id_token 에 걸리지 않는다).
+    await expect(
+      auth.validateIdToken(await sign({ aud: 'app', typ: 'ID' })),
+    ).resolves.toMatchObject({ audience: ['app'] })
+  })
+
+  it('azp 규칙 · iss · exp 도 교환의 검사 그대로다', async () => {
+    const auth = authWith()
+    const cases: Array<[Record<string, unknown>, string, string | RegExp]> = [
+      [
+        { aud: ['app', 'evil'], typ: 'ID' },
+        ISSUER,
+        'id_token has more than one audience but no azp',
+      ],
+      [{ aud: 'app', azp: 'evil', typ: 'ID' }, ISSUER, 'id_token azp is not this client'],
+      [
+        { aud: 'app', typ: 'ID' },
+        'https://evil.example',
+        /^JWT validation failed: unexpected "iss"/,
+      ],
+    ]
+    for (const [claims, iss, want] of cases) {
+      const refused = await refusal(auth.validateIdToken(await sign(claims, iss)))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      if (typeof want === 'string') expect(refused.message).toBe(want)
+      else expect(refused.message).toMatch(want)
+    }
+    const expired = await new SignJWT({ sub: 'u', aud: 'app', typ: 'ID' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuer(ISSUER)
+      .setIssuedAt(Math.floor(Date.now() / 1000) - 600)
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 60) // 스큐(30초) 밖
+      .sign(priv)
+    const late = await refusal(auth.validateIdToken(expired))
+    expect(late).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(late.message).toMatch(/^JWT validation failed: "exp" claim timestamp check failed/)
+  })
+
+  it('주입된 검증기에서 clientId 로 한 번 파생해 쓴다 — 액세스 검증기를 그대로 쓰지 않는다', async () => {
+    const idValidate = vi.fn().mockResolvedValue({ subject: 'u' })
+    const withAudience = vi.fn(() => ({ validate: idValidate }))
+    const validate = vi.fn()
+    const auth = new AuthClient(cfg, { validate, withAudience } as unknown as JwtValidator)
+    await expect(auth.validateIdToken('t1')).resolves.toEqual({ subject: 'u' })
+    await auth.validateIdToken('t2')
+    expect(withAudience).toHaveBeenCalledTimes(1)
+    expect(withAudience).toHaveBeenCalledWith('app')
+    expect(idValidate.mock.calls).toEqual([['t1'], ['t2']])
+    expect(validate).not.toHaveBeenCalled()
+  })
+
+  it('교환과 한 길이다 — 교환이 파생한 검증기를 공개 메서드가 이어 쓴다', async () => {
+    vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
+      access_token: 'AT',
+      expires_in: 60,
+      id_token: 'the-id-token',
+    } as never)
+    const idValidate = vi.fn().mockResolvedValue({ claims: {} })
+    const withAudience = vi.fn(() => ({ validate: idValidate }))
+    const auth = new AuthClient(cfg, { validate: vi.fn(), withAudience } as unknown as JwtValidator)
+    await auth.exchangeCode('c', 'https://app/cb', 'verifier', 'the-nonce')
+    await auth.validateIdToken('later')
+    expect(withAudience).toHaveBeenCalledTimes(1)
+    expect(idValidate.mock.calls).toEqual([['the-id-token'], ['later']])
   })
 })
 

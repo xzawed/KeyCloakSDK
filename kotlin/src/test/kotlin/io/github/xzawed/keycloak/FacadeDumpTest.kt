@@ -203,9 +203,9 @@ internal suspend fun dumpRoots(
     val config = KeycloakConfig(server.baseUrl(), "r", "c", DUMP_SECRET.toCharArray())
     val kc = KeycloakClient.create(config).also { closing += it }
 
-    // 인가 요청이 먼저다 — id_token 이 그 nonce 를 실어야 exchangeCode 의 강화 검증을 통과한다.
+    // 인가 요청이 먼저다 — id_token 이 그 nonce 를 실어야 exchangeCode 의 강화 검증을 통과한다(typ 은 Keycloak 의 id_token 처럼 "ID").
     val ar = kc.auth.createAuthorizationRequest("https://app/cb")
-    val idToken = signed(key, issuer, mapOf("nonce" to ar.nonce))
+    val idToken = signed(key, issuer, mapOf("nonce" to ar.nonce, "typ" to "ID"))
     val rawJwt = signed(key, issuer)
     val basic = Base64.getEncoder().encodeToString("c:$DUMP_SECRET".toByteArray())
 

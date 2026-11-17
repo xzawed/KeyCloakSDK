@@ -1,15 +1,11 @@
 import { format, inspect } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
-  defineConfig,
-  JwtValidator,
   KeycloakAuthError,
   KeycloakClient,
   KeycloakTokenValidationError,
-  oidcEndpoints,
   type AuthorizationRequest,
   type KeycloakConfigInput,
-  type ValidatedToken,
 } from '../../src/index.js'
 import { browserLogin, stripNonce } from './browser-login.js'
 import { startKeycloak, type KeycloakHarness } from './support.js'
@@ -50,25 +46,16 @@ function webConfig(
   }
 }
 
-/**
- * 서버의 id_token 을 **교환이 검증하는 그 길**로 다시 검증해 클레임을 읽는다 — `AuthClient` 가 만드는 액세스 검증기
- * (`JwtValidator.forJwksUri`, audience = expectedAudience ?? clientId)에서 `withAudience(clientId)` 로 파생한다(`#verifyIdToken`
- * 과 같은 배선 — 서명 · alg 핀 · iss · aud = clientId · exp · azp). `validate` 는 액세스 토큰만 받는다: 서버의 id_token 은
- * typ "ID" 라 거부된다.
- */
-function viaIdTokenPath(input: KeycloakConfigInput, idToken: string): Promise<ValidatedToken> {
-  const cfg = defineConfig(input)
-  const endpoints = oidcEndpoints(cfg)
-  return JwtValidator.forJwksUri(endpoints.jwks, {
-    issuer: endpoints.issuer,
-    audience: cfg.expectedAudience ?? cfg.clientId,
-    allowedAlgs: [...cfg.signatureAlgorithms],
-    clockSkewSeconds: cfg.clockSkewSeconds,
-    jwksMinRefetchSeconds: cfg.jwksMinRefetchSeconds,
-    readTimeoutMs: cfg.readTimeoutMs,
-  })
-    .withAudience(cfg.clientId)
-    .validate(idToken)
+// 서버의 id_token 클레임은 **교환이 그것을 검증하는 그 길** — 공개 `AuthClient.validateIdToken`(서명 · alg 핀 · iss · aud =
+// clientId · exp · 종류 typ "ID" · azp) — 으로 읽는다. `validate` 는 액세스 토큰만 받는다: 서버의 id_token 은 typ "ID" 라
+// 거부된다.
+
+/** JWT 페이로드를 **검증 없이** 읽는다 — 서버가 보낸 것의 전제만 잰다(판정은 SDK 가 한다). */
+function unverifiedPayload(token: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as Record<
+    string,
+    unknown
+  >
 }
 
 async function login(kc: KeycloakClient): Promise<{ request: AuthorizationRequest; code: string }> {
@@ -154,8 +141,8 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
     expect(tokens.accessToken).toBeTruthy()
     expect(tokens.refreshToken).toBeTruthy()
     expect(tokens.idToken).toBeTruthy()
-    // id_token 의 클레임은 교환이 그것을 검증하는 길(`viaIdTokenPath` — 서명·iss·aud = clientId·exp·azp)로 읽는다.
-    const id = await viaIdTokenPath(webConfig(harness.url), tokens.idToken as string)
+    // id_token 의 클레임은 교환이 그것을 검증하는 길 — 공개 `validateIdToken`(서명·iss·aud = clientId·exp·종류·azp)로 읽는다.
+    const id = await kc.auth.validateIdToken(tokens.idToken as string)
     expect(id.claims['nonce']).toBe(request.nonce)
     expect(id.subject).toBe(aliceId)
     // 서버가 서명한 id_token 은 typ "ID" 다(실서버 측정) — validate 는 그것을 액세스 토큰 자리에서 거부한다. 이 클라이언트의
@@ -164,6 +151,17 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
     const notAccess = await refusal(kc.auth.validate(tokens.idToken as string))
     expect(notAccess).toBeInstanceOf(KeycloakTokenValidationError)
     expect(notAccess.message).toBe('not an access token (typ "ID")')
+    // 반대 방향: 서버의 액세스 토큰은 공개 id_token 검증이 거부한다. aud 에 clientId 가 있으면 종류(typ 이 "ID" 가 아니다)가,
+    // 없으면 aud 가 가른다 — 어느 쪽인지는 서버가 보낸 aud 를 검증 없이 읽어 정한다(전제이지 판정이 아니다).
+    const accessAud = unverifiedPayload(tokens.accessToken)['aud']
+    const audiences = Array.isArray(accessAud) ? accessAud : [accessAud]
+    const notId = await refusal(kc.auth.validateIdToken(tokens.accessToken))
+    expect(notId).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(notId.message).toBe(
+      audiences.includes('it-web')
+        ? 'not an id_token (typ is not "ID")'
+        : 'JWT validation failed: unexpected "aud" claim value',
+    )
 
     // refresh: 새 접근 토큰을 준다 — 같은 사용자의 활성 토큰이다.
     const refreshed = await kc.auth.refresh(tokens.refreshToken as string)
@@ -213,9 +211,9 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
       request.codeVerifier,
     )
     expect(unchecked.idToken).toBeTruthy()
-    expect(
-      (await viaIdTokenPath(webConfig(harness.url), unchecked.idToken as string)).claims,
-    ).not.toHaveProperty('nonce')
+    expect((await kc.auth.validateIdToken(unchecked.idToken as string)).claims).not.toHaveProperty(
+      'nonce',
+    )
 
     const code = await browserLogin(request, REDIRECT_URI, ...ALICE)
     const refused = await refusal(
@@ -249,11 +247,9 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
         request.codeVerifier,
         request.nonce,
       )
-      // 서버가 서명한 진짜 id_token 이다 — 교환의 id_token 길로 따로 잰다(재정의한 이 설정 그대로 — 그 길은 재정의를 쓰지 않는다).
-      const id = await viaIdTokenPath(
-        { ...webConfig(harness.url), expectedAudience: 'not-it-web' },
-        tokens.idToken as string,
-      )
+      // 서버가 서명한 진짜 id_token 이다 — 재정의한 이 클라이언트의 공개 id_token 검증으로 따로 잰다(그 길은 재정의를 쓰지
+      // 않는다 — aud 는 clientId 로 잰다).
+      const id = await other.auth.validateIdToken(tokens.idToken as string)
       expect(id.audience).toContain('it-web')
       expect(id.audience).not.toContain('not-it-web')
       expect(id.claims['nonce']).toBe(request.nonce)

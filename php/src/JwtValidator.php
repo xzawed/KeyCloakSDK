@@ -40,6 +40,9 @@ final class JwtValidator
      */
     private const NOT_ACCESS_TOKEN_TYPES = ['ID', 'Refresh', 'Offline', 'Logout', 'Serialized-ID'];
 
+    /** id_token 의 페이로드 `typ` — Keycloak 26.6 이 모든 id_token 에 싣는 값이고, validateIdToken() 이 받는 유일한 값이다. */
+    private const ID_TOKEN_TYPE = 'ID';
+
     public function __construct(
         private readonly KeycloakConfig $config,
         private readonly OidcEndpoints $endpoints,
@@ -54,7 +57,7 @@ final class JwtValidator
     public function validate(#[\SensitiveParameter] string $jwt): ValidatedToken
     {
         $validated = $this->verify($jwt, $this->config->expectedAudience ?? $this->config->clientId);
-        // 토큰 종류 — 액세스 경로만(id_token 은 typ "ID" 라 validateIdToken() 은 보지 않는다). 문자열일 때만, 대소문자까지
+        // 토큰 종류 — 액세스 경로의 거부 목록(validateIdToken() 은 반대로 "ID" 하나만 받는다). 문자열일 때만, 대소문자까지
         // 정확히 견준다. 값을 인용해도 된다 — 위 다섯 상수 중 하나다.
         $typ = $validated->claims['typ'] ?? null;
         if (\is_string($typ) && \in_array($typ, self::NOT_ACCESS_TOKEN_TYPES, true)) {
@@ -68,10 +71,12 @@ final class JwtValidator
      * Validates an id_token — its aud must contain `$clientId` (OIDC Core §2 · §3.1.3.7: an id_token's aud is the client
      * that requested it). `expectedAudience` is **not consulted** — that is an access token's resource-server restriction
      * (RFC 9700 §2.3). The rest (alg pin · kid · signature · required exp · clock skew · iss) is the same path as validate(),
-     * and the JWKS store is the same one too; the token type is not checked (an id_token is typed `ID`). After those checks
-     * the authorized party is (OIDC Core §3.1.3.7 steps 4–5): an id_token with more than one audience must carry `azp`, and
-     * an `azp` that is present must be `$clientId`. Comparing the nonce is the caller's job — `AuthClient::exchangeCode()`
-     * calls this and compares it.
+     * and the JWKS store is the same one too. After those checks the token type is: the payload `typ` must be exactly the
+     * string `ID` — what Keycloak puts on every id_token — and anything else (absent, not a string, another value or case)
+     * is refused with one constant message. Then the authorized party (OIDC Core §3.1.3.7 steps 4–5): an id_token with
+     * more than one audience must carry `azp`, and an `azp` that is present must be `$clientId`. Comparing the nonce is the
+     * caller's job — `AuthClient::exchangeCode()` compares it after `AuthClient::validateIdToken()`, which calls this with
+     * the configured client id.
      *
      * @throws KeycloakConfigError  when `$clientId` is empty
      * @throws TokenValidationError on a validation failure
@@ -84,6 +89,12 @@ final class JwtValidator
         }
 
         $validated = $this->verify($idToken, $clientId);
+        // 토큰 종류 — id_token 경로는 허용 목록이다: typ 가 정확히 문자열 "ID" 여야 한다(액세스 경로의 거부 목록과 달리 —
+        // aud 와 azp 가 이 클라이언트인 액세스 토큰은 다른 검사를 전부 지나고, 그 typ 는 소문자 "bearer" 일 수도 있다). 문구는
+        // 상수다 — typ 는 토큰을 만든 쪽이 고른 값이라 싣지 않는다(azp 도 싣지 않는다).
+        if (($validated->claims['typ'] ?? null) !== self::ID_TOKEN_TYPE) {
+            throw new TokenValidationError('not an id_token (typ is not "ID")');
+        }
         // 권한 부여 당사자 — id_token 경로만. 액세스 토큰의 azp 는 그것을 요청한 클라이언트라 aud 와 다른 것이 정상이다.
         // azp 는 있으면(JSON null 도 있는 것이다) 문자열이고 client id 와 같아야 한다 — `!==` 라 문자열이 아니면 같지 않다.
         if (\array_key_exists('azp', $validated->claims)) {

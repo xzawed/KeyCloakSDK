@@ -73,6 +73,9 @@ internal class JwtValidatorTest {
         return builder.build()
     }
 
+    // Keycloak 의 id_token 종류(typ "ID")를 더한 클레임 — id_token 검증기(withAudience)에 주는 토큰용.
+    private fun typedId(claimsSet: JWTClaimsSet): JWTClaimsSet = JWTClaimsSet.Builder(claimsSet).claim("typ", "ID").build()
+
     private fun signedRs256(
         key: RSAKey,
         claimsSet: JWTClaimsSet,
@@ -344,9 +347,10 @@ internal class JwtValidatorTest {
             assertFailsWith<TokenValidationException> { validator.validate(token) }
         }
 
-    // ── withAudience — 코드 교환의 id_token 검증(OIDC Core §3.1.3.7: aud 는 client id)이 쓰는 파생 검증기 ──
-    // 바뀌는 것은 기대 audience 하나뿐이다. iss · alg 핀 · skew 는 원본 것을 그대로 쓰고, 원본은 그대로 남는다.
-    // (JWKS 저장소를 공유하는지는 요청 수로만 보인다 — `IdTokenAudienceJwksTest`.)
+    // ── withAudience — id_token 검증(`AuthClient.validateIdToken` · 코드 교환, OIDC Core §3.1.3.7: aud 는 client id)이 쓰는 파생
+    // 검증기 ── 바뀌는 것은 기대 audience 와 종류뿐이다. iss · alg 핀 · skew 는 원본 것을 그대로 쓰고, 원본은 그대로 남는다.
+    // (JWKS 저장소를 공유하는지는 요청 수로만 보인다 — `IdTokenAudienceJwksTest`.) 파생에 주는 토큰은 Keycloak 의 id_token 처럼
+    // typ "ID" 를 싣는다([typedId] — 그 검증기는 그 밖의 typ 을 거부한다): 그래야 아래 거부가 저마다의 검사 것이다.
     @Test
     fun `withAudience checks the new audience and leaves the original validator as it was`() =
         runTest {
@@ -354,8 +358,10 @@ internal class JwtValidatorTest {
             val access = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, apiAudience)
             val idToken = access.withAudience(audience)
 
-            assertEquals(listOf(audience), idToken.validate(signedRs256(key, claims(aud = listOf(audience)))).audience)
-            assertFailsWith<TokenValidationException> { idToken.validate(signedRs256(key, claims(aud = listOf(apiAudience)))) }
+            assertEquals(listOf(audience), idToken.validate(signedRs256(key, typedId(claims(aud = listOf(audience))))).audience)
+            val notForTheClient =
+                assertFailsWith<TokenValidationException> { idToken.validate(signedRs256(key, typedId(claims(aud = listOf(apiAudience))))) }
+            assertEquals("JWT validation failed", notForTheClient.message, "aud 검사의 거부다(종류 검사보다 앞)")
             assertEquals(listOf(apiAudience), access.validate(signedRs256(key, claims(aud = listOf(apiAudience)))).audience)
             assertFailsWith<TokenValidationException> { access.validate(signedRs256(key, claims(aud = listOf(audience)))) }
         }
@@ -369,17 +375,19 @@ internal class JwtValidatorTest {
             val pinned =
                 JwtValidator.withStaticJwks(jwks, issuer, apiAudience, skew = Duration.ofSeconds(120)).withAudience(audience)
             // 같은 RSA 키의 RS384 — 키는 맞고 alg 만 RS256 핀 밖이다.
-            val rs384 = signed(key, JWSAlgorithm.RS384, claims())
+            val rs384 = signed(key, JWSAlgorithm.RS384, typedId(claims()))
 
             assertFailsWith<TokenValidationException>("iss") {
-                pinned.validate(signedRs256(key, claims(iss = "https://attacker.example.com/realms/evil")))
+                pinned.validate(signedRs256(key, typedId(claims(iss = "https://attacker.example.com/realms/evil"))))
             }
             assertFailsWith<TokenValidationException>("alg pin") { pinned.validate(rs384) }
-            assertEquals(issuer, pinned.validate(signedRs256(key, claims(expiresInMillis = -90_000))).issuer, "skew kept")
+            assertEquals(issuer, pinned.validate(signedRs256(key, typedId(claims(expiresInMillis = -90_000)))).issuer, "skew kept")
             assertFailsWith<TokenValidationException>("skew kept") {
-                pinned.validate(signedRs256(key, claims(expiresInMillis = -200_000)))
+                pinned.validate(signedRs256(key, typedId(claims(expiresInMillis = -200_000))))
             }
-            assertFailsWith<TokenValidationException>("exp required") { pinned.validate(signedRs256(key, claims(expiresInMillis = null))) }
+            assertFailsWith<TokenValidationException>("exp required") {
+                pinned.validate(signedRs256(key, typedId(claims(expiresInMillis = null))))
+            }
             // 대조군: 원본이 RS384 를 허용하면 파생도 받는다 — 위 거부가 핀 때문이고, 파생이 원본의 집합을 쓴다는 증거다.
             val widened =
                 JwtValidator
@@ -838,9 +846,12 @@ internal class JwtValidatorTest {
             assertEquals(42L, validator.validate(signedWith(key, aud = listOf(audience, "other")) { claim("azp", 42L) }).claims["azp"])
         }
 
-    // withAudience 가 주는 것은 코드 교환의 id_token 검증기다. Keycloak 의 id_token 은 typ "ID" 라 (A) 를 걸지 않고, 대신 (B) azp
-    // 규칙을 건다. 같은 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고,
-    // 파생이 원본을 바꾸지 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다).
+    // withAudience 가 주는 것은 id_token 검증기다(`AuthClient.validateIdToken` · 코드 교환). Keycloak 의 id_token 은 typ "ID" 라
+    // (A) 거부 목록을 걸지 않고, 대신 typ 허용 목록(정확히 "ID" — `AuthClientValidateIdTokenTest`)과 그다음 (B) azp 규칙을 건다.
+    // 같은 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고, 파생이 원본을
+    // 바꾸지 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다). (B) 는 aud 가 둘인데 azp 가 없는 토큰으로 본다: 원본은 액세스 토큰
+    // 모양(typ "Bearer")을 받고, 파생은 id_token 모양(typ "ID")을 azp 로 거부한다 — 종류가 azp 보다 먼저라, 파생에 주는 것은 typ
+    // "ID" 여야 azp 에 닿는다(Bearer 는 종류로 거부된다 — `AuthClientValidateIdTokenTest` 의 순서 시험).
     @Test
     fun `withAudience is the id_token validator - typ ID passes and the azp rule applies`() =
         runTest {
@@ -853,6 +864,7 @@ internal class JwtValidatorTest {
                     claim("azp", audience)
                 }
             val twoAudiencesNoAzp = signedWith(key, aud = listOf(audience, "other")) { claim("typ", "Bearer") }
+            val idTwoAudiencesNoAzp = signedWith(key, aud = listOf(audience, "other")) { claim("typ", "ID") }
 
             assertEquals("ID", id.validate(typedId).claims["typ"])
             assertEquals(
@@ -861,7 +873,7 @@ internal class JwtValidatorTest {
             )
 
             assertEquals(listOf(audience, "other"), access.validate(twoAudiencesNoAzp).audience)
-            val noAzp = assertFailsWith<TokenValidationException> { id.validate(twoAudiencesNoAzp) }
+            val noAzp = assertFailsWith<TokenValidationException> { id.validate(idTwoAudiencesNoAzp) }
             assertTrue(noAzp.message!!.contains("azp"), noAzp.message)
         }
 

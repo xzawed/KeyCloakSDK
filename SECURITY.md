@@ -43,7 +43,7 @@ not limited to:
   same interval). All nine implement hardened, self-verified validation.
 - **OIDC flows** — PKCE (S256) on all nine. nonce/`id_token` replay protection
   on all nine: the authorization request always issues a nonce and `exchange*`
-  fully validates the `id_token` (signature · `iss` · `aud` · `azp` · `exp`) against it
+  fully validates the `id_token` (signature · `iss` · `aud` · `azp` · `typ` · `exp`) against it
   when the caller passes that nonce back. The exchange-side argument is
   optional on all nine — omit it and id_token validation is skipped (custom
   no-nonce flows). State is returned to the caller on all nine (the SDK is

@@ -28,7 +28,6 @@ from tests.integration.conftest import (
     WEB_CLIENT_SECRETS,
     Sealed,
     catch,
-    id_token_claims,
     render_with_locals,
     strip_nonce,
     unverified_claims,
@@ -62,10 +61,23 @@ def test_exchange_code_binds_tokens_to_the_nonce_and_user(
     with pytest.raises(TokenValidationError) as not_access:
         kc.auth.validate(tokens.id_token)
     assert str(not_access.value) == "Token is not an access token (typ ID)"
-    # 클레임은 교환이 id_token 을 검증한 그 길(kind="id_token")로 읽는다.
-    id_claims = id_token_claims(kc, tokens.id_token)
+    # 클레임은 교환이 id_token 을 검증한 그 길 — 공개 `validate_id_token` — 으로 읽는다.
+    id_claims = kc.auth.validate_id_token(tokens.id_token).claims
     assert id_claims["nonce"] == request.nonce
     assert id_claims["sub"] == alice_id
+    assert id_claims["typ"] == "ID"
+    # 반대 방향: 서버의 접근 토큰은 공개 id_token 검증이 거부한다. aud 에 client_id 가 있으면 종류
+    # (typ 가 `ID` 가 아니다)가, 없으면 aud 가 가른다 — 어느 쪽인지는 서버가 보낸 aud 를 검증 없이
+    # 읽어 정한다(전제이지 판정이 아니다).
+    access_aud = unverified_claims(tokens.access_token)["aud"]
+    audiences = access_aud if isinstance(access_aud, list) else [access_aud]
+    with pytest.raises(TokenValidationError) as not_id:
+        kc.auth.validate_id_token(tokens.access_token)
+    assert str(not_id.value) == (
+        'Token is not an id_token (typ is not "ID")'
+        if "it-web" in audiences
+        else "Audience not contained"
+    )
 
     # refresh: 새 접근 토큰을 준다 — 같은 사용자의 활성 토큰이다.
     refreshed = kc.auth.refresh(tokens.refresh_token)
@@ -99,7 +111,7 @@ def test_exchange_code_refuses_an_id_token_that_carries_no_nonce(kc: KeycloakCli
     code = browser_login(request, REDIRECT_URI, *ALICE)
     unchecked = kc.auth.exchange_code(code, REDIRECT_URI, request.code_verifier)
     assert unchecked.id_token
-    assert "nonce" not in id_token_claims(kc, unchecked.id_token)
+    assert "nonce" not in kc.auth.validate_id_token(unchecked.id_token).claims
 
     code = browser_login(request, REDIRECT_URI, *ALICE)
     with pytest.raises(KeycloakAuthError) as refused:
@@ -166,6 +178,12 @@ def test_exchange_code_with_the_nonce_succeeds_under_an_expected_audience_overri
             code, REDIRECT_URI, request.code_verifier, nonce=request.nonce
         )
         assert tokens.id_token
+        # 공개 id_token 검증은 재정의한 이 클라이언트에서도 client_id 로 잰다 — 재정의는 id_token 에
+        # 걸리지 않는다.
+        id_token = kc.auth.validate_id_token(tokens.id_token)
+        assert "it-web" in id_token.audience
+        assert EXTRA_API not in id_token.audience
+        assert id_token.claims["nonce"] == request.nonce
         # access 검증은 재정의를 계속 쓴다 — 서버가 접근 토큰에만 extra-api 를 실었다.
         access = kc.auth.validate(tokens.access_token)
         assert EXTRA_API in access.audience

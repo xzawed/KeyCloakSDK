@@ -165,10 +165,16 @@ RSpec.describe KeycloakSdk::JwtValidator do
     end
   end
 
-  # id_token 경로(`validate_id_token` — 코드 교환이 쓴다). 종류를 보지 않고(id_token 은 typ "ID" 다), 다른 검사를 모두
-  # 지난 뒤 권한 부여 당사자를 본다(OIDC Core §3.1.3.7 4–5 단계): aud 가 여럿이면 azp 가 있어야 하고, azp 가 있으면
-  # client_id 여야 한다. `audience` 는 "app" 이다 — 아래 표는 `let` 밖이라 그 값을 그대로 적는다.
+  # id_token 경로(`validate_id_token` — 코드 교환과 공개 `AuthClient#validate_id_token` 이 쓴다). 다른 검사를 모두 지난 뒤
+  # 종류(typ 이 정확히 "ID" — 허용 목록, 아래 묶음)를, 그다음 권한 부여 당사자를 본다(OIDC Core §3.1.3.7 4–5 단계): aud 가
+  # 여럿이면 azp 가 있어야 하고, azp 가 있으면 client_id 여야 한다. `audience` 는 "app" 이다 — 아래 표는 `let` 밖이라 그
+  # 값을 그대로 적는다.
   describe "#validate_id_token" do
+    # Keycloak 의 id_token 모양 — typ "ID" 를 싣는다(종류 규칙이 azp · aud 판정을 가로채지 않게).
+    def id_claims(**over)
+      base_claims("typ" => "ID", **over)
+    end
+
     it "accepts a token typed ID (control: the access path refuses the same token)" do
       token = sign(base_claims("typ" => "ID", "azp" => audience))
       expect(validator.validate_id_token(token, client_id: audience).claims["typ"]).to eq("ID")
@@ -183,7 +189,7 @@ RSpec.describe KeycloakSdk::JwtValidator do
       "several audiences, azp the client_id" => { "aud" => %w[app account], "azp" => "app" }
     }.each do |name, claims|
       it "accepts #{name}" do
-        vt = validator.validate_id_token(sign(base_claims(**claims)), client_id: audience)
+        vt = validator.validate_id_token(sign(id_claims(**claims)), client_id: audience)
         expect(vt.audience).to include(audience)
       end
     end
@@ -199,7 +205,7 @@ RSpec.describe KeycloakSdk::JwtValidator do
       "several audiences, no azp" => [{ "aud" => %w[app evil] }, "azp is required when aud has more than one value"]
     }.each do |name, (claims, reason)|
       it "refuses #{name}" do
-        expect { validator.validate_id_token(sign(base_claims(**claims)), client_id: audience) }
+        expect { validator.validate_id_token(sign(id_claims(**claims)), client_id: audience) }
           .to raise_error(KeycloakSdk::TokenValidationError, "JWT validation failed: #{reason}") { |e|
             expect(e.cause).to be_nil
           }
@@ -207,13 +213,13 @@ RSpec.describe KeycloakSdk::JwtValidator do
     end
 
     it "holds aud to the client_id it is given, not the configured audience" do
-      expect { validator.validate_id_token(sign(base_claims), client_id: "other-client") }
+      expect { validator.validate_id_token(sign(id_claims), client_id: "other-client") }
         .to raise_error(KeycloakSdk::TokenValidationError, /Invalid audience\. Expected other-client,/)
     end
 
     it "shares the key cache with validate" do
       validator.validate(sign(base_claims))
-      validator.validate_id_token(sign(base_claims("typ" => "ID")), client_id: audience)
+      validator.validate_id_token(sign(id_claims), client_id: audience)
       expect(a_request(:get, jwks_url)).to have_been_made.once
     end
 
@@ -222,6 +228,37 @@ RSpec.describe KeycloakSdk::JwtValidator do
         expect { validator.validate_id_token(sign(base_claims), client_id: blank) }
           .to raise_error(KeycloakSdk::ConfigError, /client_id/)
         expect(a_request(:get, jwks_url)).not_to have_been_made
+      end
+    end
+
+    # 종류 — id_token 경로는 **허용 목록**이다: payload typ 이 정확히 "ID" 가 아니면 거부한다(Keycloak 26.6.9 는 id_token 을
+    # 한 곳에서 만들고 늘 "ID" 를 싣는다). 부재 · 다른 문자열 · 문자열이 아닌 값이 전부 거부다. 문구는 상수다 — 토큰이 고른
+    # typ 를 싣지 않는다. azp 는 맞춰 둔다 — 거부를 가르는 것이 종류뿐이게.
+    describe "token kind (typ must be exactly \"ID\")" do
+      let(:not_id_token) { 'JWT validation failed: not an id_token (typ is not "ID")' }
+
+      it "refuses a token without typ" do
+        expect { validator.validate_id_token(sign(base_claims("azp" => audience)), client_id: audience) }
+          .to raise_error(KeycloakSdk::TokenValidationError, not_id_token) { |e| expect(e.cause).to be_nil }
+      end
+
+      ["Bearer", "bearer", "id", "ID ", "Logout", 42, nil, ["ID"]].each do |typ|
+        it "refuses typ #{typ.inspect}" do
+          token = sign(base_claims("typ" => typ, "azp" => audience))
+          expect { validator.validate_id_token(token, client_id: audience) }
+            .to raise_error(KeycloakSdk::TokenValidationError, not_id_token)
+        end
+      end
+
+      it "judges the kind before azp" do
+        token = sign(base_claims("typ" => "Bearer", "aud" => %w[app evil]))
+        expect { validator.validate_id_token(token, client_id: audience) }
+          .to raise_error(KeycloakSdk::TokenValidationError, not_id_token)
+      end
+
+      it "judges the kind after the other checks (a foreign aud without typ is refused for its aud)" do
+        expect { validator.validate_id_token(sign(base_claims("aud" => "someone-else")), client_id: audience) }
+          .to raise_error(KeycloakSdk::TokenValidationError, /Invalid audience\. Expected app,/)
       end
     end
   end

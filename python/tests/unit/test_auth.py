@@ -362,7 +362,7 @@ def test_exchange_code_validates_id_token_and_accepts_matching_nonce(jwks):
     endpoints = OidcEndpoints.for_realm(config)
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     id_token = _signed_token(
-        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce", typ="ID"
     )
     openid = MagicMock(spec=KeycloakOpenID)
     openid.token.return_value = {
@@ -384,7 +384,7 @@ def test_exchange_code_rejects_mismatched_nonce(jwks):
     endpoints = OidcEndpoints.for_realm(config)
     key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
     id_token = _signed_token(
-        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+        key, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce", typ="ID"
     )
     openid = MagicMock(spec=KeycloakOpenID)
     openid.token.return_value = {
@@ -416,7 +416,7 @@ def test_exchange_code_rejects_a_forged_rs256_id_token_whose_nonce_matches(jwks)
     endpoints = OidcEndpoints.for_realm(config)
     forger = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})  # JWKS 의 k1 과 kid 만 같다
     forged = _signed_token(
-        forger, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce"
+        forger, issuer=endpoints.issuer, audience=config.client_id, nonce="server-nonce", typ="ID"
     )
     client, _ = _exchange_client_with_id_token(id_token=forged, jwks=jwks)
 
@@ -480,7 +480,8 @@ def test_exchange_code_checks_the_id_token_aud_against_the_client_id_under_an_ov
     Keycloak 의 id_token 처럼 client_id 다 — aud 가 여럿이면 OIDC Core §3.1.3.7 ④ 가 그것을
     요구한다."""
     client, openid, key, endpoints = _override_setup(jwks)
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", azp="app"))
+    claims = {"nonce": "n", "azp": "app", "typ": "ID"}
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, **claims))
 
     tokens = client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
 
@@ -493,7 +494,7 @@ def test_exchange_code_refuses_an_id_token_without_the_client_id_even_if_aud_is_
 ):
     """A2 — `aud` 가 재정의 값뿐인 id_token 은 거부다. 재정의 값은 id_token 을 통과시키지 않는다."""
     client, openid, key, endpoints = _override_setup(jwks)
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n"))
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", typ="ID"))
 
     with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
         client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
@@ -504,7 +505,7 @@ def test_exchange_code_refuses_an_id_token_without_the_client_id_even_if_aud_is_
 def test_validate_keeps_the_override_for_access_tokens_after_an_exchange(jwks):
     """A3 — access 검증은 재정의를 계속 쓴다. 교환이 기대 audience 를 바꿔 놓지 않는다."""
     client, openid, key, endpoints = _override_setup(jwks)
-    id_token = _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n")
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n", typ="ID")
     access = _signed_token(key, issuer=endpoints.issuer, audience=_API)
     _answer(openid, id_token, access)
 
@@ -517,12 +518,14 @@ def test_validate_keeps_the_override_for_access_tokens_after_an_exchange(jwks):
 
 
 def _id_claims(endpoints: OidcEndpoints, **changes: object) -> dict[str, object]:
+    """Keycloak 의 id_token 모양(typ `ID`) — `changes` 가 덮고, 값이 None 인 클레임은 뺀다."""
     claims: dict[str, object] = {
         "iss": endpoints.issuer,
         "aud": "app",
         "sub": "user-1",
         "exp": int(time.time()) + 60,
         "nonce": "n",
+        "typ": "ID",
     }
     claims.update(changes)
     return {k: v for k, v in claims.items() if v is not None}
@@ -594,7 +597,8 @@ def test_exchange_and_validate_share_one_jwks_store(jwks):
     저장소를 볼 수 있다는 증거다. id_token 경로가 제 저장소를 만들면 첫 단언에서 2 가 된다."""
     client, openid, key, endpoints = _override_setup(jwks)
     access = _signed_token(key, issuer=endpoints.issuer, audience=_API)
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n"), access)
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n", typ="ID")
+    _answer(openid, id_token, access)
 
     client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
     assert jwks.call_count == 1
@@ -612,7 +616,8 @@ def test_exchange_and_validate_share_one_forced_refetch_window(jwks):
     client, openid, _, endpoints = _override_setup(jwks)
     stranger = RSAKey.generate_key(2048, {"kid": "x1", "use": "sig"})
     other = RSAKey.generate_key(2048, {"kid": "x2", "use": "sig"})
-    _answer(openid, _signed_token(stranger, issuer=endpoints.issuer, audience="app", nonce="n"))
+    claims = {"nonce": "n", "typ": "ID"}
+    _answer(openid, _signed_token(stranger, issuer=endpoints.issuer, audience="app", **claims))
 
     with pytest.raises(KeycloakAuthError, match="invalid id_token"):
         client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
@@ -630,7 +635,8 @@ def test_exchange_and_validate_share_one_cold_cache_backoff(jwks):
     client, openid, key, endpoints = _override_setup(jwks)
     client._jwks_backoff = JwksFailureBackoff(clock=_FakeClock(), jitter=lambda: 1.0)
     jwks.side_effect = KeycloakTransportError("idp down")
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n"))
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n", typ="ID")
+    _answer(openid, id_token)
 
     with pytest.raises(KeycloakTransportError, match="idp down"):
         client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
@@ -720,8 +726,8 @@ def test_exchange_code_accepts_an_id_token_whose_typ_is_id(jwks):
 def test_exchange_code_accepts_an_id_token_whose_azp_names_the_client(jwks, aud, azp):
     """(B) 통과 칸 — aud 가 하나면 azp 는 없어도 되고, aud 가 여럿이면 azp 가 client_id 다."""
     client, openid, key, endpoints = _exchange_setup(jwks)
-    id_token = _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", **_azp(azp))
-    _answer(openid, id_token)
+    claims = {"nonce": "n", "typ": "ID", **_azp(azp)}
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, **claims))
 
     tokens = client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
 
@@ -739,8 +745,8 @@ def test_exchange_code_accepts_an_id_token_whose_azp_names_the_client(jwks, aud,
 def test_exchange_code_refuses_an_id_token_whose_azp_breaks_oidc_core(jwks, aud, azp, reason):
     """(B) — 실패는 다른 id_token 실패와 같은 모양이다(`invalid id_token`, 원인이 이유를 말한다)."""
     client, openid, key, endpoints = _exchange_setup(jwks)
-    id_token = _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", **_azp(azp))
-    _answer(openid, id_token)
+    claims = {"nonce": "n", "typ": "ID", **_azp(azp)}
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, **claims))
 
     with pytest.raises(KeycloakAuthError) as refused:
         client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
@@ -755,13 +761,189 @@ def test_exchange_code_checks_azp_against_the_client_id_under_an_override(jwks):
     id_token 은 거부다."""
     client, openid, key, endpoints = _override_setup(jwks)
     aud = ["app", _API]
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", azp="app"))
+    for_client = {"nonce": "n", "typ": "ID", "azp": "app"}
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, **for_client))
     assert client.exchange_code("code", "https://app/cb", "verifier", nonce="n").id_token
 
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", azp=_API))
+    for_api = {**for_client, "azp": _API}
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, **for_api))
     with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
         client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
     assert str(refused.value.__cause__) == _AZP_MISMATCH
+
+
+# --- validate_id_token — 공개 id_token 검증(등록부 id-token-validator-not-public) -----------------
+# 교환이 nonce 를 대조하기 **전에** 돌리는 그 검사다(같은 내부 함수): 서명(`validate()` 와 같은 키
+# 저장소) · alg 핀 · 길이 상한 · iss · aud ∋ client_id(`expected_audience` 가 아니다) · exp · 스큐 ·
+# 종류(payload typ 가 정확히 `ID`) · azp(OIDC Core §3.1.3.7 ④⑤). nonce 는 보지 않는다. 실패는
+# `validate()` 와 같은 `TokenValidationError` 다.
+
+_NOT_ID_TOKEN = 'Token is not an id_token (typ is not "ID")'
+
+
+def test_validate_id_token_accepts_a_keycloak_id_token_and_returns_its_claims(jwks):
+    client, key, endpoints = _validate_client(_config(), jwks)
+    token = _signed_token(
+        key, issuer=endpoints.issuer, audience="app", azp="app", typ="ID", nonce="n"
+    )
+
+    result = client.validate_id_token(token)
+
+    assert result.subject == "user-1"
+    assert result.issuer == endpoints.issuer
+    assert result.audience == ("app",)
+    assert {k: result.claims[k] for k in ("typ", "azp", "nonce")} == {
+        "typ": "ID",
+        "azp": "app",
+        "nonce": "n",
+    }
+
+
+def test_validate_id_token_refuses_an_access_token_issued_to_the_client(jwks):
+    """이 규칙이 닫는 틈 — aud 에 client_id 가 있고 azp 가 client_id 인 액세스 토큰(typ `Bearer`)은
+    종류 말고는 id_token 검사를 전부 지난다. 같은 토큰을 `validate()` 는 받는다(전제)."""
+    client, key, endpoints = _validate_client(_config(), jwks)
+    token = _signed_token(
+        key, issuer=endpoints.issuer, audience=["app", "account"], azp="app", typ="Bearer"
+    )
+    assert client.validate(token).audience == ("app", "account")
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate_id_token(token)
+
+    assert type(refused.value) is TokenValidationError
+    assert str(refused.value) == _NOT_ID_TOKEN
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"typ": "bearer"}, id="lowercase bearer"),
+        pytest.param({"typ": "id"}, id="lowercase id"),
+        pytest.param({"typ": "ID "}, id="trailing space"),
+        pytest.param({"typ": ""}, id="empty"),
+        pytest.param({"typ": 1}, id="number"),
+        pytest.param({"typ": None}, id="null"),
+        pytest.param({"typ": ["ID"]}, id="array"),
+        pytest.param({"typ": {"typ": "ID"}}, id="object"),
+        pytest.param({"typ": "Refresh"}, id="Refresh"),
+        pytest.param({"typ": "Serialized-ID"}, id="Serialized-ID"),
+        pytest.param({"typ": "CANARY-TYP-0f3a"}, id="token-chosen string"),
+    ],
+)
+def test_validate_id_token_refuses_any_typ_but_id(jwks, extra):
+    """종류는 허용 목록이다 — 문구는 상수이고 토큰이 고른 typ 를 싣지 않는다. 클레임 실패라 JWKS 를
+    다시 가져오지 않는다."""
+    client, key, endpoints = _validate_client(_config(), jwks)
+    token = _signed_token(key, issuer=endpoints.issuer, audience="app", azp="app", **extra)
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate_id_token(token)
+
+    assert type(refused.value) is TokenValidationError
+    assert str(refused.value) == _NOT_ID_TOKEN
+    assert jwks.call_count == 1
+
+
+def test_validate_id_token_refuses_a_back_channel_logout_token(jwks):
+    """백채널 로그아웃 토큰 모양 — typ `Logout` · aud = client_id · azp 없음 · exp 있음."""
+    client, key, endpoints = _validate_client(_config(), jwks)
+    events = {"http://schemas.openid.net/event/backchannel-logout": {}}
+    token = _signed_token(
+        key, issuer=endpoints.issuer, audience="app", typ="Logout", sid="s-1", events=events
+    )
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate_id_token(token)
+
+    assert str(refused.value) == _NOT_ID_TOKEN
+
+
+def test_validate_id_token_holds_aud_to_the_client_id_under_an_override(jwks):
+    """aud 가 `expected_audience` 재정의 값뿐인 id_token 은 거부다 — 기대 aud 는 client_id 다. 대조:
+    같은 재정의 아래 aud 가 client_id 인 id_token 은 받는다."""
+    client, key, endpoints = _validate_client(_config(expected_audience=_API), jwks)
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate_id_token(
+            _signed_token(key, issuer=endpoints.issuer, audience=_API, typ="ID")
+        )
+    assert str(refused.value) == "Audience not contained"
+
+    accepted = client.validate_id_token(
+        _signed_token(key, issuer=endpoints.issuer, audience="app", typ="ID")
+    )
+    assert accepted.audience == ("app",)
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"aud": ["app", "evil"]}, _AZP_MISSING),
+        ({"azp": "evil"}, _AZP_MISMATCH),
+        ({"iss": "https://evil.example.com/realms/r"}, "Issuer mismatch"),
+        ({"exp": -60}, "Token expired"),  # 스큐(30초) 밖
+    ],
+)
+def test_validate_id_token_keeps_the_exchange_checks(jwks, changes, reason):
+    """azp · iss · exp 도 교환의 검사 그대로다."""
+    client, key, endpoints = _validate_client(_config(), jwks)
+    timed = {k: int(time.time()) + v for k, v in changes.items() if k == "exp"}
+    claims = _id_claims(endpoints, **{**changes, **timed, "typ": "ID"})
+
+    with pytest.raises(TokenValidationError) as refused:
+        client.validate_id_token(jjwt.encode({"alg": "RS256", "kid": key.kid}, claims, key))
+
+    assert str(refused.value) == reason
+
+
+def test_validate_id_token_shares_one_jwks_store_with_validate_and_the_exchange(jwks):
+    """키 저장소는 하나다 — 콜드 캐시를 채운 한 번 뒤로 `validate()` · 교환 · `validate_id_token`
+    이 JWKS 를 더 가져오지 않는다. 대조군: 두 번째 저장소(다른 `AuthClient`)는 실제로 가져온다."""
+    client, openid, key, endpoints = _exchange_setup(jwks)
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience="app", nonce="n", typ="ID")
+
+    client.validate_id_token(id_token)
+    assert jwks.call_count == 1
+    client.validate(_signed_token(key, issuer=endpoints.issuer, audience="app"))
+    _answer(openid, id_token)
+    client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    client.validate_id_token(id_token)
+    assert jwks.call_count == 1
+
+    second_store = _client(MagicMock(spec=KeycloakOpenID), config=_config())
+    second_store.validate_id_token(id_token)
+    assert jwks.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"typ": "Bearer"}, id="Bearer"),
+        pytest.param({"typ": "bearer"}, id="lowercase bearer"),
+        pytest.param({"typ": 1}, id="number"),
+        pytest.param({"typ": "Logout"}, id="Logout"),
+    ],
+)
+def test_exchange_code_refuses_an_id_token_that_is_not_typed_id(jwks, extra):
+    """교환과 공개 메서드는 한 길이다 — 종류 규칙이 교환에도 걸리고, 대응은 지금처럼 `invalid
+    id_token`(원인이 종류를 말한다)이다. 같은 토큰을 공개 메서드도 같은 문구로 거부한다."""
+    client, openid, key, endpoints = _exchange_setup(jwks)
+    id_token = _signed_token(
+        key, issuer=endpoints.issuer, audience="app", nonce="n", azp="app", **extra
+    )
+    _answer(openid, id_token)
+
+    with pytest.raises(KeycloakAuthError) as refused:
+        client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    assert str(refused.value) == "authorization code exchange failed: invalid id_token"
+    assert type(refused.value.__cause__) is TokenValidationError
+    assert str(refused.value.__cause__) == _NOT_ID_TOKEN
+    with pytest.raises(TokenValidationError, match="not an id_token"):
+        client.validate_id_token(id_token)
 
 
 def test_refresh_maps_response_and_delegates():

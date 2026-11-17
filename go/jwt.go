@@ -51,7 +51,8 @@ const (
 	// kindAccess is the zero value, so a Validator built without a kind judges typ: one that forgets its kind
 	// refuses an id_token rather than letting another kind of token through Validate.
 	kindAccess tokenKind = iota
-	// kindIDToken is the id_token ExchangeCode checks: azp instead of typ (OIDC Core §3.1.3.7 steps 4–5).
+	// kindIDToken is the id_token ValidateIDToken checks (and ExchangeCode, through it): typ exactly "ID", then azp
+	// (OIDC Core §3.1.3.7 steps 4–5).
 	kindIDToken
 )
 
@@ -90,7 +91,8 @@ type validatorOptions struct {
 	now func() time.Time
 	// jitter is the failure backoff's jitter source, a factor in [0.5, 1.0) — a seam for tests. Nil means clockJitter.
 	jitter func() float64
-	// kind selects the checks after the shared ones: typ for an access token (the zero value), azp for the id_token.
+	// kind selects the checks after the shared ones: typ not one of five for an access token (the zero value); typ
+	// "ID" and azp for the id_token.
 	kind tokenKind
 }
 
@@ -200,8 +202,8 @@ func newValidator(opts validatorOptions) *Validator {
 	return &Validator{opts: opts, jwksState: &jwksState{}}
 }
 
-// forIDToken returns the Validator ExchangeCode checks its id_token with: it requires clientID in aud, judges azp
-// instead of typ (kindIDToken — a Keycloak id_token is typed "ID") and shares this one's key store. Only the audience
+// forIDToken returns the Validator ValidateIDToken checks an id_token with (ExchangeCode's included): it requires
+// clientID in aud, requires typ "ID" and judges azp (kindIDToken), and shares this one's key store. Only the audience
 // and the kind differ: issuer, algorithm pin, skew and the refetch gates are this Validator's. The id_token's aud is
 // the client id (OIDC Core §2, §3.1.3.7) while Config.ExpectedAudience names the access-token audience.
 func (v *Validator) forIDToken(clientID string) *Validator {
@@ -285,11 +287,17 @@ func (v *Validator) Validate(ctx context.Context, token string) (*ValidatedToken
 // right, an id_token or a back-channel logout token passed Validate, since its aud is the client id —
 // ExpectedAudience's default. typ is one of the five constants when quoted, so the message carries no token content.
 //
-// The id_token (kindIDToken) is typed "ID", so typ is not judged; OIDC Core §3.1.3.7 steps 4–5 apply instead: with
-// several audiences azp must be present, and a present azp must be a string equal to the client id — this
-// Validator's audience (forIDToken). The azp value itself is not quoted.
+// The id_token (kindIDToken) must be typed exactly "ID" — the string Keycloak puts on every id_token it issues. An
+// allow-list, where the access path has a deny-list: an access token whose aud and azp both name the client passes
+// every other id_token check, and its typ may be "bearer" in lowercase (a client option), which a deny-list would
+// miss. The refusal is constant and never quotes typ, a value the token's minter chose. Then OIDC Core §3.1.3.7
+// steps 4–5: with several audiences azp must be present, and a present azp must be a string equal to the client id
+// — this Validator's audience (forIDToken). The azp value itself is not quoted.
 func (v *Validator) checkKind(aud jwt.Audience, all map[string]any) error {
 	if v.opts.kind == kindIDToken {
+		if typ, ok := all["typ"].(string); !ok || typ != "ID" {
+			return &TokenValidationError{Msg: `claims: not an id_token (typ is not "ID")`}
+		}
 		azp, present := all["azp"]
 		if !present {
 			if len(aud) > 1 {

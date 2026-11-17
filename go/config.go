@@ -47,8 +47,9 @@ type Config struct {
 	// Unset, it defaults to ClientID (the previous behaviour). A stock realm does
 	// not put the client id in a client-credentials token's aud unless an audience
 	// mapper is configured, so set this to the API/resource name when the token is
-	// audienced at a resource server instead. It does not apply to the id_token
-	// checked by ExchangeCode, whose aud must contain ClientID (OIDC Core §3.1.3.7).
+	// audienced at a resource server instead. It does not apply to an id_token
+	// (ValidateIDToken, and the one ExchangeCode checks), whose aud must contain
+	// ClientID (OIDC Core §3.1.3.7).
 	ExpectedAudience string
 }
 

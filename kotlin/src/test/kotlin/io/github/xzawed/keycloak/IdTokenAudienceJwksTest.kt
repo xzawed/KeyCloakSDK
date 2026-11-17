@@ -83,8 +83,11 @@ internal class IdTokenAudienceJwksTest {
             )
         }
 
-    private fun signed(aud: String): String {
-        val claims =
+    private fun signed(
+        aud: String,
+        typ: String? = null,
+    ): String {
+        val builder =
             JWTClaimsSet
                 .Builder()
                 .issuer(OidcEndpoints.forRealm(config()).issuer)
@@ -92,13 +95,14 @@ internal class IdTokenAudienceJwksTest {
                 .subject("user-1")
                 .claim("nonce", nonce)
                 .expirationTime(Date(System.currentTimeMillis() + 60_000))
-                .build()
-        val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.keyID).build(), claims)
+        if (typ != null) builder.claim("typ", typ)
+        val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.keyID).build(), builder.build())
         jwt.sign(RSASSASigner(key))
         return jwt.serialize()
     }
 
-    // 액세스 토큰의 aud 는 재정의 값, id_token 의 aud 는 client id — 실제 Keycloak 이 내는 모양.
+    // 액세스 토큰의 aud 는 재정의 값, id_token 의 aud 는 client id — 실제 Keycloak 이 내는 모양. id_token 은 typ "ID" 를 싣는다
+    // (id_token 검증기는 그 밖의 typ 을 거부한다).
     private val accessToken by lazy { signed(apiAudience) }
 
     private fun serveTokens() {
@@ -108,7 +112,8 @@ internal class IdTokenAudienceJwksTest {
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody(
-                        """{"access_token":"$accessToken","token_type":"Bearer","expires_in":300,"id_token":"${signed(clientId)}"}""",
+                        """{"access_token":"$accessToken","token_type":"Bearer","expires_in":300,""" +
+                            """"id_token":"${signed(clientId, typ = "ID")}"}""",
                     ),
             ),
         )
@@ -140,8 +145,8 @@ internal class IdTokenAudienceJwksTest {
                     val tokens = auth.exchange()
                     // A3 — 운영 경로의 validate() 는 재정의를 본다(교환이 그 검증기를 바꿔 두지 않았다).
                     assertEquals(listOf(apiAudience), auth.validate(tokens.accessToken).audience)
-                    // 교환이 받은 id_token(aud = client id)은 액세스 검증을 지나지 못한다 — aud 검사의 거부다(이 토큰엔 typ 이 없다:
-                    // 「not an access token」이 이 자리를 대신 채우지 못하게 메시지까지 본다).
+                    // 교환이 받은 id_token(aud = client id)은 액세스 검증을 지나지 못한다 — aud 검사의 거부다(이 토큰은 typ "ID" 지만
+                    // typ 은 aud 검사 뒤에야 본다: 「not an access token」이 이 자리를 대신 채우지 못하게 메시지까지 본다).
                     val refused = assertFailsWith<TokenValidationException> { auth.validate(assertNotNull(tokens.idToken)) }
                     assertEquals("JWT validation failed", refused.message)
                     jwksHits()
@@ -171,12 +176,52 @@ internal class IdTokenAudienceJwksTest {
             assertEquals(1, validateFirst, "validate() 뒤 교환이 JWKS 를 다시 조회했다 — id_token 검증이 저장소를 따로 쓴다")
         }
 
+    // 공개 id_token 검증(validateIdToken — 교환을 거치지 않는 소비자의 길)도 validate() 와 저장소 하나를 쓴다. 순서를 둘 다
+    // 친다: 어느 쪽이 먼저 적재하든 다른 쪽은 그 캐시를 쓴다. 대조군은 위 시험과 같다 — 저장소 둘이면 조회도 둘이다.
+    @Test
+    fun `validateIdToken and validate share one JWKS fetch under an expectedAudience override`() =
+        runTest {
+            serveJwks()
+            val idToken = signed(clientId, typ = "ID")
+
+            val idFirst =
+                AuthClient(config()).use { auth ->
+                    assertEquals(listOf(clientId), auth.validateIdToken(idToken).audience)
+                    assertEquals(listOf(apiAudience), auth.validate(accessToken).audience)
+                    jwksHits()
+                }
+
+            server.resetRequests()
+            val accessFirst =
+                AuthClient(config()).use { auth ->
+                    assertEquals(listOf(apiAudience), auth.validate(accessToken).audience)
+                    assertEquals(listOf(clientId), auth.validateIdToken(idToken).audience)
+                    jwksHits()
+                }
+
+            // 대조군 — 같은 두 호출을 클라이언트 둘에 나누면(저장소 둘) 프로브가 두 번째 조회를 본다.
+            server.resetRequests()
+            val twoStores =
+                AuthClient(config()).use { a ->
+                    AuthClient(config()).use { b ->
+                        a.validateIdToken(idToken)
+                        b.validate(accessToken)
+                        jwksHits()
+                    }
+                }
+
+            assertEquals(2, twoStores, "대조군: 저장소가 둘이면 조회도 둘이다 — 이것을 못 보면 아래 단언은 공허하다")
+            assertEquals(1, idFirst, "validateIdToken 뒤 validate() 가 JWKS 를 다시 조회했다 — 공개 id_token 검증이 저장소를 따로 쓴다")
+            assertEquals(1, accessFirst, "validate() 뒤 validateIdToken 이 JWKS 를 다시 조회했다 — 공개 id_token 검증이 저장소를 따로 쓴다")
+        }
+
     @Test
     fun `a cold-cache outage stays within one window across exchange and validate`() =
         runTest {
             serveJwks(status = 503)
             serveTokens()
             val attempts = 10
+            val idToken = signed(clientId, typ = "ID")
 
             suspend fun flood(
                 exchanging: AuthClient,
@@ -191,17 +236,34 @@ internal class IdTokenAudienceJwksTest {
                 return jwksHits()
             }
 
+            // 교환 대신 공개 id_token 검증으로 같은 프로브 — validateIdToken 과 validate() 를 번갈아도 창 하나다.
+            suspend fun floodPublic(auth: AuthClient): Int {
+                server.resetRequests()
+                repeat(attempts) {
+                    assertFailsWith<TokenValidationException> { auth.validateIdToken(idToken) }
+                    assertFailsWith<TokenValidationException> { auth.validate(accessToken) }
+                }
+                return jwksHits()
+            }
+
             val shared = AuthClient(config()).use { auth -> flood(auth, auth) }
+            val sharedPublic = AuthClient(config()).use { auth -> floodPublic(auth) }
             // 대조군 1 — 저장소가 둘이면 창도 둘이라 상한을 넘는다.
             val twoStores = AuthClient(config()).use { a -> AuthClient(config()).use { b -> flood(a, b) } }
             // 대조군 2 — 게이트를 풀면(간격 0) 같은 프로브가 폭주를 본다.
             val ungated = AuthClient(config(Duration.ZERO)).use { auth -> flood(auth, auth) }
+            val ungatedPublic = AuthClient(config(Duration.ZERO)).use { auth -> floodPublic(auth) }
 
             assertTrue(ungated >= attempts, "대조군이 폭주를 못 보면 이 테스트는 공허하다 — 간격 0 에서 실제=$ungated")
+            assertTrue(ungatedPublic >= attempts, "대조군: 간격 0 에서 공개 함수 프로브가 폭주를 못 본다 — 실제=$ungatedPublic")
             assertTrue(twoStores > windowCeiling, "대조군: 저장소가 둘이면 창도 둘이다 — 실제=$twoStores")
             assertTrue(
                 shared <= windowCeiling,
                 "교환과 validate() 가 콜드 캐시 창 하나를 나눠야 한다 — ${attempts * 2}회 검증에 IdP 요청 실제=$shared",
+            )
+            assertTrue(
+                sharedPublic <= windowCeiling,
+                "validateIdToken 과 validate() 가 콜드 캐시 창 하나를 나눠야 한다 — ${attempts * 2}회 검증에 IdP 요청 실제=$sharedPublic",
             )
         }
 }
