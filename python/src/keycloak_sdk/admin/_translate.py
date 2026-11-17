@@ -43,6 +43,11 @@ def encodable(rep: object) -> None:
     bytes · 문자열이 아닌 키 · 순환 · 지나친 중첩, 사용자 정의 컨테이너의 실패까지)
     토큰 그랜트도 요청도 없이 `KeycloakTransportError(UNENCODABLE_BODY)` 다.
 
+    ⚠️ 하나는 그 인코더보다 엄격하다 — `allow_nan=False`. 기본 설정은 NaN · ±Infinity 를
+    JSON 이 아닌 토큰 `NaN`·`Infinity`·`-Infinity` 로 써서 그대로 보냈다(수정 전 실측 — 등록부
+    admin-unencodable-body-residuals, 문구는 자매 언어와 같다). 짝 없는 서로게이트는 `\\ud800`
+    이스케이프로 충실히 쓰므로 받는다.
+
     예전에는 python-keycloak 안에서 난 그 `TypeError` 를 경계가 「쓸 수 없는 응답」
     으로 분류해, 나가지도 않은 요청을 「Keycloak admin API returned an unusable
     response (TypeError)」라고 했다(등록부
@@ -54,7 +59,7 @@ def encodable(rep: object) -> None:
     컨테이너는 그것을 두 번 겪는다(Grok 레그 — 정상 dict · list 에는 부작용이 없다). 넓은
     `except` 는 일부러다: 사용자 정의 컨테이너의 임의 예외도 SDK 오류로 남긴다."""
     try:
-        json.dumps(rep)
+        json.dumps(rep, allow_nan=False)
     except Exception:
         unencodable = True
     else:

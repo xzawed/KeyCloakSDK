@@ -17,12 +17,19 @@ server」). 문구는 node 의 `UNENCODABLE_BODY`(#1129)와 같다.
 admin 둘 다 0) · 사슬(`__cause__` · `__context__` 없음) · python-keycloak 프레임 없음을
 함께 단언한다. 대조: 같은 연산에 쓸 수 있는 본문은 admin 요청 하나에 닿는다(하네스가
 공허하지 않다).
+
+JSON 이 실을 수 없는 수(NaN · ±Infinity)도 같은 거부다(등록부
+`admin-unencodable-body-residuals`) — python-keycloak 의 `json.dumps` 는 그것을 JSON 이 아닌
+토큰으로 써서 보냈다(수정 전 실측: 서버가 받은 본문 `{"name": "x", "attributes": {"n": [NaN]}}`).
+두 쓰기 연산(users.create · clients.update)으로 잰다. 대조: 짝 없는 서로게이트는 이스케이프로
+충실히 실리므로 나간다.
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
+import math
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
@@ -93,7 +100,14 @@ BODIES: dict[str, Callable[[], Any]] = {
     "cyclic": _cyclic,  # ValueError
     "deep": lambda: {"name": "x", "attributes": _deep()},  # RecursionError
     "raising-container": lambda: _Raising(name="x"),  # RuntimeError
+    # JSON 이 실을 수 없는 수 — `allow_nan=False` 의 ValueError. python-keycloak 의 기본 설정
+    # (`allow_nan=True`)은 JSON 이 아닌 토큰 `NaN`·`Infinity`·`-Infinity` 를 그대로 썼다(등록부
+    # admin-unencodable-body-residuals).
+    "NaN": lambda: {"name": "x", "attributes": {"n": [math.nan]}},
+    "+Infinity": lambda: {"name": "x", "attributes": {"n": [math.inf]}},
+    "-Infinity": lambda: {"name": "x", "attributes": {"n": [-math.inf]}},
 }
+NON_FINITE = ("NaN", "+Infinity", "-Infinity")
 
 
 @dataclass
@@ -103,6 +117,7 @@ class _Idp:
     url: str = ""
     grants: int = 0
     admin: list[str] = field(default_factory=list)
+    bodies: list[bytes] = field(default_factory=list)  # admin 요청이 실은 본문(받은 그대로)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -115,8 +130,7 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
 
         def _serve(self) -> None:
             length = int(self.headers.get("Content-Length") or 0)
-            if length:
-                self.rfile.read(length)
+            body = self.rfile.read(length) if length else b""
             path = urlsplit(self.path).path
             payload = b""
             if path == _TOKEN:
@@ -127,6 +141,7 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
             else:
                 with idp.lock:
                     idp.admin.append(self.command)
+                    idp.bodies.append(body)
                 self.send_response(201 if self.command == "POST" else 204)
                 self.send_header("Location", f"{idp.url}{path}/new-id")
             self.send_header("Content-Type", "application/json")
@@ -177,9 +192,9 @@ async def _refused(lane: str, op: str, body: str) -> None:
         async with _client(lane, idp.url) as kc:
             with collector_paused():
                 _result, err = await _attempt(lane, kc, lambda c: WRITES[op][1](c.admin, rep))
+    assert (idp.grants, idp.admin) == (0, []), f"토큰도 요청도 없어야 한다 — 받은 본문 {idp.bodies}"
     assert type(err) is KeycloakTransportError, repr(err)
     assert str(err) == UNENCODABLE
-    assert (idp.grants, idp.admin) == (0, []), "본문을 못 쓰면 토큰도 요청도 없다"
     assert _chain(err) == [], "인코더의 예외는 사슬로 닿지 않는다"
     assert _inner_frames(err) == [], "python-keycloak 은 불리지 않는다"
 
@@ -194,6 +209,28 @@ async def test_every_write_operation_checks_its_body_before_any_request(lane: st
 @pytest.mark.parametrize("lane", LANES)
 async def test_every_unencodable_kind_is_refused_the_same_way(lane: str, body: str) -> None:
     await _refused(lane, "users.create", body)
+
+
+@pytest.mark.parametrize("body", NON_FINITE)
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_non_finite_number_is_refused_by_another_write_too(lane: str, body: str) -> None:
+    """두 번째 쓰기 연산(PUT · 다른 리소스) — 수의 검사도 공용 `encodable` 하나다."""
+    await _refused(lane, "clients.update", body)
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_lone_surrogate_is_escaped_and_sent(lane: str) -> None:
+    """대조 — `json.dumps` 는 짝 없는 서로게이트를 바꿔 쓰지 않고 `\\ud800` 이스케이프로
+    그대로 싣는다(.NET 의 U+FFFD 와 다르다). 거부할 까닭이 없다 — 서버가 받은 본문에 그
+    이스케이프가 있다."""
+    escaped = ('"' + chr(0x5C) + 'ud800"').encode()
+    rep = {"name": "x", "attributes": {"s": [chr(0xD800)]}}
+    with _fake_idp() as idp:
+        async with _client(lane, idp.url) as kc:
+            _result, err = await _attempt(lane, kc, lambda c: c.admin.users.create(rep))
+    assert err is None, repr(err)
+    assert idp.admin == ["POST"]
+    assert escaped in idp.bodies[0], idp.bodies
 
 
 @pytest.mark.parametrize("op", sorted(WRITES))
