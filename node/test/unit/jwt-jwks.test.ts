@@ -65,7 +65,7 @@ afterAll(async () => {
 })
 
 async function forgedToken(): Promise<string> {
-  return new SignJWT({ sub: 'u', aud: 'my-client' })
+  return new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
     .setProtectedHeader({ alg: 'RS256', kid: 'unresolvable' })
     .setIssuer(ISS)
     .setIssuedAt()
@@ -153,7 +153,7 @@ describe('JWKS 재조회 rate-limit (재조회 창 실동작)', () => {
       const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
       // kid는 서버가 내주는 것과 같게 둔다 — 그래야 "kid 미해결"이 아니라 **키 자체가 기형**인
       // 경로를 타고, 이 테스트가 의도한 실패 모드를 검증한다.
-      const token = await new SignJWT({ sub: 'u', aud: 'my-client' })
+      const token = await new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
         .setProtectedHeader({ alg: 'RS256', kid: 'served' })
         .setIssuer(ISS)
         .setIssuedAt()
@@ -194,7 +194,7 @@ describe('JWKS 재조회 rate-limit (재조회 창 실동작)', () => {
     try {
       const uri = `http://127.0.0.1:${(redirecting.address() as AddressInfo).port}/certs`
       const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
-      const token = await new SignJWT({ sub: 'u', aud: 'my-client' })
+      const token = await new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
         .setProtectedHeader({ alg: 'RS256', kid: 'served' })
         .setIssuer(ISS)
         .setIssuedAt()
@@ -343,7 +343,7 @@ describe('빈 JWKS 키셋(200)이 좋은 캐시를 덮지 않는다', () => {
       const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 0 })
 
       const sign = (kid: string) =>
-        new SignJWT({ sub: 'u', aud: 'my-client' })
+        new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
           .setProtectedHeader({ alg: 'RS256', kid })
           .setIssuer(ISS)
           .setIssuedAt()
@@ -397,7 +397,7 @@ describe('JWKS 의 JWK 가 아닌 원소는 건너뛴다', () => {
       const uri = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/certs`
       const v = JwtValidator.forJwksUri(uri, { ...baseOpts, jwksMinRefetchSeconds: 0 })
       const sign = (kid: string) =>
-        new SignJWT({ sub: 'u', aud: 'my-client' })
+        new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
           .setProtectedHeader({ alg: 'RS256', kid })
           .setIssuer(ISS)
           .setIssuedAt()
@@ -472,7 +472,7 @@ describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
         jwksMinRefetchSeconds: 0,
       })
       const legit = () =>
-        new SignJWT({ sub: 'u', aud: 'my-client' })
+        new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
           .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
           .setIssuer(ISS)
           .setIssuedAt()
@@ -485,7 +485,7 @@ describe('JWKS 의 대칭(oct) 키 — HS256 을 허용한 설정', () => {
   }
 
   const hs = (secret: Uint8Array, kid: string | undefined) =>
-    new SignJWT({ sub: 'attacker', aud: 'my-client' })
+    new SignJWT({ sub: 'attacker', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader(kid === undefined ? { alg: 'HS256' } : { alg: 'HS256', kid })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -554,7 +554,7 @@ describe('HS 서명은 설정이 허용해도 키를 찾기 전에 거부한다'
           header: { alg: string; kid: string },
           key: Parameters<SignJWT['sign']>[0],
         ) =>
-          new SignJWT({ sub: 'u', aud: 'my-client' })
+          new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
             .setProtectedHeader(header)
             .setIssuer(ISS)
             .setIssuedAt()
@@ -636,6 +636,7 @@ describe('HS 거부의 경계 — 상한 · 허용 목록 · 읽을 수 없는 �
     const claims = {
       sub: 'attacker',
       aud: 'my-client',
+      typ: 'Bearer',
       iss: ISS,
       iat: now,
       exp: now + 300,
@@ -759,7 +760,7 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
   })
 
   const legit = (): Promise<string> =>
-    new SignJWT({ sub: 'u', aud: 'my-client' })
+    new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -767,7 +768,7 @@ describe('웜 캐시 + IdP 장애 — 위조 kid 의 강제 재조회도 창마�
       .sign(published.privateKey)
 
   const forgedKid = (kid: string): Promise<string> =>
-    new SignJWT({ sub: 'u', aud: 'my-client' })
+    new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -894,7 +895,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
   })
 
   const legit = (): Promise<string> =>
-    new SignJWT({ sub: 'u', aud: 'my-client' })
+    new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -902,7 +903,7 @@ describe('낡은 캐시(cacheMaxAge 뒤) + IdP 장애 — 실패한 갱신도 �
       .sign(published.privateKey)
 
   const forgedKid = (kid: string): Promise<string> =>
-    new SignJWT({ sub: 'u', aud: 'my-client' })
+    new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid })
       .setIssuer(ISS)
       .setIssuedAt()
@@ -1167,7 +1168,12 @@ describe('경계 변환 — 쓸 수 없는 JWKS URI', () => {
 describe('받는 토큰의 길이 상한 — 콜드 원격 검증기', () => {
   it('상한 밖의 서명 토큰은 /certs 요청 없이 거부한다(대조군: 같은 검증기의 정상 길이 토큰은 요청한다)', async () => {
     const v = JwtValidator.forJwksUri(jwksUri, { ...baseOpts, jwksMinRefetchSeconds: 30 })
-    const over = await new SignJWT({ sub: 'u', aud: 'my-client', pad: 'a'.repeat(192_000) })
+    const over = await new SignJWT({
+      sub: 'u',
+      aud: 'my-client',
+      typ: 'Bearer',
+      pad: 'a'.repeat(192_000),
+    })
       .setProtectedHeader({ alg: 'RS256', kid: 'unresolvable' })
       .setIssuer(ISS)
       .setIssuedAt()

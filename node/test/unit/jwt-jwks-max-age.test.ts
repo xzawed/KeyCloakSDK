@@ -72,9 +72,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-/** 검증 시각에 서명한다 — 가짜 시계가 몇 분을 건너도 토큰은 만료되지 않는다. */
+/**
+ * 검증 시각에 서명한다 — 가짜 시계가 몇 분을 건너도 토큰은 만료되지 않는다. Keycloak 의 액세스 토큰 모양(typ "Bearer")이다.
+ */
 const sign = (pair: Pair, kid: string): Promise<string> =>
-  new SignJWT({ sub: 'u', aud: 'my-client' })
+  new SignJWT({ sub: 'u', aud: 'my-client', typ: 'Bearer' })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuer(ISS)
     .setIssuedAt()

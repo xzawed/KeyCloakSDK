@@ -237,8 +237,9 @@ export class AuthClient {
    * id_token의 aud는 **clientId**로 검사한다(OIDC Core §2·§3.1.3.7) — `expectedAudience`는 액세스 토큰의
    * 리소스 서버 제한이다. 검사는 공개 `validateIdToken` 과 같은 `#validateIdToken` 하나다(둘로 나누지 않는다) — 거기서
    * 검증기를 `#validator`에서 audience만 바꿔 파생하므로 키 소스(JWKS 캐시·재조회 제한·백오프)는 하나다.
-   * 파생은 id_token 검증기다 — `validate` 의 typ 거부 목록 대신 종류 허용 목록(typ 이 정확히 "ID")과 azp 를 본다(aud 가
-   * 둘 이상이면 있어야 하고, 있으면 clientId). openid-client 는 aud 가 하나인 id_token 의 azp 도, typ 도 보지 않는다.
+   * 파생은 id_token 검증기다 — `validate` 의 액세스 토큰 종류(Bearer · DPoP) 대신 id_token 의 종류(typ 이 정확히 "ID")와
+   * azp 를 본다(aud 가 둘 이상이면 있어야 하고, 있으면 clientId). openid-client 는 aud 가 하나인 id_token 의 azp 도, typ 도
+   * 보지 않는다.
    */
   async #verifyIdToken(idToken: string | undefined): Promise<void> {
     if (idToken === undefined) {

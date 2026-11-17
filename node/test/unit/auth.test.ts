@@ -368,8 +368,9 @@ describe('validate — expectedAudience', () => {
     keys = createLocalJWKSet({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] })
   })
 
+  /** Keycloak 의 액세스 토큰 모양 — typ "Bearer"(액세스 검증은 Bearer · DPoP 만 받는다). */
   const sign = (aud: string) =>
-    new SignJWT({ sub: 'u', aud })
+    new SignJWT({ sub: 'u', aud, typ: 'Bearer' })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuedAt()
       .setIssuer('https://kc.example.com/realms/demo')
@@ -413,6 +414,96 @@ describe('validate — expectedAudience', () => {
       KeycloakTokenValidationError,
     )
   })
+})
+
+/**
+ * 공개 `AuthClient.validate` 의 종류 판정(등록부 access-token-typ-deny-list) — Keycloak 자신의 리소스 쪽 검사처럼 허용 목록이다:
+ * payload typ 이 ASCII 대소문자를 무시하고 Bearer 나 DPoP 와 같은 문자열일 때만 받는다. 기본 설정(audience = clientId)에서
+ * typ 이 없는 realm 서명 JWT — JARM 인가 응답(aud = client id) — 가 액세스 토큰으로 받아들여지던 틈이다. 검증기 칸은
+ * `jwt.test.ts` 다.
+ */
+describe('validate — 액세스 토큰의 종류(typ 허용 목록)', () => {
+  const ISSUER = 'https://kc.example.com/realms/demo'
+  const NOT_ACCESS = 'not an access token (typ is not Bearer or DPoP)'
+  let priv: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+  let keys: JWTVerifyGetKey
+
+  beforeAll(async () => {
+    const kp = await generateKeyPair('RS256')
+    priv = kp.privateKey
+    const jwk = await exportJWK(kp.publicKey)
+    keys = createLocalJWKSet({ keys: [{ ...jwk, kid: 'k1', use: 'sig', alg: 'RS256' }] })
+  })
+
+  const sign = (claims: Record<string, unknown>) =>
+    new SignJWT({ aud: 'app', ...claims })
+      .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+      .setIssuedAt()
+      .setIssuer(ISSUER)
+      .setExpirationTime('5m')
+      .sign(priv)
+
+  /** 로컬 키셋 검증기로 조립한다(기본 설정 — 기대 audience 는 clientId `app`). */
+  const auth = (): AuthClient => {
+    const spy = vi
+      .spyOn(JwtValidator, 'forJwksUri')
+      .mockImplementation((_uri, opts) => JwtValidator.forKeySource(keys, opts))
+    try {
+      return new AuthClient(
+        defineConfig({ serverUrl: 'https://kc.example.com', realm: 'demo', clientId: 'app' }),
+      )
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  const refusal = async (call: Promise<unknown>): Promise<Error> => {
+    const outcome = await call.then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    if (!(outcome instanceof Error)) throw new Error('expected a refusal, got success')
+    return outcome
+  }
+
+  it.each(['Bearer', 'bearer', 'DPoP', 'dpop'])('typ "%s" 인 액세스 토큰을 받는다', async (typ) => {
+    await expect(auth().validate(await sign({ sub: 'u', typ }))).resolves.toMatchObject({
+      subject: 'u',
+      audience: ['app'],
+      claims: { typ },
+    })
+  })
+
+  it('JARM 인가 응답 모양(typ 없음 · code · state · iss · aud = client id · exp)을 상수 문구로 거부한다', async () => {
+    const jarm = await sign({ code: 'c0de-from-the-browser-url', state: 'st-1' })
+    const refused = await refusal(auth().validate(jarm))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe(NOT_ACCESS)
+  })
+
+  it.each([
+    ['typ 없음', undefined],
+    ['at+jwt', 'at+jwt'],
+    ['토큰이 고른 문자열', 'CANARY-TYP-7c2e'],
+    ['숫자', 1],
+    ['null', null],
+    ['배열', ['Bearer']],
+  ])('%s → 상수 문구로 거부한다(typ 을 싣지 않는다)', async (_name, typ) => {
+    const token = await sign(typ === undefined ? { sub: 'u' } : { sub: 'u', typ })
+    const refused = await refusal(auth().validate(token))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe(NOT_ACCESS)
+    expect(refused.message).not.toContain('CANARY')
+  })
+
+  it.each(['ID', 'Refresh', 'Offline', 'Logout', 'Serialized-ID'])(
+    '알려진 종류 typ "%s" 는 지금의 문구다',
+    async (typ) => {
+      const refused = await refusal(auth().validate(await sign({ sub: 'u', typ })))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(refused.message).toBe(`not an access token (typ "${typ}")`)
+    },
+  )
 })
 
 /**
