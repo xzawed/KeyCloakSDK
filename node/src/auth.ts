@@ -231,6 +231,8 @@ export class AuthClient {
    * id_token의 aud는 **clientId**로 검사한다(OIDC Core §2·§3.1.3.7) — `expectedAudience`는 액세스 토큰의
    * 리소스 서버 제한이다. 검증기는 `#validator`에서 audience만 바꿔 파생하므로 키 소스(JWKS 캐시·재조회
    * 제한·백오프)는 하나다. 파생은 지연한다 — 주입된 검증기가 교환 경로에 닿기 전에는 부르지 않는다.
+   * 파생은 id_token 검증기다 — `validate` 의 typ 거부(Keycloak 의 id_token 은 typ "ID")를 걸지 않고 azp 를 본다(aud 가
+   * 둘 이상이면 있어야 하고, 있으면 clientId). openid-client 는 aud 가 하나인 id_token 의 azp 를 보지 않는다.
    */
   async #verifyIdToken(idToken: string | undefined): Promise<void> {
     if (idToken === undefined) {

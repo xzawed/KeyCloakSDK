@@ -20,6 +20,16 @@ const OPTS: JwtValidatorOptions = {
   jwksMinRefetchSeconds: 30,
 }
 
+/** 실패해야 하는 검증의 오류 — 성공하면 그것이 곧 실패다. */
+async function refusal(call: Promise<unknown>): Promise<Error> {
+  const outcome = await call.then(
+    () => undefined,
+    (e: unknown) => e,
+  )
+  if (!(outcome instanceof Error)) throw new Error('expected a refusal, got success')
+  return outcome
+}
+
 describe('JwtValidator (강화 검증)', () => {
   let priv: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
   let pub: Awaited<ReturnType<typeof generateKeyPair>>['publicKey']
@@ -205,6 +215,139 @@ describe('JwtValidator (강화 검증)', () => {
       await expect(
         pinned.withAudience('the-client').validate(await sign({ sub: 'u', aud: 'the-client' })),
       ).rejects.toBeInstanceOf(KeycloakTokenValidationError)
+    })
+  })
+
+  /**
+   * (A) 액세스 토큰 자리에 온 다른 Keycloak 토큰 — 페이로드의 `typ` 클레임. Keycloak 은 거기에 토큰의 종류를 적는다
+   * (`org.keycloak.util.TokenUtil`, keycloak-client-common-synced 26.0.12: 액세스 토큰은 Bearer · DPoP, 그 밖은 ID ·
+   * Refresh · Offline · Logout · Serialized-ID). id_token 과 back-channel logout 토큰도 같은 realm 키로 서명되고 iss · exp
+   * 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(audience = clientId)의 aud 검사까지 지난다 — 그래서 `validate` 가
+   * 그것을 액세스 토큰으로 받아 줬다. 다섯을 거부하고 나머지는 지금처럼 받는다(Java `JwtValidatorTest` 동형).
+   */
+  describe('typ — validate 는 액세스 토큰이 아닌 Keycloak 토큰을 거부한다', () => {
+    it.each(['ID', 'Refresh', 'Offline', 'Logout', 'Serialized-ID'])(
+      'typ "%s" → KeycloakTokenValidationError(메시지가 그 값을 말한다)',
+      async (typ) => {
+        const token = await sign({ sub: 'u', aud: 'my-client', typ })
+        const refused = await refusal(JwtValidator.forKeySource(keys, OPTS).validate(token))
+        expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+        // 감싼 「JWT validation failed: …」가 아니라 이 거부이고, 어느 typ 인지 말한다.
+        expect(refused.message).toBe(`not an access token (typ "${typ}")`)
+      },
+    )
+
+    // 다섯 값과 정확히(대소문자 · 공백까지) 같은 문자열만 거부된다 — 액세스 토큰의 값 · 그 밖의 문자열 · 문자열 아닌 값은 통과.
+    it.each([
+      ['Bearer', 'Bearer'],
+      ['DPoP', 'DPoP'],
+      ['at+jwt', 'at+jwt'],
+      ['소문자 id', 'id'],
+      ['소문자 logout', 'logout'],
+      ['뒤에 공백이 붙은 ID', 'ID '],
+      ['빈 문자열', ''],
+      ['ID 를 담은 배열', ['ID']],
+      ['숫자', 1],
+      ['참거짓', true],
+      ['객체', { typ: 'ID' }],
+      ['null', null],
+    ])('typ 이 %s 이면 지금처럼 통과한다', async (_name, typ) => {
+      const token = await sign({ sub: 'u', aud: 'my-client', typ })
+      const validated = await JwtValidator.forKeySource(keys, OPTS).validate(token)
+      // 토큰이 정말 그 값을 실었는지(되읽은 값) — 직렬화가 값을 바꿨다면 이 경우는 아무것도 재지 않는다.
+      expect(validated.claims['typ']).toEqual(typ)
+    })
+
+    it('typ 이 없으면 지금처럼 통과한다', async () => {
+      const validated = await JwtValidator.forKeySource(keys, OPTS).validate(
+        await sign({ sub: 'u', aud: 'my-client' }),
+      )
+      expect(validated.claims).not.toHaveProperty('typ')
+    })
+
+    // typ 은 서명 · iss · aud · exp 가 통과한 **뒤에** 본다 — 검증 전 클레임으로 판정하지 않는다.
+    it('typ "ID" 를 실은 위조 서명 · 다른 aud · 다른 iss 토큰은 typ 이 아니라 그 검사가 거부한다', async () => {
+      const forger = (await generateKeyPair('RS256')).privateKey
+      const forged = await new SignJWT({ sub: 'u', aud: 'my-client', typ: 'ID' })
+        .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+        .setIssuedAt()
+        .setIssuer(ISS)
+        .setExpirationTime('5m')
+        .sign(forger)
+      const tokens = [
+        forged,
+        await sign({ sub: 'u', aud: 'someone-else', typ: 'ID' }),
+        await sign(
+          { sub: 'u', aud: 'my-client', typ: 'ID' },
+          'https://evil.example.com/realms/test',
+        ),
+      ]
+      for (const token of tokens) {
+        const refused = await refusal(JwtValidator.forKeySource(keys, OPTS).validate(token))
+        expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+        expect(refused.message).toMatch(/^JWT validation failed: /)
+      }
+    })
+
+    // (B) 는 id_token 의 규칙이다 — 액세스 토큰의 azp 는 그 토큰을 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다.
+    it('azp 규칙은 걸지 않는다 — 다중 aud 에 azp 가 없어도 · 다른 클라이언트여도 · 문자열이 아니어도 받는다', async () => {
+      const v = JwtValidator.forKeySource(keys, OPTS)
+      await expect(
+        v.validate(await sign({ sub: 'u', aud: ['my-client', 'other'] })),
+      ).resolves.toMatchObject({ audience: ['my-client', 'other'] })
+      for (const [aud, azp] of [
+        ['my-client', 'frontend'],
+        [['my-client', 'other'], 'frontend'],
+        [['my-client', 'other'], 42],
+      ] as const) {
+        await expect(v.validate(await sign({ sub: 'u', aud, azp }))).resolves.toMatchObject({
+          claims: { azp },
+        })
+      }
+    })
+  })
+
+  /**
+   * `withAudience` 가 주는 것은 코드 교환의 id_token 검증기다 — Keycloak 의 id_token 은 typ "ID" 라 (A) 를 걸지 않고, 대신
+   * (B) OIDC Core §3.1.3.7 4·5 를 건다: aud 가 둘 이상이면 azp 가 있어야 하고, azp 가 있으면(JSON null 도 있는 것이다) client
+   * id 와 같은 문자열이어야 한다.
+   */
+  describe('withAudience — id_token 검증기: typ 거부 없음 · azp 규칙', () => {
+    const idTokenValidator = () => JwtValidator.forKeySource(keys, OPTS).withAudience('the-client')
+
+    it('typ "ID" 를 받는다 — 같은 토큰을 원본(aud 가 같은 액세스 검증기)은 거부하고, 파생 뒤에도 원본은 그대로다', async () => {
+      const token = await sign({ sub: 'u', aud: 'the-client', typ: 'ID', azp: 'the-client' })
+      const access = JwtValidator.forKeySource(keys, { ...OPTS, audience: 'the-client' })
+      await expect(access.withAudience('the-client').validate(token)).resolves.toMatchObject({
+        claims: { typ: 'ID' },
+      })
+      const refused = await refusal(access.validate(token))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(refused.message).toBe('not an access token (typ "ID")')
+    })
+
+    it.each([
+      ['aud 하나 · azp 없음', 'the-client', undefined],
+      ['aud 하나 · azp = client', 'the-client', 'the-client'],
+      ['aud 둘 · azp = client', ['the-client', 'other'], 'the-client'],
+      ['aud 둘(순서 반대) · azp = client', ['other', 'the-client'], 'the-client'],
+    ])('%s → 통과', async (_name, aud, azp) => {
+      const token = await sign({ sub: 'u', aud, typ: 'ID', ...(azp === undefined ? {} : { azp }) })
+      await expect(idTokenValidator().validate(token)).resolves.toMatchObject({ subject: 'u' })
+    })
+
+    it.each([
+      ['aud 하나 · azp 가 다른 클라이언트', 'the-client', 'evil'],
+      ['aud 둘 · azp 없음', ['the-client', 'evil'], undefined],
+      ['aud 둘 · azp 가 다른 aud', ['the-client', 'evil'], 'evil'],
+      ['azp 가 숫자', 'the-client', 42],
+      ['azp 가 client id 를 담은 배열', 'the-client', ['the-client']],
+      ['azp 가 JSON null', 'the-client', null],
+    ])('%s → 거부(메시지가 azp 를 말한다)', async (_name, aud, azp) => {
+      const token = await sign({ sub: 'u', aud, typ: 'ID', ...(azp === undefined ? {} : { azp }) })
+      const refused = await refusal(idTokenValidator().validate(token))
+      expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+      expect(refused.message).toContain('azp')
     })
   })
 

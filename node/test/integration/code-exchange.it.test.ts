@@ -1,4 +1,5 @@
 import { format, inspect } from 'node:util'
+import { decodeJwt } from 'jose'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   KeycloakAuthError,
@@ -129,10 +130,16 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
     expect(tokens.accessToken).toBeTruthy()
     expect(tokens.refreshToken).toBeTruthy()
     expect(tokens.idToken).toBeTruthy()
-    // id_token 의 클레임은 SDK 의 강화 검증기(서명·iss·aud·exp)를 통과한 것만 읽는다.
-    const id = await kc.auth.validate(tokens.idToken as string)
-    expect(id.claims['nonce']).toBe(request.nonce)
-    expect(id.subject).toBe(aliceId)
+    // id_token 의 클레임은 교환이 이미 SDK 의 강화 검증기(서명·iss·aud·exp·azp)로 검증했다 — 여기서는 읽기만 한다.
+    const id = decodeJwt(tokens.idToken as string)
+    expect(id['nonce']).toBe(request.nonce)
+    expect(id.sub).toBe(aliceId)
+    // 서버가 서명한 id_token 은 typ "ID" 다 — validate 는 그것을 액세스 토큰 자리에서 거부한다. 이 클라이언트의 기대
+    // audience 는 clientId(it-web)라 aud 검사는 지나고, typ 만이 가른다.
+    expect(id['typ']).toBe('ID')
+    const notAccess = await refusal(kc.auth.validate(tokens.idToken as string))
+    expect(notAccess).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(notAccess.message).toBe('not an access token (typ "ID")')
 
     // refresh: 새 접근 토큰을 준다 — 같은 사용자의 활성 토큰이다.
     const refreshed = await kc.auth.refresh(tokens.refreshToken as string)
@@ -182,7 +189,7 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
       request.codeVerifier,
     )
     expect(unchecked.idToken).toBeTruthy()
-    expect((await kc.auth.validate(unchecked.idToken as string)).claims).not.toHaveProperty('nonce')
+    expect(decodeJwt(unchecked.idToken as string)).not.toHaveProperty('nonce')
 
     const code = await browserLogin(request, REDIRECT_URI, ...ALICE)
     const refused = await refusal(
@@ -216,12 +223,12 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
         request.codeVerifier,
         request.nonce,
       )
-      // 서버가 서명한 진짜 id_token 이다 — 기본 설정(aud=it-web) 검증기로 따로 잰다.
-      const id = await kc.auth.validate(tokens.idToken as string)
-      expect(id.audience).toContain('it-web')
-      expect(id.audience).not.toContain('not-it-web')
-      expect(id.claims['nonce']).toBe(request.nonce)
-      expect(id.subject).toBe(aliceId)
+      // 서버가 서명한 진짜 id_token 이다 — 교환이 이미 검증했다(validate 는 typ "ID" 를 받지 않는다). 클레임은 읽기만 한다.
+      const id = decodeJwt(tokens.idToken as string)
+      expect([id.aud].flat()).toContain('it-web')
+      expect([id.aud].flat()).not.toContain('not-it-web')
+      expect(id['nonce']).toBe(request.nonce)
+      expect(id.sub).toBe(aliceId)
 
       // 재정의는 액세스 토큰 검증에 그대로 걸린다 — 그 토큰은 기본 설정에서는 유효하다(대조군).
       await expect(kc.auth.validate(tokens.accessToken)).resolves.toBeDefined()

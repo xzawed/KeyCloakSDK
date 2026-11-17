@@ -435,17 +435,21 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
   const now = () => Math.floor(Date.now() / 1000)
   const sign = (
     aud: string | string[],
-    { iss = ISSUER, exp = now() + 300 }: { iss?: string; exp?: number | null } = {},
+    {
+      iss = ISSUER,
+      exp = now() + 300,
+      extra = {},
+    }: { iss?: string; exp?: number | null; extra?: Record<string, unknown> } = {},
   ) => {
-    const jwt = new SignJWT({ sub: 'u', aud, nonce: 'the-nonce' })
+    const jwt = new SignJWT({ sub: 'u', aud, nonce: 'the-nonce', ...extra })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuedAt(now() - 120)
       .setIssuer(iss)
     return (exp === null ? jwt : jwt.setExpirationTime(exp)).sign(priv)
   }
 
-  /** 로컬 키셋 검증기로 조립한다 — 실제 aud 판정을 네트워크 없이 관찰. */
-  const overridden = (): AuthClient => {
+  /** 로컬 키셋 검증기로 조립한다 — 실제 aud 판정을 네트워크 없이 관찰. `expectedAudience` 가 없으면 재정의 없음. */
+  const authWith = (expectedAudience?: string): AuthClient => {
     const spy = vi
       .spyOn(JwtValidator, 'forJwksUri')
       .mockImplementation((_uri, opts) => JwtValidator.forKeySource(keys, opts))
@@ -455,13 +459,14 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
           serverUrl: 'https://kc.example.com',
           realm: 'demo',
           clientId: 'app',
-          expectedAudience: 'some-api',
+          ...(expectedAudience === undefined ? {} : { expectedAudience }),
         }),
       )
     } finally {
       spy.mockRestore()
     }
   }
+  const overridden = (): AuthClient => authWith('some-api')
 
   const exchangeWith = (auth: AuthClient, idToken: string) => {
     vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue({
@@ -476,7 +481,7 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
    * 교환이 id_token 검증에서 거부됐다 — 문구가 아니라 타입으로 가린다. cause 는 `scrubCause` 가 만든
    * 사본이라(`src/errors.ts`) 인스턴스가 아니라 이름으로 본다.
    */
-  const refusedAtIdToken = async (call: Promise<unknown>) => {
+  const refusedAtIdToken = async (call: Promise<unknown>): Promise<Error> => {
     const refused = await call.then(
       () => undefined,
       (e: unknown) => e,
@@ -485,15 +490,33 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
     expect(((refused as Error).cause as Error | undefined)?.name).toBe(
       KeycloakTokenValidationError.name,
     )
+    return refused as Error
+  }
+
+  /** 거부의 원인이 azp 규칙이다 — 다른 id_token 검사(서명 · iss · aud · exp)의 거부가 이 초록을 대신 채우지 못하게. */
+  const refusedForAzp = async (call: Promise<unknown>) => {
+    const refused = await refusedAtIdToken(call)
+    expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
+    expect((refused.cause as Error).message).toContain('azp')
   }
 
   it('(A1) 재정의해도 aud 에 clientId 가 있는 id_token 의 교환은 통과한다', async () => {
     const auth = overridden()
     const single = await sign('app')
     await expect(exchangeWith(auth, single)).resolves.toMatchObject({ idToken: single })
-    // Keycloak 「Add to ID token」 audience 매퍼의 모양 — [client_id, extra].
-    const multi = await sign(['app', 'some-api'])
+    // Keycloak 「Add to ID token」 audience 매퍼의 모양 — [client_id, extra]. Keycloak 은 id_token 에 azp = client id 를
+    // 싣는다 — aud 가 둘 이상인 id_token 은 그것이 있어야 통과한다(아래 azp 묶음).
+    const multi = await sign(['app', 'some-api'], { extra: { azp: 'app' } })
     await expect(exchangeWith(auth, multi)).resolves.toMatchObject({ idToken: multi })
+  })
+
+  // 재정의 아래에서도 azp 는 client id 와 대조한다 — 재정의 값(액세스 토큰이 향하는 리소스 서버)이 아니다.
+  it('(A5) 재정의 아래에서도 azp 는 clientId 와 대조한다 — 재정의 값인 azp · azp 없는 다중 aud 는 거부한다', async () => {
+    const auth = overridden()
+    await refusedForAzp(
+      exchangeWith(auth, await sign(['app', 'some-api'], { extra: { azp: 'some-api' } })),
+    )
+    await refusedForAzp(exchangeWith(auth, await sign(['app', 'some-api'])))
   })
 
   it('(A2) aud 에 clientId 가 없는 id_token 은 거부한다 — aud 가 재정의 값과 같아도', async () => {
@@ -531,6 +554,46 @@ describe('exchangeCode — expectedAudience 재정의(id_token aud 는 clientId)
     // nonce 대조는 openid-client 의 몫이다 — 재정의가 그 전달을 바꾸지 않는다.
     const [, , checks] = vi.mocked(oidc.authorizationCodeGrant).mock.calls.at(-1)!
     expect(checks).toEqual({ pkceCodeVerifier: 'verifier', expectedNonce: 'the-nonce' })
+  })
+
+  /**
+   * id_token 의 typ · azp(SDK 층 — openid-client 는 목이다). (A) `validate` 의 typ 거부(액세스 토큰이 아닌 Keycloak
+   * 토큰)는 액세스 토큰 자리에만 걸린다 — Keycloak 의 id_token 은 typ "ID" 이므로 교환에 걸리면 정상 교환이 전부 실패한다.
+   * (B) OIDC Core §3.1.3.7 4·5: aud 가 둘 이상이면 azp 가 있어야 하고, azp 가 있으면 clientId 와 같은 문자열이어야 한다.
+   * 아래 토큰은 전부 Keycloak 처럼 typ "ID" 를 싣는다.
+   */
+  it('(B1) Keycloak 모양의 id_token(typ "ID" · azp = clientId)은 교환을 통과하고, 같은 토큰을 validate 는 거부한다', async () => {
+    const auth = authWith()
+    const idToken = await sign('app', { extra: { typ: 'ID', azp: 'app' } })
+    await expect(exchangeWith(auth, idToken)).resolves.toMatchObject({ idToken })
+    const refused = await auth.validate(idToken).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect((refused as Error).message).toBe('not an access token (typ "ID")')
+  })
+
+  it.each([
+    ['aud 하나 · azp 없음', 'app', undefined],
+    ['aud 하나 · azp = clientId', 'app', 'app'],
+    ['aud 둘 · azp = clientId', ['app', 'other'], 'app'],
+    ['aud 둘(순서 반대) · azp = clientId', ['other', 'app'], 'app'],
+  ])('(B2) %s → 교환을 통과한다', async (_name, aud, azp) => {
+    const idToken = await sign(aud, { extra: { typ: 'ID', ...(azp === undefined ? {} : { azp }) } })
+    await expect(exchangeWith(authWith(), idToken)).resolves.toMatchObject({ idToken })
+  })
+
+  it.each([
+    ['aud 하나 · azp 가 다른 클라이언트', 'app', 'evil'],
+    ['aud 둘 · azp 없음', ['app', 'evil'], undefined],
+    ['aud 둘 · azp 가 다른 aud', ['app', 'evil'], 'evil'],
+    ['azp 가 숫자', 'app', 42],
+    ['azp 가 clientId 를 담은 배열', 'app', ['app']],
+    ['azp 가 JSON null', 'app', null],
+  ])('(B3) %s → invalid id_token(원인이 azp 를 말한다)', async (_name, aud, azp) => {
+    const idToken = await sign(aud, { extra: { typ: 'ID', ...(azp === undefined ? {} : { azp }) } })
+    await refusedForAzp(exchangeWith(authWith(), idToken))
   })
 })
 
