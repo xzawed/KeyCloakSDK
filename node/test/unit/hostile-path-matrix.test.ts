@@ -361,7 +361,9 @@ async function startServer(keys: Keys): Promise<IdpServer> {
       next += 1
       const realm = `r${next}`
       const iss = `${origin}/realms/${realm}`
-      const universal = await sign(keys.priv, 'k1', iss, {})
+      // Keycloak 의 액세스 토큰처럼 typ "Bearer" — 액세스 경로(`validate`)는 Bearer · DPoP 만 받는다(`jwt.ts`
+      // `requireAccessTokenType`). 없으면 분류 실행의 validate 두 행이 종류 검사에서 err 로 끝난다(HEAD 는 ok).
+      const universal = await sign(keys.priv, 'k1', iss, { typ: 'Bearer' })
       const cell: OpenCell = {
         label,
         closed: false,
