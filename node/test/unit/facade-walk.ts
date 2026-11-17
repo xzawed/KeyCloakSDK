@@ -158,7 +158,7 @@ export function isEmptyValue(v: unknown): boolean {
 export function privateFieldDeclarations(): string[] {
   const out: string[] = []
   const field =
-    /(?:^|[;{}])[ \t]*(?:(?:static|readonly|declare|override|accessor)[ \t]+)*#([A-Za-z_$][\w$]*)[ \t]*[?!]?[ \t]*(?=[:=;\n]|$)/gm
+    /(?:^|[;{}])[ \t]*(?:(?:static|readonly|declare|override|accessor)[ \t]+)*#([A-Za-z_$][\w$]*)[ \t]*(?:[?!][ \t]*)?(?=[:=;\n]|$)/gm
   for (const rel of readdirSync(SRC, { recursive: true, encoding: 'utf8' })) {
     if (!rel.endsWith('.ts') || rel.endsWith('.d.ts')) continue
     const text = readFileSync(join(SRC, rel), 'utf8')
@@ -166,7 +166,8 @@ export function privateFieldDeclarations(): string[] {
       .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1')
     for (const m of text.matchAll(field)) out.push(`${rel.replaceAll('\\', '/')}:#${m[1] ?? ''}`)
   }
-  return out.sort()
+  // 코드 포인트 순 — 로캘에 기대지 않는다(표와 대조하는 결과다).
+  return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
 }
 
 /**
