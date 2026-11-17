@@ -435,9 +435,27 @@ pub struct FnDecl {
     pub nested: bool,
 }
 
+/// 선언된 이름 있는 필드 하나 — 구조체(`{ … }` 몸통)와 열거형 구조체 변형의 필드. 튜플 필드는 이름이 없어 빠진다.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FieldDecl {
+    /// 선언한 타입의 짧은 이름 — 열거형 구조체 변형의 필드면 `타입::변형`.
+    pub owner: String,
+    pub name: String,
+    pub file: String,
+}
+
+impl FieldDecl {
+    /// `타입.필드` — 대조 표의 키.
+    pub fn key(&self) -> String {
+        format!("{}.{}", self.owner, self.name)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Scan {
     pub decls: BTreeMap<String, Decl>,
+    /// 선언된 이름 있는 필드 전부(선언 순서) — facade_dump.rs 의 비밀 이름 필드 대조가 쓴다.
+    pub fields: Vec<FieldDecl>,
     /// 루트가 재노출하는 foreign **타입** 이름 → 원 경로.
     pub foreign_reexports: BTreeMap<String, String>,
     /// 파생이 판독할 수 없어 사람이 봐야 하는 자리(글롭 재노출·같은 짧은 이름 둘·같은 라벨 둘).
@@ -503,6 +521,7 @@ impl Scan {
                         Vec::new()
                     };
                     self.declare(stem, name, public, &derives(attrs), variants);
+                    self.record_fields(stem, kw, name, toks, j + 2);
                 }
                 j + 2
             }
@@ -523,6 +542,49 @@ impl Scan {
                 i + 1
             }
             _ => i + 1,
+        }
+    }
+
+    /// `struct`/`union`/`enum` 이름 뒤에서 이름 있는 필드를 모은다 — 구조체는 `{ … }` 몸통, 열거형은 변형마다의
+    /// `{ … }`. 튜플(`(…)`)과 단위(`;`)는 이름이 없어 아무것도 남기지 않는다. 제네릭(`<…>`)과 `where` 절은 건너뛴다.
+    fn record_fields(&mut self, stem: &str, kw: &str, name: &str, toks: &[Tok], from: usize) {
+        let mut k = skip_angles(toks, from);
+        if kw != "enum" && matches!(toks.get(k), Some(Tok::P('(' | ';'))) {
+            return;
+        }
+        let open = loop {
+            match toks.get(k) {
+                None | Some(Tok::P(';')) => return,
+                Some(Tok::P('{')) => break k,
+                Some(Tok::P('(' | '[')) => k = matching(toks, k) + 1,
+                Some(Tok::P('<')) => k = skip_angles(toks, k),
+                Some(_) => k += 1,
+            }
+        };
+        let body = &toks[open + 1..matching(toks, open)];
+        let file = format!("{stem}.rs");
+        let mut push = |owner: String, fields: Vec<String>| {
+            self.fields.extend(fields.into_iter().map(|f| FieldDecl {
+                owner: owner.clone(),
+                name: f,
+                file: file.clone(),
+            }));
+        };
+        if kw != "enum" {
+            push(name.to_string(), named_fields(body));
+            return;
+        }
+        for seg in split_top(body) {
+            let mut v = 0;
+            while v < seg.len()
+                && let Some((_, next)) = attribute(seg, v)
+            {
+                v = next;
+            }
+            if let (Some(variant), Some(Tok::P('{'))) = (id(seg.get(v)), seg.get(v + 1)) {
+                let inner = &seg[v + 2..matching(seg, v + 1)];
+                push(format!("{name}::{variant}"), named_fields(inner));
+            }
         }
     }
 
@@ -875,6 +937,29 @@ pub fn skip_qualifiers(toks: &[Tok], mut k: usize) -> usize {
             _ => return k,
         }
     }
+}
+
+/// `{ … }` 몸통(괄호 안쪽)의 이름 있는 필드 — 조각마다 속성 · 가시성(`pub` · `pub(crate)`)을 건너뛰고 `이름 :` 을
+/// 읽는다(경로의 `::` 는 아니다).
+pub fn named_fields(body: &[Tok]) -> Vec<String> {
+    split_top(body)
+        .into_iter()
+        .filter_map(|seg| {
+            let mut k = 0;
+            while k < seg.len()
+                && let Some((_, next)) = attribute(seg, k)
+            {
+                k = next;
+            }
+            let (k, _) = visibility(seg, k);
+            match (id(seg.get(k)), seg.get(k + 1), seg.get(k + 2)) {
+                (Some(name), Some(Tok::P(':')), next) if next != Some(&Tok::P(':')) => {
+                    Some(name.to_string())
+                }
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// 괄호·꺾쇠 깊이 0 의 `,` 로 가른다(빈 조각은 버린다 — 끝의 쉼표).
