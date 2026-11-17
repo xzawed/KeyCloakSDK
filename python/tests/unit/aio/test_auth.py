@@ -286,9 +286,11 @@ def _answer(openid: MagicMock, id_token: str, access: str = "acc") -> None:
 async def test_exchange_code_checks_the_id_token_aud_against_the_client_id_under_an_override(
     ajwks, aud
 ):
-    """A1 — 재정의가 있어도 `aud` 에 client_id 가 있는 id_token 의 교환은 통과한다."""
+    """A1 — 재정의가 있어도 `aud` 에 client_id 가 있는 id_token 의 교환은 통과한다. azp 는
+    Keycloak 의 id_token 처럼 client_id 다 — aud 가 여럿이면 OIDC Core §3.1.3.7 ④ 가 그것을
+    요구한다(sync 동형)."""
     client, openid, key, endpoints = _override_setup(ajwks)
-    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n"))
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", azp="app"))
 
     tokens = await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
 
@@ -441,6 +443,134 @@ async def test_exchange_and_validate_share_one_cold_cache_backoff(ajwks):
     with pytest.raises(KeycloakTransportError, match="backing off"):
         await client.validate(_signed_token(key, issuer=endpoints.issuer, audience=_API))
     assert ajwks.call_count == 1
+
+
+# --- typ · azp — 두 경로가 갈리는 두 검사(파사드 배선, sync 동형) ------------------------
+# (A) `validate()` 는 Keycloak 의 access 아닌 토큰(typ ID · Refresh · Offline · Logout ·
+# Serialized-ID)을 거부한다. (B) nonce 교환의 id_token 은 OIDC Core §3.1.3.7 ④⑤ 를
+# 지킨다. 어느 검사도 다른 경로에 걸리지 않는다. 검증기 칸은 `tests/unit/test_jwt.py` 다.
+
+_NO_AZP = object()  # azp 클레임 자체가 없다
+_AZP_MISMATCH = "Authorized party (azp) mismatch"
+_AZP_MISSING = "Missing azp claim for multiple audiences"
+
+
+def _exchange_setup(ajwks) -> tuple[AsyncAuthClient, MagicMock, RSAKey, OidcEndpoints]:
+    """재정의 없는 교환 클라이언트(client_id `app`). 토큰 응답은 `_answer` 가 싣는다."""
+    config = _config()
+    key = RSAKey.generate_key(2048, {"kid": "k1", "use": "sig"})
+    ajwks.return_value = {"keys": [key.as_dict(private=False)]}
+    openid = MagicMock()
+    return _client(openid, config=config), openid, key, OidcEndpoints.for_realm(config)
+
+
+def _azp(azp: object) -> dict[str, object]:
+    return {} if azp is _NO_AZP else {"azp": azp}
+
+
+@pytest.mark.parametrize("typ", ["ID", "Logout", "Refresh"])
+async def test_validate_refuses_a_keycloak_token_that_is_not_an_access_token(ajwks, typ):
+    """(A) — id_token · 백채널 로그아웃 토큰 · refresh 토큰이 `validate()` 를 통과하지
+    못한다. 클레임 실패라 JWKS 를 다시 가져오지 않는다."""
+    client, key, endpoints = _validate_client(_config(), ajwks)
+    token = _signed_token(key, issuer=endpoints.issuer, audience="app", typ=typ)
+
+    with pytest.raises(TokenValidationError) as refused:
+        await client.validate(token)
+
+    assert type(refused.value) is TokenValidationError
+    assert str(refused.value) == f"Token is not an access token (typ {typ})"
+    assert ajwks.call_count == 1
+
+
+@pytest.mark.parametrize("typ", [None, "Bearer", "DPoP", "at+jwt"])
+async def test_validate_accepts_an_access_token_typ(ajwks, typ):
+    """(A) 대조 — typ 가 없거나 access 토큰의 값이면 지금처럼 통과한다."""
+    client, key, endpoints = _validate_client(_config(), ajwks)
+    extra = {} if typ is None else {"typ": typ}
+
+    result = await client.validate(
+        _signed_token(key, issuer=endpoints.issuer, audience="app", **extra)
+    )
+
+    assert result.subject == "user-1"
+
+
+async def test_validate_does_not_judge_azp(ajwks):
+    """(B) 는 access 경로에 걸리지 않는다 — aud 가 여럿이고 azp 가 없거나 남인 access
+    토큰도 통과한다."""
+    client, key, endpoints = _validate_client(_config(), ajwks)
+
+    for azp in (_NO_AZP, "frontend"):
+        token = _signed_token(key, issuer=endpoints.issuer, audience=["app", "x"], **_azp(azp))
+        assert (await client.validate(token)).subject == "user-1"
+
+
+async def test_exchange_code_accepts_an_id_token_whose_typ_is_id(ajwks):
+    """(A) 는 교환의 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다."""
+    client, openid, key, endpoints = _exchange_setup(ajwks)
+    claims = {"nonce": "n", "typ": "ID", "azp": "app"}
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience="app", **claims))
+
+    tokens = await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    assert tokens.id_token
+
+
+@pytest.mark.parametrize(
+    ("aud", "azp"),
+    [
+        pytest.param("app", _NO_AZP, id="single aud, no azp"),
+        pytest.param(["app", "other"], "app", id="several auds, azp is the client"),
+    ],
+)
+async def test_exchange_code_accepts_an_id_token_whose_azp_names_the_client(ajwks, aud, azp):
+    """(B) 통과 칸 — aud 가 하나면 azp 는 없어도 되고, aud 가 여럿이면 azp 가 client_id 다."""
+    client, openid, key, endpoints = _exchange_setup(ajwks)
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", **_azp(azp))
+    _answer(openid, id_token)
+
+    tokens = await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    assert tokens.id_token
+
+
+@pytest.mark.parametrize(
+    ("aud", "azp", "reason"),
+    [
+        pytest.param("app", "evil", _AZP_MISMATCH, id="single aud, foreign azp"),
+        pytest.param(["app", "evil"], _NO_AZP, _AZP_MISSING, id="several auds, no azp"),
+        pytest.param(["app", "evil"], "evil", _AZP_MISMATCH, id="several auds, foreign azp"),
+    ],
+)
+async def test_exchange_code_refuses_an_id_token_whose_azp_breaks_oidc_core(
+    ajwks, aud, azp, reason
+):
+    """(B) — 실패는 다른 id_token 실패와 같은 모양이다(`invalid id_token`, 원인이 이유를 말한다)."""
+    client, openid, key, endpoints = _exchange_setup(ajwks)
+    id_token = _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", **_azp(azp))
+    _answer(openid, id_token)
+
+    with pytest.raises(KeycloakAuthError) as refused:
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+
+    assert str(refused.value) == "authorization code exchange failed: invalid id_token"
+    assert type(refused.value.__cause__) is TokenValidationError
+    assert str(refused.value.__cause__) == reason
+
+
+async def test_exchange_code_checks_azp_against_the_client_id_under_an_override(ajwks):
+    """(B) 의 기준은 `expected_audience` 가 아니라 client_id 다 — 재정의 값을 azp 로 단
+    id_token 은 거부다."""
+    client, openid, key, endpoints = _override_setup(ajwks)
+    aud = ["app", _API]
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", azp="app"))
+    assert (await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")).id_token
+
+    _answer(openid, _signed_token(key, issuer=endpoints.issuer, audience=aud, nonce="n", azp=_API))
+    with pytest.raises(KeycloakAuthError, match="invalid id_token") as refused:
+        await client.exchange_code("code", "https://app/cb", "verifier", nonce="n")
+    assert str(refused.value.__cause__) == _AZP_MISMATCH
 
 
 async def test_refresh_maps_response_and_delegates():

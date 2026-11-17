@@ -233,6 +233,8 @@ impl AuthClient {
     /// nonce replay protection. A mismatch, an absence or a failed verification are all rejected (fail-closed). `None`
     /// skips id_token validation.
     /// The id_token's `aud` is checked against `client_id` — `expected_audience` applies only to [`Self::validate`].
+    /// Its `azp` must also be `client_id` when present, and must be present when `aud` has several values (OIDC Core
+    /// §3.1.3.7, steps 4–5).
     pub async fn exchange_code(
         &self,
         code: &str,
@@ -291,7 +293,8 @@ impl AuthClient {
     // id_token의 nonce 클레임을 대조하기 전에 강화 JwtValidator로 서명·iss·aud·exp까지 검증한다.
     // ⚠️ aud 는 `expected_audience` 가 아니라 **이 AuthClient 의 client_id**(토큰 엔드포인트에서 인증한
     // 신원)로 본다(OIDC Core §2 · §3.1.3.7) — 재정의는 access 토큰의 리소스 서버 제한이다. 검증기는 같은
-    // 것을 쓴다(JWKS 상태가 하나로 남는다).
+    // 것을 쓴다(JWKS 상태가 하나로 남는다). 진입점은 id_token 의 것이다 — azp 를 보고, access 의 typ 검사는
+    // 걸지 않는다(Keycloak 의 id_token 은 typ 가 `ID` 다).
     async fn verify_nonce(&self, id_token: Option<&str>, expected_nonce: &str) -> Result<()> {
         let id_token = id_token.ok_or_else(|| KeycloakError::Auth {
             message: "authorization code exchange failed: missing id_token for nonce validation"
@@ -300,7 +303,7 @@ impl AuthClient {
         })?;
         let validated = self
             .validator
-            .validate_for_audience(id_token, &self.config.client_id)
+            .validate_id_token(id_token, &self.config.client_id)
             .await
             .map_err(|e| KeycloakError::Auth {
                 message: format!("authorization code exchange failed: invalid id_token: {e}"),
@@ -373,7 +376,8 @@ impl AuthClient {
     }
 
     /// Delegates access_token validation to the hardened `JwtValidator` (RS256 pin · iss · aud · exp · nbf · skew ·
-    /// DoS-safe JWKS).
+    /// DoS-safe JWKS), which also refuses a Keycloak token that is not an access token (`typ` claim `ID`, `Refresh`,
+    /// `Offline`, `Logout` or `Serialized-ID`).
     ///
     /// ⚠️ A forced JWKS refetch (unknown kid) runs to completion even if this call is cancelled, but it ends together with
     /// the tokio runtime that spawned it if that runtime shuts down first, and tokens signed with the new key are then
@@ -917,12 +921,15 @@ mod tests {
     // 담은 **진짜** id_token 이 거부됐다(nonce 교환이 막혔다). 재정의는 access 토큰의 리소스 서버
     // 제한이다(RFC 9700 §2.3 · §4.10.2) — id_token 의 aud 는 client id 를 담아야 한다.
 
-    /// (A1) 재정의 아래에서도 aud 에 client id 가 있으면 교환이 통과한다 — 단일 값과 배열 둘 다.
+    /// (A1) 재정의 아래에서도 aud 에 client id 가 있으면 교환이 통과한다 — 단일 값과 배열 둘 다. azp 는 Keycloak 의
+    /// id_token 처럼 client id 다 — aud 가 여럿이면 OIDC Core §3.1.3.7 ④ 가 그것을 요구한다.
     #[tokio::test]
     async fn exchange_code_accepts_client_id_audience_under_expected_audience_override() {
         for aud in [json!("it-client"), json!(["it-client", "api://orders"])] {
             let fx = exchange_fixture_with(override_spec(), |t| {
-                Some(t.id_token(aud.clone(), Some("expected-nonce")))
+                let mut c = t.claims(aud.clone(), Some("expected-nonce"));
+                c["azp"] = json!("it-client");
+                Some(t.sign(&c, "test-kid"))
             })
             .await;
             let ts = fx
@@ -1192,6 +1199,133 @@ mod tests {
             1,
             "the backoff opened by the exchange must hold for validate()"
         );
+    }
+
+    // ── typ · azp — 두 경로가 갈리는 두 검사(파사드 배선) ──────────────────────────────────────
+    //
+    // (A) `validate()` 는 Keycloak 의 access 아닌 토큰(typ ID · Refresh · Offline · Logout · Serialized-ID)을 거부한다.
+    // (B) nonce 교환의 id_token 은 OIDC Core §3.1.3.7 ④⑤ 를 지킨다 — aud 가 여럿이면 azp 가 있어야 하고, 있는 azp 는
+    // 코드를 교환한 client id 다. 어느 검사도 다른 경로에 걸리지 않는다. 검증기 칸(다섯 typ 전부 · 경계값)은 `jwt.rs` 다.
+
+    /// (A) — id_token · 백채널 로그아웃 토큰 · refresh 토큰이 `validate()` 를 통과하지 못하고 access 토큰의 typ 는 지금처럼
+    /// 통과한다. (B) 는 `validate()` 에 걸리지 않는다 — aud 가 여럿이고 azp 가 없거나 남이어도 통과한다.
+    #[tokio::test]
+    async fn validate_judges_typ_and_leaves_azp_alone() {
+        let fx = exchange_fixture_with(ExchangeSpec::default(), |_| None).await;
+        let access = |extra: serde_json::Value| {
+            let mut c = fx.signer.claims(json!(["it-client", "account"]), None);
+            c.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            fx.signer.sign(&c, "test-kid")
+        };
+        for typ in ["ID", "Logout", "Refresh"] {
+            match fx.auth.validate(&access(json!({ "typ": typ }))).await {
+                Err(KeycloakError::TokenValidation(m)) => {
+                    assert_eq!(m, format!("not an access token (typ {typ})"))
+                }
+                other => {
+                    panic!("typ {typ}: expected the not-an-access-token refusal, got {other:?}")
+                }
+            }
+        }
+        for extra in [
+            json!({}),
+            json!({ "typ": "Bearer" }),
+            json!({ "typ": "DPoP" }),
+            json!({ "typ": "at+jwt" }),
+            json!({ "azp": "frontend" }),
+        ] {
+            fx.auth
+                .validate(&access(extra.clone()))
+                .await
+                .unwrap_or_else(|e| panic!("{extra}: an access token must pass, got {e:?}"));
+        }
+    }
+
+    /// (A) 는 교환의 id_token 경로에 걸리지 않는다 — Keycloak 의 id_token 은 typ 가 `ID` 다.
+    #[tokio::test]
+    async fn exchange_code_accepts_an_id_token_typed_id() {
+        let fx = exchange_fixture_with(ExchangeSpec::default(), |t| {
+            let mut c = t.claims(json!("it-client"), Some("expected-nonce"));
+            c["typ"] = json!("ID");
+            c["azp"] = json!("it-client");
+            Some(t.sign(&c, "test-kid"))
+        })
+        .await;
+        fx.auth
+            .exchange_code("c", "v", Some("expected-nonce"))
+            .await
+            .expect("an id_token typed ID must pass the exchange");
+    }
+
+    /// (B) — 실패는 다른 id_token 실패와 같은 모양이다(`invalid id_token: …`, 이유가 azp 를 말한다). 기준은
+    /// `expected_audience` 가 아니라 코드를 교환한 client id 다 — 그래서 재정의 아래에서 잰다.
+    #[tokio::test]
+    async fn exchange_code_applies_oidc_azp_rules_to_the_id_token() {
+        let mismatch = "authorization code exchange failed: invalid id_token: \
+                        token validation error: authorized party (azp) mismatch";
+        let missing = "authorization code exchange failed: invalid id_token: \
+                       token validation error: missing azp claim for multiple audiences";
+        let cases = [
+            ("single aud, no azp", json!("it-client"), None, None),
+            (
+                "several auds, azp is the client",
+                json!(["it-client", "other"]),
+                Some("it-client"),
+                None,
+            ),
+            (
+                "single aud, foreign azp",
+                json!("it-client"),
+                Some("evil"),
+                Some(mismatch),
+            ),
+            (
+                "several auds, no azp",
+                json!(["it-client", "evil"]),
+                None,
+                Some(missing),
+            ),
+            (
+                "several auds, foreign azp",
+                json!(["it-client", "evil"]),
+                Some("evil"),
+                Some(mismatch),
+            ),
+            (
+                "azp is the override",
+                json!(["it-client", "api://orders"]),
+                Some("api://orders"),
+                Some(mismatch),
+            ),
+        ];
+        for (name, aud, azp, want) in cases {
+            let fx = exchange_fixture_with(override_spec(), |t| {
+                let mut c = t.claims(aud, Some("expected-nonce"));
+                if let Some(a) = azp {
+                    c["azp"] = json!(a);
+                }
+                Some(t.sign(&c, "test-kid"))
+            })
+            .await;
+            match (
+                want,
+                fx.auth
+                    .exchange_code("c", "v", Some("expected-nonce"))
+                    .await,
+            ) {
+                (None, Ok(ts)) => assert!(ts.id_token.is_some(), "{name}"),
+                (
+                    Some(w),
+                    Err(KeycloakError::Auth {
+                        message,
+                        oauth_error: None,
+                    }),
+                ) => assert_eq!(message, w, "{name}"),
+                (want, got) => panic!("{name}: want {want:?}, got {got:?}"),
+            }
+        }
     }
 
     #[tokio::test]

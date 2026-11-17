@@ -201,7 +201,7 @@ func TestValidateRefusesOverCapHSTokenByTheCapBeforeTheHSRefusal(t *testing.T) {
 	for _, path := range []struct {
 		name string
 		v    *Validator
-	}{{"access", v}, {"id_token", v.withAudience("my-client")}} {
+	}{{"access", v}, {"id_token", v.forIDToken("my-client")}} {
 		_, err := path.v.Validate(context.Background(), over)
 		var te *TokenValidationError
 		if !errors.As(err, &te) {

@@ -205,7 +205,10 @@ export class AuthClient {
     const currentUrl = redirectUrl(redirectUri)
     const config = await this.#discover()
     currentUrl.searchParams.set('code', code)
-    // RFC 9207: Keycloak은 인가 응답에 iss를 포함하며 openid-client가 이를 검증한다.
+    // ⚠️ RFC 9207 검증이 **아니다** — SDK 가 자기 issuer 를 넣는다. Keycloak 의 discovery 가
+    // `authorization_response_iss_parameter_supported` 를 알려 oauth4webapi(`validateAuthResponse`)는 콜백의 `iss` 가 없으면
+    // 거부하는데, exchangeCode 는 code 만 받아 인가 응답의 iss 가 없다(아홉 언어 다 그렇다). 그래서 이 대조는 늘 참이다 —
+    // 여러 발급자를 쓰는 앱의 mix-up 방어는 호출자가 콜백의 iss 를 직접 대조해야 한다(등록부 authcode-flow-verification-defeated).
     currentUrl.searchParams.set('iss', this.#endpoints.issuer)
     const checks: oidc.AuthorizationCodeGrantChecks = { pkceCodeVerifier: codeVerifier }
     if (nonce !== undefined) {
@@ -231,6 +234,8 @@ export class AuthClient {
    * id_token의 aud는 **clientId**로 검사한다(OIDC Core §2·§3.1.3.7) — `expectedAudience`는 액세스 토큰의
    * 리소스 서버 제한이다. 검증기는 `#validator`에서 audience만 바꿔 파생하므로 키 소스(JWKS 캐시·재조회
    * 제한·백오프)는 하나다. 파생은 지연한다 — 주입된 검증기가 교환 경로에 닿기 전에는 부르지 않는다.
+   * 파생은 id_token 검증기다 — `validate` 의 typ 거부(Keycloak 의 id_token 은 typ "ID")를 걸지 않고 azp 를 본다(aud 가
+   * 둘 이상이면 있어야 하고, 있으면 clientId). openid-client 는 aud 가 하나인 id_token 의 azp 를 보지 않는다.
    */
   async #verifyIdToken(idToken: string | undefined): Promise<void> {
     if (idToken === undefined) {

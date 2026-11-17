@@ -79,7 +79,7 @@ cd kotlin
 
 ## SDK behaviour (isomorphic with Java)
 
-- `exchangeCode` validates the id_token (signature · iss · aud = `clientId` · exp) **before** comparing the nonce.
+- `exchangeCode` validates the id_token (signature · iss · aud = `clientId` · azp · exp) **before** comparing the nonce.
 - ⚠️ **Nimbus rejects bad input locally** (value-type constructors: IAE · `Builder.build()`: ISE), and `java.net.URI(String)` throws `URISyntaxException` — none may escape (§4). Wrap call-site strings in `requestValue`/`redirectUri`, keep the `build()` catch, take scopes from `configuredScope` (`AuthClientInputBoundaryTest`); config values: still open.
 - The admin facade knows nothing about auth — it owns its token through `KeycloakBuilder`'s built-in client-credentials (§4).
 - `fun interface` + `suspend` compiles (KT-40978 is resolved), so `TokenProvider` is SAM-convertible.

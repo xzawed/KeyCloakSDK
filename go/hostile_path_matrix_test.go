@@ -1242,7 +1242,7 @@ const hpColdK = 5
 
 // hpFreezeGateClock 은 recv 에서 걷기로 닿는 *Validator 의 게이트 시계(opts.now)를 지금에 얼리고 얼렸는지를 낸다.
 // ⚠️ 실시간이면 다섯 호출 사이의 정지가 창(0.1–0.2 · 0.2–0.4 · 0.4–0.8 · 0.8–1.6초)을 넘을 때마다 요청이 하나 더
-// 나가 상한 k−1 을 깬다(실측: 호출마다 1.7초 정지 → 세 행 전부 `/certs 요청 5`). ExchangeCode 의 withAudience 는
+// 나가 상한 k−1 을 깬다(실측: 호출마다 1.7초 정지 → 세 행 전부 `/certs 요청 5`). ExchangeCode 의 forIDToken 은
 // 호출 때 opts 를 복사하므로 그 사본도 언 시계를 갖는다. 걷기는 타입마다 처음 닿은 값 하나만 남긴다(found).
 func hpFreezeGateClock(t *testing.T, recv reflect.Value) bool {
 	t.Helper()

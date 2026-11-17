@@ -28,8 +28,10 @@ from tests.integration.conftest import (
     WEB_CLIENT_SECRETS,
     Sealed,
     catch,
+    id_token_claims,
     render_with_locals,
     strip_nonce,
+    unverified_claims,
     web_config,
 )
 
@@ -55,7 +57,13 @@ def test_exchange_code_binds_tokens_to_the_nonce_and_user(
     assert tokens.access_token
     assert tokens.refresh_token
     assert tokens.id_token
-    id_claims = kc.auth.validate(tokens.id_token).claims
+    # access 검증은 실서버 id_token 을 거부한다 — Keycloak 이 id_token 의 typ 를 `ID` 로 싣는다는
+    # 실측 자리이기도 하다.
+    with pytest.raises(TokenValidationError) as not_access:
+        kc.auth.validate(tokens.id_token)
+    assert str(not_access.value) == "Token is not an access token (typ ID)"
+    # 클레임은 교환이 id_token 을 검증한 그 길(kind="id_token")로 읽는다.
+    id_claims = id_token_claims(kc, tokens.id_token)
     assert id_claims["nonce"] == request.nonce
     assert id_claims["sub"] == alice_id
 
@@ -91,7 +99,7 @@ def test_exchange_code_refuses_an_id_token_that_carries_no_nonce(kc: KeycloakCli
     code = browser_login(request, REDIRECT_URI, *ALICE)
     unchecked = kc.auth.exchange_code(code, REDIRECT_URI, request.code_verifier)
     assert unchecked.id_token
-    assert "nonce" not in kc.auth.validate(unchecked.id_token).claims
+    assert "nonce" not in id_token_claims(kc, unchecked.id_token)
 
     code = browser_login(request, REDIRECT_URI, *ALICE)
     with pytest.raises(KeycloakAuthError) as refused:
@@ -163,6 +171,7 @@ def test_exchange_code_with_the_nonce_succeeds_under_an_expected_audience_overri
         assert EXTRA_API in access.audience
         assert access.subject == alice_id
         # 반대편: `validate()` 는 client_id 를 기대하지 않는다 — id_token 에는 extra-api 가 없다.
+        # audience 검사가 typ 검사보다 먼저라 거부 이유는 여전히 audience 다.
         with pytest.raises(TokenValidationError, match="Audience not contained"):
             kc.auth.validate(tokens.id_token)
 
@@ -179,7 +188,10 @@ def test_exchange_code_refuses_an_id_token_whose_aud_lacks_the_client_id(
             browser_login(request, REDIRECT_URI, *ALICE), REDIRECT_URI, request.code_verifier
         )
         assert unchecked.id_token
-        assert kc.auth.validate(unchecked.id_token).audience == (EXTRA_API,)
+        # 서명 검증 없이 읽는다 — 맞는 검증 길이 없다: id_token 길은 client_id 없는 이 aud 를
+        # 거부하고(그것이 아래가 재는 것이다), access 길은 typ `ID` 를 거부한다.
+        aud = unverified_claims(unchecked.id_token)["aud"]
+        assert (aud if isinstance(aud, list) else [aud]) == [EXTRA_API]
 
         request, code = _login(kc)
         with pytest.raises(KeycloakAuthError) as refused:

@@ -22,15 +22,23 @@ public final class JwtValidator {
   // 아니라 그 조회를 부른 검증이 **시작한** 때부터(그만큼 짧다), monotonic 이 아니라 벽시계(System.currentTimeMillis)로
   // 센다 — 시계를 뒤로 돌리면 그만큼 길어진다(JwksMaxAgeTest 머리 주석).
   static final int JWKS_MAX_AGE_SECONDS = 300;
+  // 액세스 토큰이 아닌 Keycloak 토큰의 typ 클레임 값 — org.keycloak.util.TokenUtil(keycloak-client-common-synced 26.0.12)의
+  // TOKEN_TYPE_* 중 액세스 토큰의 둘(Bearer · DPoP)을 뺀 다섯이다. 액세스 검증기의 validate() 가 거부한다(rejectNonAccessToken).
+  static final Set<String> NON_ACCESS_TOKEN_TYPES = Set.of("ID", "Refresh", "Offline", "Logout", "Serialized-ID");
   private final ConfigurableJWTProcessor<SecurityContext> processor;   // issuer당 1회 구성(JWKSource 캐시)
   // withAudience 가 넘겨줄 것 — 특히 jwkSource 는 **같은 객체**여야 한다(JWKS 캐시·재조회 제한·콜드 캐시 창이 그 안에 있다).
   private final JWKSource<SecurityContext> jwkSource;
   private final String issuer;
+  private final String audience;
   private final Set<JWSAlgorithm> allowedAlgs;
   private final Duration skew;
+  // 코드 교환의 id_token 검증기인가 — withAudience 가 만든 것만 참이다. 참이면 typ 거부(액세스 토큰 전용)를 건너뛰고 azp 를
+  // 본다(requireAuthorizedParty). 거짓(forRealm · withStaticJwks · withJwkSource)이면 그 반대다.
+  private final boolean idToken;
   private JwtValidator(JWKSource<SecurityContext> jwkSource, String issuer, String audience,
-                       Set<JWSAlgorithm> allowedAlgs, Duration skew) {
-    this.jwkSource = jwkSource; this.issuer = issuer; this.allowedAlgs = allowedAlgs; this.skew = skew;
+                       Set<JWSAlgorithm> allowedAlgs, Duration skew, boolean idToken) {
+    this.jwkSource = jwkSource; this.issuer = issuer; this.audience = audience; this.allowedAlgs = allowedAlgs;
+    this.skew = skew; this.idToken = idToken;
     DefaultJWTProcessor<SecurityContext> p = new DefaultJWTProcessor<>();
     p.setJWSKeySelector(new JWSVerificationKeySelector<>(allowedAlgs, jwkSource)); // 허용 alg만 → none/기타 거부
     // exactMatchClaims에는 issuer만 둔다: audience까지 넣으면 Nimbus가 aud를 [audience]와
@@ -68,7 +76,7 @@ public final class JwtValidator {
                 + "s) must be shorter than the JWKS cache time-to-live ("
                 + JWKS_MAX_AGE_SECONDS + "s)", e);
       }
-      return new JwtValidator(src, md.getIssuer(), audience, allowedAlgs, cfg.getClockSkew());
+      return new JwtValidator(src, md.getIssuer(), audience, allowedAlgs, cfg.getClockSkew(), false);
     } catch (java.net.MalformedURLException e) {
       throw new TokenValidationException("Invalid JWKS URI", e);
     }
@@ -90,22 +98,25 @@ public final class JwtValidator {
   }
   static JwtValidator withJwkSource(JWKSource<SecurityContext> jwkSource, String issuer, String audience,
                                     Set<JWSAlgorithm> allowedAlgs, Duration skew) {
-    return new JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew);
+    return new JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew, false);
   }
   // 이 검증기의 키 원천 — 패키지 전용(시험이 forRealm 이 만든 체인을 꺼낸다).
   JWKSource<SecurityContext> jwkSource() {
     return jwkSource;
   }
-  // 요구 aud 만 바꾼 검증기 — 키 원천·iss·alg 핀·skew·필수 exp 는 이 검증기 것 그대로다. 교환의 id_token 용이다:
-  // id_token 의 aud 는 client id 를 담는다(OIDC Core §2·§3.1.3.7). ⚠️ 여기서 forRealm 을 다시 부르면 키 저장소가 둘이
-  // 되어 교환 뒤 첫 validate() 가 JWKS 를 다시 받고 장애 때 창당 상한이 두 배다(IdTokenAudienceJwksSharingTest).
+  // 교환의 id_token 검증기 — 요구 aud 를 client id 로 바꾸고(OIDC Core §2·§3.1.3.7: id_token 의 aud 는 client id 를 담는다)
+  // 종류를 id_token 으로 바꾼다: typ 거부(액세스 토큰 전용 — Keycloak 의 id_token 은 typ "ID" 다)를 건너뛰고 azp 를 본다. 키
+  // 원천·iss·alg 핀·skew·필수 exp 는 이 검증기 것 그대로다. ⚠️ 여기서 forRealm 을 다시 부르면 키 저장소가 둘이 되어 교환 뒤
+  // 첫 validate() 가 JWKS 를 다시 받고 장애 때 창당 상한이 두 배다(IdTokenAudienceJwksSharingTest).
   // 네트워크 I/O 없이 처리기만 새로 만든다. 패키지 전용 — 공개 API 가 아니다.
   JwtValidator withAudience(String audience) {
-    return new JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew);
+    return new JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew, true);
   }
   // 반환 타입은 SDK 소유의 ValidatedToken (I.1): 이 SDK의 공개 API는 어떤 시그니처에서도
   // Nimbus 타입을 노출하지 않는다.
   // 코드 교환의 id_token 검증(AuthClient.requireValidNonce → withAudience(..).validate)도 이 메서드라 상한 검사는 여기 하나다.
+  // 서명·iss·aud·exp 를 통과한 뒤 종류별 검사가 하나 더 있다 — 액세스 검증기는 typ(rejectNonAccessToken), id_token 검증기는
+  // azp(requireAuthorizedParty). 둘 다 try 밖이라 메시지가 그대로 나간다.
   public ValidatedToken validate(String accessToken) {
     // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에. try 밖이라 이 메시지가 그대로 나간다. null 은 지금까지처럼 아래로 간다.
     if (accessToken != null && accessToken.length() > JWT_MAX_BYTES) {
@@ -122,11 +133,43 @@ public final class JwtValidator {
       throw new TokenValidationException(
           "algorithm not allowed: " + alg.getName() + " (a JWKS holds public keys only)", null);
     }
+    JWTClaimsSet claims;
     try {
-      JWTClaimsSet claims = processor.process(jwt, null);
-      return ValidatedToken.from(claims);
+      claims = processor.process(jwt, null);
     }
     catch (Exception e) { throw new TokenValidationException("JWT validation failed", e); }
+    // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다.
+    if (idToken) {
+      requireAuthorizedParty(claims);
+    } else {
+      rejectNonAccessToken(claims);
+    }
+    return ValidatedToken.from(claims);
+  }
+
+  // 액세스 토큰 자리에 온 다른 Keycloak 토큰을 거부한다. id_token 과 back-channel logout 토큰도 같은 realm 키로 서명되고
+  // iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(expectedAudience = clientId)의 aud 검사까지 지난다 — typ
+  // 클레임만이 그것을 가른다. 문자열이고 NON_ACCESS_TOKEN_TYPES 의 하나와 정확히(대소문자 구분) 같을 때만 거부한다 — 부재 ·
+  // Bearer · DPoP · at+jwt · 그 밖의 문자열 · 문자열이 아닌 값은 지금처럼 통과다. 메시지에 싣는 값은 그 다섯 상수 중 하나다.
+  private static void rejectNonAccessToken(JWTClaimsSet claims) {
+    if (claims.getClaim("typ") instanceof String typ && NON_ACCESS_TOKEN_TYPES.contains(typ)) {
+      throw new TokenValidationException("not an access token (typ \"" + typ + "\")", null);
+    }
+  }
+
+  // id_token 의 azp — OIDC Core §3.1.3.7 4·5. aud 가 둘 이상이면 azp 가 있어야 하고, azp 가 있으면(JSON null 도 있는 것이다)
+  // 이 검증기의 요구 aud(= client id)와 같은 문자열이어야 한다. 액세스 토큰에는 걸지 않는다 — 액세스 토큰의 azp 는 그 토큰을
+  // 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다. 메시지에 azp 값을 싣지 않는다(토큰이 고른 문자열이다).
+  private void requireAuthorizedParty(JWTClaimsSet claims) {
+    if (!claims.getClaims().containsKey("azp")) {
+      if (claims.getAudience().size() > 1) {
+        throw new TokenValidationException("id_token has more than one audience but no azp", null);
+      }
+      return;
+    }
+    if (!(claims.getClaim("azp") instanceof String azp && azp.equals(audience))) {
+      throw new TokenValidationException("id_token azp is not this client", null);
+    }
   }
 
   // 분해한다 — 실패는 지금처럼 「JWT validation failed」 로 감싼다.

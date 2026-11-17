@@ -6,12 +6,18 @@ module KeycloakSdk
   # Self-hardened JWT validator. It overrides every unsafe ruby-jwt default:
   # RS256 pin (none/confusion rejected structurally) · exact iss · aud membership · exp required · nbf · clock skew.
   # Keys are looked up through the DoS-safe JwksStore (a forged signature triggers no refetch). The header alg is
-  # not used to choose the verification algorithm.
+  # not used to choose the verification algorithm. `validate` takes access tokens only (token type); an id_token goes
+  # through `validate_id_token` (authorized party).
   class JwtValidator
     # 받는 토큰의 길이 상한(아홉 언어 공통). Microsoft.IdentityModel 의 `DefaultMaximumTokenSizeInBytes` 와 같은 수이고,
     # Keycloak 26.6 기본값이 받는 가장 긴 Bearer(65,459 B)의 약 3.9 배라 서버가 낸 토큰은 거부하지 않는다.
     JWT_MAX_BYTES = 256_000
     private_constant :JWT_MAX_BYTES
+
+    # 접근 토큰이 아닌 Keycloak 토큰의 페이로드 `typ`(org.keycloak.util.TokenUtil) — id_token · refresh · offline ·
+    # 백채널 logout · 직렬화된 id_token. 접근 토큰은 Bearer · DPoP 다.
+    NOT_ACCESS_TOKEN_TYPES = %w[ID Refresh Offline Logout Serialized-ID].freeze
+    private_constant :NOT_ACCESS_TOKEN_TYPES
 
     # ⚠️ Do not write the `clock_skew` default here as a number — `Config` is its single definition site (the same
     # class of issue as Task D1). This class is public too, so a consumer can construct it directly, and if the two
@@ -36,11 +42,34 @@ module KeycloakSdk
           algorithms: config.signature_algorithms, clock_skew: config.clock_skew)
     end
 
-    # `audience:` is the expected aud for this call only (default = the value given at construction). The code
-    # exchange uses it to check the id_token against client_id — the key store (cache · refetch limit · backoff)
-    # stays this instance's single one.
+    # Validates an access token. `audience:` is the expected aud for this call only (default = the value given at
+    # construction). A token whose payload `typ` names another kind of Keycloak token — an id_token (`ID`), `Refresh`,
+    # `Offline`, `Logout` or `Serialized-ID` — is refused even when every other check passes; any other `typ`, or
+    # none, is not looked at. An id_token goes through `validate_id_token`.
     # ⚠️ nil or blank is a ConfigError, as in the constructor — with `aud: nil`, ruby-jwt skips the aud check.
     def validate(token, audience: @audience)
+      validated = verify(token, audience)
+      reject_other_token_type!(validated.claims)
+      validated
+    end
+
+    # Validates an id_token, the code exchange's path: every check of `validate` with aud held to `client_id` — not to
+    # the configured audience, which restricts access tokens — and no token-type check (an id_token is typed `ID`).
+    # Then the authorized party (OIDC Core §3.1.3.7 steps 4-5): an id_token with more than one audience must carry
+    # `azp`, and an `azp` that is present must be `client_id`. The key store (cache · refetch limit · backoff) is this
+    # instance's single one. ⚠️ nil or blank `client_id` is a ConfigError.
+    def validate_id_token(token, client_id:)
+      raise ConfigError, "client_id is required" if client_id.nil? || client_id.to_s.strip.empty?
+
+      validated = verify(token, client_id)
+      require_authorized_party!(validated.claims, client_id)
+      validated
+    end
+
+    private
+
+    # 두 진입점이 나누는 검증 본문 — 기대 aud 만 다르다.
+    def verify(token, audience)
       reject_oversized!(token) # ⚠️ it comes first — before splitting · decoding · the JWKS load (method below)
       raise ConfigError, "audience is required" if audience.nil? || audience.to_s.strip.empty?
       # ⚠️ ruby-jwt `split`s the token first of all, and with invalid UTF-8 that is a raw ArgumentError (measured).
@@ -58,7 +87,26 @@ module KeycloakSdk
       raise TokenValidationError, "JWT validation failed: #{e.message}", cause: RedactedCause.new(e)
     end
 
-    private
+    # 토큰 종류 — 접근 토큰 경로만. 문자열일 때만, 대소문자까지 정확히 견준다. 값을 인용해도 된다 — 위 다섯 상수 중 하나다.
+    def reject_other_token_type!(claims)
+      typ = claims["typ"]
+      return unless typ.is_a?(String) && NOT_ACCESS_TOKEN_TYPES.include?(typ)
+
+      raise TokenValidationError, "JWT validation failed: not an access token (typ \"#{typ}\")"
+    end
+
+    # 권한 부여 당사자 — id_token 경로만. 접근 토큰의 azp 는 그것을 요청한 클라이언트라 aud 와 다른 것이 정상이다.
+    # azp 는 있으면(JSON null 도 있는 것이다) 문자열이고 client_id 와 같아야 한다.
+    def require_authorized_party!(claims, client_id)
+      if claims.key?("azp")
+        return if claims["azp"].is_a?(String) && claims["azp"] == client_id
+
+        raise TokenValidationError, "JWT validation failed: azp does not match the client id"
+      end
+      return unless claims["aud"].is_a?(Array) && claims["aud"].length > 1
+
+      raise TokenValidationError, "JWT validation failed: azp is required when aud has more than one value"
+    end
 
     # 길이 상한 — ruby-jwt 는 서명을 보기 전에 토큰을 나누고 base64·JSON 디코드하며(할당이 길이에 비례한다), 키는
     # 그 뒤에 JWKS 에서 찾는다. 단위는 `bytesize`(진짜 JWT 는 ASCII 라 문자 수와 같다)이고, 잘못된 UTF-8 이어도 잴 수

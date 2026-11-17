@@ -58,6 +58,23 @@ public sealed class CodeExchangeTests
             ExpectedAudience = expectedAudience,
         });
 
+    /// <summary>id_token 을 교환이 쓰는 경로(<c>JwtValidator.ValidateForAudienceAsync</c>)로 검증한다 — <c>ValidateAsync</c> 는
+    /// 접근 토큰 검증이라 id_token 을 typ("ID")으로 거부한다. 배선은 <c>KeycloakClient.Create</c> 의 것과 같다.</summary>
+    private async Task<ValidatedToken> ValidateIdTokenAsync(string idToken, string clientId = "it-web")
+    {
+        var cfg = new KeycloakConfig
+        {
+            ServerUrl = _kc.BaseUrl,
+            Realm = KeycloakFixture.Realm,
+            ClientId = clientId,
+            ClientSecret = WebClientSecrets[clientId],
+        }.Normalized();
+        var issuer = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm).Issuer;
+        using var http = new HttpClient();
+        return await new JwtValidator(issuer, KeycloakClient.ValidatorOptionsFor(cfg, issuer), http)
+            .ValidateForAudienceAsync(idToken, cfg.ClientId);
+    }
+
     private static async Task<(AuthorizationRequest Request, string Code)> LoginAsync(KeycloakClient kc)
     {
         var request = kc.Auth.CreateAuthorizationRequest(RedirectUri);
@@ -89,7 +106,10 @@ public sealed class CodeExchangeTests
         Assert.False(string.IsNullOrEmpty(tokens.AccessToken));
         Assert.False(string.IsNullOrEmpty(tokens.RefreshToken));
         Assert.False(string.IsNullOrEmpty(tokens.IdToken));
-        var id = await kc.Auth.ValidateAsync(tokens.IdToken!);
+        // 접근 토큰 검증은 서버의 id_token 을 거부한다 — 서명·iss·aud·exp 를 다 지나도 typ 이 "ID" 다.
+        var notAccess = await Assert.ThrowsAsync<KeycloakTokenValidationException>(() => kc.Auth.ValidateAsync(tokens.IdToken!));
+        Assert.Equal("not an access token (typ \"ID\")", notAccess.Message);
+        var id = await ValidateIdTokenAsync(tokens.IdToken!);
         Assert.Equal(request.Nonce, Assert.IsType<string>(id.Claims["nonce"]));
         Assert.Equal(await AliceIdAsync(), id.Subject);
 
@@ -141,7 +161,7 @@ public sealed class CodeExchangeTests
         Assert.IsType<SecurityTokenInvalidAudienceException>(held.InnerException);
         await using var plain = WebClient();
         var access = await plain.Auth.ValidateAsync(tokens.AccessToken);
-        var id = await plain.Auth.ValidateAsync(tokens.IdToken!);
+        var id = await ValidateIdTokenAsync(tokens.IdToken!);
         _out.WriteLine($"access aud=[{string.Join(",", access.Audience)}] id_token aud=[{string.Join(",", id.Audience)}]");
         Assert.Contains("it-web", access.Audience);
         Assert.DoesNotContain("not-it-web", id.Audience); // 전제: 교환이 통과한 것은 id_token 이 재정의 값을 실어서가 아니다
@@ -157,7 +177,7 @@ public sealed class CodeExchangeTests
         var code = await BrowserLogin.LoginAsync(request, RedirectUri, AliceName, AlicePassword);
         var unchecked_ = await kc.Auth.ExchangeCodeAsync(code, RedirectUri, request.CodeVerifier);
         Assert.False(string.IsNullOrEmpty(unchecked_.IdToken));
-        Assert.False((await kc.Auth.ValidateAsync(unchecked_.IdToken!)).Claims.ContainsKey("nonce"));
+        Assert.False((await ValidateIdTokenAsync(unchecked_.IdToken!)).Claims.ContainsKey("nonce"));
 
         code = await BrowserLogin.LoginAsync(request, RedirectUri, AliceName, AlicePassword);
         var refused = await Assert.ThrowsAsync<KeycloakAuthException>(

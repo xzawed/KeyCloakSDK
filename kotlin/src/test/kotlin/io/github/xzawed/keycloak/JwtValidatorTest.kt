@@ -755,6 +755,116 @@ internal class JwtValidatorTest {
         }
     }
 
+    // ── (A) 액세스 토큰 자리에 온 다른 Keycloak 토큰 — 페이로드의 typ 클레임 ──
+    // Keycloak 은 typ 클레임에 토큰의 종류를 적는다(org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
+    // 액세스 토큰은 Bearer · DPoP, 그 밖은 ID · Refresh · Offline · Logout · Serialized-ID. id_token 과 back-channel logout
+    // 토큰도 같은 realm 키로 서명되고 iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(expectedAudience =
+    // clientId)의 aud 검사까지 지난다 — 그래서 validate() 가 그것을 액세스 토큰으로 받아 줬다. 다섯을 거부하고 나머지는
+    // 지금처럼 받는다(Java `JwtValidatorTest` 동형).
+
+    // iss · aud · exp(1분 뒤)가 맞는 RS256 토큰 — extra 가 클레임을 더한다.
+    private fun signedWith(
+        key: RSAKey,
+        aud: List<String> = listOf(audience),
+        iss: String = issuer,
+        extra: JWTClaimsSet.Builder.() -> Unit = {},
+    ): String = signedRs256(key, JWTClaimsSet.Builder(claims(iss = iss, aud = aud)).apply(extra).build())
+
+    @Test
+    fun `validate refuses a Keycloak token that is not an access token`() =
+        runTest {
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+
+            for (typ in listOf("ID", "Refresh", "Offline", "Logout", "Serialized-ID")) {
+                val refused = assertFailsWith<TokenValidationException>(typ) { validator.validate(signedWith(key) { claim("typ", typ) }) }
+                // 메시지까지 본다 — 감싼 「JWT validation failed」가 아니라 이 거부이고, 어느 typ 인지 말한다.
+                assertEquals("not an access token (typ \"$typ\")", refused.message, typ)
+            }
+        }
+
+    // 다섯 값과 정확히(대소문자 · 공백까지) 같은 문자열만 거부된다 — 액세스 토큰의 값 · 그 밖의 문자열 · 문자열 아닌 값 · 부재는 통과.
+    @Test
+    fun `validate accepts any other typ claim, a non-string one and none`() =
+        runTest {
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+            val passing: List<Any?> =
+                listOf(null, "Bearer", "DPoP", "at+jwt", "id", "logout", "ID ", "", listOf("ID"), 1L, true, mapOf("typ" to "ID"))
+
+            for (typ in passing) {
+                val token = signedWith(key) { if (typ != null) claim("typ", typ) }
+                // 토큰이 정말 그 값을 실었는지(되읽은 값) — 직렬화가 값을 바꿨다면 이 경우는 아무것도 재지 않는다.
+                assertEquals(typ, validator.validate(token).claims["typ"], "typ=$typ")
+            }
+        }
+
+    // typ 은 서명 · iss · aud · exp 가 통과한 **뒤에** 본다 — 검증 전 클레임으로 판정하지 않는다. typ="ID" 를 실은 위조 서명 ·
+    // 다른 aud · 다른 iss 토큰은 typ 이 아니라 그 검사의 「JWT validation failed」로 거부된다.
+    @Test
+    fun `validate reads the typ claim only after the other checks pass`() =
+        runTest {
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+            val typedId: JWTClaimsSet.Builder.() -> Unit = { claim("typ", "ID") }
+            val invalid =
+                mapOf(
+                    "forged signature" to signedWith(rsaKey("k1"), extra = typedId),
+                    "another aud" to signedWith(key, aud = listOf("someone-else"), extra = typedId),
+                    "another iss" to signedWith(key, iss = "https://evil.example.com/realms/r", extra = typedId),
+                )
+
+            for ((case, token) in invalid) {
+                val refused = assertFailsWith<TokenValidationException>(case) { validator.validate(token) }
+                assertEquals("JWT validation failed", refused.message, case)
+            }
+        }
+
+    // (B) 는 id_token 의 규칙이다 — 액세스 토큰의 azp 는 그 토큰을 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다
+    // (리소스 서버가 받는 토큰). validate() 는 azp 를 보지 않는다: 다중 aud 에 azp 가 없어도 · azp 가 다른 클라이언트여도 ·
+    // 문자열이 아니어도 지금처럼 받는다.
+    @Test
+    fun `validate does not apply the id_token azp rule`() =
+        runTest {
+            val key = rsaKey()
+            val validator = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+
+            assertEquals(listOf(audience, "other"), validator.validate(signedWith(key, aud = listOf(audience, "other"))).audience)
+            assertEquals("frontend", validator.validate(signedWith(key) { claim("azp", "frontend") }).claims["azp"])
+            assertEquals(
+                "frontend",
+                validator.validate(signedWith(key, aud = listOf(audience, "other")) { claim("azp", "frontend") }).claims["azp"],
+            )
+            assertEquals(42L, validator.validate(signedWith(key, aud = listOf(audience, "other")) { claim("azp", 42L) }).claims["azp"])
+        }
+
+    // withAudience 가 주는 것은 코드 교환의 id_token 검증기다. Keycloak 의 id_token 은 typ "ID" 라 (A) 를 걸지 않고, 대신 (B) azp
+    // 규칙을 건다. 같은 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고,
+    // 파생이 원본을 바꾸지 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다).
+    @Test
+    fun `withAudience is the id_token validator - typ ID passes and the azp rule applies`() =
+        runTest {
+            val key = rsaKey()
+            val access = JwtValidator.withStaticJwks(JWKSet(key.toPublicJWK()), issuer, audience)
+            val id = access.withAudience(audience)
+            val typedId =
+                signedWith(key) {
+                    claim("typ", "ID")
+                    claim("azp", audience)
+                }
+            val twoAudiencesNoAzp = signedWith(key, aud = listOf(audience, "other")) { claim("typ", "Bearer") }
+
+            assertEquals("ID", id.validate(typedId).claims["typ"])
+            assertEquals(
+                "not an access token (typ \"ID\")",
+                assertFailsWith<TokenValidationException> { access.validate(typedId) }.message,
+            )
+
+            assertEquals(listOf(audience, "other"), access.validate(twoAudiencesNoAzp).audience)
+            val noAzp = assertFailsWith<TokenValidationException> { id.validate(twoAudiencesNoAzp) }
+            assertTrue(noAzp.message!!.contains("azp"), noAzp.message)
+        }
+
     private companion object {
         const val JWKS_PATH = "/realms/r/protocol/openid-connect/certs"
         const val TOKEN_PATH = "/realms/r/protocol/openid-connect/token"

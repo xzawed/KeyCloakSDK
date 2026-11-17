@@ -26,9 +26,12 @@ import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 // OIDC nonce 재생 방지 회귀 테스트: exchangeCode가 id_token을 보존하고(현재는 null 폐기),
@@ -181,12 +184,25 @@ class AuthClientNonceTest {
   }
 
   // 「Add to ID token」 audience 매퍼를 켠 Keycloak 은 [client_id, extra] 를 낸다(실측) — 포함 검사이지 완전 일치가 아니다.
+  // Keycloak 은 id_token 에 azp = client id 를 싣는다 — aud 가 둘 이상인 id_token 은 그것이 있어야 통과한다(아래 azp 묶음).
   @Test void exchangeCode_underAudienceOverride_acceptsAMultiValuedAudienceThatNamesTheClient() throws Exception {
     RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
-    String idToken = sign(key, JWSAlgorithm.RS256, idClaims("app", OVERRIDE).build());
+    String idToken = sign(key, JWSAlgorithm.RS256, idClaims("app", OVERRIDE).claim("azp", "app").build());
     AuthClient client = clientServingToken(key, idToken, OVERRIDE);
     assertEquals(idToken,
         client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE).getIdToken());
+  }
+
+  // 재정의 아래에서도 azp 는 client id 와 대조한다 — 재정의 값(액세스 토큰이 향하는 리소스 서버)이 아니다.
+  @Test void exchangeCode_underAudienceOverride_refusesAnAzpThatNamesTheOverride() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    assertRefusedForAzp(assertRefusedAsInvalidIdToken(key,
+        sign(key, JWSAlgorithm.RS256, idClaims("app", OVERRIDE).claim("azp", OVERRIDE).build())));
+  }
+
+  @Test void exchangeCode_underAudienceOverride_refusesAMultiValuedAudienceWithoutAzp() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    assertRefusedForAzp(assertRefusedAsInvalidIdToken(key, sign(key, JWSAlgorithm.RS256, idClaims("app", OVERRIDE).build())));
   }
 
   // 재정의 값만 담은 id_token — 액세스 검증기라면 통과시킬 aud 다. client id 가 없으니 거부한다.
@@ -249,12 +265,93 @@ class AuthClientNonceTest {
     assertEquals("Authorization code exchange failed: unexpected nonce", e.getMessage());
   }
 
-  private void assertRefusedAsInvalidIdToken(RSAKey key, String idToken) throws Exception {
-    AuthClient client = clientServingToken(key, idToken, OVERRIDE);
+  private KeycloakAuthException assertRefusedAsInvalidIdToken(RSAKey key, String idToken) throws Exception {
+    return assertRefusedAsInvalidIdToken(clientServingToken(key, idToken, OVERRIDE));
+  }
+
+  private static KeycloakAuthException assertRefusedAsInvalidIdToken(AuthClient client) {
     KeycloakAuthException e = assertThrows(KeycloakAuthException.class,
         () -> client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE));
     assertEquals("Authorization code exchange failed: invalid id_token", e.getMessage());
     assertInstanceOf(TokenValidationException.class, e.getCause());
+    return e;
+  }
+
+  /** 거부의 원인이 azp 규칙이다 — 다른 id_token 검사(서명 · iss · aud · exp)의 거부가 이 초록을 대신 채우지 못하게. */
+  private static void assertRefusedForAzp(KeycloakAuthException refused) {
+    String cause = refused.getCause().getMessage();
+    assertTrue(cause.contains("azp"), cause);
+  }
+
+  // ── id_token 의 typ · azp ──
+  // (A) validate() 의 typ 거부(액세스 토큰이 아닌 Keycloak 토큰)는 액세스 토큰 자리에만 걸린다 — Keycloak 의 id_token 은
+  // typ "ID" 이므로 교환에 걸리면 정상 교환이 전부 실패한다. (B) OIDC Core §3.1.3.7 4·5: aud 가 둘 이상이면 azp 가 있어야 하고,
+  // azp 가 있으면 client id 와 같은 문자열이어야 한다. 거부는 다른 id_token 거부와 같은 꼴(「invalid id_token」 + 원인
+  // TokenValidationException)이고 원인 메시지가 azp 를 말한다. 아래 토큰은 전부 Keycloak 처럼 typ "ID" 를 싣는다.
+
+  // Keycloak 이 내는 모양(typ "ID" · azp = client id) — 교환은 받고, 같은 토큰을 validate() 는 액세스 토큰이 아니라고 거부한다.
+  @Test void exchangeCode_acceptsAnIdTokenTypedId_thatValidateRefuses() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = sign(key, JWSAlgorithm.RS256, idClaims("app").claim("typ", "ID").claim("azp", "app").build());
+    AuthClient client = clientServingToken(key, idToken);
+
+    assertEquals(idToken, client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE).getIdToken());
+    TokenValidationException e = assertThrows(TokenValidationException.class, () -> client.validate(idToken));
+    assertEquals("not an access token (typ \"ID\")", e.getMessage());
+  }
+
+  /** azp 규칙을 통과하는 id_token — {@code azp} 가 null 이면 그 클레임이 없다. */
+  static Stream<Arguments> idTokensThatPassTheAzpRule() {
+    return Stream.of(
+        Arguments.of("one audience, no azp", List.of("app"), null),
+        Arguments.of("one audience, azp is the client", List.of("app"), "app"),
+        Arguments.of("two audiences, azp is the client", List.of("app", "other"), "app"),
+        Arguments.of("two audiences the other way round, azp is the client", List.of("other", "app"), "app"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("idTokensThatPassTheAzpRule")
+  void exchangeCode_acceptsAnIdTokenThatPassesTheAzpRule(String name, List<String> audience, Object azp)
+      throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = sign(key, JWSAlgorithm.RS256, typedId(audience, azp).build());
+    AuthClient client = clientServingToken(key, idToken);
+    assertEquals(idToken,
+        client.exchangeCode("c", URI.create("http://localhost/cb"), VERIFIER, NONCE).getIdToken(), name);
+  }
+
+  /** azp 규칙에 걸리는 id_token — 마지막 둘은 azp 가 문자열이 아니다(client id 를 담은 배열도 문자열이 아니다). */
+  static Stream<Arguments> idTokensRefusedByTheAzpRule() {
+    return Stream.of(
+        Arguments.of("one audience, azp names another client", List.of("app"), "evil"),
+        Arguments.of("two audiences, no azp", List.of("app", "evil"), null),
+        Arguments.of("two audiences, azp names the other audience", List.of("app", "evil"), "evil"),
+        Arguments.of("azp is a number", List.of("app"), 42L),
+        Arguments.of("azp is an array holding the client id", List.of("app"), List.of("app")));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("idTokensRefusedByTheAzpRule")
+  void exchangeCode_refusesAnIdTokenThatFailsTheAzpRule(String name, List<String> audience, Object azp)
+      throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    AuthClient client = clientServingToken(key, sign(key, JWSAlgorithm.RS256, typedId(audience, azp).build()));
+    assertRefusedForAzp(assertRefusedAsInvalidIdToken(client));
+  }
+
+  // JSON null 인 azp 도 「있는」 azp 다 — 문자열이 아니므로 거부한다(없는 것으로 읽으면 aud 하나에서 통과한다).
+  @Test void exchangeCode_refusesAnIdTokenWhoseAzpIsJsonNull() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String idToken = sign(key, JWSAlgorithm.RS256,
+        idClaims("app").claim("typ", "ID").serializeNullClaims(true).claim("azp", null).build());
+    // 전제: 토큰이 정말 "azp":null 을 싣는다(아니면 이 테스트는 부재를 잰다).
+    assertTrue(SignedJWT.parse(idToken).getPayload().toString().contains("\"azp\":null"));
+    assertRefusedForAzp(assertRefusedAsInvalidIdToken(clientServingToken(key, idToken)));
+  }
+
+  private static JWTClaimsSet.Builder typedId(List<String> audience, Object azpOrNull) {
+    JWTClaimsSet.Builder claims = idClaims(audience.toArray(String[]::new)).claim("typ", "ID");
+    return azpOrNull == null ? claims : claims.claim("azp", azpOrNull);
   }
 
   private static JWTClaimsSet.Builder idClaims(String... audience) {

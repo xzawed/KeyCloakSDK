@@ -34,6 +34,12 @@ final class JwtValidator
      */
     public const JWT_MAX_BYTES = 256000;
 
+    /**
+     * 액세스 토큰이 아닌 Keycloak 토큰의 페이로드 `typ`(`org.keycloak.util.TokenUtil`) — id_token · refresh · offline ·
+     * 백채널 logout · 직렬화된 id_token. 액세스 토큰은 `Bearer` · `DPoP` 다.
+     */
+    private const NOT_ACCESS_TOKEN_TYPES = ['ID', 'Refresh', 'Offline', 'Logout', 'Serialized-ID'];
+
     public function __construct(
         private readonly KeycloakConfig $config,
         private readonly OidcEndpoints $endpoints,
@@ -41,19 +47,31 @@ final class JwtValidator
     ) {}
 
     /**
-     * Validates an access token — the expected aud is `expectedAudience` (when set), otherwise `clientId`.
+     * Validates an access token — the expected aud is `expectedAudience` (when set), otherwise `clientId`. A token whose
+     * payload `typ` names another kind of Keycloak token — an id_token (`ID`), `Refresh`, `Offline`, `Logout` or
+     * `Serialized-ID` — is refused even when it passes every other check; any other `typ`, or none, is not looked at.
      */
     public function validate(#[\SensitiveParameter] string $jwt): ValidatedToken
     {
-        return $this->verify($jwt, $this->config->expectedAudience ?? $this->config->clientId);
+        $validated = $this->verify($jwt, $this->config->expectedAudience ?? $this->config->clientId);
+        // 토큰 종류 — 액세스 경로만(id_token 은 typ "ID" 라 validateIdToken() 은 보지 않는다). 문자열일 때만, 대소문자까지
+        // 정확히 견준다. 값을 인용해도 된다 — 위 다섯 상수 중 하나다.
+        $typ = $validated->claims['typ'] ?? null;
+        if (\is_string($typ) && \in_array($typ, self::NOT_ACCESS_TOKEN_TYPES, true)) {
+            throw new TokenValidationError(sprintf('not an access token (typ "%s")', $typ));
+        }
+
+        return $validated;
     }
 
     /**
      * Validates an id_token — its aud must contain `$clientId` (OIDC Core §2 · §3.1.3.7: an id_token's aud is the client
      * that requested it). `expectedAudience` is **not consulted** — that is an access token's resource-server restriction
      * (RFC 9700 §2.3). The rest (alg pin · kid · signature · required exp · clock skew · iss) is the same path as validate(),
-     * and the JWKS store is the same one too. Comparing the nonce is the caller's job — `AuthClient::exchangeCode()` calls
-     * this and compares it.
+     * and the JWKS store is the same one too; the token type is not checked (an id_token is typed `ID`). After those checks
+     * the authorized party is (OIDC Core §3.1.3.7 steps 4–5): an id_token with more than one audience must carry `azp`, and
+     * an `azp` that is present must be `$clientId`. Comparing the nonce is the caller's job — `AuthClient::exchangeCode()`
+     * calls this and compares it.
      *
      * @throws KeycloakConfigError  when `$clientId` is empty
      * @throws TokenValidationError on a validation failure
@@ -65,7 +83,21 @@ final class JwtValidator
             throw new KeycloakConfigError('clientId is required');
         }
 
-        return $this->verify($idToken, $clientId);
+        $validated = $this->verify($idToken, $clientId);
+        // 권한 부여 당사자 — id_token 경로만. 액세스 토큰의 azp 는 그것을 요청한 클라이언트라 aud 와 다른 것이 정상이다.
+        // azp 는 있으면(JSON null 도 있는 것이다) 문자열이고 client id 와 같아야 한다 — `!==` 라 문자열이 아니면 같지 않다.
+        if (\array_key_exists('azp', $validated->claims)) {
+            if ($validated->claims['azp'] !== $clientId) {
+                throw new TokenValidationError('azp does not match the client id');
+            }
+        } else {
+            $aud = $validated->claims['aud'] ?? null;
+            if (\is_array($aud) && \count($aud) > 1) {
+                throw new TokenValidationError('azp is required when aud has more than one value');
+            }
+        }
+
+        return $validated;
     }
 
     /**

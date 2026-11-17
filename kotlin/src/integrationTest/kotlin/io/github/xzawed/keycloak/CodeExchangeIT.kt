@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.TestInstance
+import org.keycloak.jose.jws.JWSInput
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.URI
@@ -124,9 +125,15 @@ internal class CodeExchangeIT {
                 assertTrue(tokens.accessToken.isNotBlank())
                 val refreshToken = assertNotNull(tokens.refreshToken)
                 val idToken = assertNotNull(tokens.idToken)
-                val idClaims = kc.auth.validate(idToken).claims
+                // id_token 의 클레임은 교환이 이미 검증했다(서명 · iss · aud · exp · azp · nonce) — 여기서는 읽기만 한다.
+                val idClaims = claimsOf(idToken)
                 assertEquals(request.nonce, idClaims["nonce"])
                 assertEquals(aliceId, idClaims["sub"])
+                // 서버가 서명한 id_token 은 typ "ID" 다 — validate() 는 그것을 액세스 토큰 자리에서 거부한다. 이 클라이언트의
+                // 기대 audience 는 client id(it-web)라 aud 검사는 지나고, typ 만이 가른다.
+                assertEquals("ID", idClaims["typ"])
+                val notAccess = assertFailsWith<TokenValidationException> { kc.auth.validate(idToken) }
+                assertEquals("not an access token (typ \"ID\")", notAccess.message)
 
                 // refresh: 새 접근 토큰을 준다 — 같은 사용자의 활성 토큰이다.
                 val refreshed = kc.auth.refresh(refreshToken)
@@ -170,7 +177,7 @@ internal class CodeExchangeIT {
                         REDIRECT_URI,
                     )
                 val uncheckedIdToken = assertNotNull(unchecked.idToken)
-                assertFalse("nonce" in kc.auth.validate(uncheckedIdToken).claims, "premise: the server signed no nonce")
+                assertFalse("nonce" in claimsOf(uncheckedIdToken), "premise: the server signed no nonce")
 
                 val code = browserLogin(request, REDIRECT_URI, ALICE_USERNAME, ALICE_PASSWORD)
                 val refused = refusedExchange(kc, request, code, expectedNonce = request.nonce)
@@ -216,15 +223,22 @@ internal class CodeExchangeIT {
                 val (request, code) = login(kc)
                 val tokens = kc.auth.exchangeCode(code, request.codeVerifier, REDIRECT_URI, expectedNonce = request.nonce)
                 val idToken = assertNotNull(tokens.idToken)
-                // 전제: 이 id_token 의 aud 에 재정의 값이 없다 — 재정의로 id_token 을 보던 옛 동작이면 위 교환은 거부됐다.
-                assertFailsWith<TokenValidationException> { kc.auth.validate(idToken) }
+                // 전제: 이 id_token 의 aud 에 재정의 값이 없다 — 재정의로 id_token 을 보던 옛 동작이면 위 교환은 거부됐다. 거부는
+                // aud 검사의 것이다(typ 은 그 뒤에야 본다) — 「not an access token」이 이 자리를 대신 채우지 못하게 메시지까지 본다.
+                assertEquals("JWT validation failed", assertFailsWith<TokenValidationException> { kc.auth.validate(idToken) }.message)
                 // 액세스 검증은 재정의를 그대로 쓴다.
-                assertFailsWith<TokenValidationException> { kc.auth.validate(tokens.accessToken) }
-                // 대조군: 기본 설정(aud = it-web)은 같은 두 토큰을 받는다 — 위 두 거부는 audience 때문이다.
+                assertEquals(
+                    "JWT validation failed",
+                    assertFailsWith<TokenValidationException> { kc.auth.validate(tokens.accessToken) }.message,
+                )
+                // 대조군: 기본 설정(aud = it-web)은 같은 액세스 토큰을 받고, id_token 은 aud 검사를 지나 typ 으로만 거부한다 —
+                // 위 두 거부는 audience 때문이다. id_token 의 클레임은 교환이 이미 검증했다(읽기만 한다).
                 KeycloakClient.create(webConfig()).use { plain ->
-                    val idClaims = plain.auth.validate(idToken).claims
+                    val idClaims = claimsOf(idToken)
                     assertEquals(request.nonce, idClaims["nonce"])
                     assertEquals(aliceId, idClaims["sub"])
+                    val notAccess = assertFailsWith<TokenValidationException> { plain.auth.validate(idToken) }
+                    assertEquals("not an access token (typ \"ID\")", notAccess.message)
                     assertTrue("it-web" in plain.auth.validate(tokens.accessToken).audience)
                 }
             }
@@ -306,6 +320,16 @@ internal class CodeExchangeIT {
         val WEB_CLIENT_SECRETS = mapOf("it-web" to "it-web-secret", "it-web-hs256" to "it-web-hs256-secret")
     }
 }
+
+/**
+ * 토큰의 클레임을 **서명 검증 없이** 읽는다 — 교환이 이미 검증한(또는 이 테스트가 서버에서 직접 받은) 토큰에만 쓴다. `validate()` 는
+ * 액세스 토큰만 받는다: 서버의 id_token 은 typ "ID" 라 거부된다. 교환의 id_token 길([JwtValidator] 의 `withAudience`)로 다시
+ * 검증하지 않는 것은 그 파생이 `internal` 이고 이 스위트는 다른 컴파일이라 보이지 않기 때문이다(실측: compileIntegrationTestKotlin
+ * 「Cannot access 'fun withAudience…': it is internal」). 디코더는 Keycloak 의 `JWSInput`(keycloak-admin-client 가 끌고 오는
+ * keycloak-client-common-synced)이다 — Nimbus 는 `implementation` 이라 이 스위트의 컴파일 클래스패스에 없다.
+ */
+@Suppress("UNCHECKED_CAST")
+internal fun claimsOf(jwt: String): Map<String, Any?> = JWSInput(jwt).readJsonContent(Map::class.java) as Map<String, Any?>
 
 /** 인가 URL 에서 `nonce` 만 뺀다 — 서버가 nonce 클레임 **없는** id_token 을 서명하게 한다. */
 internal fun stripNonce(request: AuthorizationRequest): AuthorizationRequest {

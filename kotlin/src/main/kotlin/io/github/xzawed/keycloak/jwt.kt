@@ -39,6 +39,11 @@ internal const val JWT_MAX_BYTES: Int = 256_000
 // 센다 — 시계를 뒤로 돌리면 그만큼 길어진다(JwksMaxAgeTest 머리 주석). Java 자매(`JwtValidator.JWKS_MAX_AGE_SECONDS`)와 같다.
 internal const val JWKS_MAX_AGE_SECONDS: Int = 300
 
+// 액세스 토큰이 아닌 Keycloak 토큰의 typ 클레임 값 — org.keycloak.util.TokenUtil(keycloak-client-common-synced 26.0.12)의
+// TOKEN_TYPE_* 중 액세스 토큰의 둘(Bearer · DPoP)을 뺀 다섯이다. 액세스 검증기의 validate() 가 거부한다. Java 자매
+// (`JwtValidator.NON_ACCESS_TOKEN_TYPES`)와 같은 집합이다.
+private val NON_ACCESS_TOKEN_TYPES: Set<String> = setOf("ID", "Refresh", "Offline", "Logout", "Serialized-ID")
+
 // jwt.kt — JwtValidator: Java SDK의 JwtValidator(io.github.xzawed.keycloak.auth.JwtValidator)와 100%
 // 동형인 하드닝 불변식(§jwt)을 지킨다: RS256 alg 핀 · alg=none/미서명 명시 거부 · iss 정확일치
 // (exactMatchClaims엔 issuer만 — aud를 넣으면 다중값 정상 토큰이 오탐 거부된다) · aud 포함검사 ·
@@ -48,10 +53,17 @@ internal const val JWKS_MAX_AGE_SECONDS: Int = 300
 public class JwtValidator private constructor(
     private val jwkSource: JWKSource<SecurityContext>,
     private val issuer: String,
-    audience: String,
+    private val audience: String,
     private val allowedAlgs: Set<JWSAlgorithm>,
     private val skew: Duration,
 ) {
+    // 코드 교환의 id_token 검증기인가 — [withAudience] 가 만든 것만 참이다. 참이면 typ 거부(액세스 토큰 전용 — Keycloak 의
+    // id_token 은 typ "ID" 다)를 건너뛰고 azp 를 본다([requireAuthorizedParty]). 거짓(forRealm · withStaticJwks ·
+    // withJwkSource)이면 그 반대다(Java 자매의 생성자 인자 `idToken`).
+    // ⚠️ 생성자 인자가 아니라 속성인 것은 위 ⚠️(게시본의 합성 public 생성자 모양) 때문이다. [withAudience] 가 새 검증기를
+    // 내보내기 **전에** 한 번 정하고, 그 뒤로 바꾸는 자리는 없다.
+    private var idToken: Boolean = false
+
     private val processor: ConfigurableJWTProcessor<SecurityContext> =
         DefaultJWTProcessor<SecurityContext>().also { p ->
             // 허용 alg만 통과(JWSVerificationKeySelector) → none/HS256/기타 미허용 alg는 여기서 거부된다.
@@ -68,8 +80,10 @@ public class JwtValidator private constructor(
     /**
      * Validates accessToken and returns the SDK-owned [ValidatedToken] — no failure path exposes a Nimbus type in the
      * public API. A JWKS fetch can be blocking I/O, so it is wrapped in [runInterruptible].
+     * After the signature and claim checks pass, a Keycloak token that is not an access token — its `typ` claim is `ID`,
+     * `Refresh`, `Offline`, `Logout` or `Serialized-ID` — is rejected with [TokenValidationException].
      * The code exchange's id_token validation (`AuthClient.requireValidNonce` → [withAudience]'s validate) is this
-     * function too, so the cap check is here and only here.
+     * function too, so the cap check is here and only here; that validator skips the `typ` check and checks `azp` instead.
      */
     public suspend fun validate(accessToken: String): ValidatedToken {
         // 상한이 먼저다 — 분해·디코드·JWKS 적재 전에, IO 디스패처로 넘기기도 전에([JWT_MAX_BYTES]).
@@ -91,7 +105,11 @@ public class JwtValidator private constructor(
             if (alg in allowedAlgs && alg.name.startsWith("HS")) {
                 throw TokenValidationException("algorithm not allowed: ${alg.name} (a JWKS holds public keys only)")
             }
-            onIo { validatedTokenFrom(processor.process(jwt, null)) }
+            val claims = onIo { processor.process(jwt, null) }
+            // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다. 둘 다 TokenValidationException 이라 아래
+            // catch 가 감싸지 않는다(IO 디스패처 밖이라 코루틴 스택 복구의 사본도 아니다).
+            if (idToken) requireAuthorizedParty(claims) else rejectNonAccessToken(claims)
+            validatedTokenFrom(claims)
         } catch (e: TokenValidationException) {
             throw e
         } catch (e: CancellationException) {
@@ -101,11 +119,42 @@ public class JwtValidator private constructor(
         }
     }
 
-    // 기대 audience 만 바꾼 검증기. 코드 교환의 id_token 검증이 쓴다 — OIDC Core §2 · §3.1.3.7 대로 id_token 의
-    // aud 는 client id 이고, `expectedAudience` 재정의는 액세스 토큰 전용이다. iss · alg 핀 · skew 는 그대로다.
+    // 액세스 토큰 자리에 온 다른 Keycloak 토큰을 거부한다(Java `JwtValidator.rejectNonAccessToken` 동형). id_token 과
+    // back-channel logout 토큰도 같은 realm 키로 서명되고 iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정
+    // (expectedAudience = clientId)의 aud 검사까지 지난다 — typ 클레임만이 그것을 가른다. 문자열이고 [NON_ACCESS_TOKEN_TYPES]
+    // 의 하나와 정확히(대소문자 구분) 같을 때만 거부한다 — 부재 · Bearer · DPoP · at+jwt · 그 밖의 문자열 · 문자열이 아닌 값은
+    // 지금처럼 통과다. 메시지에 싣는 값은 그 다섯 상수 중 하나다.
+    private fun rejectNonAccessToken(claims: JWTClaimsSet) {
+        val typ = claims.getClaim("typ")
+        if (typ is String && typ in NON_ACCESS_TOKEN_TYPES) {
+            throw TokenValidationException("not an access token (typ \"$typ\")")
+        }
+    }
+
+    // id_token 의 azp — OIDC Core §3.1.3.7 4·5(Java `JwtValidator.requireAuthorizedParty` 동형). aud 가 둘 이상이면 azp 가
+    // 있어야 하고, azp 가 있으면(JSON null 도 있는 것이다) 이 검증기의 요구 aud(= client id)와 같은 문자열이어야 한다. 액세스
+    // 토큰에는 걸지 않는다 — 액세스 토큰의 azp 는 그 토큰을 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다. 메시지에
+    // azp 값을 싣지 않는다(토큰이 고른 문자열이다).
+    private fun requireAuthorizedParty(claims: JWTClaimsSet) {
+        if (!claims.claims.containsKey("azp")) {
+            if (claims.audience.size > 1) {
+                throw TokenValidationException("id_token has more than one audience but no azp")
+            }
+            return
+        }
+        val azp = claims.getClaim("azp")
+        if (azp !is String || azp != audience) {
+            throw TokenValidationException("id_token azp is not this client")
+        }
+    }
+
+    // 코드 교환의 id_token 검증기 — 기대 audience 를 client id 로 바꾸고(OIDC Core §2 · §3.1.3.7 대로 id_token 의 aud 는
+    // client id 이고, `expectedAudience` 재정의는 액세스 토큰 전용이다) 종류를 id_token 으로 바꾼다: typ 거부를 건너뛰고 azp
+    // 를 본다. iss · alg 핀 · skew 는 그대로다.
     // ⚠️ 같은 [jwkSource] 객체를 넘긴다 — 새 저장소를 만들면 JWKS 캐시·재조회 rate-limit 창·콜드 캐시 창이 둘로
     // 갈려 IdP 요청 상한이 두 배가 된다(`IdTokenAudienceJwksTest`). 조회도 suspension point 도 없다.
-    internal fun withAudience(audience: String): JwtValidator = JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew)
+    internal fun withAudience(audience: String): JwtValidator =
+        JwtValidator(jwkSource, issuer, audience, allowedAlgs, skew).also { it.idToken = true }
 
     // 이 검증기의 키 원천 — 시험이 forRealm 이 만든 체인을 꺼내 가짜 시계로 돌린다(JwksMaxAgeTest).
     internal fun jwkSource(): JWKSource<SecurityContext> = jwkSource

@@ -26,7 +26,7 @@ from ._internal.frames import scrub_frames
 from ._internal.jwks_cache import JwksKeyCache
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwks_keys import import_usable_keys
-from ._internal.jwt import JwtValidator, check_token_size, refuse_hs_algorithm
+from ._internal.jwt import JwtValidator, TokenKind, check_token_size, refuse_hs_algorithm
 from ._internal.lower import auth_failure, is_lower_failure, summarize
 from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
@@ -211,7 +211,8 @@ class AuthClient:
         validation failure are all rejected (fail-closed). When it is omitted, id_token
         validation is skipped. The id_token's `aud` is checked against **`client_id`**, not
         `expected_audience` (OIDC Core §2·§3.1.3.7) — `expected_audience` is only for the access
-        token that `validate()` checks.
+        token that `validate()` checks. Its `azp` must also be `client_id` when present, and must
+        be present when `aud` has several values (OIDC Core §3.1.3.7, steps 4 and 5).
         """
         response = self._wrap(
             lambda: self._openid.token(
@@ -234,7 +235,7 @@ class AuthClient:
                 "authorization code exchange failed: missing id_token for nonce validation"
             )
         try:
-            validated = self._validate_for(id_token, self._config.client_id)
+            validated = self._validate_for(id_token, self._config.client_id, kind="id_token")
         except TokenValidationError as exc:
             raise KeycloakAuthError("authorization code exchange failed: invalid id_token") from exc
         if validated.claims.get("nonce") != expected_nonce:
@@ -261,7 +262,8 @@ class AuthClient:
     @scrub_frames
     def validate(self, access_token: str) -> ValidatedToken:
         """Verifies the signature against the realm JWKS and enforces issuer/audience/exp/nbf
-        (`JwtValidator`).
+        (`JwtValidator`), then refuses a Keycloak token that is not an access token (`typ` claim
+        `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`).
 
         The JWKS is loaded on the first call and cached on the instance — calls within 300
         seconds (`JWKS_MAX_AGE_SECONDS`) of receiving it reuse that `KeySet` without a network
@@ -278,11 +280,16 @@ class AuthClient:
         """
         # `expected_audience`가 설정되면 그 값을, 아니면 client_id를 기대한다(기존 동작).
         return self._validate_for(
-            access_token, self._config.expected_audience or self._config.client_id
+            access_token, self._config.expected_audience or self._config.client_id, kind="access"
         )
 
-    def _validate_for(self, token: str, audience: str) -> ValidatedToken:
-        """`validate()` 의 본체 — 기대 audience 만 호출자가 정한다(access·id_token 이 갈린다).
+    def _validate_for(self, token: str, audience: str, *, kind: TokenKind) -> ValidatedToken:
+        """`validate()` 의 본체 — 기대 audience 와 토큰 종류만 호출자가 정한다.
+
+        ⚠️ `kind` 는 기본값이 없다 — 두 호출자(access · id_token)가 각자 적는다. access 는 typ
+        를, id_token 은 azp 를 본다(`JwtValidator`). id_token 에 access 의 typ 검사가 걸리면
+        Keycloak 의 진짜 id_token(`ID`)이 거부되고, access 에 azp 검사가 걸리면 다른
+        클라이언트가 받은 정상 access 토큰이 거부된다.
 
         ⚠️ **JWKS 상태는 여기서 만들지 않는다** — 캐시·30초 강제 재조회 창·콜드 캐시 백오프는
         이 인스턴스의 `_load_jwks` 하나가 소유하고, 두 경로가 그것을 함께 쓴다. `JwtValidator` 는
@@ -300,6 +307,7 @@ class AuthClient:
             audience=audience,
             allowed_algs=self._config.signature_algorithms,
             clock_skew=self._config.clock_skew,
+            kind=kind,
         )
         try:
             return validator.validate(token, key_set)

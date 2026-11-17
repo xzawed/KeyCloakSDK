@@ -485,6 +485,7 @@ internal class AuthClientTest {
         iss: String = OidcEndpoints.forRealm(config()).issuer,
         alg: JWSAlgorithm = JWSAlgorithm.RS256,
         expiresInMillis: Long? = 60_000,
+        extra: JWTClaimsSet.Builder.() -> Unit = {},
     ): String {
         val claims =
             JWTClaimsSet
@@ -494,6 +495,7 @@ internal class AuthClientTest {
                 .subject("user-1")
                 .claim("nonce", nonce)
         expiresInMillis?.let { claims.expirationTime(Date(System.currentTimeMillis() + it)) }
+        claims.extra()
         val jwt = SignedJWT(JWSHeader.Builder(alg).keyID(key.keyID).build(), claims.build())
         jwt.sign(RSASSASigner(key))
         return jwt.serialize()
@@ -528,12 +530,13 @@ internal class AuthClientTest {
     private suspend fun AuthClient.exchange(expectedNonce: String = "the-nonce"): TokenSet =
         exchangeCode("code", testCodeVerifier, "https://app.example.com/cb", expectedNonce = expectedNonce)
 
+    // Keycloak 은 id_token 에 azp = client id 를 싣는다 — aud 가 둘 이상인 id_token 은 그것이 있어야 통과한다(아래 azp 묶음).
     @Test
     fun `exchangeCode checks the id_token against the client id under an expectedAudience override`() =
         runTest {
             val key = rsaKey()
             for (aud in listOf(listOf("app"), listOf("app", apiAudience), listOf(apiAudience, "app"))) {
-                val token = idToken(key, aud)
+                val token = idToken(key, aud) { claim("azp", "app") }
                 stubExchange(token)
                 val auth = overridden(key)
 
@@ -608,5 +611,130 @@ internal class AuthClientTest {
             val refused = assertFailsWith<KeycloakAuthException> { wrongNonce.exchange(expectedNonce = "expected-nonce") }
             assertEquals("Authorization code exchange failed: unexpected nonce", refused.message)
             wrongNonce.close()
+        }
+
+    // id_token 의 typ · azp -----------------------------------------------------------------------------------
+    //
+    // (A) validate() 의 typ 거부(액세스 토큰이 아닌 Keycloak 토큰)는 액세스 토큰 자리에만 걸린다 — Keycloak 의 id_token 은
+    // typ "ID" 이므로 교환에 걸리면 정상 교환이 전부 실패한다. (B) OIDC Core §3.1.3.7 4·5: aud 가 둘 이상이면 azp 가 있어야 하고,
+    // azp 가 있으면 client id 와 같은 문자열이어야 한다. 거부는 다른 id_token 거부와 같은 꼴(「invalid id_token」 + 원인
+    // TokenValidationException)이고 원인 메시지가 azp 를 말한다. 아래 토큰은 전부 Keycloak 처럼 typ "ID" 를 싣는다(Java 동형).
+
+    // 운영 경로의 모양 — 재정의 없음: 주입 검증기의 audience 는 config.expectedAudience(= client id)다.
+    private fun plain(realmKey: RSAKey): AuthClient {
+        val cfg = config()
+        val endpoints = OidcEndpoints.forRealm(cfg)
+        val validator = JwtValidator.withStaticJwks(JWKSet(realmKey.toPublicJWK()), endpoints.issuer, cfg.expectedAudience)
+        return AuthClient(cfg, endpoints, validator)
+    }
+
+    private fun typedId(
+        key: RSAKey,
+        aud: List<String>,
+        azp: Any? = null,
+    ): String =
+        idToken(key, aud) {
+            claim("typ", "ID")
+            if (azp != null) claim("azp", azp)
+        }
+
+    // 거부의 원인이 azp 규칙이다 — 다른 id_token 검사(서명 · iss · aud · exp)의 거부가 이 초록을 대신 채우지 못하게.
+    private suspend fun AuthClient.assertRefusedForAzp(case: String) {
+        val refused = assertFailsWith<KeycloakAuthException>(case) { exchange() }
+        assertEquals("Authorization code exchange failed: invalid id_token", refused.message, case)
+        val cause = assertIs<TokenValidationException>(refused.cause, case)
+        assertTrue("azp" in cause.message.orEmpty(), "$case: ${cause.message}")
+    }
+
+    // Keycloak 이 내는 모양(typ "ID" · azp = client id) — 교환은 받고, 같은 토큰을 validate() 는 액세스 토큰이 아니라고 거부한다.
+    @Test
+    fun `exchangeCode accepts an id_token typed ID, which validate refuses as not an access token`() =
+        runTest {
+            val key = rsaKey()
+            val token = typedId(key, listOf("app"), azp = "app")
+            stubExchange(token)
+            val auth = plain(key)
+
+            assertEquals(token, auth.exchange().idToken)
+            val refused = assertFailsWith<TokenValidationException> { auth.validate(token) }
+            assertEquals("not an access token (typ \"ID\")", refused.message)
+            auth.close()
+        }
+
+    @Test
+    fun `exchangeCode accepts an id_token that passes the azp rule`() =
+        runTest {
+            val key = rsaKey()
+            val passing =
+                mapOf(
+                    "one audience, no azp" to typedId(key, listOf("app")),
+                    "one audience, azp is the client" to typedId(key, listOf("app"), azp = "app"),
+                    "two audiences, azp is the client" to typedId(key, listOf("app", "other"), azp = "app"),
+                    "two audiences the other way round, azp is the client" to typedId(key, listOf("other", "app"), azp = "app"),
+                )
+            for ((case, token) in passing) {
+                stubExchange(token)
+                val auth = plain(key)
+                assertEquals(token, auth.exchange().idToken, case)
+                auth.close()
+            }
+        }
+
+    // 마지막 둘은 azp 가 문자열이 아니다(client id 를 담은 배열도 문자열이 아니다).
+    @Test
+    fun `exchangeCode refuses an id_token that fails the azp rule`() =
+        runTest {
+            val key = rsaKey()
+            val refusedCases =
+                mapOf(
+                    "one audience, azp names another client" to typedId(key, listOf("app"), azp = "evil"),
+                    "two audiences, no azp" to typedId(key, listOf("app", "evil")),
+                    "two audiences, azp names the other audience" to typedId(key, listOf("app", "evil"), azp = "evil"),
+                    "azp is a number" to typedId(key, listOf("app"), azp = 42L),
+                    "azp is an array holding the client id" to typedId(key, listOf("app"), azp = listOf("app")),
+                )
+            for ((case, token) in refusedCases) {
+                stubExchange(token)
+                val auth = plain(key)
+                auth.assertRefusedForAzp(case)
+                auth.close()
+            }
+        }
+
+    // JSON null 인 azp 도 「있는」 azp 다 — 문자열이 아니므로 거부한다(없는 것으로 읽으면 aud 하나에서 통과한다).
+    @Test
+    fun `exchangeCode refuses an id_token whose azp is JSON null`() =
+        runTest {
+            val key = rsaKey()
+            val token =
+                idToken(key, listOf("app")) {
+                    claim("typ", "ID")
+                    serializeNullClaims(true)
+                    claim("azp", null)
+                }
+            // 전제: 토큰이 정말 "azp":null 을 싣는다(아니면 이 테스트는 부재를 잰다).
+            assertContains(SignedJWT.parse(token).payload.toString(), "\"azp\":null")
+            stubExchange(token)
+            val auth = plain(key)
+            auth.assertRefusedForAzp("azp is JSON null")
+            auth.close()
+        }
+
+    // 재정의 아래에서도 azp 는 client id 와 대조한다 — 재정의 값(액세스 토큰이 향하는 리소스 서버)이 아니다.
+    @Test
+    fun `exchangeCode under an expectedAudience override compares the azp with the client id`() =
+        runTest {
+            val key = rsaKey()
+            val refusedCases =
+                mapOf(
+                    "azp names the override" to typedId(key, listOf("app", apiAudience), azp = apiAudience),
+                    "two audiences, no azp" to typedId(key, listOf("app", apiAudience)),
+                )
+            for ((case, token) in refusedCases) {
+                stubExchange(token)
+                val auth = overridden(key)
+                auth.assertRefusedForAzp(case)
+                auth.close()
+            }
         }
 }

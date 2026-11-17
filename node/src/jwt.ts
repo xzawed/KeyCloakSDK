@@ -5,6 +5,7 @@ import {
   createRemoteJWKSet,
   customFetch,
   type FetchImplementation,
+  type JWTPayload,
   type JWTVerifyGetKey,
   type RemoteJWKSet,
 } from 'jose'
@@ -39,6 +40,52 @@ const JWT_MAX_BYTES = 256_000
  * 강제 재조회의 성공도 나이를 다시 센다. ⚠️ 나이는 벽시계다 — jose 의 `isFreshFor` 가 `Date.now()` 를 읽는다.
  */
 const JWKS_MAX_AGE_SECONDS = 300
+
+/**
+ * 액세스 토큰이 아닌 Keycloak 토큰의 `typ` 클레임 값 — `org.keycloak.util.TokenUtil`(keycloak-client-common-synced
+ * 26.0.12)의 `TOKEN_TYPE_*` 중 액세스 토큰의 둘(Bearer · DPoP)을 뺀 다섯이다. 액세스 검증기의 `validate` 가 거부한다(아홉
+ * 언어 공통 — Java `JwtValidator.NON_ACCESS_TOKEN_TYPES`). ⚠️ **export 하지 않는다** — 공개 표면을 늘리지 않는다.
+ */
+const NON_ACCESS_TOKEN_TYPES: ReadonlySet<string> = new Set([
+  'ID',
+  'Refresh',
+  'Offline',
+  'Logout',
+  'Serialized-ID',
+])
+
+/**
+ * 액세스 토큰 자리에 온 다른 Keycloak 토큰을 거부한다. id_token 과 back-channel logout 토큰도 같은 realm 키로 서명되고
+ * iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(audience = clientId)의 aud 검사까지 지난다 — `typ` 클레임만이
+ * 그것을 가른다. 문자열이고 `NON_ACCESS_TOKEN_TYPES` 의 하나와 정확히(대소문자 구분) 같을 때만 거부한다 — 부재 · Bearer ·
+ * DPoP · at+jwt · 그 밖의 문자열 · 문자열이 아닌 값은 지금처럼 통과다. 메시지에 싣는 값은 그 다섯 상수 중 하나다.
+ */
+function rejectNonAccessToken(payload: JWTPayload): void {
+  const typ = payload['typ']
+  if (typeof typ === 'string' && NON_ACCESS_TOKEN_TYPES.has(typ)) {
+    throw new KeycloakTokenValidationError(`not an access token (typ "${typ}")`)
+  }
+}
+
+/**
+ * id_token 의 azp — OIDC Core §3.1.3.7 4·5. aud 가 둘 이상이면 azp 가 있어야 하고, azp 가 있으면(JSON null 도 있는 것이다)
+ * `clientId`(이 검증기의 기대 audience)와 같은 문자열이어야 한다. 액세스 토큰에는 걸지 않는다 — 액세스 토큰의 azp 는 그 토큰을
+ * 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다. 메시지에 azp 값을 싣지 않는다(토큰이 고른 문자열이다).
+ *
+ * ⚠️ openid-client(oauth4webapi `validateIdTokenAuthorizedParty`)는 aud 가 배열이고 길이가 1 이 아닐 때만 azp 를 본다 — aud
+ * 가 하나인 id_token 의 azp 불일치는 여기만 거부한다(`auth-id-token-signature.test.ts`).
+ */
+function requireAuthorizedParty(payload: JWTPayload, clientId: string): void {
+  if (payload['azp'] === undefined) {
+    if (Array.isArray(payload.aud) && payload.aud.length > 1) {
+      throw new KeycloakTokenValidationError('id_token has more than one audience but no azp')
+    }
+    return
+  }
+  if (payload['azp'] !== clientId) {
+    throw new KeycloakTokenValidationError('id_token azp is not this client')
+  }
+}
 
 /**
  * jose 가 검증할 토큰 머리의 `alg`(JSON 값 그대로). 읽을 수 없으면 undefined 다 — 그 판정은 지금처럼 jose 몫이다.
@@ -312,7 +359,9 @@ export interface JwtValidatorOptions {
  * Self-hardened JWT validator. It does not trust library defaults:
  * algorithm pinning (the header alg is not trusted, `none` is rejected) · exact issuer match · audience membership
  * check (multiple aud accepted) · exp/nbf ± clock skew · DoS-safe JWKS refetch (key set lifetime 300 seconds —
- * within it, a refetch only on an unresolved kid + cooldown rate-limit).
+ * within it, a refetch only on an unresolved kid + cooldown rate-limit). After those checks pass, `validate` rejects a
+ * Keycloak token that is not an access token — one whose `typ` claim is `ID`, `Refresh`, `Offline`, `Logout` or
+ * `Serialized-ID`.
  *
  * The key source is injected (a local JWKS in tests, the remote JWKS of `forJwksUri` in real use).
  */
@@ -327,6 +376,10 @@ export class JwtValidator {
   private constructor(
     private readonly keys: JWTVerifyGetKey,
     private readonly opts: JwtValidatorOptions,
+    // 코드 교환의 id_token 검증기인가 — `withAudience` 가 만든 것만 참이다. 참이면 typ 거부(액세스 토큰 전용 — Keycloak 의
+    // id_token 은 typ "ID" 다)를 건너뛰고 azp 를 본다. 거짓(`forKeySource` · `forJwksUri`)이면 그 반대다. ⚠️ `//` 주석이다 —
+    // JSDoc 이면 private 이어도 방출 `.d.ts` 에 실린다.
+    private readonly idToken = false,
   ) {}
 
   /**
@@ -380,9 +433,10 @@ export class JwtValidator {
   }
 
   /**
-   * 기대 audience 만 바꾼 검증기 — 키 소스(`keys`)는 **같은 객체**를 넘긴다. 코드 교환이 id_token 을
-   * client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token `aud` 는 client_id 를 담는다).
-   * `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다.
+   * 코드 교환의 id_token 검증기 — 기대 audience 를 바꾸고 종류를 id_token 으로 바꾼다. 키 소스(`keys`)는 **같은 객체**를
+   * 넘긴다. 코드 교환이 id_token 을 client id 로 검증하는 데 쓴다(OIDC Core §2·§3.1.3.7 — id_token `aud` 는 client_id 를
+   * 담는다). `expectedAudience` 재정의는 액세스 토큰의 몫이라 id_token 에 걸면 안 된다. 같은 이유로 `validate` 의 typ 거부
+   * (Keycloak 의 id_token 은 typ "ID")를 건너뛰고, 대신 azp 를 본다(`requireAuthorizedParty` — azp 는 이 audience 와 대조).
    *
    * ⚠️ 새 키 소스를 만들지 말 것 — JWKS 캐시·재조회 쿨다운·fetch 실패 백오프가 전부 `keys` 클로저 안에
    * 있어서, 둘로 나뉘면 IdP 요청과 DoS 상한이 두 배가 된다. I/O 는 하지 않는다.
@@ -392,9 +446,11 @@ export class JwtValidator {
    * @internal
    */
   withAudience(audience: string): JwtValidator {
-    return new JwtValidator(this.keys, { ...this.opts, audience })
+    return new JwtValidator(this.keys, { ...this.opts, audience }, true)
   }
 
+  // ⚠️ JSDoc 을 달지 말 것 — 방출 리포트에서 `// (undocumented)` 줄이 사라져 api-extractor 게이트가 「직전 릴리스의 공개 API
+  // 줄이 바뀌었다」로 막는다(실측: 그 한 줄이 `<`). 계약은 클래스 문서에 적는다.
   async validate(token: string): Promise<ValidatedToken> {
     try {
       // ⚠️ 길이 상한이 맨 앞이다 — jose 가 나누고 디코드하기 전, JWKS 를 찾기 전(`JWT_MAX_BYTES`). 단위는 UTF-16 코드
@@ -420,6 +476,13 @@ export class JwtValidator {
         clockTolerance: this.opts.clockSkewSeconds, // exp/nbf ± skew
         requiredClaims: ['exp'], // exp 존재 강제 — jose는 exp가 있을 때만 만료검사하므로 부재 시 무만료 토큰이 통과한다(Go/Rust/Python 동형 심층방어)
       })
+      // 검증을 통과한 클레임만 본다 — 검증 전 클레임으로 판정하지 않는다. 둘 다 KeycloakTokenValidationError 라 아래 catch 가
+      // 감싸지 않는다.
+      if (this.idToken) {
+        requireAuthorizedParty(payload, this.opts.audience)
+      } else {
+        rejectNonAccessToken(payload)
+      }
       const aud = payload.aud
       return {
         subject: typeof payload.sub === 'string' ? payload.sub : '',
@@ -430,7 +493,7 @@ export class JwtValidator {
         claims: payload as Record<string, unknown>,
       }
     } catch (e) {
-      if (e instanceof KeycloakTokenValidationError) throw e // 위의 HS 거부 — 하위 오류가 아니다
+      if (e instanceof KeycloakTokenValidationError) throw e // 위의 HS · typ · azp 거부 — 하위 오류가 아니다
       throw new KeycloakTokenValidationError(`JWT validation failed: ${(e as Error).message}`, {
         cause: e,
       })

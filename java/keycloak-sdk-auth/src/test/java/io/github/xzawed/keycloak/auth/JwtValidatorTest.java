@@ -3,8 +3,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.nimbusds.jose.*; import com.nimbusds.jose.crypto.*;
 import com.nimbusds.jose.jwk.*; import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.*;
+import io.github.xzawed.keycloak.core.exception.TokenValidationException;
 import java.util.*;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class JwtValidatorTest {
   // Keycloak 서버 베이스 URL(realm 경로 제외) — KeycloakConfig 조립에만 쓴다.
@@ -613,6 +619,119 @@ class JwtValidatorTest {
         new JWTClaimsSet.Builder().issuer(issuer).audience("app")
             .expirationTime(new Date(System.currentTimeMillis() + 60_000))
             .claim("pad", "x".repeat(pad)).build());
+    jwt.sign(new RSASSASigner(key));
+    return jwt.serialize();
+  }
+
+  // ── (A) 액세스 토큰 자리에 온 다른 Keycloak 토큰 — 페이로드의 typ 클레임 ──
+  // Keycloak 은 typ 클레임에 토큰의 종류를 적는다(org.keycloak.util.TokenUtil, keycloak-client-common-synced 26.0.12):
+  // 액세스 토큰은 Bearer · DPoP, 그 밖은 ID · Refresh · Offline · Logout · Serialized-ID. id_token 과 back-channel logout
+  // 토큰도 같은 realm 키로 서명되고 iss · exp 가 맞으며, id_token 의 aud 는 client id 라 기본 설정(expectedAudience =
+  // clientId)의 aud 검사까지 지난다 — 그래서 validate() 가 그것을 액세스 토큰으로 받아 줬다. 다섯을 거부하고 나머지는 받는다.
+  private static final String ISSUER = "https://kc.example.com/realms/r";
+
+  @ParameterizedTest
+  @ValueSource(strings = {"ID", "Refresh", "Offline", "Logout", "Serialized-ID"})
+  void validate_refusesAKeycloakTokenThatIsNotAnAccessToken(String typ) throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String token = signedFor(key, ISSUER, List.of("app"), c -> c.claim("typ", typ));
+
+    TokenValidationException e =
+        assertThrows(TokenValidationException.class, () -> staticValidator(key, "app").validate(token));
+    // 메시지까지 본다 — 감싼 「JWT validation failed」가 아니라 이 거부이고, 어느 typ 인지 말한다.
+    assertEquals("not an access token (typ \"" + typ + "\")", e.getMessage());
+  }
+
+  /** 다섯 값과 정확히(대소문자 · 공백까지) 같은 문자열만 거부된다 — 액세스 토큰의 값 · 그 밖의 문자열 · 문자열 아닌 값 · 부재는 통과. */
+  static Stream<Arguments> typClaimsThatPass() {
+    return Stream.of(
+        Arguments.of("absent", null),
+        Arguments.of("Bearer", "Bearer"),
+        Arguments.of("DPoP", "DPoP"),
+        Arguments.of("at+jwt", "at+jwt"),
+        Arguments.of("id in lower case", "id"),
+        Arguments.of("logout in lower case", "logout"),
+        Arguments.of("ID with a trailing space", "ID "),
+        Arguments.of("empty string", ""),
+        Arguments.of("array holding ID", List.of("ID")),
+        Arguments.of("number", 1L),
+        Arguments.of("boolean", true),
+        Arguments.of("object", Map.of("typ", "ID")));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("typClaimsThatPass")
+  void validate_acceptsAnyOtherTypClaim(String name, Object typ) throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    String token = signedFor(key, ISSUER, List.of("app"), c -> typ == null ? c : c.claim("typ", typ));
+
+    ValidatedToken validated = staticValidator(key, "app").validate(token);
+    // 토큰이 정말 그 값을 실었는지(되읽은 값) — 직렬화가 값을 바꿨다면 이 경우는 아무것도 재지 않는다.
+    assertEquals(typ, validated.getClaims().get("typ"), name);
+  }
+
+  // typ 은 서명 · iss · aud · exp 가 통과한 **뒤에** 본다 — 검증 전 클레임으로 판정하지 않는다. typ="ID" 를 실은 위조 서명 ·
+  // 다른 aud · 다른 iss 토큰은 typ 이 아니라 그 검사의 「JWT validation failed」로 거부된다.
+  @Test void validate_readsTheTypClaimOnlyAfterTheOtherChecksPass() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    RSAKey forger = new RSAKeyGenerator(2048).keyID("k1").generate();
+    JwtValidator v = staticValidator(key, "app");
+    for (String token : List.of(
+        signedFor(forger, ISSUER, List.of("app"), c -> c.claim("typ", "ID")),
+        signedFor(key, ISSUER, List.of("someone-else"), c -> c.claim("typ", "ID")),
+        signedFor(key, "https://evil.example.com/realms/r", List.of("app"), c -> c.claim("typ", "ID")))) {
+      TokenValidationException e = assertThrows(TokenValidationException.class, () -> v.validate(token));
+      assertEquals("JWT validation failed", e.getMessage());
+    }
+  }
+
+  // (B) 는 id_token 의 규칙이다 — 액세스 토큰의 azp 는 그 토큰을 요청한 클라이언트라 기대 audience 와 다른 것이 정상이다
+  // (리소스 서버가 받는 토큰). validate() 는 azp 를 보지 않는다: 다중 aud 에 azp 가 없어도 · azp 가 다른 클라이언트여도 ·
+  // 문자열이 아니어도 지금처럼 받는다.
+  @Test void validate_doesNotApplyTheIdTokenAzpRule() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    JwtValidator v = staticValidator(key, "app");
+
+    assertEquals(List.of("app", "other"), v.validate(signedFor(key, ISSUER, List.of("app", "other"), c -> c)).getAudience());
+    assertEquals("frontend",
+        v.validate(signedFor(key, ISSUER, List.of("app"), c -> c.claim("azp", "frontend"))).getClaims().get("azp"));
+    assertEquals("frontend",
+        v.validate(signedFor(key, ISSUER, List.of("app", "other"), c -> c.claim("azp", "frontend"))).getClaims().get("azp"));
+    assertEquals(42L,
+        v.validate(signedFor(key, ISSUER, List.of("app", "other"), c -> c.claim("azp", 42L))).getClaims().get("azp"));
+  }
+
+  // withAudience 가 주는 것은 코드 교환의 id_token 검증기다. Keycloak 의 id_token 은 typ "ID" 라 (A) 를 걸지 않고, 대신 (B) azp
+  // 규칙을 건다. 같은 토큰을 원본(액세스 검증기, aud 가 같은 기본 설정)은 반대로 판정한다 — 둘을 가르는 것이 검증기의 종류이고,
+  // 파생이 원본을 바꾸지 않는다(파생 뒤에도 원본은 typ "ID" 를 거부한다).
+  @Test void withAudience_isTheIdTokenValidator_typIdPasses_andTheAzpRuleApplies() throws Exception {
+    RSAKey key = new RSAKeyGenerator(2048).keyID("k1").generate();
+    JwtValidator access = staticValidator(key, "app");
+    JwtValidator id = access.withAudience("app");
+    String typedId = signedFor(key, ISSUER, List.of("app"), c -> c.claim("typ", "ID").claim("azp", "app"));
+    String twoAudiencesNoAzp = signedFor(key, ISSUER, List.of("app", "other"), c -> c.claim("typ", "Bearer"));
+
+    assertEquals("ID", id.validate(typedId).getClaims().get("typ"));
+    assertEquals("not an access token (typ \"ID\")",
+        assertThrows(TokenValidationException.class, () -> access.validate(typedId)).getMessage());
+
+    assertEquals(List.of("app", "other"), access.validate(twoAudiencesNoAzp).getAudience());
+    TokenValidationException noAzp = assertThrows(TokenValidationException.class, () -> id.validate(twoAudiencesNoAzp));
+    assertTrue(noAzp.getMessage().contains("azp"), noAzp.getMessage());
+  }
+
+  private static JwtValidator staticValidator(RSAKey key, String audience) {
+    return JwtValidator.withStaticJwks(new JWKSet(key.toPublicJWK()), ISSUER, audience,
+        Set.of(JWSAlgorithm.RS256), java.time.Duration.ofSeconds(30));
+  }
+
+  /** iss · aud · exp(1분 뒤)가 맞는 RS256(kid k1) 토큰 — more 가 클레임을 더한다. */
+  private static String signedFor(RSAKey key, String issuer, List<String> audience,
+      java.util.function.UnaryOperator<JWTClaimsSet.Builder> more) throws Exception {
+    SignedJWT jwt = new SignedJWT(
+        new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(),
+        more.apply(new JWTClaimsSet.Builder().issuer(issuer).audience(audience)
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000))).build());
     jwt.sign(new RSASSASigner(key));
     return jwt.serialize();
   }

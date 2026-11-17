@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 ### Added
+- **(Ruby)** `JwtValidator#validate_id_token(token, client_id:)` — id_token 을 코드 교환과 같은 규칙(서명 · `iss` · `aud` 에 client id · `exp` · `azp`)으로 검증합니다(PHP `validateIdToken` 과 같은 자리). 코드 교환이 이것을 부르고, `validate` 는 이제 id_token 을 거부합니다(아래 Security).
 - **(.NET)** 패키지가 `net8.0` 과 함께 **`net10.0`** 빌드도 싣습니다 — .NET 10 이상 앱은 그것을 저절로 고릅니다. 하한은 그대로 .NET 8 입니다(.NET 8 · 9 는 2026-11-10 에 지원이 끝났지만 쓰는 곳을 위해 남깁니다). 두 대상의 의존성과 공개 API 는 같습니다 — admin 의존성 `Keycloak.AuthServices.Sdk` 2.7.0 이 net8.0 전용이라 그보다 낮은 대상은 둘 수 없습니다.
 - **(Node)** `KeycloakAdminError` 가 실패한 admin 응답의 HTTP 상태를 **`status`** 필드로 싣습니다 — `KeycloakNotFoundError` · `KeycloakConflictError` · `KeycloakForbiddenError` 는 늘 404 · 409 · 403 입니다. 지금까지는 아홉 언어 중 node 만 상태 필드가 없어, 그 셋은 클래스로만, 나머지 상태는 메시지 머리 `HTTP <상태>:` 로만 드러났습니다. 클래스 · 메시지 · `cause` 는 그대로이고, 상태 없이 만든 `new KeycloakAdminError(message)` 는 `status` 가 `undefined` 입니다.
 
@@ -66,6 +67,7 @@
 - **(Node)** `JwtValidator.forJwksUri` 에 URL 로 안 읽히는 값(상대 경로 · 빈 문자열 · 범위 밖 포트)을 주면 `new URL` 의 `TypeError`(`ERR_INVALID_URL`)가 그대로 나갔습니다 — 이제 `KeycloakTokenValidationError('invalid JWKS URI')` 이고 원래 오류는 `cause` 에 있습니다.
 
 ### Security
+- **(Java · Kotlin · Node · Go · Python · Ruby · PHP · Rust · .NET)** ⚠️ 액세스 토큰 검증(`validate` 류)이 페이로드 `typ` 이 Keycloak 의 다른 토큰 종류(`ID` · `Refresh` · `Offline` · `Logout` · `Serialized-ID`)인 토큰을 거부합니다 — 기본 audience(client id)에서 id_token(로그아웃 URL 의 `id_token_hint` 등으로 새는 값)이 액세스 토큰으로 통과했습니다. `typ` 이 없거나 `Bearer` · `DPoP` 등이면 그대로입니다. 코드 교환의 id_token 은 `aud` 가 여럿이면 `azp` 가 있어야 하고, 있으면 client id 여야 합니다(OIDC Core §3.1.3.7) — 실패는 지금의 「invalid id_token」과 같습니다. id_token 을 `validate` 로 확인하던 코드는 이제 실패합니다 — 코드 교환이 nonce 와 함께 검증하고, 따로는 PHP `validateIdToken` · Ruby `validate_id_token` 입니다.
 - **(Go)** `Config` · `TokenSet` · `AuthorizationRequest` · `*Client` · `AuthClient` · `AdminClient` 와 `NewClientCredentialsTokenProvider` 의 provider 를 문자열이 아닌 동사(`%d` · `%b` · `%e` · `%t` · `%U` 등)로 찍으면 `String()` 을 건너뛰고 클라이언트 시크릿 · 토큰 · PKCE code verifier 를 원문으로 찍었습니다(값과 포인터 모두). 이제 `fmt.Formatter` 가 모든 동사를 가린 문자열로 보냅니다 — 그 동사들은 fmt 의 잘못된-동사 꼴(`%!d(keycloak.Config=Config{…ClientSecret:***…})`)로 찍히고, 문자열 동사(`%v` · `%+v` · `%#v` · `%s` · `%q` · `%x` · `%X`)의 출력은 너비 · 플래그까지 그대로입니다. ⚠️ 값에 건 `%p` 는 fmt 가 어떤 메서드보다 먼저 처리해 여전히 필드를 찍습니다 — `go vet` 이 그 호출을 경고합니다.
 - **(Ruby)** JWKS 의 문자열 원소는 거부되지 않고 ruby-jwt 에서 **그 문자열이 비밀인 HMAC 키**가 되었습니다(`JWT::JWK::HMAC` 이 `String` 을 받습니다). `signature_algorithms` 에 HS 계열을 허용한 소비자에게는, JWKS 에 그런 원소가 있을 때 공개된 그 문자열로 서명한 위조 토큰이 통과했습니다(실측 — 기본값 `["RS256"]` 은 해당하지 않습니다). 이제 해시가 아닌 원소는 키로 읽지 않고 버립니다. ⚠️ JWKS 에 실린 `oct` 키는 지금도 HMAC 키로 쓰입니다 — 공개 JWKS 를 쓰는 검증에는 HS 계열을 허용하지 마십시오.
 - **(Java · Kotlin)** admin 레인도 응답 머리·청크 크기 줄·트레일러·TLS 레코드까지 요청을 보낸 때부터 읽기 타임아웃 안에 읽습니다 — 지금까지는 그 틀을 읽기마다만 묶어, 바이트를 읽기 타임아웃보다 조금 짧게 흘리는 서버가 1 초 설정에 7 초(틀)·33.5 초(TLS 레코드 하나) 호출을 붙잡았습니다. 이제 같은 `KeycloakTransportException` 으로 1.5 초 안에 끝납니다. ⚠️ 컨테이너가 RESTEasy `ClientConfigProvider` 를 두면(WildFly Elytron 등) 그 TLS 정책을 지키려 RESTEasy 의 풀을 그대로 쓰고, 그때 머리·틀은 지금처럼 읽기마다만 묶입니다.

@@ -98,13 +98,14 @@ afterAll(async () => {
   await idp.close()
 })
 
-/** JWKS 의 `k1` 로 보이는 RS256 id_token — `key` 가 실제 서명 키다. */
+/** JWKS 의 `k1` 로 보이는 RS256 id_token — `key` 가 실제 서명 키다. `extra` 는 더 실을 클레임이다. */
 function idToken(
   key: CryptoKey,
   nonce: string,
   audience: string | string[] = CLIENT_ID,
+  extra: Record<string, unknown> = {},
 ): Promise<string> {
-  return new SignJWT({ nonce })
+  return new SignJWT({ nonce, ...extra })
     .setProtectedHeader({ alg: 'RS256', kid: 'k1', typ: 'JWT' })
     .setIssuer(`${idp.origin}/realms/r`)
     .setSubject('u1')
@@ -274,6 +275,31 @@ describe('exchangeCode — expectedAudience 재정의(진짜 openid-client)', ()
     await exchange(exchanger)
     await validator.auth.validate(await accessToken(API))
     expect(idp.certsHits).toBe(2)
+  })
+})
+
+/**
+ * id_token 의 typ · azp — 진짜 openid-client 를 지나서. (A) `validate` 의 typ 거부(액세스 토큰이 아닌 Keycloak 토큰)는
+ * 액세스 토큰 자리에만 걸린다 — Keycloak 의 id_token 은 typ "ID" 다. (B) openid-client(oauth4webapi
+ * `validateIdTokenAuthorizedParty`)는 aud 가 **배열이고 길이가 1 이 아닐 때만** azp 를 본다 — aud 가 하나인 id_token 의
+ * azp 가 다른 클라이언트여도 거기서는 통과하고, SDK 검증기가 거부한다(OIDC Core §3.1.3.7 5).
+ */
+describe('exchangeCode — id_token 의 typ · azp(진짜 openid-client)', () => {
+  it('Keycloak 모양의 id_token(typ "ID" · azp = clientId)은 교환을 통과하고, 같은 토큰을 validate 는 거부한다', async () => {
+    idp.idToken = await idToken(signed, NONCE, CLIENT_ID, { typ: 'ID', azp: CLIENT_ID })
+    const kc = client()
+    await expect(exchange(kc)).resolves.toMatchObject({ idToken: idp.idToken })
+    const refused = await refusal(kc.auth.validate(idp.idToken))
+    expect(refused).toBeInstanceOf(KeycloakTokenValidationError)
+    expect(refused.message).toBe('not an access token (typ "ID")')
+  })
+
+  it('aud 가 하나인 id_token 의 azp 가 다른 클라이언트면 SDK 검증기가 거부한다(openid-client 는 보지 않는다)', async () => {
+    idp.idToken = await idToken(signed, NONCE, CLIENT_ID, { typ: 'ID', azp: 'evil' })
+    const refused = await refusal(exchange())
+    expect(refused).toBeInstanceOf(KeycloakAuthError)
+    expect(refused.message).toBe('Authorization code exchange failed: invalid id_token')
+    expect((refused.cause as Error).message).toContain('azp')
   })
 })
 

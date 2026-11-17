@@ -131,7 +131,9 @@ public class AuthClient internal constructor(
      * nonce claim is compared as well. This blocks at the source the HIGH defect the Node SDK went through (without
      * threading the nonce, the id_token passes effectively unvalidated).
      * The id_token's `aud` is checked against `clientId`, per OIDC Core §3.1.3.7 — `expectedAudience` is only for
-     * [validate]'s access tokens, so overriding it does not apply to this exchange.
+     * [validate]'s access tokens, so overriding it does not apply to this exchange. Its `azp` must be present when `aud`
+     * has more than one value and, when present, must equal `clientId` (§3.1.3.7 steps 4–5); [validate]'s `typ` check
+     * does not apply here, since Keycloak's id_token carries `typ` "ID".
      * Omitting `expectedNonce` (a custom flow without a nonce) skips id_token validation.
      */
     public suspend fun exchangeCode(
@@ -211,7 +213,8 @@ public class AuthClient internal constructor(
 
     /**
      * Verifies the signature against the realm JWKS and enforces issuer/audience (= `expectedAudience`)/exp/nbf
-     * (hardened [JwtValidator], reusing §jwt).
+     * (hardened [JwtValidator], reusing §jwt), and rejects a Keycloak token that is not an access token (`typ` claim
+     * `ID`, `Refresh`, `Offline`, `Logout` or `Serialized-ID`).
      */
     public suspend fun validate(accessToken: String): ValidatedToken = ensureValidator().validate(accessToken)
 
@@ -238,7 +241,8 @@ public class AuthClient internal constructor(
     // id_token의 nonce 클레임을 대조하기 전에 realm JWKS로 서명·iss·aud·exp까지 강화 검증한다. aud는 언제나
     // config.clientId다(OIDC Core §2 · §3.1.3.7) — config.expectedAudience는 액세스 토큰(validate) 전용이다.
     // ⚠️ 새 검증기를 만들지 않고 ensureValidator()의 것에서 audience 만 바꾼다 — 같은 JWKS 저장소(캐시·재조회
-    // 창)를 공유해야 IdP 요청 상한이 그대로다(`IdTokenAudienceJwksTest`).
+    // 창)를 공유해야 IdP 요청 상한이 그대로다(`IdTokenAudienceJwksTest`). 파생은 id_token 검증기다 — validate() 의 typ
+    // 거부(Keycloak 의 id_token 은 typ "ID")를 걸지 않고 azp 를 본다(aud 가 둘 이상이면 있어야 하고, 있으면 clientId).
     private suspend fun requireValidNonce(
         idToken: String?,
         expectedNonce: String,
