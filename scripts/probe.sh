@@ -39,6 +39,13 @@
 # 변이 명령과 검사 명령은 **워크트리 안에서** 돈다. 본 트리는 손대지 않는다.
 set -eu
 
+# ⚠️ **python 바이트코드를 쓰지 않는다.** 기준선의 import 가 `__pycache__` 를 남기면, python 은 원본의 수정 시각(초) ·
+# 크기로만 그 캐시를 믿는다 — 크기를 안 바꾸는 변이(`1` → `2`)가 같은 초에 일어나면 **옛 코드**가 돌아 잡히는 변이가
+# SILENT 였다(실측 2026-11-17: CI 리눅스에서 자가테스트의 python 두 칸, 손 재현으로 이 PC 에서도). 이 러너가 막으려는
+# 「착지했는데 안 읽힌 변이」 그대로다.
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
+
 SITE=''
 SITE_MODE=''
 RELEVANCE_MODE=''

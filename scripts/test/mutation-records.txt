@@ -1689,3 +1689,10 @@ TEST:scripts/test/test-probe.sh
 OLD:    *) if printf '%s\n' "$CHANGED" | grep -q '^python/src/'; then
 NEW:    *) if false; then # PROBE-REC
 SITE:if false; then # PROBE-REC
+
+### probe-python-bytecode-written
+FILE:scripts/probe.sh
+TEST:scripts/test/test-probe.sh
+OLD:PYTHONDONTWRITEBYTECODE=1
+NEW:PYTHONDONTWRITEBYTECODE= # PROBE-REC
+SITE:PYTHONDONTWRITEBYTECODE= # PROBE-REC

@@ -329,6 +329,16 @@ chmod +x "$TOOLS/py-main"
 assert_contains "$(KCSDK_PY="$TOOLS/py-main" deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut" sh -c "$_pychk")" \
   "2 INVALID: --deps python: " \
   "--deps python 의 해석기가 본 트리 패키지를 적재하면 INVALID(2) — 판정하지 않는다"
+# ⚠️ **바이트코드 캐시** — 기준선의 import 가 `__pycache__` 를 남기고, python 은 원본의 수정 시각(초) · 크기로만 그 캐시의
+# 신선도를 본다. 크기를 안 바꾸는 변이(X = 1 → X = 2)가 같은 초에 일어나면 **옛 바이트코드**가 돌아 잡히는 변이가
+# SILENT 였다(실측 2026-11-17: CI 리눅스의 빠른 기준선에서 위 두 칸이 거짓 SILENT — 이 PC 는 느려서 초가 넘어갔다).
+# 수정 시각을 원래 초로 되돌려 그 경우를 결정적으로 만든다(git 은 ctime · 나노초로 내용 변경을 여전히 본다). ⚠️ `sed -b`
+# 여야 한다 — Windows 의 MSYS `sed -i` 는 CRLF 체크아웃의 CR 을 떼어 크기를 바꾸고, 그러면 캐시가 무효라 재현되지 않는다
+# (실측: 7 → 6 바이트에서 새 값, `-b` 로 7 바이트에서 옛 값).
+_pymut_samesec='f=python/src/keycloak_sdk/__init__.py; t=$(stat -c %Y "$f"); sed -b -i "s/X = 1/X = 2/" "$f"; touch -d "@$t" "$f"'
+assert_eq "$_caught" "$(KCSDK_PY="$PY" deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut_samesec" sh -c "$_pychk")" \
+  "같은 크기 · 같은 초의 python 변이도 CAUGHT(0) — 기준선의 바이트코드를 다시 쓰지 않는다"
+
 # 해석기를 안 주면 본 트리의 python/.venv 를 쓰고, 그것도 없으면 거부한다.
 assert_contains "$(KCSDK_PY='' deps_run --assume-relevant --site 'X = 2' --deps python "$_pymut" sh -c "$_pychk")" \
   "2 INVALID: --deps python: 해석기가 없다" \
