@@ -92,10 +92,28 @@ def test_a_fragment_is_refused(facade: str, value: str) -> None:
         "https://app/c%2",  # 끝에서 잘린 퍼센트 인코딩
         "https://app/c%",
         "https://app/c%g0",
+        "https://app/c\ud800b",  # 짝 없는 서로게이트 — urlencode 의 UTF-8 strict 가 던진다
+        "https://app/c\udc00b",
+        "https://app/c\udfffb",
     ],
 )
 def test_a_value_keycloak_cannot_parse_is_refused(facade: str, value: str) -> None:
     assert _refusal(_authorization_url(facade), value) == NOT_VALID
+
+
+@pytest.mark.parametrize("facade", FACADES)
+def test_every_lone_surrogate_is_refused(facade: str) -> None:
+    """str 은 짝지은 서로게이트를 쥐지 않는다(아스트랄 문자는 코드 포인트 하나다).
+
+    그래서 그 범위 전부가 짝이 없다. 예전에는 urlencode 의 raw UnicodeEncodeError 가
+    SDK 예외 밖으로 나갔다(실측)."""
+    build = _authorization_url(facade)
+    missed = [
+        f"U+{cp:04X}"
+        for cp in range(0xD800, 0xE000)
+        if _refusal(build, f"https://app/c{chr(cp)}b") != NOT_VALID
+    ]
+    assert missed == []
 
 
 @pytest.mark.parametrize("facade", FACADES)
@@ -149,6 +167,9 @@ def test_the_message_does_not_quote_the_value(facade: str, value: str, message: 
         "https://app/c~b",  # U+007E — R3 범위 바로 앞
         "https://app/c\xa1b",  # U+00A1 — R3 범위 바로 뒤
         "https://app/c%2Fb",
+        "https://app/c\U0001f600b",  # 아스트랄 문자 하나(짝지은 서로게이트가 아니다)
+        "https://app/c\U0000d7ffb",  # 서로게이트 범위 바로 앞
+        "https://app/c\U0000e000b",  # 서로게이트 범위 바로 뒤
     ],
 )
 def test_an_absolute_uri_is_carried_exactly_as_given(facade: str, value: str) -> None:

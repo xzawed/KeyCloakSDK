@@ -13,7 +13,9 @@ Three rules, in this order:
 - R3 a URI Keycloak can read (RFC 3986 §2): Keycloak parses `redirect_uri` with
   `java.net.URI.create` and refuses the request when that throws -- for every character in
   U+0000-U+0020 and U+007F-U+00A0, for `" < > \\ ^ ` { | }`, and for a `%` that is not
-  followed by two hex digits (measured on JDK 21, 2026-11-18).
+  followed by two hex digits (measured on JDK 21, 2026-11-18). A lone surrogate (U+D800-U+DFFF;
+  a `str` never holds a paired one) is refused here too: `urlencode` encodes UTF-8 strictly and
+  would raise `UnicodeEncodeError` outside the SDK's errors.
 
 A refusal is `KeycloakConfigError` with a fixed message: it never quotes the value.
 """
@@ -30,8 +32,9 @@ NOT_VALID = "invalid redirect_uri: not a valid URI (RFC 3986 §2)"
 
 #: RFC 3986 §3.1 scheme, then `:`. `match` anchors it at the start.
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
-#: R3 -- one character `java.net.URI.create` refuses, or a `%` without two hex digits.
-_UNREADABLE = re.compile(r'[\x00-\x20\x7f-\xa0"<>\\^`{|}]|%(?![0-9A-Fa-f]{2})')
+#: R3 -- one character `java.net.URI.create` refuses, a lone surrogate, or a `%` without two
+#: hex digits.
+_UNREADABLE = re.compile(r'[\x00-\x20\x7f-\xa0\ud800-\udfff"<>\\^`{|}]|%(?![0-9A-Fa-f]{2})')
 
 
 def check_redirect_uri(redirect_uri: object) -> None:
