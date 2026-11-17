@@ -22,8 +22,11 @@ use Xzawed\Keycloak\Exception\KeycloakConfigError;
  *    `]` outside the query and the host, and an empty part after the scheme; those are not checked here.
  *
  * R1 and R2 read bytes (no `/u`), so an invalid UTF-8 string still gets R1 and R2 first. A refusal is a KeycloakConfigError
- * whose message never quotes the value. null means "none given" and is not checked: `AuthClient` then sends the config
- * value, which `KeycloakConfig` already checked.
+ * whose message never quotes the value.
+ *
+ * `check()` is given the value about to be sent, so null — no redirect URI at all — is not an absolute URI: the league
+ * provider would put an empty `redirect_uri=` on the URL, which Keycloak refuses for every client. `KeycloakConfig` checks
+ * its `redirectUri` only when it is set, since a client may give one per request instead.
  */
 final class RedirectUri
 {
@@ -37,10 +40,7 @@ final class RedirectUri
 
     public static function check(?string $redirectUri): void
     {
-        if ($redirectUri === null) {
-            return;
-        }
-        if (preg_match('/^[A-Za-z][A-Za-z0-9+.-]*:/', $redirectUri) !== 1) {
+        if ($redirectUri === null || preg_match('/^[A-Za-z][A-Za-z0-9+.-]*:/', $redirectUri) !== 1) {
             throw new KeycloakConfigError(self::NOT_ABSOLUTE);
         }
         if (str_contains($redirectUri, '#')) {

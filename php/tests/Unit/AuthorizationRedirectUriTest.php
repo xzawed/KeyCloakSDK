@@ -162,10 +162,29 @@ final class AuthorizationRedirectUriTest extends TestCase
         self::assertIsString(self::providerField($auth, 'pkceCode'));
     }
 
-    /** null 은 config 값이다 — 그 값은 생성자가 이미 같은 규칙으로 봤다(검사하지 않는다). */
+    /** null 은 config 값이다 — 그 값도 같은 규칙으로 본다(생성자가 이미 봤다). */
     public function testNullSendsTheConfigValue(): void
     {
         self::assertSame(['https://app/cb'], self::queryValues(self::auth()->createAuthorizationRequest()->url, 'redirect_uri'));
+    }
+
+    /**
+     * 인자도 config 도 null 이면 실을 redirect_uri 가 없다 — league 프로바이더가 빈 `redirect_uri=` 를 실었다(실측), Keycloak 은
+     * 그것을 모든 등록에서 거부한다. state·PKCE 를 만들기 전에 R1 이다.
+     */
+    public function testNoRedirectUriAnywhereIsRefused(): void
+    {
+        $auth = self::auth(configRedirectUri: null);
+        self::assertSame(self::NOT_ABSOLUTE, self::refusal(fn () => $auth->createAuthorizationRequest()));
+        self::assertNull(self::providerField($auth, 'state'));
+        self::assertNull(self::providerField($auth, 'pkceCode'));
+    }
+
+    /** 대조 — config 에 값이 없어도 호출당 값이 있으면 그것이 실린다. */
+    public function testAPerCallValueNeedsNoConfigValue(): void
+    {
+        $url = self::auth(configRedirectUri: null)->createAuthorizationRequest('https://app/per-call')->url;
+        self::assertSame(['https://app/per-call'], self::queryValues($url, 'redirect_uri'));
     }
 
     public function testConfigRefusesANonAbsoluteRedirectUri(): void
@@ -243,9 +262,9 @@ final class AuthorizationRedirectUriTest extends TestCase
         );
     }
 
-    private static function auth(): AuthClient
+    private static function auth(?string $configRedirectUri = 'https://app/cb'): AuthClient
     {
-        $cfg = self::config('https://app/cb');
+        $cfg = self::config($configRedirectUri);
         $endpoints = new OidcEndpoints($cfg);
         $noHttp = static function (RequestInterface $request): never {
             throw new \LogicException('the authorization URL needs no request');

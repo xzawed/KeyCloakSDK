@@ -61,11 +61,12 @@ final class AuthClient
      *   ⚠️ This is where an app with several callbacks (multi-tenant, per environment) serves them with one client —
      *   isomorphic with the other eight SDKs. **Pass the same value to `exchangeCode()`** (RFC 6749 §4.1.3).
      *   It must be an absolute URI without a fragment that Keycloak can parse (RFC 6749 §3.1.2 · RFC 3986 §2) — anything
-     *   else throws KeycloakConfigError before state, PKCE or nonce exist. It is sent exactly as given.
+     *   else throws KeycloakConfigError before state, PKCE or nonce exist, and so does null when the config has no
+     *   `redirectUri` either (there would be none to send). It is sent exactly as given.
      */
     public function createAuthorizationRequest(?string $redirectUri = null): AuthorizationRequest
     {
-        RedirectUri::check($redirectUri);   // null 은 config 값이다 — 그 값은 KeycloakConfig 생성자가 이미 봤다
+        RedirectUri::check($redirectUri ?? $this->config->redirectUri);   // 실릴 값 — 둘 다 null 이면 빈 redirect_uri= 다(R1)
         // league/oauth2-client getAuthorizationUrl(['nonce' => $n])는 쿼리에 nonce=를 그대로 싣는다
         // (실측 2026-08-15: HAS_NONCE_KEY=yes MATCHES=yes). pkceMethod 생성자 옵션의 no-op과 다른 부류.
         $nonce = self::randomUrlSafe();

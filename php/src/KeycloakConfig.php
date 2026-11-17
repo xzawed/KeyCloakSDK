@@ -98,7 +98,10 @@ final readonly class KeycloakConfig implements \JsonSerializable
             throw new KeycloakConfigError('clockSkew must be >= 0');
         }
         // createAuthorizationRequest(null) 이 보내는 값이다 — 호출당 값과 같은 규칙(RFC 6749 §3.1.2 · RFC 3986 §2). 고쳐 쓰지 않는다.
-        RedirectUri::check($this->redirectUri);
+        // null 은 허용한다 — 클라이언트가 호출마다 값을 줄 수 있다(둘 다 없으면 그 호출이 R1 이다).
+        if ($this->redirectUri !== null) {
+            RedirectUri::check($this->redirectUri);
+        }
         // 후행 슬래시 제거(엔드포인트 조립 규약)
         $this->serverUrl = rtrim($serverUrl, '/');
         $this->scopes = array_values($scopes);
