@@ -26,6 +26,7 @@ public final class GroupsResource {
 
   /** Creates a group, then extracts the new group's id from the response {@code Location} header and returns it. */
   public String create(GroupRepresentation representation) {
+    EncodableBody.require(representation);
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.add(representation)) {
         return CreatedResponseUtil.getCreatedId(r);
@@ -47,6 +48,7 @@ public final class GroupsResource {
    * <p>⚠️ Do not merge the path ({@code id}) and the body ({@code representation}).
    */
   public void update(String id, GroupRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.group(id).update(representation));
   }
 
