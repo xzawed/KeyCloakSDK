@@ -131,14 +131,16 @@ describe('URL 이 아닌 redirectUri 는 인가 요청에서도 KeycloakConfigEr
 })
 
 /**
- * WHATWG 가 받지만 Keycloak 은 받지 않는 값 — 등록부 `redirect-uri-r3-narrower-than-keycloak`.
+ * WHATWG 가 받지만 Keycloak 은 받지 않는 값 — 등록부 `redirect-uri-r3-narrower-than-keycloak` ·
+ * `redirect-uri-create-residuals`.
  *
  * Keycloak 은 받은 redirect_uri 를 `java.net.URI.create` 로 파싱한다(`RedirectUtils.toUri`). WHATWG URL 은 경로의 `[` · `]` 를
- * 그대로 두고 비특수 scheme 의 빈 값(`myapp:`)도 받아, SDK 가 보내는 `href` 를 Keycloak 이 거부했다(JDK 21.0.8: "Illegal
- * character in path" · "Expected scheme-specific part"). R4 가 보내는 `href` 를 본다 — (R4a) scheme 의 `:` 뒤가 비면 거부,
- * (R4b) `:` 뒤가 `/` 로 시작하면 `?` 앞에서 — `//` 로 시작하면 다음 `/` 까지(없으면 끝까지)가 authority 이고 거기 `[` · `]` 는
- * 괄호 호스트 하나로만 올 수 있다, 그 밖(경로)의 `[` · `]` 는 거부. 불투명한 값과 쿼리는 괄호를 가져도 된다. 문구는 다른 언어의
- * R3 와 같다. 인가 요청과 교환이 같은 `href` 를 보내므로 둘 다 요청 없이 거부한다.
+ * 그대로 두고 비특수 scheme 의 빈 값(`myapp:`)과 빈 authority(`myapp://`)도 받아, SDK 가 보내는 `href` 를 Keycloak 이
+ * 거부했다(JDK 21.0.8: "Illegal character in path" · "Expected scheme-specific part" · "Expected authority"). R4 가 보내는
+ * `href` 를 본다 — (R4a) scheme 의 `:` 뒤가 비면 거부, `:` 뒤가 `/` 로 시작하면 `?` 앞에서 — `//` 로 시작하면 (R4c) `:` 뒤가
+ * `//` 뿐이면 거부, 다음 `/` 까지(없으면 끝까지)가 authority 이고 거기 `[` · `]` 는 (R4d) 괄호 친 IPv6 호스트 하나로만 올 수
+ * 있고 (R4e) 그 포트는 2147483647 이하다, (R4b) 그 밖(경로)의 `[` · `]` 는 거부. 불투명한 값과 쿼리는 괄호를 가져도 된다.
+ * 문구는 다른 언어의 R3 와 같다. 인가 요청과 교환이 같은 `href` 를 보내므로 둘 다 요청 없이 거부한다.
  */
 describe('Keycloak 의 java.net.URI 가 거부하는 redirectUri 는 두 호출 모두 요청 없이 거부한다(R4)', () => {
   const NOT_URI = 'invalid redirect_uri: not a valid URI (RFC 3986 §2)'
@@ -149,6 +151,10 @@ describe('Keycloak 의 java.net.URI 가 거부하는 redirectUri 는 두 호출 
     'myapp:/c[b',
     'https://[::1]/c[b',
     'myapp://[::1]/c[b',
+    // R4c — 빈 `?` · `#` 는 지워져 셋 다 `myapp://` 를 보낼 뻔했다.
+    'myapp://',
+    'myapp://?',
+    'myapp://#',
   ]) {
     it(JSON.stringify(value), async () => {
       const srv = await idp()
@@ -169,7 +175,18 @@ describe('Keycloak 의 java.net.URI 가 거부하는 redirectUri 는 두 호출 
 
   // 같은 목록의 나머지는 WHATWG 가 먼저 거부한다 — 오늘의 파싱 문구 그대로다(`https:/` 는 java.net.URI 가 받는다 — WHATWG 가
   // 더 엄격한 자리다).
-  for (const value of ['https:', 'https://app[1]/cb', 'https://[::1]]/cb', 'https:/']) {
+  for (const value of [
+    'https:',
+    'https://app[1]/cb',
+    'https://[::1]]/cb',
+    'https:/',
+    // zone id 셋 — java.net.URI 는 받지만 다른 언어는 R3 로 거부한다(`%` 뒤에 16진 두 자리가 없다 — RFC 6874 §2 는 URI 안의
+    // zone id 구분자를 `%25` 로 쓰라고 한다). node 는 파서가 zone id 를 아예 받지 않는다(`%25` 로 써도).
+    'https://[fe80::1%eth0]/cb',
+    'https://[::1%1]/cb',
+    'https://[::1%zz]/cb',
+    'https://[fe80::1%25eth0]/cb',
+  ]) {
     it(`${JSON.stringify(value)} 는 파서가 먼저 거부한다`, () => {
       const e = thrown(() => client('http://127.0.0.1:1').createAuthorizationRequest(value))
       expect(e).toBeInstanceOf(KeycloakConfigError)
@@ -218,6 +235,139 @@ describe('Keycloak 의 java.net.URI 가 거부하는 redirectUri 는 두 호출 
     ]
     expect(refused.filter(passesR4)).toEqual([])
     expect(accepted.filter((v) => !passesR4(v))).toEqual([])
+  })
+
+  // `java.net.URI.create` 실측 표 전부(JDK 21.0.8, 83 값 — 빈 authority · 괄호 호스트의 내용 · zone id · 포트 · 사용자 정보 ·
+  // 괄호 없는 호스트). 줄 끝은 JDK 의 거부 문구다. R4 만 보는 판정이라 zone id 의 맨 `%`(`%eth0` · `%1` · `%zz`)는 Java 처럼
+  // 받는다 — 그 셋을 거부하는 것은 다른 언어에서 R3 이고, node 에서는 파서다(위).
+  const JDK_REFUSED = [
+    'https://', // Expected authority
+    'myapp://', // Expected authority
+    'https://[zz]/cb', // Malformed IPv6 address
+    'https://[v1.x]/cb', // Malformed IPv6 address
+    'https://[::1::2]/cb', // Expected hex digits or IPv4 address
+    'https://[1:2:3:4:5:6:7:8:9]/cb', // IPv6 address too long
+    'https://[1:2:3:4:5:6:7:8::]/cb', // Malformed IPv6 address
+    'https://[::1:2:3:4:5:6:7:8]/cb', // Malformed IPv6 address
+    'https://[1:2:3:4:5:6:7]/cb', // IPv6 address too short
+    'https://[:]/cb', // Malformed IPv6 address
+    'https://[:::]/cb', // Expected hex digits or IPv4 address
+    'https://[1:::2]/cb', // Expected hex digits or IPv4 address
+    'https://[::1:]/cb', // Expected digits for an IPv6 address
+    'https://[:1::2]/cb', // Malformed IPv6 address
+    'https://[1::2:]/cb', // Expected digits for an IPv6 address
+    'https://[12345::]/cb', // IPv6 hexadecimal digit sequence too long
+    'https://[1.2.3.4]/cb', // Malformed IPv6 address
+    'https://[::ffff:256.2.3.4]/cb', // Malformed IPv4 address
+    'https://[::ffff:1.2.3]/cb', // Malformed IPv4 address
+    'https://[::ffff:1.2.3.4.5]/cb', // Malformed IPv4 address
+    'https://[::ffff:1.2.3.]/cb', // Malformed IPv4 address
+    'https://[::ffff:.1.2.3]/cb', // Expected digits for an IPv6 address
+    'https://[::ffff:1..2.3]/cb', // Malformed IPv4 address
+    'https://[1:2:3:4:5:6:7:1.2.3.4]/cb', // IPv6 address too long
+    'https://[1:2:3:4:5:1.2.3.4]/cb', // IPv6 address too short
+    'https://[1:2:3:4:5:6::1.2.3.4]/cb', // Malformed IPv6 address
+    'https://[::1.2.3.4:5]/cb', // Expected hex digits or IPv4 address
+    'https://[1.2.3.4::]/cb', // Malformed IPv6 address
+    'https://[::99999999999.2.3.4]/cb', // NumberFormatException
+    'https://[::1.2.3.9999999999999]/cb', // NumberFormatException
+    'https://[fe80::1%]/cb', // scope id expected
+    'https://[fe80::1%25en-1]/cb', // Illegal character in scope id
+    'https://[fe80::1%25a%25b]/cb', // Illegal character in scope id
+    'https://[fe80::1%25a~b]/cb', // Illegal character in scope id
+    'https://[fe80::1%25é]/cb', // Illegal character in scope id
+    'https://[%25::1]/cb', // Malformed IPv6 address
+    'https://[::1]:2147483648/cb', // Malformed port number
+    'https://[::1]:99999999999/cb', // Malformed port number
+    'https://a@b@[::1]/cb', // Illegal character in hostname
+    'myapp://[zz]/cb', // Malformed IPv6 address
+  ]
+  const JDK_ACCEPTED = [
+    'https:///',
+    'https:///cb',
+    'https://?x=1',
+    'https://u@/cb',
+    'https://:80/cb',
+    'https://@/cb',
+    'https:/',
+    'https://[::1]/cb',
+    'https://[1:2:3:4:5:6:7:8]/cb',
+    'https://[1:2:3:4:5:6:7::]/cb',
+    'https://[::1:2:3:4:5:6:7]/cb',
+    'https://[::]/cb',
+    'https://[ABCD::EF]/cb',
+    'https://[abcd:EF01::]/cb',
+    'https://[0001:2:3:4:5:6:7:8]/cb',
+    'https://[::ffff:1.2.3.4]/cb',
+    'https://[::1.2.3.4]/cb',
+    'https://[::ffff:01.2.3.4]/cb',
+    'https://[::ffff:0001.2.3.4]/cb',
+    'https://[::ffff:00000000255.2.3.4]/cb',
+    'https://[1:2:3:4:5:6:1.2.3.4]/cb',
+    'https://[1::1.2.3.4]/cb',
+    'https://[1:2:3:4:5::1.2.3.4]/cb',
+    'https://[fe80::1%eth0]/cb',
+    'https://[fe80::1%25eth0]/cb',
+    'https://[fe80::1%25]/cb',
+    'https://[fe80::1%25a_b.c]/cb',
+    'https://[::1%1]/cb',
+    'https://[::1%zz]/cb',
+    'https://[::1]:/cb',
+    'https://[::1]:8443/cb',
+    'https://[::1]:2147483647/cb',
+    'https://[::1]:00000000000000000080/cb',
+    'https://h:99999999999/cb',
+    'https://u@[::1]:8443/cb',
+    'https://u:p@[::1]/cb',
+    'https://[::1]',
+    'https://[::1]?x=[1]',
+    'myapp://[::1]/cb',
+    'https://my_host/cb',
+    'https://999.1.1.1/cb',
+    'https://host:abc/cb',
+    'https://hé/cb',
+  ]
+
+  it('R4 는 java.net.URI 의 실측 표와 같다(redirect-uri-create-residuals)', () => {
+    expect([JDK_REFUSED.length, JDK_ACCEPTED.length]).toEqual([40, 43])
+    expect(JDK_REFUSED.filter(passesR4)).toEqual([])
+    expect(JDK_ACCEPTED.filter((v) => !passesR4(v))).toEqual([])
+  })
+
+  // 같은 표를 공개 경로로 — Keycloak 이 거부한 값은 하나도 그대로 나가지 않는다(파서가 먼저 거부하거나 R4 가 거부한다). 하나는
+  // 파서가 고쳐 쓴다: `https://a@b@[::1]/cb` 의 사용자 정보 `@` 가 `%40` 이 되어 Keycloak 이 받는 값이 나간다(#1133 의 정규화 —
+  // 두 요청이 같은 문자열).
+  it('Keycloak 이 거부한 표의 값은 그대로 나가지 않는다', () => {
+    const auth = client('http://127.0.0.1:1')
+    const sent: [string, string | null][] = []
+    for (const value of JDK_REFUSED) {
+      let url: string
+      try {
+        url = auth.createAuthorizationRequest(value).url
+      } catch (e) {
+        expect(e, value).toBeInstanceOf(KeycloakConfigError)
+        continue
+      }
+      sent.push([value, new URL(url).searchParams.get('redirect_uri')])
+    }
+    expect(sent).toEqual([['https://a@b@[::1]/cb', 'https://a%40b@[::1]/cb']])
+  })
+
+  // 그리고 Keycloak 이 받은 값은 R4 의 문구로 거부되지 않는다 — 파서가 받으면 그 직렬화가 나가고(괄호 호스트는 WHATWG 의 IPv6
+  // 직렬화다 — `[::ffff:102:304]` · `[1:2:3:4:5:6:7:0]` 도 R4d 를 지난다), 파서가 거부하면(WHATWG 가 더 엄격한 자리) 파싱
+  // 문구, 쿼리가 있으면 쿼리 문구다.
+  it('Keycloak 이 받은 표의 값은 R4 의 문구로 거부되지 않는다', () => {
+    const auth = client('http://127.0.0.1:1')
+    const refusedAsNotUri = JDK_ACCEPTED.filter((value) => {
+      try {
+        auth.createAuthorizationRequest(value)
+        return false
+      } catch (e) {
+        expect(e, value).toBeInstanceOf(KeycloakConfigError)
+        return (e as Error).message === NOT_URI
+      }
+    })
+    expect(refusedAsNotUri).toEqual([])
   })
 
   // 대조군 — java.net.URI 가 받는 값은 그대로 실린다(인가 URL 의 redirect_uri 와 토큰 요청의 redirect_uri 가 같은 href).
