@@ -155,16 +155,22 @@ def refused_grant(exc: KeycloakAuthError) -> KeycloakAuthError:
     return KeycloakAuthError(str(exc), exc.error)
 
 
-def refused_send(exc: BaseException) -> KeycloakAuthError | None:
-    """보내는 순간의 bearer 거부(`_internal/admin_guard.py` — REST 세션의 `send`)면 같은
-    타입·메시지로 새로 만든다, 아니면 `None`.
+def refused_send(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError | None:
+    """보내는 순간의 거부(`_internal/admin_guard.py` — REST 세션의 `send`)면 같은
+    타입·메시지로 새로 만든다, 아니면 `None`. 거부는 둘이다 — 규칙 밖의 bearer
+    (`KeycloakAuthError`)와 그 토큰을 실을 요청 URL(`KeycloakTransportError`).
 
     그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 `KeycloakConnectionError("Can't
     connect to server")` 의 원인으로 감싼다 — 그대로 두면 거부가 연결 실패로 보고된다. 세션 안에서
-    `KeycloakAuthError` 를 던지는 자리는 그 검사뿐이다. 원본은 요청 헤더를 쥔 requests·httpx
-    프레임을 지나왔으므로 사슬로 달지 않는다(호출자가 `except` 밖에서 던진다)."""
+    `KeycloakAuthError`·`KeycloakTransportError` 를 던지는 자리는 그 검사뿐이다. 원본은 요청
+    헤더를 쥔 requests·httpx 프레임을 지나왔으므로 사슬로 달지 않는다(호출자가 `except` 밖에서
+    던진다)."""
     signal = exc.__cause__
-    return refused_grant(signal) if isinstance(signal, KeycloakAuthError) else None
+    if isinstance(signal, KeycloakAuthError):
+        return refused_grant(signal)
+    if isinstance(signal, KeycloakTransportError):
+        return KeycloakTransportError(str(signal))
+    return None
 
 
 def refused_guard(exc: KeycloakConfigError) -> KeycloakConfigError:
