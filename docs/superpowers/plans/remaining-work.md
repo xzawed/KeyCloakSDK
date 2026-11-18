@@ -1,5 +1,7 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=129245 max-raw-bytes=139827 -->
+<!-- doc-budget: max-bytes=128884 max-raw-bytes=139329 -->
+<!-- max-bytes 129245 → 128884 · max-raw-bytes 139827 → 139329: 묶음 마감 — 닫힘 둘(#1154) · 유예 하나(#1153 — semver) · 새 항목 셋. 긴 닫힌 줄 넷을 c3ceebba
+     포인터로 줄였다. 원본 예산을 지키려고 옛 앵커 이력 셋(#1080 · #1087 · push-lane)은 git log 로 보냈다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-raw-bytes 140387 → 139827: 묶음 마감 — 넷 닫음(#1139–#1142) · 새 항목 넷(A 하나 · C 셋). 닫힌 줄을 줄였고(#1131 줄 포함)
      python-admin-guard-send-time 의 착수 주석이 항목과 함께 나갔다. max-bytes 는 그대로(여유 300B 안). -->
 <!-- max-bytes 129703 → 129245 · max-raw-bytes 140593 → 140387: 묶음 마감 — 넷 닫음(#1133–#1136) · 새 항목 둘. 닫힌 줄은 한 줄로 줄였고
@@ -25,12 +27,6 @@
      불릿 일곱과 설계 블록 주석((a)–(f))이 닫힌 한 줄이 됐다. 경위는 PR 본문. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-raw-bytes 156584 → 156086: wall-clock-ordering-in-tests 마감(#1088) — 남은 자리 주석이 닫힌 한 줄이 되고, go 비행
      시험 한 줄만 token-provider-cache-invariants 의 주석으로 옮겼다. 검사 8e 가 이 인하를 강제했다. -->
-<!-- max-bytes 141742 → 141179 · max-raw-bytes 156896 → 156584: coverage-omit-overreach 재판정 마감(#1087) — 하위 측정
-     메모 둘이 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
-<!-- max-bytes 142839 → 141742 · max-raw-bytes 157739 → 156896: docs-commands-that-do-not-work 마감(#1080) — 열린 항목의 하위
-     불릿이 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
-<!-- max-bytes 143454 → 142839 · max-raw-bytes 157980 → 157739: push-lane-failures-still-silent 마감 — 열린 항목의 긴 착수
-     서사가 닫힌 한 줄이 됐다(경위는 그 PR 본문). 검사 8e 가 이 인하를 강제했다. -->
 <!-- 193526 → 174781 (2026-10-28). 끝난 이력 다섯 — 2026-09-11 회고 · 2026-09-13 재발 원인 분석 · 2026-09-03 닫힌 표 ·
      착수 순서 · 예산 인상 기록 — 을 `git show 7a4763a:docs/superpowers/plans/remaining-work.md` 로 보냈다. 살아 있는
      규칙 중 다른 집이 없던 것만 진입점 함정 (a)–(f) · (ii)–(ll) 와 「읽는 법」으로 옮겼다 — 나머지는 이미 CLAUDE.md ·
@@ -80,7 +76,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `331`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `334`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -102,7 +98,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-18 · #1149–#1151 반영)
+### 다음 세션 진입점 (2026-11-19 · #1153–#1155 반영)
 
 **지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 릴리스는 먼저 권하지 않는다(사용자 2026-11-10 「잦다」), 태그는 물결마다 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 #1138(Cursor 봇 · README — 사람 판단)뿐. 래퍼 9.8 은 #682·#788.
 
@@ -110,7 +106,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 다음 묶음(PM 선택 · 항목마다 Grok 레그) — `coverage-omit-hides-security-paths`(① · 단위 미도달 장부를 .NET 으로) → `python-jitter-constant-on-windows-py310`(②) → `php-ruby-read-timeout-default-diverges`(②) → `python-raw-upload-traceback-locals-bearer`(③).
+1. 다음 묶음(PM 선택 · 항목마다 Grok 레그) — `coverage-omit-hides-security-paths`(① · 단위 미도달 장부를 java 로) → `node-auth-error-no-oauth-code`(②) → `dotnet-auth-400-no-error-member-message`(②) → `python-scrub-frames-skips-exception-groups`(③ · 닿는지부터). CHANGELOG 여유 5,215 B — 넘으면 그 PR 에서 `node scripts/changelog-rotate.mjs`. ⚠️ 공개 기본값을 바꾸는 계획은 semver 부터 본다(php `php-semver-checker` V097 = MAJOR · #1153).
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -228,7 +224,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `go-tokenprovider-injection-missing` **[M/M · 닫힘 2026-09-09 #449]** Go의 TokenProvider 주입점이 문서에만 있고 실제로는 존재하지 않았다 · `go/tokenprovider.go:11`
 - [x] `python-sync-admin-close-noop` **[M/S · 닫힘 2026-09-11]** sync `close()` 가 `return None` 이라 `requests.Session` 둘이 GC 까지 살았다 — 매니저 둘(`connection._s` · `connection.keycloak_openid.connection._s`)을 `finally` 계약으로 닫는다(변이 3/3). ⚠️ `async_s` 는 sync 경로에서 못 닫는다(과대광고 금지). 「중첩 매니저 부재」는 도달 불가 — `harden_admin` 이 생성자에서 fail-closed 한다.
 - [x] `python-sync-authorization-url-unencoded` **[M/S · 닫힘 2026-09-07 #442]** Python 동기 authorization_url이 퍼센트 인코딩 없이 URL을 조립했다 — async 미러는 `urlencode`를 쓴다 · `python/src/keycloak_sdk/auth.py:151`
-- [x] `php-sensitiveparameter-methods-missing` **[M/S · 닫힘 2026-09-11 · 계수 정정]** PHP `#[\SensitiveParameter]` 가 생성자에만 붙어 있었다. ⚠️ **「여섯 메서드」가 아니라 아홉 파라미터였다** — 손 목록 대신 반사 가드를 세우자 `TokenSet::__construct($idToken)` 이 드러났다(생성자인데도 빠져 있었다). 가드 `tests/Unit/SensitiveParameterTest.php` 는 `php/src` 를 반사해 **문자열 타입 + 비밀 이름** 파라미터를 스스로 찾으므로 새 자리가 생겨도 목록을 고칠 필요가 없다. 변이 5/5 `CAUGHT`(공허 대조군 포함). 실측: 속성 없는 인자는 스택트레이스에 원문(`refresh('SUPER-SECRET-RE...')`), 있으면 `Object(SensitiveParameterValue)`.
+- [x] `php-sensitiveparameter-methods-missing` **[M/S · 닫힘 2026-09-11 · 계수 정정]** 반사 가드 `tests/Unit/SensitiveParameterTest.php` 가 비밀 이름 파라미터를 스스로 찾는다(아홉 자리) · 서사: `git show c3ceebba:docs/superpowers/plans/remaining-work.md` 의 이 항목
 - [x] `authorization-request-verifier-unmasked` **[M/M]** AuthorizationRequest.codeVerifier가 마스킹 없이 평문 출력된다 (Go·Node) — 같은 파일의 TokenSet은 마스킹한다 · `go/tokens.go:86`
 - [x] `coverage-exclusion-hides-untested-branches` **[M/M · 닫힘 2026-11-18 #1151]** 단위 미도달 장부 — kotlin · php 경계 함수마다 단위 시험이 안 닿는 줄 · 가지(php 는 줄)를 `scripts/unit-unreached.json` 과 대조(`unit-unreached` 잡) · 남은 틈 `php-unit-unreached-same-line-branch`
 - [x] `redirect-uri-signature-parity` **[L/M · 닫힘 2026-09-12 · 중복이었다]** ⚠️ **이 항목은 `authz-redirect-uri-not-per-call` 과 같은 것을 다른 이름으로 적은 것이다** — 등록부에 한 부류가 두 행으로 있었고(이름·심각도·지목줄이 달라 서로를 못 알아봤다: 여기는 `rust/src/auth.rs:96` · 저기는 `:106`), 그래서 **한쪽만 보면 범위를 절반으로 읽는다**. 실제로 그렇게 됐다 — 「다음 대상」에 오른 쪽은 인가요청만 적었고 `exchangeCode` 비대칭은 이 행에만 있었다. 같은 PR 이 둘을 닫는다. ⚠️ **교훈**: 새 항목을 적기 전에 **부류로** 검색할 것(이름으로만 찾으면 중복이 남는다).
@@ -252,11 +248,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 166건 (열림 38)
+## C. 품질 부채 — 169건 (열림 39)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 100
+### 9언어 소스 — 103
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -275,10 +271,13 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `redirect-uri-create-residuals` **[L/S · 닫힘 2026-11-18 #1149]** R4c–R4e — `//` 뒤가 빈 값 · IPv6 가 아닌 괄호 호스트 · int 를 넘는 포트(일곱 언어) · zone id 의 맨 `%` 는 일부러 R3
 - [x] `node-redirect-uri-r3-chars` **[L/S · 닫힘 2026-11-18 #1149]** href 의 R3 문자 · 짝 없는 서로게이트(`passesR3`)
 - [x] `python-upload-certificate-headers-not-restored` **[L/S · 닫힘 2026-11-18 #1150]** 실패 · 취소 뒤 헤더 복원 · 남은 창 `python-upload-certificate-in-flight-multipart`
-- [ ] `php-ruby-read-timeout-default-diverges` **[L/S · 신규 2026-11-18]** PHP · Ruby 의 기본 read timeout 은 10 초, 나머지 일곱은 30 초 — 2026-09-22 감사의 예에서 분리 · `php/src/KeycloakConfig.php:53` · `ruby/lib/keycloak_sdk/config.rb:35`
+- [ ] `php-ruby-read-timeout-default-diverges` **[L/S · 신규 2026-11-18 · 유예 2026-11-19 — 다음 메이저]** PHP · Ruby 의 기본 read timeout 은 10 초, 나머지 일곱은 30 초 — 공개 생성자 기본값을 바꾸는 것은 MAJOR 다(php `php-semver-checker` V097, #1153 을 닫았다 · Ruby 도 같은 성질) · 되살릴 조건: PHP · Ruby 의 다음 메이저에서 30 초로 · `php/src/KeycloakConfig.php:53` · `ruby/lib/keycloak_sdk/config.rb:35`
+- [ ] `connect-timeout-default-diverges` **[L/S · 신규 2026-11-19 · 유예 — 다음 메이저]** 기본 connect timeout 이 갈린다 — Rust · PHP 5 초, Python 은 필드가 없어 read 값(30 초)이 연결에도 쓰이고, 나머지 다섯은 10 초 · 되살릴 조건은 위와 같다 · `rust/src/config.rs:59` · `php/src/KeycloakConfig.php:52` · `python/src/keycloak_sdk/config.py:19`
 - [ ] `python-upload-certificate-in-flight-multipart` **[L/S · 신규 2026-11-18]** 업로드가 도는 동안 같은 admin 의 다른 요청이 multipart `Content-Type` 으로 나간다 — 상류가 연결 하나의 헤더를 바꾼다(sync 의 다른 스레드 · aio 콜드 토큰의 그랜트 대기, 실측 #1150) · 닫으려면 헤더를 안 바꾸는 업로드 · `python/src/keycloak_sdk/_internal/admin_guard.py`
-- [ ] `python-raw-upload-traceback-locals-bearer` **[L/S · 신규 2026-11-18]** raw `IN_URL` 거부의 traceback 지역 변수에 bearer 가 남는다(python-keycloak `orig_headers` · `new_headers` · `kwargs` · httpx · SDK `admin_guard.sent` 의 `request` repr) — 지역 변수를 렌더하는 오류 수집기에서 보인다(실측 #1150) · `python/src/keycloak_sdk/_internal/admin_guard.py`
-- [ ] `python-jitter-constant-on-windows-py310` **[L/S · 신규 2026-11-18]** `_default_jitter` 가 `time.monotonic_ns() % 1_000_000` 이라 밀리초 시계(Windows 3.10 `GetTickCount64`)에서 늘 0.5 — 백오프가 흩어지지 않고 기존 시험이 그 환경에서 실패한다(CI 는 ubuntu) · `python/src/keycloak_sdk/_internal/backoff.py:68`
+- [x] `python-raw-upload-traceback-locals-bearer` **[L/S · 닫힘 2026-11-19 #1154]** 업로드가 던진 오류의 사슬 · 그룹에서 끝난 프레임의 로컬을 비운다 · 다른 raw 호출의 하위 라이브러리 `headers` 는 CHANGELOG 안내
+- [x] `python-jitter-constant-on-windows-py310` **[L/S · 닫힘 2026-11-19 #1154]** `perf_counter_ns` — Windows 3.10 · 3.12 의 monotonic 이 15.6 ms 틱이었다
+- [ ] `python-scrub-frames-skips-exception-groups` **[L/S · 신규 2026-11-19]** `frames.py::_detached`(auth 의 `@scrub_frames`)는 원인 · 문맥 사슬만 떼고 예외 그룹의 구성원은 그대로 둔다 — 그 경로에서 그룹이 닿는지는 안 쟀다(#1154 의 `_clear_locals` 는 따라간다) · `python/src/keycloak_sdk/_internal/frames.py:30`
+- [ ] `dotnet-auth-400-no-error-member-message` **[L/S · 신규 2026-11-19]** `error` 멤버가 없는 400 이 「error is not a JSON string」이라는 사실과 다른 문구를 낸다(#1155 에이전트 탐침 — Duende 는 `Protocol` · `IsError`) · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs`
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** rust·python·ruby·php·dotnet 이 비었거나 문자열이 아닌 `access_token` 으로 TokenSet 을 만들었다 — 불변식(그런 응답은 TokenSet 이 아니다)을 `test-security-defaults.sh` 축 1c 가 집행한다, 변이 7/7 CAUGHT · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
   - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다. 셋째 자리(java 레그 2026-10-05): admin 토큰 400·응답 없는 전송 실패의 원인 사슬에 jakarta `ProcessingException` 이 남는다(토큰 인용 없음).
@@ -291,7 +290,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `config-validation-gaps` **[L/M]** 설정 진입점이 값을 검증하지 않고 잘못된 기본값으로 대체한다 · `node/src/config.ts:74-87`
 - [ ] `token-provider-cache-invariants` **[L/S]** 토큰 프로바이더 캐시가 설정을 무시하거나 중복 발급한다 · `go/tokenprovider.go:36-60`
 <!-- 시험 쪽: go TestProviderSingleFlight 는 50 ms time.Sleep 비행에 기댄다 — 60 ms 주입에 2/3 실패(2026-10-03 · 원인은 비행 안에서 캐시를 다시 안 보는 것). 고칠 때 결정적으로 바꾼다(wall-clock-ordering-in-tests 에서 옮김) -->
-- [ ] `coverage-omit-hides-security-paths` **[L/L]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
+- [ ] `coverage-omit-hides-security-paths` **[L/L · 진행 2026-11-19 — 단위 미도달 장부 kotlin · php #1151 · dotnet #1155]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · 남은 언어 go · python · node · rust · ruby · java · 통합 장부 소유 54 와 dotnet 단위 장부의 틈 10 이 이 id 다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
 - [ ] `cross-language-surface-divergence` **[L/L]** 같은 개념의 공개 표면이 언어마다 갈린다 — 필드·타입명·메서드명·정규화 위치 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/IntrospectionResult.java:5-9`
 - [ ] `php-oauth2-delegation-drift` **[L/S]** PHP가 league 프로바이더에 위임하면서 요청 모양이 다른 SDK와 갈린다 · `php/src/AuthClient.php:161-166`
 - [ ] `discovery-roundtrip-divergence` **[L/S]** 엔드포인트를 조립하지 않고 discovery로 왕복하는 자리가 남아 있고 문서에 없다 · `node/src/auth.ts:227-258`
@@ -437,7 +436,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 - [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** 공허가 셋이었다 — 요청↔응답 미대조 · 빈 `code_challenge` 통과 · `state` 를 존재만 보고 대조 안 함. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 Docker 없이 픽스처로 잰다 · 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts`) · 변이 6/6 `CAUGHT` + OFF 짝 3/3(`v.ok` 를 버리는 구멍도 그 PR 이 닫음) · 파생: `authz-redirect-uri-not-per-call`.
 - [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** 한 파일의 두 결함 — 야간 감사가 보는 rust 하네스 락을 Dockerfile 이 COPY 하지 않았고(1.0 이전 그래프를 6주 감사한 거짓 초록) · `FROM rust:alpine` 무버전. ⚠️ 락 재생성은 MSRV 인지 해석이 필요하다 — `scripts/regen-harness-rust-lock.sh` 가 소유 · 재스캔 · 변이는 `git log -S'H3-harness-image-and-lock-pins' -- docs/superpowers/plans/remaining-work.md`
-- [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** ⚠️ **가드 부재가 아니라 실제 노출이었다.** `ClientCredentialsTokenProvider` 의 기본 `inspect` 가 캐시된 **액세스 토큰을 원문으로** 찍었다 — `@cached` 가 원시 String 이라 `TokenSet#inspect` 의 마스킹이 닿지 않았다(형제 `Config`·`TokenSet` 만 재정의). `p provider` 로 재현 → 고친 뒤 `cached="***"`, 캐시 **유무는 남긴다**(빈 캐시의 `***` 는 거짓 신호 — 대조군 spec). 아홉 전수도 실행으로 갈랐다 — 나머지 여덟은 노출 없음. 수치 · 언어별 근거: `git show e4e7c63f:docs/superpowers/plans/remaining-work.md`
+- [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** 공급자 `inspect` 가 `cached="***"`(유무는 남긴다) · 나머지 여덟은 실행으로 노출 없음 · 서사: `git show e4e7c63f:docs/superpowers/plans/remaining-work.md`
 - [x] `php-var-dump-bypasses-all-masking` **[M/M · 닫힘 2026-09-12 · 범위 재정의]** 덤프 경로 마스킹은 아홉 언어 균일 계약으로 불가능했다 — 훅이 있는 셋(php `__debugInfo` · go `GoStringer` · ruby `pretty_print`)만 구현하고 나머지는 경계로 적었다(왕복 직렬화 훅은 일부러 안 넣었다). 계약은 `SECURITY.md` 가 소유한다 · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `harness-orphan-container-reads-as-build-failure` **[L/S · 닫힘 2026-09-16 · 부류로 넓혀서]** 중단된 하네스 런이 남긴 컨테이너가 다음 런을 막는데, 신호가 **원인을 잘못 가리킨다** · `harness/verify.sh:30`
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
@@ -487,7 +486,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `id-token-audience-follows-access-audience` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #663–#671 · 아홉 언어]** id_token `aud` 는 `expectedAudience` 가 아니라 clientId 로 검증한다(판정 (a) 2026-09-27 · OIDC Core §3.1.3.7) — 근거 · 수용 기준은 #663 본문. `azp` 는 다루지 않는다.
 - [ ] `node-auth-error-no-oauth-code` **[L/S · 신규 2026-09-27]** node `KeycloakAuthError` 에만 OAuth `error` 코드가 없다. python 은 `.error`, go 는 `OAuthError`, rust 는 `oauth_error` 로 공개한다. `scrubCause` 가 name·message·code 만 남겨, `invalid_grant` 를 공개 API 로 가를 수 없다. 코드 교환 이식 테스트는 그래서 `OAUTH_RESPONSE_BODY_ERROR` 까지만 단언한다 · `node/src/errors.ts`
 - [x] `node-admin-error-no-status` **[L/S · 신규 2026-11-13 · 닫힘 2026-11-14 #1070]** `KeycloakAdminError.status` — 404 · 409 · 403 하위 클래스는 늘 제 상태, 3xx 가드도 필드로 단언
-- [x] `nonce-failure-leaves-session-alive` **[L/S · 신규·닫힘 2026-09-27 · 판정 (b) 기각]** 검증에 실패한 교환의 토큰을 revoke 하지 않는다 — 버리고 원래 오류를 던지는 지금 동작이 계약이다(사용자 결정). 실측: 거부된 교환은 로그인 세션을 끝내지 않는다(idle 1800s · max 36000s) · 근거: OIDC Core 는 revoke 를 요구하지 않고 RFC 7009 §2.2 는 무효 토큰에도 200, 주입된 코드면 남의 grant 에 손댄다(Grok 도 (b)). **되살릴 조건**: 검증 통과 뒤의 실패에 한정한 제품 요구 + 잔존 수명 실측 + Keycloak `/revoke` 범위 실측. ⚠️ 이 실측이 `python-traceback-locals-carry-tokens` 를 찾았다.
+- [x] `nonce-failure-leaves-session-alive` **[L/S · 신규·닫힘 2026-09-27 · 판정 (b) 기각]** 검증에 실패한 교환의 토큰을 revoke 하지 않는다 — 버리고 원래 오류를 던지는 지금 동작이 계약이다(사용자 결정 · Grok 도 (b)). **되살릴 조건**: 검증 통과 뒤의 실패에 한정한 제품 요구 + 잔존 수명 실측 + Keycloak `/revoke` 범위 실측 · 실측 · 근거: `git show c3ceebba:docs/superpowers/plans/remaining-work.md` 의 이 항목
 - [x] `python-traceback-locals-carry-tokens` **[M/S · 신규 2026-09-27 · 닫힘 2026-10-01 #666]** 거부된 교환의 토큰이 traceback **프레임 로컬**에 남았다(`capture_locals` · Sentry 가 찍는다, `str` · `repr` 에는 없어 누출 테스트가 못 봤다) — 비밀을 다루는 공개 진입점을 `@scrub_frames`(`_internal/frames.py`)로 감싸 실패하면 안쪽 프레임 · 사슬 traceback · 인자를 떼고 같은 예외를 던진다(sync · aio · 생성자). 다른 언어는 예외가 로컬을 안 들고 다닌다(php 인자는 `php-exception-trace-third-party-args`)
 
 - [ ] `admin-relations-role-mapping-group-membership` **[H/L]** 역할 부여·그룹 가입이 9개 언어 어디에도 없다 — CRUD만 있고 리소스 간 연결이 없다 · `docs/reference/admin-capability.md:18`
@@ -578,7 +577,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `four-lanes-provenance-unproven-on-published-bytes` **[M/S · 신규 2026-11-16]** 네 레인의 증명 단계는 다음 릴리스에서 처음 돈다 — 그 게시 바이트에 `gh attestation verify` 를 돌리기 전까지 검증 안내는 「증명 없음」 그대로이고 주간 `--attest` 도 JVM 만 · `docs/guides/verifying-releases.md:25`
 - [ ] `dependency-license-claims-unverified` **[L/M]** CLAUDE.md가 아홉 스택 전부의 라이선스 호환을 단언하는데 CI에 라이선스 검사가 0건 · `CLAUDE.md:150`
 - [ ] `repo-topics-omit-four-languages` **[L/S]** 저장소 topics가 아홉 언어 중 다섯만 담고 20개 한도를 소진했다 — 그리고 topics는 SSOT 밖이다 · `.github/security-config.json:2`
-- [x] `java-short-code-verifier-leaks-iae` **[M/S · 신규·닫힘 2026-09-25 #585]** 아홉을 쟀다 — 잘못된 verifier 를 로컬에서 거부하는 것은 JVM 짝(Nimbus)뿐이고 자매 일곱은 전송 → 400 → SDK 인증 오류다. 부류 재스캔이 verifier 밖으로 넓혔다: 빈 code·refresh·introspect 토큰, client_credentials 공백 scope(전례가 인가 요청만 고쳤다), kotlin 문자열 redirectUri, Nimbus `build()` 의 redirect_uri 검사(Grok 레그가 찾음), java null 셋 — 전부 SDK 타입으로, 변이 22/22 CAUGHT · `java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientInputBoundaryTest.java`
+- [x] `java-short-code-verifier-leaks-iae` **[M/S · 신규·닫힘 2026-09-25 #585]** JVM 짝의 로컬 거부를 전부 SDK 타입으로(변이 22/22) · `java/keycloak-sdk-auth/src/test/java/io/github/xzawed/keycloak/auth/AuthClientInputBoundaryTest.java` · 서사: `git show c3ceebba:docs/superpowers/plans/remaining-work.md` 의 이 항목
 - [x] `jvm-config-values-leak-lower-exceptions` **[M/M · 신규·닫힘 2026-09-25 #588]** JVM 은 설정값을 생성 시점에 검증해 `KeycloakConfigException` 으로 낸다 — 검증 목록 · 판정 · 계약 프로브(927 사례) · 변이 31/31 은 #588 이 소유한다 · `java/keycloak-sdk-core/src/main/java/io/github/xzawed/keycloak/core/KeycloakConfig.java`
 - [x] `config-url-values-leak-ruby-dotnet-node` **[M/M · 신규 2026-09-25 · 닫힘 2026-09-26 #589]** 셋 다 생성 시 ConfigError — ruby(URI::HTTP·host·port, realm 은 엔드포인트에서만 인코딩) · dotnet(`Uri.TryCreate` Absolute + http(s)) · node(`new URL` + http(s)). 밑줄 호스트는 셋 다 받는다(실측). ruby·dotnet 은 Grok 레그가 구현, 변이 7/7 · 음수 타임아웃 동형 문제는 아래 신규 항목 · `ruby/lib/keycloak_sdk/config.rb`
 - [x] `config-timeouts-accept-negative-node-python-php` **[L/S · 신규·닫힘 2026-09-26 #590]** 셋의 0·음수를 먼저 쟀다 — 누출은 없고 쓸 수 없거나 위험한 설정이었다(php 0 = 무한 대기, node 2^31 이상 = 타이머가 1ms 로 바꿔 즉시 abort, python admin 은 즉시 실패). 셋 다 타임아웃 유한 > 0(node 는 ≤ 2147483647), skew·재조회 유한 ≥ 0 → 생성 시 ConfigError. python·php 는 Grok 레그가 구현, 변이 10/10 · `node/src/config.ts`
