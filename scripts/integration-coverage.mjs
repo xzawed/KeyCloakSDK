@@ -78,6 +78,44 @@
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
 // 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
+// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet, 등록부 coverage-exclusion-hides-untested-branches ·
+// coverage-omit-hides-security-paths) ──
+// 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
+// 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
+// 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin 은 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친 실행
+// 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport ·
+// dotnetReport)가 낸다: kotlin 의 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, dotnet 의 상태 기계 · 람다 · 로컬 함수는
+// dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다). 정적 초기화는 kotlin
+// `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin ·
+// dotnet), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위 소유자와 같은 판정).
+// run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크, dotnet 은 같은
+// 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`) — kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL
+// (`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게
+// 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
+// ⚠️ php 는 줄만 센다 — 행복 경로가 이미 도는 줄에 붙은 실패 갈래(`$x = $y ?? throw …` · 한 줄 `?:` · 삼항 · `match`)는 줄 수를 안
+// 바꿔 이 장부가 못 본다. `--path-coverage`(Xdebug)로도 `--coverage-xml` 에는 가지 · 경로 수가 없다(실측 2026-11-18 — PHPUnit 12.5.33 ·
+// php-code-coverage 12.5.7 · Xdebug 3.5.3: `<method>` 는 줄 수뿐이고 Report/Xml/Method.php 가 그것만 쓴다 · clover 는 클래스 단위
+// conditionals · cobertura 는 메서드의 branch-rate 비율뿐이다). kotlin 은 한 줄의 실패 갈래도 가지로 센다.
+// ⚠️ dotnet 도 가지를 센다 — coverlet(10.1.0)은 컴파일러가 만든 갈래 대부분을 싣지 않는다: 상태 기계의 분기 · finally 의 가드 · using 의
+// null 검사 · 람다 · 메서드 그룹 캐시, 그리고 Task · ValueTask(ConfigureAwait 여부와 무관)를 await 할 때의 IsCompleted 검사(실측 2026-11-19,
+// 실제 트리 · net8.0 Release: 경계의 상태 기계 31 개에 await 40 개 — 그중 18 개는 실린 가지가 0 개다 · AdminAsync 의 IL 조건 점프 10 개 중
+// 실린 것은 소스의 결정 넷이다). 실린 가지 182 개는 전부 소스의 결정(if · ?: · ?? · ?. · 패턴 · && · || · switch · 반복)이 있는 문장의 것이고,
+// 같은 트리의 net8.0 세 실행 · net10.0 한 실행이 경계 메서드 97 개의 줄 · 가지 수와 놓친 가지의 자리(오프셋 · 경로)까지 같았다.
+// 싣는 것 하나: 다른 awaiter 의 IsCompleted 검사(측정: `Task.Yield()` 의 YieldAwaiter 는 싣고 Task · 완료된 Task · ValueTask · 설정한 둘 ·
+// SemaphoreSlim.WaitAsync 는 안 싣는다) — 그 가지의 멈추는 쪽은 그 await 가 한 번이라도 멈춘 실행에서만 돈다(실행마다 갈릴 수 있다). 경계
+// 파일의 await 40 개는 전부 Task · ValueTask 다(실린 가지 0). 못 보는 것 둘: `catch … when (…)` 필터 안의 결정은 가지로 안 실린다(IL 의
+// endfilter 블록 — GetJsonAsync 의 두 필터에 조건 점프 넷, 데이터에 0) — 필터가 거른 쪽은 그 catch 몸통의 줄로만 보인다. 그리고 async
+// 메서드(상태 기계) 안에서는 갈래의 횟수를 도착한 자리로 센다 — 한 갈래가 다른 갈래의 도착 자리로 흘러 들어가면(else 없는 if · ??=) 안
+// 탄 그 갈래도 돈 것으로 센다(측정: 그 꼴의 async 메서드 셋은 안 탄 쪽이 1 회 · 같은 꼴의 동기 메서드 둘은 바르게 0 · 실제 트리의
+// AdminAsync L64 `??=` 는 두 쪽 합 3078(1531 + 1547)이 그 줄에 온 1547 회보다 크다). 그래서 async 메서드의 놓친 가지 수는 하한이다(늘지는
+// 않는다).
+// ⚠️ 수로 대조하는 장부의 한계(세 언어 공통) — 한 함수 안에서 시험이 옛 미도달 하나를 덮고 새 미도달 하나가 생기면 수가 같아 통과한다.
+// 장부는 함수마다 「얼마나」를 대조할 뿐 「어느 줄 · 가지」인지는 대조하지 않는다.
+// 종료코드(`unit` · `unit-report`): 0 측정 = 장부 · 1 DRIFT — 장부에 없는 미도달 · 수가 다르다 · 낡았거나 경계 밖 · 데이터에 없는 함수를
+// 가리키는 항목 · 까닭이 아니거나 열린 항목이 아닌 why(그 줄이 할 일을 말한다 — 시험을 쓰거나 까닭을 적는다) · 2 FAIL — 아래 표의
+// 무결성과 같다(데이터가 없다 · 다른 트리나 바이트의 것이다 · **단위 스위트의 성공한 실행이 아니다** · 경계 파일이 데이터에 없다 ·
+// 장부 · 기록의 꼴을 모른다). `check` 는 데이터 없이 장부의 꼴 · 경계 · why 를 본다(등록부만 바꾼 PR 도 — 레인은 `paths:` 뒤다).
+//
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
 //   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡거나 핀 밖을 가리키는 항목 · 트리에서 확인되지 않는 하네스 연결) —
@@ -104,7 +142,10 @@
 //   node scripts/integration-coverage.mjs <LANG> [--out DIR]                 로컬 — 통합 테스트(Docker) 후 리포트
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
-//   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자(데이터·Docker 불필요)
+//   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자 · 단위 장부(데이터·Docker 불필요)
+//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께 돌리고 단위
+//                                                                                              미도달 장부와 대조한다(Docker 불필요 — 레인 게이트)
+//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
@@ -141,6 +182,12 @@ const LINE_LANGS = new Set(['rust', 'php', 'ruby', 'dotnet', 'java', 'kotlin'])
 const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
 // JaCoCo · javap 를 읽는 언어(같은 리더 — 이름 접기의 언어별 꼴만 다르다).
 const JVM_LANGS = new Set(['java', 'kotlin'])
+// 단위 미도달 장부(머리 주석) — 재는 언어와 why 의 까닭 머리. 등록부 id 가 아닌 why 는 이 셋 중 하나로 시작해야 한다.
+const UNIT = 'scripts/unit-unreached.json'
+const UNIT_LANGS = ['kotlin', 'php', 'dotnet']
+const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
+// 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없다(머리 주석).
+const UNIT_BRANCHES = new Set(['kotlin', 'dotnet'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -148,6 +195,7 @@ function usage(msg) {
   console.error(`usage: node scripts/integration-coverage.mjs <${LANGS.join('|')}> [--out DIR]`)
   console.error(`       node scripts/integration-coverage.mjs run|report <${LANGS.join('|')}> [ROOT] [--out DIR]`)
   console.error('       node scripts/integration-coverage.mjs check [ROOT]')
+  console.error(`       node scripts/integration-coverage.mjs unit|unit-report <${UNIT_LANGS.join('|')}> [ROOT] [--out DIR]`)
   process.exit(2)
 }
 const argv = process.argv.slice(2)
@@ -159,7 +207,12 @@ if (cmd === 'langs' && rest.length === 0) {
   for (const l of LANGS) console.log(`covered ${l}`)
   process.exit(0)
 }
-if (cmd !== undefined && !['run', 'report', 'check'].includes(cmd) && !cmd.startsWith('-')) {
+// `unit-langs` — 단위 미도달 장부가 재는 언어(같은 꼴). 레인 배선 시험(`test-integration-coverage-gate.sh`)이 언어마다 게이트 줄을 찾는다.
+if (cmd === 'unit-langs' && rest.length === 0) {
+  for (const l of UNIT_LANGS) console.log(`covered ${l}`)
+  process.exit(0)
+}
+if (cmd !== undefined && !['run', 'report', 'check', 'unit', 'unit-report'].includes(cmd) && !cmd.startsWith('-')) {
   rest = argv
   cmd = 'local'
 }
@@ -184,10 +237,21 @@ if (cmd === 'check') {
   if (!LANGS.includes(lang)) usage(`this pilot measures ${LANGS.join(' · ')} — got ${lang ?? 'nothing'}`)
   if (pos.length > (cmd === 'local' ? 1 : 2)) usage(`too many arguments: ${pos.join(' ')}`)
   root = pos[1] ?? null
+} else if (cmd === 'unit' || cmd === 'unit-report') {
+  lang = pos[0]
+  if (!UNIT_LANGS.includes(lang)) usage(`the unit-unreached ledger measures ${UNIT_LANGS.join(' · ')} — got ${lang ?? 'nothing'}`)
+  if (pos.length > 2) usage(`too many arguments: ${pos.join(' ')}`)
+  root = pos[1] ?? null
 } else usage(cmd ? `unknown command: ${cmd}` : '')
 root = resolve(root ?? join(dirname(fileURLToPath(import.meta.url)), '..'))
 const rootPosix = root.replace(/\\/g, '/')
-out = resolve(out ?? join(tmpdir(), 'kcsdk-integration-coverage', lang ?? ''))
+// 어느 스위트의 데이터인가 — 단위 미도달 장부(`unit` · `unit-report`)는 단위, 그 밖은 통합이다. 단위의 데이터 · 기록 · 생성물은 `.unit`
+// 이 붙은 이름이라 같은 --out 을 줘도 통합의 것을 덮거나 읽지 않는다(기록의 `suite` 가 한 번 더 가른다 — 리더).
+const SUITE = cmd === 'unit' || cmd === 'unit-report' ? 'unit' : 'integration'
+const TAG = SUITE === 'unit' ? '.unit' : ''
+// 그 데이터를 쓰는 명령 — 판정 문구가 「무엇을 다시 돌릴지」로 댄다(`run <언어>` · `unit <언어>`).
+const RUN_CMD = SUITE === 'unit' ? 'unit' : 'run'
+out = resolve(out ?? join(tmpdir(), SUITE === 'unit' ? 'kcsdk-unit-unreached' : 'kcsdk-integration-coverage', lang ?? ''))
 
 // ── 판정 기록 ─────────────────────────────────────────────────────────────────────────────
 const findings = []
@@ -1482,30 +1546,32 @@ function xmlTags(src) {
 }
 const xmlCount = (v) => (/^\d+$/.test(v ?? '') ? Number(v) : NaN)
 // `run php` 의 기록(종료코드 · index.xml 의 sha1) — 데이터 디렉터리 옆에 둔다(그 디렉터리는 run 이 매번 지우고 PHPUnit 이 쓴다).
-const PHP_RUN = () => join(out, 'php.run.json')
+// 단위(`unit php`)는 `.unit` 이 붙은 이름이다(SUITE).
+const PHP_RUN = () => join(out, `php${TAG}.run.json`)
+const PHP_DATA = () => join(out, `php${TAG}`)
 // 짧은 이름 — `Xzawed\Keycloak\Admin\AdminClient` → `AdminClient`, 함수 `Fixture\…\adminHelper` → `adminHelper`.
 const phpShort = (n) => n.slice(n.lastIndexOf('\\') + 1)
-// 통합 스위트의 테스트 클래스 — 단위 설정 `<testsuite name="integration">` 의 `<directory>`(suffix · prefix — 기본 `Test.php`)
-// 와 `<file>` 로 디스크에서 찾은 파일 이름이다(PSR-4: 클래스 이름 = 파일 이름). 다른 고르기(`<exclude>` 등)는 이 리더가 모르므로
-// FAIL 이다 — 무엇이 스위트인지 모르면 데이터가 그 스위트의 것인지 가를 수 없다.
-function phpIntegrationClasses(d) {
+// 그 스위트(SUITE — 통합이나 단위)의 테스트 클래스 — 단위 설정 `<testsuite name="…">` 의 `<directory>`(suffix · prefix — 기본
+// `Test.php`)와 `<file>` 로 디스크에서 찾은 파일 이름이다(PSR-4: 클래스 이름 = 파일 이름). 다른 고르기(`<exclude>` 등)는 이 리더가
+// 모르므로 FAIL 이다 — 무엇이 스위트인지 모르면 데이터가 그 스위트의 것인지 가를 수 없다.
+function phpSuiteClasses(d) {
   const site = `${d.dir}/phpunit.xml`
   if (!existsSync(join(root, site))) {
-    fail('php', `${site} is missing — the integration testsuite cannot be read`)
+    fail('php', `${site} is missing — the ${SUITE} testsuite cannot be read`)
     return null
   }
   // 주석은 같은 길이의 공백으로 덮는다 — 지우면(`''`) 겹친 꼴(`<!<!---->--`)이 한 번 지운 뒤 `<!--` 로 남는다(CodeQL
   // js/incomplete-multi-character-sanitization — 이 PR 의 첫 판이 그 경보를 냈다).
   const x = readFileSync(join(root, site), 'utf8').replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
-  const suites = [...x.matchAll(/<testsuite\s+name="integration"\s*>([\s\S]*?)<\/testsuite>/g)]
+  const suites = [...x.matchAll(new RegExp(`<testsuite\\s+name="${SUITE}"\\s*>([\\s\\S]*?)<\\/testsuite>`, 'g'))]
   if (suites.length !== 1) {
-    fail('php', `${site} must define exactly one <testsuite name="integration"> (found ${suites.length}) — the report checks the data against it`)
+    fail('php', `${site} must define exactly one <testsuite name="${SUITE}"> (found ${suites.length}) — the report checks the data against it`)
     return null
   }
   const body = suites[0][1]
   const known = /<(directory|file)((?:\s+[\w-]+="[^"]*")*)\s*>\s*([^<]+?)\s*<\/\1>/g
   if (body.replace(known, '').trim() !== '') {
-    fail('php', `${site}: the integration testsuite selects tests with something other than <directory> and <file> — this reader does not know which tests it runs`)
+    fail('php', `${site}: the ${SUITE} testsuite selects tests with something other than <directory> and <file> — this reader does not know which tests it runs`)
     return null
   }
   const classes = new Set()
@@ -1516,7 +1582,7 @@ function phpIntegrationClasses(d) {
       continue
     }
     if (!existsSync(path)) {
-      fail('php', `${site}: the integration testsuite directory ${m[3]} does not exist`)
+      fail('php', `${site}: the ${SUITE} testsuite directory ${m[3]} does not exist`)
       return null
     }
     const suffix = m[2].match(/suffix="([^"]*)"/)?.[1] ?? 'Test.php'
@@ -1527,17 +1593,17 @@ function phpIntegrationClasses(d) {
     }
   }
   if (!classes.size) {
-    fail('php', `${site}: the integration testsuite finds no test files — a report over no tests is vacuous`)
+    fail('php', `${site}: the ${SUITE} testsuite finds no test files — a report over no tests is vacuous`)
     return null
   }
   return classes
 }
 function phpReport(d) {
-  const dir = join(out, 'php')
+  const dir = PHP_DATA()
   const shown = dir.replace(/\\/g, '/')
   const index = join(dir, 'index.xml')
   if (!existsSync(index)) {
-    fail('php', `no coverage data at ${shown}/index.xml — run the integration suite first (node scripts/integration-coverage.mjs run php)`)
+    fail('php', `no coverage data at ${shown}/index.xml — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} php)`)
     return null
   }
   const tags = xmlTags(readFileSync(index, 'utf8'))
@@ -1553,7 +1619,7 @@ function phpReport(d) {
   // 독립 레그 1차 실측: 생성 설정에 `--testsuite unit --filter …`(단위 26 개)로 돌린 데이터를 이 리더가 수치로 냈다(소유 문제
   // exit 1 — 그때 레인은 1 을 경고로 지났다). 경계에 닿기 전에 실패한 테스트 · 일부 클래스만 거른 실행은 이 목록으로 못
   // 가른다 — 그것은 끝의 run 기록(종료코드 · index.xml 해시)이 막는다.
-  const suite = phpIntegrationClasses(d)
+  const suite = phpSuiteClasses(d)
   if (!suite) return null
   const tests = tags.filter((t) => !t.close && t.name === 'test')
   const bad = tests.filter((t) => t.attrs.status !== 'success')
@@ -1565,7 +1631,7 @@ function phpReport(d) {
   const ran = new Set(tests.map((t) => phpShort(String(t.attrs.name ?? '').split('::')[0])))
   const foreign = [...ran].filter((c) => !suite.has(c)).sort()
   if (foreign.length) {
-    fail('php', `the run included tests outside the integration suite (${foreign.join(' · ')}) — the report would not be integration-only`)
+    fail('php', `the run included tests outside the ${SUITE} suite (${foreign.join(' · ')}) — the report would not be ${SUITE}-only`)
     return null
   }
   const driver = tags.find((t) => t.name === 'driver')?.attrs ?? {}
@@ -1601,6 +1667,8 @@ function phpReport(d) {
   }
   const files = []
   const never = []
+  // 함수마다의 실행 가능 줄 · 안 돈 줄 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다).
+  const units = []
   for (const f of sortU(d.files)) {
     const e = entries.get(f)
     if (!e) {
@@ -1636,7 +1704,7 @@ function phpReport(d) {
       continue
     }
     // 메서드(클래스 · 트레이트 안)와 함수. 메서드는 `짧은 클래스::이름`, 파일 수준 함수는 짧은 이름이다.
-    const units = []
+    const fileUnits = []
     let owner = null
     let broken = false
     for (const t of ft) {
@@ -1658,22 +1726,23 @@ function phpReport(d) {
           broken = true
           break
         }
-        units.push(u)
+        fileUnits.push(u)
       }
     }
     if (broken) continue
-    const dup = units.find((u, i) => units.findIndex((v) => v.name === u.name) !== i)
+    const dup = fileUnits.find((u, i) => fileUnits.findIndex((v) => v.name === u.name) !== i)
     if (dup) {
       fail('php', `${f}: two functions are both named ${dup.name} — the owner keys would collide`)
       continue
     }
-    const sum = units.reduce((a, u) => ({ exec: a.exec + u.exec, done: a.done + u.done }), { exec: 0, done: 0 })
+    const sum = fileUnits.reduce((a, u) => ({ exec: a.exec + u.exec, done: a.done + u.done }), { exec: 0, done: 0 })
     if (sum.exec !== exec || sum.done !== done) {
       fail('php', `${f}: its methods and functions account for ${sum.exec} of ${exec} executable lines (${sum.done} of ${done} executed) — lines outside any method cannot be attributed to a function`)
       continue
     }
     files.push({ file: f, stmts: exec, covered: done, outside: { stmts: 0, covered: 0 } })
-    for (const u of units) if (u.exec > 0 && u.done === 0) never.push({ file: f, line: u.line, name: u.name, stmts: u.exec })
+    for (const u of fileUnits) if (u.exec > 0 && u.done === 0) never.push({ file: f, line: u.line, name: u.name, stmts: u.exec })
+    for (const u of fileUnits) units.push({ file: f, line: u.line, name: u.name, lines: u.exec - u.done })
   }
   // 줄이 돌았는데 그 줄을 돈 테스트가 하나도 안 실렸다 — 위 판정(스위트 · 결과)을 건너뛴 데이터다.
   if (!tests.length && files.some((f) => f.covered > 0)) {
@@ -1682,7 +1751,7 @@ function phpReport(d) {
   }
   // run 기록 — 이 데이터를 `run php`(거르지 않은 통합 스위트)가 썼고 그 실행이 성공했는가. 손으로 돌린 실행 · 거른 실행 ·
   // 실패한 실행(경계에 닿기 전에 실패한 테스트는 위 목록에 안 실린다)의 데이터는 수치를 내지 않는다. 다른 판정 뒤에 둔다 —
-  // 데이터가 스스로 모순이면 그 문구가 먼저다.
+  // 데이터가 스스로 모순이면 그 문구가 먼저다. 기록의 `suite` 는 단위 실행만 쓴다(`unit` — 없으면 통합이다).
   const runRec = PHP_RUN()
   let rec = null
   try {
@@ -1690,8 +1759,8 @@ function phpReport(d) {
   } catch {
     rec = null
   }
-  if (!rec || rec.run !== 'php') {
-    fail('php', `no record that \`run php\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run php) so the report can tell a complete, successful run`)
+  if (!rec || rec.run !== 'php' || (rec.suite ?? 'integration') !== SUITE) {
+    fail('php', `no record that \`${RUN_CMD} php\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} php) so the report can tell a complete, successful run`)
     return null
   }
   if (rec.exit !== 0) {
@@ -1700,11 +1769,11 @@ function phpReport(d) {
   }
   const indexSha = createHash('sha1').update(readFileSync(index)).digest('hex')
   if (rec.index_sha1 !== indexSha) {
-    fail('php', `${shown}/index.xml is not the data \`run php\` recorded (sha1 ${String(rec.index_sha1).slice(0, 12)}… recorded, ${indexSha.slice(0, 12)}… now) — another run wrote over it`)
+    fail('php', `${shown}/index.xml is not the data \`${RUN_CMD} php\` recorded (sha1 ${String(rec.index_sha1).slice(0, 12)}… recorded, ${indexSha.slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
   const note = `driver ${driver.name ?? '?'} ${driver.version ?? '?'} · php-code-coverage ${build.coverage ?? '?'}`
-  return { path: dir, note, files, never }
+  return { path: dir, note, files, never, units }
 }
 
 // ── ruby: run 이 쓰는 덤프(Ruby `Coverage` 의 lines · methods + 예제 결과 — 머리 주석) ───────────────
@@ -1948,9 +2017,10 @@ function rubyReport(d) {
 }
 
 // ── dotnet — coverlet 컬렉터의 고유 JSON ──────────────────────────────────────────────────
-const DOTNET_DATA = () => join(out, 'dotnet.json')
-const DOTNET_TRX = () => join(out, 'dotnet.trx')
-const DOTNET_RUN = () => join(out, 'dotnet.run.json')
+// 단위(`unit dotnet`)는 `.unit` 이 붙은 이름이다(SUITE).
+const DOTNET_DATA = () => join(out, `dotnet${TAG}.json`)
+const DOTNET_TRX = () => join(out, `dotnet${TAG}.trx`)
+const DOTNET_RUN = () => join(out, `dotnet${TAG}.run.json`)
 // run 이 쓰는 컬렉터 설정 — 형식만 json 이고 **거르지 않는다**(경계는 리포트가 파일 경로로 고른다). 단위 설정의 `<Exclude>` 를
 // 뒤집은 `<Include>` 는 컴파일러가 만든 중첩 타입(async 상태 기계 · 람다 클래스)을 떨어뜨린다 — 실측(2026-11-06, 실제 트리):
 // 경계 10 파일의 428 줄 중 바깥 타입의 것은 175 뿐이다(머리 주석의 211/312 와 같은 꼴).
@@ -2058,11 +2128,13 @@ function dotnetSuite(dir) {
 // 같은 모델이다(열이 모두 1–2 · visited 가 모두 true — 실측).
 // 데이터에 소스 해시가 없다 — run 이 경계 파일의 sha1 을 실행 앞뒤로 재 기록에 싣고(같을 때만), report 가 트리의 바이트와 대조한다.
 // 문서 키는 절대 경로다 — CI 의 결정적 빌드(`ContinuousIntegrationBuild` — PDB 에는 `/_/`)에서도 컬렉터가 실제 경로로 되돌린다(실측).
+// 가지는 메서드마다의 `Branches`(가지 점마다 경로 둘 — `Line` · `Hits`)다 — 줄과 같이 접고 오버로드로 가른다. 단위 미도달 장부만 쓴다
+// (`units` — 머리 주석의 「dotnet 도 가지를 센다」).
 function dotnetReport(d) {
   const path = DOTNET_DATA()
   const shown = path.replace(/\\/g, '/')
   if (!existsSync(path)) {
-    fail('dotnet', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run dotnet)`)
+    fail('dotnet', `no coverage data at ${shown} — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} dotnet)`)
     return null
   }
   const bytes = readFileSync(path)
@@ -2092,7 +2164,7 @@ function dotnetReport(d) {
     }
   }
   for (const rel of docs.keys()) if (!existsSync(join(root, rel))) fail('dotnet', `${rel} is in the data but not in the tree — the data belongs to another checkout`)
-  // trx — 이 실행의 테스트 결과. 통합 스위트만 · 전부 통과.
+  // trx — 이 실행의 테스트 결과. 그 스위트(SUITE)만 · 전부 통과.
   const trxPath = DOTNET_TRX()
   const trxShown = trxPath.replace(/\\/g, '/')
   let trx = null
@@ -2102,7 +2174,7 @@ function dotnetReport(d) {
     trx = null
   }
   let note = 'coverlet json'
-  if (trx === null) fail('dotnet', `no test results at ${trxShown} — run the integration suite through the script (node scripts/integration-coverage.mjs run dotnet)`)
+  if (trx === null) fail('dotnet', `no test results at ${trxShown} — run the ${SUITE} suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} dotnet)`)
   else {
     const attr = (tag, a) => new RegExp(`\\b${a}="([^"]*)"`).exec(tag)?.[1]
     // 테스트 어셈블리도 이 트리의 것이어야 한다(다른 체크아웃의 결과가 아니다).
@@ -2129,16 +2201,31 @@ function dotnetReport(d) {
     }
     const { set: suite, stray } = dotnetSuite(join(root, d.dir))
     for (const f of sortU(stray)) fail('dotnet', `${toRepoPath(f, d.dir)} has a [Trait("Category", "Integration")] that is not on a class declaration — this reader reads the suite from class-level traits only`)
-    const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
-    if (foreign.length) {
-      const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
-      fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes whose declaration carries [Trait("Category", "Integration")])`)
+    if (SUITE === 'unit') {
+      // 단위 스위트는 통합 스위트 밖의 시험이다(레인의 `--filter "Category!=Integration"`). 정의에 잇지 못하는 결과는 어느 쪽인지 모르므로
+      // 섞인 것으로 본다(통합 판정이 그것을 스위트 밖으로 보는 것과 같은 쪽 — 모르면 수치를 내지 않는다).
+      const mixed = results.filter((r) => {
+        const c = classOf.get(r.id)
+        return c === undefined || suite.has(c)
+      })
+      if (mixed.length) {
+        const eg = sortU(mixed.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
+        fail('dotnet', `the run included tests of the integration suite or tests it cannot place (${eg}) — the data would not be unit-only (unit dotnet runs --filter "Category!=Integration"; the integration suite = classes whose declaration carries [Trait("Category", "Integration")])`)
+      }
+    } else {
+      const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
+      if (foreign.length) {
+        const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
+        fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes whose declaration carries [Trait("Category", "Integration")])`)
+      }
     }
     const rt = /\(64-bit \.NET ([\d.]+)\)/.exec(trx)?.[1]
-    note = `.NET ${rt ?? '?'} · coverlet json · ${results.length} test${results.length === 1 ? '' : 's'}`
+    note = `.NET ${rt ?? '?'} · coverlet json · ${results.length} ${SUITE === 'unit' ? 'unit ' : ''}test${results.length === 1 ? '' : 's'}`
   }
   const files = []
   const never = []
+  // 함수마다 0 회인 줄 · 0 회인 가지 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다).
+  const units = []
   for (const f of d.files) {
     const e = docs.get(f)
     if (!e) {
@@ -2166,6 +2253,13 @@ function dotnetReport(d) {
           broken = true
           break
         }
+        // 가지 — coverlet 은 가지가 없는 메서드에도 빈 배열을 싣는다(실측). 없거나 꼴이 다르면 가지 수를 셀 수 없다.
+        const branches = v?.Branches
+        if (!Array.isArray(branches) || !branches.every((b) => isObj(b) && Number.isInteger(b.Line) && b.Line >= 1 && isCount(b.Hits))) {
+          fail('dotnet', `${f}: cannot read the branch counts of ${sig} in ${shown}`)
+          broken = true
+          break
+        }
         const fo = dotnetFold(cls, sig)
         if (!fo) {
           fail('dotnet', `${f}: cannot name ${cls}::${sig.replace(/^.*?::/, '')} — not a generated name this reader knows`)
@@ -2173,11 +2267,11 @@ function dotnetReport(d) {
           break
         }
         const key = `${fo.type}.${fo.member}`
-        const m = methods.get(key) ?? { plain: new Map(), machines: new Set(), lambdas: 0, lines: new Map() }
+        const m = methods.get(key) ?? { plain: new Map(), machines: new Set(), lambdas: 0, lines: new Map(), branches: [] }
         if (fo.kind === 'sm') m.machines.add(fo.machine)
         else if (fo.kind === 'lambda') m.lambdas++
-        // 시그니처마다 따로 든다 — 오버로드면 그것으로 가른다(아래).
-        const own = fo.kind === 'plain' ? (m.plain.get(fo.params) ?? new Map()) : null
+        // 시그니처마다 따로 든다 — 오버로드면 그것으로 가른다(아래). 가지도 줄과 같이 그 시그니처의 것이다.
+        const own = fo.kind === 'plain' ? (m.plain.get(fo.params) ?? { lines: new Map(), branches: [] }) : null
         for (const [k, c] of Object.entries(lines)) {
           const ln = Number(k)
           if (ln > nlines) {
@@ -2186,10 +2280,20 @@ function dotnetReport(d) {
             break
           }
           m.lines.set(ln, (m.lines.get(ln) ?? 0) + c)
-          if (own) own.set(ln, (own.get(ln) ?? 0) + c)
+          if (own) own.lines.set(ln, (own.lines.get(ln) ?? 0) + c)
         }
         if (broken) break
-        if (own) m.plain.set(fo.params, own)
+        const past = branches.find((b) => b.Line > nlines)
+        if (past) {
+          fail('dotnet', `${f}: ${key} counts a branch on line ${past.Line}, past the ${nlines} lines of the file — the data contradicts the tree`)
+          broken = true
+          break
+        }
+        m.branches.push(...branches)
+        if (own) {
+          own.branches.push(...branches)
+          m.plain.set(fo.params, own)
+        }
         methods.set(key, m)
       }
       if (broken) break
@@ -2199,18 +2303,21 @@ function dotnetReport(d) {
     const per = new Map()
     let amb = null
     for (const [key, m] of methods) {
-      if (m.plain.size + m.machines.size <= 1) per.set(key, m.lines)
+      if (m.plain.size + m.machines.size <= 1) per.set(key, m)
       else if (m.machines.size || m.lambdas) amb ??= key
-      else for (const [p, ls] of m.plain) per.set(`${key}(${p})`, ls)
+      else for (const [p, own] of m.plain) per.set(`${key}(${p})`, own)
     }
     if (amb) {
       fail('dotnet', `${f}: ${amb} has overloads and a state machine or lambda folds into one of them — this reader cannot tell which`)
       continue
     }
     const fileLines = new Map()
-    for (const [key, ls] of per) {
+    for (const [key, { lines: ls, branches: bs }] of per) {
       for (const [ln, c] of ls) fileLines.set(ln, (fileLines.get(ln) ?? 0) + c)
       if (ls.size && [...ls.values()].every((c) => c === 0)) never.push({ file: f, line: Math.min(...ls.keys()), name: key, stmts: ls.size })
+      // 자리는 첫 줄이다 — 줄 없이 가지만 실린 이름(같은 줄의 람다)은 첫 가지의 줄.
+      const at = ls.size ? Math.min(...ls.keys()) : bs.length ? Math.min(...bs.map((b) => b.Line)) : 0
+      units.push({ file: f, line: at, name: key, lines: [...ls.values()].filter((c) => c === 0).length, branches: bs.filter((b) => b.Hits === 0).length })
     }
     const covered = [...fileLines.values()].filter((c) => c > 0).length
     // coverlet 은 메서드 밖 줄을 싣지 않는다(필드 초기화는 생성자 · 정적 생성자의 줄이다).
@@ -2225,8 +2332,9 @@ function dotnetReport(d) {
     rec = null
   }
   const sha = (b) => createHash('sha1').update(b).digest('hex')
-  if (!rec || rec.run !== 'dotnet') {
-    fail('dotnet', `no record that \`run dotnet\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run dotnet) so the report can tell a complete, successful run`)
+  // 기록의 `suite` 는 단위 실행만 쓴다(`unit` — 없으면 통합이다). 다른 스위트의 기록이면 기록이 없는 것과 같다.
+  if (!rec || rec.run !== 'dotnet' || (rec.suite ?? 'integration') !== SUITE) {
+    fail('dotnet', `no record that \`${RUN_CMD} dotnet\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} dotnet) so the report can tell a complete, successful run`)
     return null
   }
   if (rec.exit !== 0) {
@@ -2234,11 +2342,11 @@ function dotnetReport(d) {
     return null
   }
   if (rec.data_sha1 !== sha(bytes)) {
-    fail('dotnet', `${shown} is not the data \`run dotnet\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    fail('dotnet', `${shown} is not the data \`${RUN_CMD} dotnet\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
   if (trx !== null && rec.trx_sha1 !== sha(readFileSync(trxPath))) {
-    fail('dotnet', `${trxShown} is not the test result \`run dotnet\` recorded — another run wrote over it`)
+    fail('dotnet', `${trxShown} is not the test result \`${RUN_CMD} dotnet\` recorded — another run wrote over it`)
     return null
   }
   if (!isObj(rec.files)) {
@@ -2249,7 +2357,7 @@ function dotnetReport(d) {
     const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
     if (rec.files[f] !== now) fail('dotnet', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
   }
-  return { path, note, files, never }
+  return { path, note, files, never, units }
 }
 
 // ── java ─────────────────────────────────────────────────────────────────────────────────
@@ -2268,16 +2376,29 @@ function dotnetReport(d) {
 // 람다는 만드는 메서드, 다리는 부르는 대상, 로컬 함수는 부르는 메서드). `internal` 멤버는 모듈 이름 접미를 벗긴다(`name$<모듈>` —
 // 모듈 이름의 식별자 밖 글자는 `_` · 실측 `applyTimeouts$io_github_xzawed_keycloak_sdk_kotlin`). suspend 함수의 이어받기
 // 클래스(`AuthClient$authSend$1`)는 줄표가 없어 JaCoCo 가 빈 클래스로 싣는다(실측 — 사실과 데이터 둘 다에 있다).
-// run kotlin 의 Gradle 초기화 스크립트 — 빌드 파일을 안 바꾸고 `integrationTest` 에만 JaCoCo 에이전트를 붙인다(Kover 는 그 태스크를
-// 일부러 계측하지 않는다 — build.gradle.kts 의 disabledForTestTasks). 에이전트와 CLI 는 Gradle 이 그 빌드의 저장소에서 받는다(kotlin
-// 레인은 Maven 을 안 쓴다). kotlin 의 `$` 보간이 JS 에 안 먹히게 문자열 배열로 쓴다.
+// run kotlin 의 Gradle 초기화 스크립트 — 빌드 파일을 안 바꾸고 재는 태스크 하나(`kcsdkItcovTask` — 통합은 `integrationTest`, 단위
+// 미도달 장부는 `test`)에만 JaCoCo 에이전트를 붙인다. 그 태스크의 Kover 에이전트는 Kover 의 DSL(`instrumentation.disabledForTestTasks` —
+// build.gradle.kts 가 integrationTest 에 쓰는 그 손잡이)로 끈다 — 두 에이전트가 한 클래스를 고쳐 쓰면 JaCoCo 의 클래스 id 가 디스크의
+// 클래스와 어긋날 수 있다(실측: 끈 실행은 Kover 의 bin-reports 가 비었다). 그 DSL 을 못 찾으면 빌드가 실패한다(fail-closed). 에이전트와
+// CLI 는 Gradle 이 그 빌드의 저장소에서 받는다(kotlin 레인은 Maven 을 안 쓴다). kotlin 의 `$` 보간이 JS 에 안 먹히게 문자열 배열로 쓴다.
 const KOTLIN_INIT = [
-  '// integration-coverage.mjs (run kotlin) — attaches a JaCoCo agent to integrationTest only; the build files stay as they are.',
+  '// integration-coverage.mjs (run kotlin · unit kotlin) — attaches a JaCoCo agent to the measured test task only and switches',
+  "// Kover's own agent off for that task; the build files stay as they are.",
   'allprojects {',
   '    val ver = findProperty("kcsdkItcovJacoco") as String? ?: return@allprojects',
+  '    val task = findProperty("kcsdkItcovTask") as String? ?: "integrationTest"',
+  '    pluginManager.withPlugin("org.jetbrains.kotlinx.kover") {',
+  '        val kover = extensions.getByName("kover")',
+  '        val dsl = { n: String -> Class.forName("kotlinx.kover.gradle.plugin.dsl.$n", true, kover.javaClass.classLoader) }',
+  '        val current = dsl("KoverProjectExtension").getMethod("getCurrentProject").invoke(kover)',
+  '        val instrumentation = dsl("KoverCurrentProjectVariantsConfig").getMethod("getInstrumentation").invoke(current)',
+  '        @Suppress("UNCHECKED_CAST")',
+  '        val off = dsl("KoverProjectInstrumentation").getMethod("getDisabledForTestTasks").invoke(instrumentation) as org.gradle.api.provider.SetProperty<String>',
+  '        off.add(task)',
+  '    }',
   '    val agent = configurations.detachedConfiguration(dependencies.create("org.jacoco:org.jacoco.agent:$ver:runtime"))',
   '    val cli = configurations.detachedConfiguration(dependencies.create("org.jacoco:org.jacoco.cli:$ver:nodeps"))',
-  '    tasks.withType<Test>().matching { it.name == "integrationTest" }.configureEach {',
+  '    tasks.withType<Test>().matching { it.name == task }.configureEach {',
   '        val exec = findProperty("kcsdkItcovExec") as String',
   '        doFirst { jvmArgs("-javaagent:" + agent.singleFile.absolutePath + "=destfile=" + exec) }',
   '        outputs.upToDateWhen { false }',
@@ -2289,10 +2410,10 @@ const KOTLIN_INIT = [
   '}',
   '',
 ].join('\n')
-const JVM_DATA = (l) => join(out, `${l}.xml`)
-const JVM_JAVAP = (l) => join(out, `${l}.javap.txt`)
-const JVM_RUN = (l) => join(out, `${l}.run.json`)
-const JVM_EXEC = (l) => join(out, `${l}.exec`)
+const JVM_DATA = (l) => join(out, `${l}${TAG}.xml`)
+const JVM_JAVAP = (l) => join(out, `${l}${TAG}.javap.txt`)
+const JVM_RUN = (l) => join(out, `${l}${TAG}.run.json`)
+const JVM_EXEC = (l) => join(out, `${l}${TAG}.exec`)
 // `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc,
 // lines, calls, news, lambdas }] } }. `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class ·
 // NameAndType)로 푼다. 코드에서는 부르는 메서드(`invoke*` 의 주석 — `owner.name:desc`) · 만드는 클래스(`new`) · 만드는 람다 몸통
@@ -2704,9 +2825,11 @@ function jvmReport(l, d) {
   const sha = (b) => createHash('sha1').update(b).digest('hex')
   const runRec = JVM_RUN(l)
   const noRecord = () =>
-    fail(l, `no record that \`run ${l}\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run ${l}) so the report can tell a passing run from a failed one`)
+    fail(l, `no record that \`${RUN_CMD} ${l}\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} ${l}) so the report can tell a passing run from a failed one`)
+  // 기록의 종류 — 단위 실행의 기록만 `suite: "unit"` 을 갖는다(없으면 통합이다). 다른 스위트의 기록이면 기록이 없는 것과 같다.
+  const ofSuite = (r) => isObj(r) && r.run === l && (r.suite ?? 'integration') === SUITE
   if (!existsSync(path)) {
-    fail(l, `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run ${l})`)
+    fail(l, `no coverage data at ${shown} — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} ${l})`)
     return null
   }
   const bytes = readFileSync(path)
@@ -2744,12 +2867,15 @@ function jvmReport(l, d) {
       pkg.classes.push(cls)
       if (t.empty) cls = null
     } else if (t.name === 'method' && cls) {
-      meth = { name: t.attrs.name, desc: t.attrs.desc, line: t.attrs.line, missed: 0, covered: 0 }
+      // 가지 계수기는 가지가 있는 메서드에만 있다(없으면 0) — 단위 미도달 장부가 놓친 가지를 센다.
+      meth = { name: t.attrs.name, desc: t.attrs.desc, line: t.attrs.line, missed: 0, covered: 0, bmissed: 0 }
       cls.methods.push(meth)
       if (t.empty) meth = null
     } else if (t.name === 'counter' && meth && t.attrs.type === 'LINE') {
       meth.missed = xmlCount(t.attrs.missed)
       meth.covered = xmlCount(t.attrs.covered)
+    } else if (t.name === 'counter' && meth && t.attrs.type === 'BRANCH') {
+      meth.bmissed = xmlCount(t.attrs.missed)
     } else if (t.name === 'sourcefile') {
       sf = new Map()
       pkg.sources.set(t.attrs.name, sf)
@@ -2767,7 +2893,7 @@ function jvmReport(l, d) {
   }
   const facts = javapBytes && javapFacts(javapBytes.toString('utf8'))
   if (!facts || !Object.keys(facts).length) {
-    fail(l, `no class facts at ${javapShown} — run ${l} writes javap's output there (line tables · enclosing methods of nested classes)`)
+    fail(l, `no class facts at ${javapShown} — ${RUN_CMD} ${l} writes javap's output there (line tables · enclosing methods of nested classes)`)
     return null
   }
   // kotlin — `internal` 멤버 이름의 모듈 접미는 run 이 기록에 남긴 모듈 이름(`META-INF/<모듈>.kotlin_module`)에서 온다. 그래서
@@ -2781,18 +2907,20 @@ function jvmReport(l, d) {
     } catch {
       rec0 = null
     }
-    if (!isObj(rec0) || rec0.run !== l) {
+    if (!ofSuite(rec0)) {
       noRecord()
       return null
     }
     if (typeof rec0.module !== 'string' || !/^[\w.-]+$/.test(rec0.module)) {
-      fail(l, `no Kotlin module name in ${runRec.replace(/\\/g, '/')} — run kotlin records it from build/classes/kotlin/main/META-INF/*.kotlin_module (internal members carry it as a name suffix)`)
+      fail(l, `no Kotlin module name in ${runRec.replace(/\\/g, '/')} — ${RUN_CMD} kotlin records it from build/classes/kotlin/main/META-INF/*.kotlin_module (internal members carry it as a name suffix)`)
       return null
     }
     kt = { mangle: rec0.module.replace(/[^A-Za-z0-9_]/g, '_') }
   }
   const files = []
   const never = []
+  // 함수마다의 놓친 줄 · 놓친 가지 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다).
+  const units = []
   for (const f of d.files) {
     // java 는 모듈마다 디렉터리(`<lane>/<module>/src/main/java`), kotlin 은 레인이 한 모듈이다(`kotlin/src/main/kotlin`).
     const fm = (l === 'kotlin' ? /^[^/]+\/src\/main\/kotlin\/(.+)\/([^/]+\.kt)$/ : /^[^/]+\/[^/]+\/src\/main\/java\/(.+)\/([^/]+\.java)$/).exec(f)
@@ -2818,7 +2946,7 @@ function jvmReport(l, d) {
     const onlyXml = sortU(xmlNames.filter((n) => !factNames.includes(n)))
     const onlyFacts = sortU(factNames.filter((n) => !xmlNames.includes(n)))
     if (onlyXml.length || onlyFacts.length) {
-      fail(l, `${f}: the class facts and the data name different classes (${[...onlyXml.map((n) => `data only: ${n}`), ...onlyFacts.map((n) => `facts only: ${n}`)].join(' · ')}) — run ${l} writes both from one build`)
+      fail(l, `${f}: the class facts and the data name different classes (${[...onlyXml.map((n) => `data only: ${n}`), ...onlyFacts.map((n) => `facts only: ${n}`)].join(' · ')}) — ${RUN_CMD} ${l} writes both from one build`)
       continue
     }
     // `@file:JvmMultifileClass` — 파사드(메타데이터 k=4)에는 첫 줄로 매긴 전달 메서드만 있고 코드는 부분 클래스(k=5 · JVM 합성)에 있는데,
@@ -2839,8 +2967,8 @@ function jvmReport(l, d) {
         // 걸러, 데이터의 첫 줄이 줄표의 가장 앞 줄보다 뒤일 수 있다(실측: clientCredentialsToken 줄표 {117, 118, 119, 120} · 데이터
         // 118) — 그 메서드의 줄이기만 하면 된다.
         const firstOk = fx && (fx.lines.length ? (kt ? fx.lines.includes(Number(x.line)) : String(fx.lines[0]) === x.line) : x.line === undefined)
-        if (!fx || !isCount(x.missed) || !isCount(x.covered) || !firstOk) {
-          fail(l, `${f}: ${c.name}.${x.name}${x.desc} — the data and the class facts disagree (first line ${x.line ?? 'none'} vs ${fx?.lines[0] ?? 'no method'}) — run ${l} writes both from one build`)
+        if (!fx || !isCount(x.missed) || !isCount(x.covered) || !isCount(x.bmissed) || !firstOk) {
+          fail(l, `${f}: ${c.name}.${x.name}${x.desc} — the data and the class facts disagree (first line ${x.line ?? 'none'} vs ${fx?.lines[0] ?? 'no method'}) — ${RUN_CMD} ${l} writes both from one build`)
           broken = true
           break
         }
@@ -2850,7 +2978,8 @@ function jvmReport(l, d) {
           broken = true
           break
         }
-        parts.push({ ...fo, cls: c.name, name: x.name, lines: fx.lines, ends: fx.ends, covered: x.covered })
+        // missed · bmissed — 이 메서드(JaCoCo 메서드 계수기)의 놓친 줄 · 놓친 가지. 접힌 함수의 수는 그 부분들의 합이다(units — 아래).
+        parts.push({ ...fo, cls: c.name, name: x.name, lines: fx.lines, ends: fx.ends, covered: x.covered, missed: x.missed, bmissed: x.bmissed })
       }
       if (broken) break
     }
@@ -3017,6 +3146,14 @@ function jvmReport(l, d) {
       const at = sh.size ? sh : ls
       never.push({ file: f, line: Math.min(...at), name: key, stmts: at.size })
     }
+    // 단위 미도달 장부 — 함수마다 그 부분들의 놓친 줄 · 놓친 가지(JaCoCo 메서드 계수기)의 합이다. 람다 · 로컬 함수 · 기본 인자 다리 ·
+    // 익명 객체 · 접근자는 ktFold 가 그 소스 함수의 부분으로 접었다 — 그 안의 놓친 가지가 합성 이름으로 새지 않는다. 여러 생성자가
+    // 함께 가진 부분(shared)은 그 생성자마다 센다. 정적 초기화는 `<타입>.<clinit>` 이다. 한 줄에 람다와 그것을 만든 호출이 있으면 그 줄은
+    // 부분마다 따로 센다(메서드 계수기 — 호출이 돌아도 람다가 안 돌았으면 람다의 줄은 놓쳤다).
+    for (const [key, ps] of fns) {
+      const ls = ps.flatMap((p) => p.lines)
+      units.push({ file: f, name: key, line: ls.length ? Math.min(...ls) : 0, lines: ps.reduce((a, p) => a + p.missed, 0), branches: ps.reduce((a, p) => a + p.bmissed, 0) })
+    }
     files.push({ file: f, stmts, covered, bodies, outside: { stmts: 0, covered: 0 } })
   }
   // run 기록 — dotnet 과 같은 이유. 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
@@ -3026,7 +3163,7 @@ function jvmReport(l, d) {
   } catch {
     rec = null
   }
-  if (!rec || rec.run !== l) {
+  if (!ofSuite(rec)) {
     noRecord()
     return null
   }
@@ -3035,21 +3172,26 @@ function jvmReport(l, d) {
     return null
   }
   if (rec.data_sha1 !== sha(bytes)) {
-    fail(l, `${shown} is not the data \`run ${l}\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    fail(l, `${shown} is not the data \`${RUN_CMD} ${l}\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
   if (rec.javap_sha1 !== sha(javapBytes)) {
-    fail(l, `${javapShown} is not the javap output \`run ${l}\` recorded — another run wrote over it`)
+    fail(l, `${javapShown} is not the javap output \`${RUN_CMD} ${l}\` recorded — another run wrote over it`)
     return null
   }
+  // 시험 수 — 그 스위트의 것(tests)과 다른 스위트의 보고 수(통합 기록은 `unit` · 단위 기록은 `integration`). 다른 스위트가 섞이면 그
+  // 데이터는 이 스위트만의 것이 아니다.
   const t = rec.tests
-  if (!isObj(t) || !isCount(t.completed) || !isCount(t.failures) || !isCount(t.errors) || !isCount(rec.unit)) {
-    fail(l, `the record has no test counts — run ${l} reads them from ${l === 'kotlin' ? 'the JUnit XML of integrationTest and test' : 'failsafe-summary.xml and the surefire reports'}`)
+  const other = SUITE === 'unit' ? rec.integration : rec.unit
+  if (!isObj(t) || !isCount(t.completed) || !isCount(t.failures) || !isCount(t.errors) || !isCount(other)) {
+    const from = SUITE === 'unit' ? 'the JUnit XML of test and integrationTest' : l === 'kotlin' ? 'the JUnit XML of integrationTest and test' : 'failsafe-summary.xml and the surefire reports'
+    fail(l, `the record has no test counts — ${RUN_CMD} ${l} reads them from ${from}`)
     return null
   }
-  if (t.completed === 0) fail(l, 'the run recorded no integration tests — a report over no tests is vacuous')
-  if (t.failures + t.errors) fail(l, `${t.failures + t.errors} of ${t.completed} integration tests failed — the data of a failed run is partial`)
-  if (rec.unit) fail(l, `the run included ${rec.unit} unit test report${rec.unit > 1 ? 's' : ''} — the report would not be integration-only (${l === 'kotlin' ? 'run runs integrationTest only' : 'run skips surefire: -Dtest=NONE'})`)
+  if (t.completed === 0) fail(l, `the run recorded no ${SUITE} tests — a report over no tests is vacuous`)
+  if (t.failures + t.errors) fail(l, `${t.failures + t.errors} of ${t.completed} ${SUITE} tests failed — the data of a failed run is partial`)
+  if (other && SUITE === 'unit') fail(l, `the run included ${other} integration test report${other > 1 ? 's' : ''} — the data would not be unit-only (unit ${l} runs test only)`)
+  else if (other) fail(l, `the run included ${rec.unit} unit test report${rec.unit > 1 ? 's' : ''} — the report would not be integration-only (${l === 'kotlin' ? 'run runs integrationTest only' : 'run skips surefire: -Dtest=NONE'})`)
   if (!isObj(rec.files)) {
     fail(l, 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
     return null
@@ -3058,13 +3200,39 @@ function jvmReport(l, d) {
     const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
     if (rec.files[f] !== now) fail(l, `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
   }
-  const note = `JaCoCo ${typeof rec.jacoco === 'string' ? rec.jacoco : '?'} · ${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${t.completed} integration test${t.completed === 1 ? '' : 's'}`
-  return { path, note, files, never }
+  const note = `JaCoCo ${typeof rec.jacoco === 'string' ? rec.jacoco : '?'} · ${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${t.completed} ${SUITE} test${t.completed === 1 ? '' : 's'}`
+  return { path, note, files, never, units }
 }
 
 // ── report ───────────────────────────────────────────────────────────────────────────────
 function emitFindings(l) {
   for (const f of findings) if (f.lang === l || f.lang === null) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
+}
+// 아무 경계 문장도 안 돈 실행은 「낮은 수치」가 아니라 측정 실패다(테스트가 경계를 한 줄도 안 지나고 통과할 수 없다) — FAIL 을 남기고
+// true. 통합 리포트와 단위 미도달 장부가 함께 쓴다(그 스위트의 이름으로 묻는다).
+// ⚠️ python 은 **함수 몸통**으로 판정한다 — import 만으로 모듈·클래스 수준 줄이 덮인다. conftest 가 패키지를 import
+// 하므로 통합 테스트가 전부 skip 돼 pytest 가 exit 0 으로 끝나도 lines 는 0 이 아니다(실측: 실제 트리 import 만으로
+// 160/395 = 40.5% · 몸통 0/235). lines 로 판정하면 그 실행이 「40.5%」로 보고된다. ruby 도 같다(require 가 클래스 · def 줄을 돈다).
+function ranNothing(l, data, tot) {
+  const ran = BODY_LANGS.has(l)
+    ? data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
+    : tot
+  if (ran.covered !== 0) return false
+  const scope =
+    l === 'python'
+      ? 'boundary statements inside functions'
+      : l === 'ruby'
+        ? 'boundary lines inside methods'
+        : JVM_LANGS.has(l)
+          ? 'boundary lines outside static initializers'
+          : LINE_LANGS.has(l)
+            ? 'boundary lines'
+            : 'boundary statements'
+  const load = l === 'ruby' ? 'require' : JVM_LANGS.has(l) ? 'class loading' : 'import'
+  const level = JVM_LANGS.has(l) ? 'static-initializer' : 'module-level'
+  const why = BODY_LANGS.has(l) && tot.covered ? `${load} alone credits ${tot.covered} ${level} lines` : `did the ${SUITE} tests run against this tree?`
+  fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
+  return true
 }
 function report(l) {
   const d = derivedFor(l)
@@ -3075,29 +3243,7 @@ function report(l) {
   const data = fails(l) ? null : reader(d)
   if (data && !fails(l)) {
     const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
-    // 아무 경계 문장도 안 돈 실행은 「낮은 수치」가 아니라 측정 실패다(테스트가 경계를 한 줄도 안 지나고 통과할 수 없다).
-    // ⚠️ python 은 **함수 몸통**으로 판정한다 — import 만으로 모듈·클래스 수준 줄이 덮인다. conftest 가 패키지를 import
-    // 하므로 통합 테스트가 전부 skip 돼 pytest 가 exit 0 으로 끝나도 lines 는 0 이 아니다(실측: 실제 트리 import 만으로
-    // 160/395 = 40.5% · 몸통 0/235). lines 로 판정하면 그 실행이 「40.5%」로 보고된다. ruby 도 같다(require 가 클래스 · def 줄을 돈다).
-    const ran = BODY_LANGS.has(l)
-      ? data.files.reduce((a, f) => ({ stmts: a.stmts + f.bodies.stmts, covered: a.covered + f.bodies.covered }), { stmts: 0, covered: 0 })
-      : tot
-    if (ran.covered === 0) {
-      const scope =
-        l === 'python'
-          ? 'boundary statements inside functions'
-          : l === 'ruby'
-            ? 'boundary lines inside methods'
-            : JVM_LANGS.has(l)
-              ? 'boundary lines outside static initializers'
-              : LINE_LANGS.has(l)
-                ? 'boundary lines'
-                : 'boundary statements'
-      const load = l === 'ruby' ? 'require' : JVM_LANGS.has(l) ? 'class loading' : 'import'
-      const level = JVM_LANGS.has(l) ? 'static-initializer' : 'module-level'
-      const why = BODY_LANGS.has(l) && tot.covered ? `${load} alone credits ${tot.covered} ${level} lines` : 'did the integration tests run against this tree?'
-      fail(l, `the run executed 0 of ${ran.stmts} ${scope} — a measurement failure, not a low number (${why})`)
-    } else {
+    if (!ranNothing(l, data, tot)) {
       const neverKeys = new Set()
       for (const x of data.never) {
         const key = `${x.file}:${x.name}`
@@ -3217,6 +3363,124 @@ function printReport(l, d, data, tot, pin, extraNever = []) {
   }
 }
 
+// ── 단위 미도달 장부(머리 주석) — 장부 · why · 대조 ─────────────────────────────────────────────
+// 장부의 꼴 — 틀리면 무결성 실패다(무시하면 장부가 꺼진 줄 모른다). 항목의 키는 통합 소유자와 같은 `"<파일>:<함수>"` 다.
+let unitLedger
+function loadUnitLedger() {
+  if (unitLedger !== undefined) return unitLedger
+  unitLedger = null
+  let j
+  try {
+    j = JSON.parse(readFileSync(join(root, UNIT), 'utf8'))
+  } catch {
+    fail(null, `${UNIT} is missing or not JSON`)
+    return null
+  }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) {
+    fail(null, `${UNIT} must be an object keyed by language`)
+    return null
+  }
+  for (const k of Object.keys(j)) if (!UNIT_LANGS.includes(k)) fail(null, `${UNIT} names ${k}, which the unit-unreached ledger does not measure (${UNIT_LANGS.join(' · ')})`)
+  unitLedger = j
+  return j
+}
+function unitLedgerFor(l) {
+  const j = loadUnitLedger()
+  if (!j) return null
+  const e = j[l]
+  if (!e || typeof e !== 'object' || Array.isArray(e)) {
+    fail(l, `${UNIT} has no ${l} object — an empty ledger is {}, not a missing one`)
+    return null
+  }
+  // kotlin · dotnet 은 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
+  const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : ['lines', 'why']
+  for (const [k, v] of Object.entries(e)) {
+    const ok = v !== null && typeof v === 'object' && !Array.isArray(v) && sortU(Object.keys(v)).join() === want.join() && want.every((x) => (x === 'why' ? typeof v.why === 'string' && v.why !== '' : isCount(v[x])))
+    if (!ok) {
+      fail(l, `${UNIT}: ${l}["${k}"] must be { ${want.join(', ')} } — whole-number counts and a non-empty why`)
+      return null
+    }
+  }
+  return e
+}
+// why 의 판정 — 까닭 머리(`unreachable:` · `defensive:` · `integration:`)와 그 뒤의 말, 아니면 열린 등록부 항목의 id. 문제가 없으면 null.
+// 등록부를 못 읽었으면(그것은 이미 FAIL 이다) id 를 판정하지 않는다 — ownerProblem 과 같다.
+function whyProblem(reg, key, why) {
+  const head = UNIT_WHY.find((p) => why.startsWith(p))
+  if (head) return why.slice(head.length).trim() ? null : `${key}: why "${why}" names a kind but not the reason — say why after "${head}"`
+  return reg && !reg.open.has(why) ? `${key}: why "${why}" is neither ${UNIT_WHY.join(' · ')} with a reason nor an open item of ${REGISTRY}` : null
+}
+const unitCounts = (l, x) => (UNIT_BRANCHES.has(l) ? `${x.lines} line${x.lines === 1 ? '' : 's'} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : `${x.lines} line${x.lines === 1 ? '' : 's'}`)
+const unitMissed = (u) => u.lines > 0 || (u.branches ?? 0) > 0
+// `unit` · `unit-report` — 측정(단위 실행의 데이터)과 장부를 함수마다 대조한다. 종료코드는 머리 주석의 단위 표다.
+function unitReport(l) {
+  const d = derivedFor(l)
+  const pin = pinFor(l)
+  const reg = loadRegistry()
+  const led = unitLedgerFor(l)
+  // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
+  if (d && pin) matchesPin(l, d, pin)
+  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport }[l]
+  const data = fails(l) ? null : reader(d)
+  const rows = []
+  if (data && !fails(l)) {
+    const tot = data.files.reduce((a, f) => ({ stmts: a.stmts + f.stmts, covered: a.covered + f.covered }), { stmts: 0, covered: 0 })
+    if (!ranNothing(l, data, tot)) {
+      const byKey = new Map(data.units.map((u) => [`${u.file}:${u.name}`, u]))
+      const D = new Set(d.files)
+      for (const u of data.units) {
+        if (!unitMissed(u)) continue
+        const key = `${u.file}:${u.name}`
+        const e = led[key]
+        rows.push({ ...u, key, why: e ? e.why : 'NONE' })
+        if (!e) drift(l, `unrecorded unreached code ${key} — the unit suite never reaches ${unitCounts(l, u)} of it: test that code, or record why in ${UNIT}`)
+        else if (e.lines !== u.lines || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
+          drift(l, `${key}: the unit run leaves ${unitCounts(l, u)} unreached, ${UNIT} records ${unitCounts(l, e)} — ${u.lines > e.lines || (u.branches ?? 0) > (e.branches ?? 0) ? 'test what the unit suite does not reach, or record why and correct the counts' : 'the unit suite reaches more of it now: lower the counts and check the why'}`)
+      }
+      for (const [key, e] of Object.entries(led)) {
+        const at = key.indexOf(':')
+        const file = at < 0 ? key : key.slice(0, at)
+        const u = byKey.get(key)
+        if (at < 0 || !D.has(file)) drift(l, `${UNIT}: entry ${key} names a file outside the boundary derived from ${d.site} — drop the entry`)
+        else if (!u) drift(l, `stale entry ${key} — the data of ${file} has no such function (renamed or removed?); drop or rename the entry`)
+        else if (!unitMissed(u)) drift(l, `stale entry ${key} — the unit run reaches all of it now; drop the entry`)
+        const why = whyProblem(reg, key, e.why)
+        if (why) drift(l, why)
+      }
+      printUnit(l, d, data, rows)
+    }
+  }
+  emitFindings(l)
+  const nf = findings.filter((f) => f.kind === 'FAIL' && (f.lang === l || f.lang === null)).length
+  const nd = findings.filter((f) => f.kind === 'DRIFT' && f.lang === l).length
+  if (nf) {
+    console.log(`unit-unreached [${l}]: FAIL — ${nf} integrity failure${nf > 1 ? 's' : ''}; the ledger is not compared against a run that failed one`)
+    return 2
+  }
+  const sum = rows.reduce((a, r) => ({ lines: a.lines + r.lines, branches: a.branches + (r.branches ?? 0) }), { lines: 0, branches: 0 })
+  const head = `${rows.length} function${rows.length === 1 ? '' : 's'} with code the unit suite never reaches (${unitCounts(l, sum)})`
+  if (nd) {
+    console.log(`unit-unreached [${l}]: DRIFT — ${head} · ${nd} ledger problem${nd > 1 ? 's' : ''} (the lane fails on it — each DRIFT line says what to change: a test, or ${UNIT}, whose why is ${UNIT_WHY.join(' · ')} with the reason or an open item of ${REGISTRY})`)
+    return 1
+  }
+  console.log(`unit-unreached [${l}]: OK — ${head}, each recorded in ${UNIT}`)
+  return 0
+}
+function printUnit(l, d, data, rows) {
+  console.log(`[${l}] unit-unreached — boundary code the unit suite never reaches, against ${UNIT}`)
+  console.log(`  boundary: ${d.files.length} files derived from ${d.site} (${d.label}) — equal to the pin in ${PINS}`)
+  console.log(`  data: ${data.path.replace(/\\/g, '/')}${data.note ? ` (${data.note})` : ''}`)
+  console.log(
+    l === 'kotlin'
+      ? '  (counts = JaCoCo method counters — missed lines · missed branches — summed over the methods folded into each source function: lambdas, local functions, default-argument bridges, anonymous objects)'
+      : l === 'dotnet'
+        ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
+        : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
+  )
+  const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
+  for (const r of sorted) console.log(`  UNREACHED ${r.file}:${r.line} ${r.name} · ${unitCounts(l, r)} · ${r.why}`)
+}
+
 // ── check — 데이터 없이: 파생 ↔ 핀 ↔ 소유자 ───────────────────────────────────────────────
 function check() {
   const reg = loadRegistry()
@@ -3224,8 +3488,10 @@ function check() {
   const counts = []
   let owners = 0
   let linked = 0
+  const derived = new Map()
   for (const l of LANGS) {
     const d = derivedFor(l)
+    derived.set(l, d)
     const pin = p ? pinFor(l) : null
     if (d && pin && matchesPin(l, d, pin)) console.log(`[${l}] pin OK — ${d.files.length} files equal the derivation from ${d.site} (${d.label})`)
     if (!pin) continue
@@ -3250,6 +3516,24 @@ function check() {
     }
     if (S.size) console.log(`[${l}] admin surface: ${S.size} files (${pin.surface.filter((f) => !P.has(f)).length} outside the pin)`)
     console.log(`[${l}] ${floorText(pin)?.replace(/^floor /, 'floor: ') ?? 'floor: none (report mode)'}`)
+  }
+  // 단위 미도달 장부 — 데이터 없이 꼴 · 경계 · why 만(수는 레인의 `unit` 이 잰다). 등록부만 바꾼 PR 에서도 닫힌 id 가 여기서 걸린다 —
+  // 레인은 `paths:` 뒤라 그 PR 에서 안 돈다(위 소유자와 같은 까닭).
+  if (loadUnitLedger()) {
+    for (const l of UNIT_LANGS) {
+      const e = unitLedgerFor(l)
+      if (!e) continue
+      const D = derived.get(l)?.files ? new Set(derived.get(l).files) : null
+      for (const [key, v] of Object.entries(e)) {
+        const at = key.indexOf(':')
+        if (D && (at < 0 || !D.has(key.slice(0, at)))) drift(l, `${UNIT}: entry ${key} names a file outside the boundary derived from ${derived.get(l).site} — drop the entry`)
+        const why = whyProblem(reg, key, v.why)
+        if (why) drift(l, why)
+      }
+      const kinds = Object.values(e).map((v) => UNIT_WHY.find((x) => v.why.startsWith(x))?.slice(0, -1) ?? v.why)
+      const n = Object.keys(e).length
+      console.log(`[${l}] unit-unreached: ${n} entr${n === 1 ? 'y' : 'ies'} (${sortU(kinds).map((k) => `${k} ${kinds.filter((x) => x === k).length}`).join(' · ') || 'none'})`)
+    }
   }
   for (const f of findings) console.log(`${f.kind} [${f.lang ?? '-'}] ${f.msg}`)
   const nf = findings.filter((f) => f.kind === 'FAIL').length
@@ -3346,7 +3630,8 @@ function run(l) {
     const phpunit = join(cwd, 'vendor', 'bin', 'phpunit')
     // 옛 데이터와 그 기록은 **먼저** 지운다 — 아래에서 일찍 멈추면 지난 성공한 실행의 데이터 · 기록이 남아, 다음 report 가 낡은
     // 수치를 OK 로 냈다(독립 레그 3차 실측: vendor/bin/phpunit 을 치운 run → rc 2 · 옛 기록 그대로 → report OK 141/235).
-    const xdir = join(out, 'php')
+    // 단위 미도달 장부(`unit php`)는 같은 길로 `--testsuite unit` 을 돈다 — 이름은 `.unit` 이 붙는다(SUITE).
+    const xdir = PHP_DATA()
     rmSync(xdir, { recursive: true, force: true })
     rmSync(PHP_RUN(), { force: true })
     const stop = (msg) => {
@@ -3365,12 +3650,13 @@ function run(l) {
     const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
     const source = ['<source>', '    <include>', ...d.files.map((f) => `      <file>${esc(rel(f))}</file>`), '    </include>', '  </source>'].join('\n')
     const at = blocks[0].index
-    const gen = join(cwd, '.integration-coverage.phpunit.xml')
+    const gen = join(cwd, `.integration-coverage${TAG}.phpunit.xml`)
     writeFileSync(gen, xml.slice(0, at) + source + xml.slice(at + blocks[0][0].length))
     let rc
     try {
-      // 같은 `--testsuite integration` 이다(레인의 명령). Xdebug 는 `XDEBUG_MODE=coverage` 없이는 아무것도 안 잰다 — pcov 는 무시한다.
-      rc = spawnStep('php', [phpunit, '--configuration', gen, '--testsuite', 'integration', '--coverage-xml', xdir], cwd, {
+      // 같은 `--testsuite integration` 이다(레인의 명령 — 단위 장부는 `unit`). Xdebug 는 `XDEBUG_MODE=coverage` 없이는 아무것도 안 잰다 —
+      // pcov 는 무시한다.
+      rc = spawnStep('php', [phpunit, '--configuration', gen, '--testsuite', SUITE, '--coverage-xml', xdir], cwd, {
         ...process.env,
         XDEBUG_MODE: 'coverage',
       })
@@ -3379,11 +3665,12 @@ function run(l) {
     }
     // 이 실행의 기록 — report 가 데이터를 이 실행에 묶는다(종료코드 · 그 index.xml 의 sha1). PHPUnit 은 실패한 실행에도 XML 을
     // 쓰고, 경계에 닿기 전에 실패한 테스트(`setUpBeforeClass` 가 던진 클래스 전체)는 데이터의 <tests> 에 아예 안 실린다 — 독립
-    // 레그 2차 실측: 그런 실행을 따로 report 하면 77/235 · exit 1 로 지나갔다.
+    // 레그 2차 실측: 그런 실행을 따로 report 하면 77/235 · exit 1 로 지나갔다. 단위 실행의 기록만 `suite` 를 갖는다.
     const index = join(xdir, 'index.xml')
     if (existsSync(index)) {
       const sha = createHash('sha1').update(readFileSync(index)).digest('hex')
-      writeFileSync(PHP_RUN(), `${JSON.stringify({ run: 'php', exit: rc, index_sha1: sha })}\n`)
+      const rec = SUITE === 'unit' ? { run: 'php', suite: 'unit', exit: rc, index_sha1: sha } : { run: 'php', exit: rc, index_sha1: sha }
+      writeFileSync(PHP_RUN(), `${JSON.stringify(rec)}\n`)
     }
     return rc
   }
@@ -3501,12 +3788,15 @@ function run(l) {
     return rc
   }
   if (l === 'kotlin') {
-    // 옛 데이터 · exec · javap 출력 · 기록 · CLI · 초기화 스크립트를 먼저 지운다(java 와 같은 이유).
+    // 옛 데이터 · exec · javap 출력 · 기록 · CLI · 초기화 스크립트를 먼저 지운다(java 와 같은 이유). 재는 태스크는 통합이면
+    // `integrationTest`, 단위 미도달 장부(`unit kotlin`)면 `test` 다 — 이름은 `.unit` 이 붙는다(SUITE).
+    const task = SUITE === 'unit' ? 'test' : 'integrationTest'
+    const otherTask = SUITE === 'unit' ? 'integrationTest' : 'test'
     const data = JVM_DATA(l)
     const exec = JVM_EXEC(l)
     const javap = JVM_JAVAP(l)
-    const cli = join(out, 'kotlin-cli')
-    const init = join(out, 'kotlin.itcov.init.gradle.kts')
+    const cli = join(out, `kotlin${TAG}-cli`)
+    const init = join(out, `kotlin${TAG}.itcov.init.gradle.kts`)
     for (const f of [data, exec, javap, JVM_RUN(l), init]) rmSync(f, { force: true })
     rmSync(cli, { recursive: true, force: true })
     const stop = (msg) => {
@@ -3531,9 +3821,9 @@ function run(l) {
     const recorded = sortU([...d.files, ...surfaceOf(l)])
     const shas = () => Object.fromEntries(recorded.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
-    // 레인의 명령(`./gradlew integrationTest`)과 같은 태스크다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트 결과가 남지 않게 —
-    // 단위 결과가 남으면 「단위가 섞였다」로 못 가른다) · 초기화 스크립트 · CLI 받기.
-    const rc = spawnGradle(['-I', init, `-PkcsdkItcovJacoco=${ver}`, `-PkcsdkItcovExec=${exec}`, `-PkcsdkItcovCli=${cli}`, 'clean', 'integrationTest', 'kcsdkItcovCli'], cwd)
+    // 레인의 명령(`./gradlew integrationTest` · 단위는 `./gradlew test`)과 같은 태스크다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트
+    // 결과가 남지 않게 — 다른 스위트의 결과가 남으면 「섞였다」로 못 가른다) · 초기화 스크립트 · CLI 받기.
+    const rc = spawnGradle(['-I', init, `-PkcsdkItcovJacoco=${ver}`, `-PkcsdkItcovTask=${task}`, `-PkcsdkItcovExec=${exec}`, `-PkcsdkItcovCli=${cli}`, 'clean', task, 'kcsdkItcovCli'], cwd)
     const after = shas()
     if (!existsSync(exec)) return rc
     const jar = join(cli, `org.jacoco.cli-${ver}-nodeps.jar`)
@@ -3565,9 +3855,9 @@ function run(l) {
       text += jp.stdout
     }
     writeFileSync(javap, text)
-    // 테스트 — integrationTest 의 JUnit XML 을 합치고, 단위(test)의 결과가 없는지 센다(clean 뒤라 이 실행이 쓴 것만 있다).
+    // 테스트 — 잰 태스크의 JUnit XML 을 합치고, 다른 스위트의 결과가 없는지 센다(clean 뒤라 이 실행이 쓴 것만 있다).
     const tests = { completed: 0, failures: 0, errors: 0, skipped: 0 }
-    const itDir = join(cwd, 'build', 'test-results', 'integrationTest')
+    const itDir = join(cwd, 'build', 'test-results', task)
     if (existsSync(itDir)) {
       for (const n of readdirSync(itDir).filter((x) => /^TEST-.*\.xml$/.test(x))) {
         const head = /<testsuite\b[^>]*>/.exec(readFileSync(join(itDir, n), 'utf8'))?.[0] ?? ''
@@ -3578,19 +3868,22 @@ function run(l) {
         tests.skipped += attr('skipped')
       }
     }
-    const unitDir = join(cwd, 'build', 'test-results', 'test')
-    const unit = existsSync(unitDir) ? readdirSync(unitDir).filter((x) => /^TEST-.*\.xml$/.test(x)).length : 0
+    const otherDir = join(cwd, 'build', 'test-results', otherTask)
+    const other = existsSync(otherDir) ? readdirSync(otherDir).filter((x) => /^TEST-.*\.xml$/.test(x)).length : 0
     const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
     const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
-    writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'kotlin', exit: rc, jacoco: ver, module, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
+    const facts = { jacoco: ver, module, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests }
+    const rec = SUITE === 'unit' ? { run: 'kotlin', suite: 'unit', exit: rc, ...facts, integration: other } : { run: 'kotlin', exit: rc, ...facts, unit: other }
+    writeFileSync(JVM_RUN(l), `${JSON.stringify({ ...rec, files: same ? before : null })}\n`)
     return rc
   }
   if (l === 'dotnet') {
-    // 옛 데이터 · trx · 기록 · 결과 디렉터리를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    // 옛 데이터 · trx · 기록 · 결과 디렉터리를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게). 단위 미도달
+    // 장부(`unit dotnet`)는 같은 길로 단위 스위트를 돈다 — 이름은 `.unit` 이 붙는다(SUITE).
     const data = DOTNET_DATA()
     const trx = DOTNET_TRX()
-    const results = join(out, 'dotnet-results')
-    const settings = join(out, 'dotnet.runsettings')
+    const results = join(out, `dotnet${TAG}-results`)
+    const settings = join(out, `dotnet${TAG}.runsettings`)
     for (const f of [data, trx, DOTNET_RUN(), settings]) rmSync(f, { force: true })
     rmSync(results, { recursive: true, force: true })
     const stop = (msg) => {
@@ -3607,17 +3900,20 @@ function run(l) {
     const recorded = sortU([...d.files, ...surfaceOf(l)])
     const shas = () => Object.fromEntries(recorded.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
-    // 레인의 명령(`dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"`)과 같은 해 · 구성 · 필터다.
+    // 레인의 명령(통합 `dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"` · 단위는 같은 해 · 구성에
+    // `--filter "Category!=Integration"`)과 같은 해 · 구성 · 필터다.
     // ⚠️ 대상이 여럿(`<TargetFrameworks>` — 읽는 규칙은 scripts/lib/dotnet-tfm.mjs)이면 **가장 낮은 대상 하나**만 돈다 —
     // 대상마다 첨부가 하나씩 생겨 아래 「첨부 하나」 불변식이 멈추고, 두 대상의 데이터를 합치면 같은 경계 파일을 두 번 센다.
-    // 하한(소비자가 받는 가장 낮은 자산)이 재는 대상이다. 나머지 대상의 통합은 레인 잡이 커버리지 없이 돈다.
+    // 하한(소비자가 받는 가장 낮은 자산)이 재는 대상이다. 나머지 대상의 통합은 레인 잡이 커버리지 없이 돈다. 단위 장부도 같은 대상이다 —
+    // 두 장부가 같은 컴파일 결과의 이름 · 줄을 읽는다(실측 2026-11-19: net10.0 의 단위 실행도 경계 메서드마다 줄 · 가지 수가 같았다).
     const props = join(cwd, 'Directory.Build.props')
     const tfms = existsSync(props) ? dotnetTfms(readFileSync(props, 'utf8')) : []
     const framework = tfms.length > 1 ? ['--framework', tfms[0]] : []
+    const filter = SUITE === 'unit' ? 'Category!=Integration' : 'Category=Integration'
     const rc = spawnStep(
       'dotnet',
-      ['test', slns[0], '-c', 'Release', ...framework, '--filter', 'Category=Integration', '--collect:XPlat Code Coverage', '--settings', settings,
-        '--results-directory', results, '--logger', 'trx;LogFileName=dotnet.trx'],
+      ['test', slns[0], '-c', 'Release', ...framework, '--filter', filter, '--collect:XPlat Code Coverage', '--settings', settings,
+        '--results-directory', results, '--logger', `trx;LogFileName=${basename(trx)}`],
       cwd,
     )
     const after = shas()
@@ -3628,10 +3924,11 @@ function run(l) {
     if (att.length > 1) return stop(`the run left ${att.length} coverage attachments — this reader knows one test project per solution`)
     if (att.length === 1) {
       copyFileSync(att[0], data)
-      if (existsSync(join(results, 'dotnet.trx'))) copyFileSync(join(results, 'dotnet.trx'), trx)
+      if (existsSync(join(results, basename(trx)))) copyFileSync(join(results, basename(trx)), trx)
       const sha = (p) => (existsSync(p) ? createHash('sha1').update(readFileSync(p)).digest('hex') : null)
       const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
-      writeFileSync(DOTNET_RUN(), `${JSON.stringify({ run: 'dotnet', exit: rc, data_sha1: sha(data), trx_sha1: sha(trx), files: same ? before : null })}\n`)
+      const facts = { data_sha1: sha(data), trx_sha1: sha(trx), files: same ? before : null }
+      writeFileSync(DOTNET_RUN(), `${JSON.stringify(SUITE === 'unit' ? { run: 'dotnet', suite: 'unit', exit: rc, ...facts } : { run: 'dotnet', exit: rc, ...facts })}\n`)
     }
     return rc
   }
@@ -3692,11 +3989,18 @@ function run(l) {
 // 레인은 report 의 종료코드를 그대로 받는다 — 그것을 해석하던 레인 사본(`[ "$rc" -le 1 ]` — 소유 문제를 경고로 넘겼다)을
 // 지웠으니 실패 주석도 여기서 낸다. 무엇을 고칠지는 위에 찍힌 판정 줄이 말한다.
 const VERDICTS = { 1: 'DRIFT — ownership problem', 2: 'FAIL — integrity failure', 3: 'BELOW — under the floor', 4: 'UNEXERCISED — an admin surface function never ran' }
+const UNIT_VERDICTS = { 1: 'DRIFT — unreached code the ledger does not record as measured', 2: 'FAIL — integrity failure' }
 let code
 if (cmd === 'check') code = check()
 else if (cmd === 'report') {
   code = report(lang)
   if (code && process.env.GITHUB_ACTIONS === 'true') console.log(`::error::integration-coverage [${lang}]: ${VERDICTS[code] ?? `exit ${code}`} — the lines above say what to change`)
+} else if (cmd === 'unit' || cmd === 'unit-report') {
+  // `unit` 은 단위 스위트를 돌린 뒤 **그 종료코드와 상관없이** 대조한다 — 실패한 실행은 기록의 종료코드 · 시험 결과로 FAIL(2)이 되고,
+  // 테스트의 종료코드(1 일 수 있다)가 DRIFT(1)로 읽히지 않는다. run 자신이 멈췄으면(FAIL 을 이미 찍었다) 대조하지 않는다.
+  if (cmd === 'unit') run(lang)
+  code = fails(lang) ? 2 : unitReport(lang)
+  if (code && process.env.GITHUB_ACTIONS === 'true') console.log(`::error::unit-unreached [${lang}]: ${UNIT_VERDICTS[code] ?? `exit ${code}`} — the lines above say what to change`)
 } else if (cmd === 'run') code = run(lang)
 else {
   code = run(lang)

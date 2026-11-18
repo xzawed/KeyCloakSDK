@@ -7,6 +7,7 @@ namespace Xzawed\Keycloak\Admin;
 use Fschmtt\Keycloak\Keycloak;
 use Fschmtt\Keycloak\Representation\Role;
 use Fschmtt\Keycloak\Collection\RoleCollection;
+use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class RolesResource
 {
@@ -25,6 +26,7 @@ final class RolesResource
     /** ⚠️ The representation being sent is hidden (update too) — so it is not printed as a trace argument of a failure error (the same rule as `UsersResource::create`). */
     public function create(#[\SensitiveParameter] Role $role): void
     {
+        EncodableBody::check($role);
         ErrorTranslation::call(fn () => $this->kc->roles()->create($this->realm, $role));
     }
 
@@ -53,6 +55,7 @@ final class RolesResource
      */
     public function update(string $name, #[\SensitiveParameter] Role $role): void
     {
+        EncodableBody::check($role);
         ErrorTranslation::call(
             fn () => $this->kc->resource(RenamableRoles::class)->updateByName($this->realm, $name, $role),
         );

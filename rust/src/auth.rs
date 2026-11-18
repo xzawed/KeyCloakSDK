@@ -8,7 +8,8 @@ use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::jwt::JwtValidator;
-use crate::oidc::OidcEndpoints;
+use crate::oidc::{OidcEndpoints, authorization_scopes};
+use crate::redirect_uri::check_redirect_uri;
 use crate::token_provider::TokenProvider;
 use crate::tokens::{AuthorizationRequest, IntrospectionResult, TokenSet, ValidatedToken};
 use async_trait::async_trait;
@@ -114,7 +115,9 @@ fn now_secs() -> u64 {
 }
 
 impl AuthClient {
-    /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`.
+    /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`, and so is a
+    /// config `redirect_uri` that [`Self::create_authorization_request_with_redirect`] would refuse (a fragment, a
+    /// character outside RFC 3986 §2, or a shape Keycloak cannot parse).
     /// The shared `http` (with the TLS, timeout and SSRF policies injected) is used as-is; no client of its own is built.
     pub fn new(
         config: KeycloakConfig,
@@ -141,6 +144,11 @@ impl AuthClient {
             Some(s) => core.set_client_secret(ClientSecret::new(s.to_string())),
             None => core,
         };
+        let redirect =
+            RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
+                .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?;
+        // `create_authorization_request()` 가 이 값을 싣는다 — 호출당 판과 같은 R2 · R3 · R4.
+        check_redirect_uri(&redirect)?;
         let oidc = core
             .set_auth_uri(
                 AuthUrl::new(endpoints.authorization())
@@ -154,10 +162,7 @@ impl AuthClient {
                 IntrospectionUrl::new(endpoints.introspection())
                     .map_err(|e| KeycloakError::Config(format!("introspect url: {e}")))?,
             )
-            .set_redirect_uri(
-                RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
-                    .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?,
-            );
+            .set_redirect_uri(redirect);
         Ok(Self {
             config,
             endpoints,
@@ -184,12 +189,19 @@ impl AuthClient {
     /// exchange's `redirect_uri` to equal the value used at authorization (RFC 6749 §4.1.3).
     ///
     /// ⚠️ An invalid URL is `KeycloakError::Config` — per §4, the underlying type (`RedirectUrl`) and its
-    /// parse error do not leak out of the facade.
+    /// parse error do not leak out of the facade. So is, in this order, a value with a fragment component, an empty
+    /// one included (RFC 6749 §3.1.2), and a value Keycloak cannot parse (RFC 3986 §2): a control character, a space,
+    /// U+007F–U+00A0 or another Unicode space separator (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
+    /// U+3000), one of `"` `<` `>` `\` `^` `` ` `` `{` `|` `}`, or a `%` not followed by two hex digits — then nothing,
+    /// or only `//`, after the scheme's `:`, or a `[` or `]` before the query of a value whose part after the scheme
+    /// starts with `/`, except around one bracketed host in its authority. An accepted value is sent exactly as given.
     pub fn create_authorization_request_with_redirect(
         &self,
         redirect_uri: &str,
     ) -> Result<AuthorizationRequest> {
-        Ok(self.authorization_request(Some(Self::redirect_url(redirect_uri)?)))
+        let uri = Self::redirect_url(redirect_uri)?;
+        check_redirect_uri(&uri)?;
+        Ok(self.authorization_request(Some(uri)))
     }
 
     /// 상류 `RedirectUrl` 조립 — 파싱 오류를 경계에서 SDK 타입으로 바꾼다(§4).
@@ -202,8 +214,9 @@ impl AuthClient {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
         // nonce는 openidconnect가 auth URL에 실어 Keycloak이 id_token에 담아 돌려준다. 호출자에게
         // 함께 돌려줘 콜백 후 exchange_code(expected_nonce)로 넘기면 id_token 재생을 막는다.
-        // config.scopes를 반영(사용자 커스텀 스코프). 비면 "openid" 폴백.
-        let scopes = self.scopes();
+        // config.scopes를 반영(사용자 커스텀 스코프) — 정확한 "openid" 는 빼고 싣는다. `authorize_url` 이
+        // 그것을 늘 맨 앞에 더하므로 그대로 더하면 `scope=openid+openid` 였다(`authorization_scopes`).
+        let scopes = authorization_scopes(&self.config.scopes);
         let mut builder = self
             .oidc
             .authorize_url(
@@ -321,14 +334,14 @@ impl AuthClient {
         }
     }
 
-    /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(authz-url·client-credentials 공용).
-    /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
     /// The client secret this client sends (empty for a public client) — what an echoed `error` is compared against
     /// (`oauth_error_code`).
     fn sent_secret(&self) -> &str {
         self.config.client_secret.as_deref().unwrap_or_default()
     }
 
+    /// config.scopes를 openidconnect `Scope` 벡터로 변환한다(client-credentials — 인가요청은 `authorization_scopes`).
+    /// 비면 "openid" 폴백 — token_provider(admin 경로)와 동형.
     fn scopes(&self) -> Vec<Scope> {
         if self.config.scopes.is_empty() {
             vec![Scope::new("openid".to_string())]
@@ -696,6 +709,349 @@ mod tests {
             "boundary must translate to KeycloakError::Config, got: {err:?}"
         );
     }
+
+    // ── RFC 6749 §3.1.2 — 인가요청의 redirect_uri (등록부 authz-request-redirect-unvalidated) ──
+    //
+    // 절대 URI(R1)는 `url::Url` 파싱이 이미 강제한다 — 그 문구(`invalid redirect_uri: <파싱 오류>`)를 그대로 둔다.
+    // 새 것은 fragment(R2)와 RFC 3986 §2 밖의 문자(R3)다: `Url::parse` 는 둘 다 받아 주고(R3 은 자기 사본에서 퍼센트
+    // 인코딩한다), 상류(oauth2 `RedirectUrl`)는 호출자의 문자열 **원본**을 두 요청에 그대로 싣는다(실측) — 그 원본을
+    // Keycloak 이 `java.net.URI.create` 로 파싱해 거부한다. 검사만 한다 — 고치지 않는다.
+    const REDIRECT_R2: &str = "invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)";
+    const REDIRECT_R3: &str = "invalid redirect_uri: not a valid URI (RFC 3986 §2)";
+
+    fn with_char(cp: u32) -> String {
+        format!(
+            "https://app/c{}b",
+            char::from_u32(cp).expect("a scalar value")
+        )
+    }
+
+    fn redirect_refusal(r: Result<AuthorizationRequest>) -> String {
+        match r {
+            Err(KeycloakError::Config(m)) => m,
+            other => panic!("expected KeycloakError::Config, got {other:?}"),
+        }
+    }
+
+    /// 절대 URI 가 아니면 파싱 오류 문구 그대로다(R1 — 새 문구 없음). `cb#f` 도 R1 이다(R1 이 R2 보다 먼저).
+    #[tokio::test]
+    async fn authorization_request_refuses_a_relative_redirect_uri_with_the_parse_message() {
+        let auth = test_auth();
+        for input in ["", "cb", "/cb", "//app/cb", "not a url", "cb#f"] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(input));
+            assert!(
+                msg.starts_with("invalid redirect_uri: "),
+                "{input:?}: {msg}"
+            );
+            assert_ne!(msg, REDIRECT_R2, "{input:?}: R1 comes before R2");
+        }
+    }
+
+    /// fragment 성분 — 빈 fragment(`…#`)도 fragment 다.
+    #[tokio::test]
+    async fn authorization_request_refuses_a_redirect_uri_with_a_fragment() {
+        let auth = test_auth();
+        for input in ["https://app/cb#", "https://app/cb#f"] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(input));
+            assert_eq!(msg, REDIRECT_R2, "{input:?}");
+        }
+    }
+
+    /// R3 — Keycloak 의 `URI.create` 가 던지는 값(Amendment 1·3). `https://app/c b#f` 는 R2 다(R2 가 R3 보다 먼저).
+    #[tokio::test]
+    async fn authorization_request_refuses_a_redirect_uri_keycloak_cannot_parse() {
+        let auth = test_auth();
+        for input in [
+            "https://app/c b".to_string(),
+            "https://app/cb\n".to_string(),
+            "https://app/c\\b".to_string(),
+            "https://app/c%zz".to_string(),
+            with_char(0xa0),
+            with_char(0x3000),
+            with_char(0x2028),
+        ] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(&input));
+            assert_eq!(msg, REDIRECT_R3, "{input:?}");
+        }
+        let msg =
+            redirect_refusal(auth.create_authorization_request_with_redirect("https://app/c b#f"));
+        assert_eq!(msg, REDIRECT_R2, "R2 comes before R3");
+    }
+
+    /// R3 의 문자 집합 전수 — U+0000–U+0020 · U+007F–U+00A0 · 유니코드 공백 구분자 · ASCII 아홉 · 16진 두 자리가
+    /// 따르지 않는 `%`. 파싱(R1)이 먼저 거부하는 것이 없음까지 본다 — 전부 R3 문구여야 한다.
+    #[tokio::test]
+    async fn authorization_request_r3_character_set() {
+        let auth = test_auth();
+        let mut refused: Vec<String> = (0x00..=0x20).chain(0x7f..=0xa0).map(with_char).collect();
+        refused.extend(
+            [0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000]
+                .into_iter()
+                .chain(0x2000..=0x200a)
+                .map(with_char),
+        );
+        refused.extend("\"<>\\^`{|}".chars().map(|c| with_char(c as u32)));
+        refused.extend(
+            [
+                "https://app/cb%",
+                "https://app/cb%2",
+                "https://app/c%2zb",
+                "https://app/c%z2b",
+                "https://app/c%%20b",
+                "https://app/cb?x=%G0",
+            ]
+            .map(String::from),
+        );
+        for input in refused {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(&input));
+            assert_eq!(msg, REDIRECT_R3, "{input:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn authorization_request_refusal_does_not_quote_the_input() {
+        let auth = test_auth();
+        for input in [
+            "cb-CANARY-7d1f",
+            "https://app/cb#CANARY-7d1f",
+            "https://app/c CANARY-7d1f",
+        ] {
+            let msg = redirect_refusal(auth.create_authorization_request_with_redirect(input));
+            assert!(!msg.contains("CANARY"), "{input:?}: {msg}");
+        }
+    }
+
+    /// 받은 값은 고치지 않는다 — URL 의 redirect_uri 를 디코드하면 입력과 정확히 같다(대문자 스킴·호스트도).
+    /// R3 대조: `%20` · `ü` · 쿼리의 `[ ]` 와, 공백 구분자가 아닌 이웃(U+00A1 · U+00AD · U+200B · U+FEFF · U+1F600 —
+    /// URI.create 가 받는다, JDK 21.0.8 실측)은 받는다.
+    #[tokio::test]
+    async fn authorization_request_carries_an_accepted_redirect_uri_verbatim() {
+        let auth = test_auth();
+        let mut accepted: Vec<String> = [
+            "https://app/cb",
+            "https://app/cb?x=1",
+            "myapp:/cb",
+            "com.example.app:/oauth2redirect",
+            "HTTP://LOCALHOST/cb",
+            "https://app/c%20b",
+            "https://app/cüb",
+            "https://app/cb?x=[1]",
+            "https://app/c'b",
+            "https://app/cb?x=$&y=(+*,;=)@:",
+            // R4 대조 — 괄호 친 호스트 하나(userinfo · 포트 포함) · query 의 괄호 · 불투명 값의 괄호(JDK 21.0.8 실측).
+            "https://[::1]/cb",
+            "https://[::1]:8443/cb",
+            "https://u@[::1]:8443/cb",
+            "https://[::1]",
+            "https://[::1]:/cb",
+            "https://[::1]?x=[2]",
+            "myapp:c[b",
+            "urn:x[y]",
+        ]
+        .map(String::from)
+        .to_vec();
+        accepted.extend([0xa1, 0xad, 0x200b, 0xfeff, 0x1f600].map(with_char));
+        for input in accepted {
+            let input = input.as_str();
+            let req = auth
+                .create_authorization_request_with_redirect(input)
+                .unwrap_or_else(|e| panic!("{input:?} refused: {e:?}"));
+            let url = url::Url::parse(&req.url).expect("authorization URL");
+            let sent: Vec<String> = url
+                .query_pairs()
+                .filter(|(k, _)| k == "redirect_uri")
+                .map(|(_, v)| v.into_owned())
+                .collect();
+            assert_eq!(sent, vec![input.to_string()], "{input:?}: {}", req.url);
+        }
+    }
+
+    // ── R4 — Keycloak 의 `URI.create` 가 거부하는 모양 (등록부 redirect-uri-r3-narrower-than-keycloak) ──
+    //
+    // 문자는 R3 안이지만 JDK 21.0.8 의 `URI.create` 가 거부한다: scheme 뒤가 빈 값, query 앞의 `[` `]`(괄호 친 호스트
+    // 하나 밖). 문구는 R3 과 같다. R1 은 `url::Url` 파싱이다 — 그것이 먼저 거부하는 값은 파싱 문구 그대로다(WHATWG
+    // 파서는 호스트 자리의 괄호 · 숫자 아닌 포트 · 빈 호스트를 거부한다). 판정은 원본 문자열이다 — 그것이 나간다.
+
+    /// 호출당 인가요청 하나의 판정 — 받음 · R2 · R3 문구, 그 밖의 `invalid redirect_uri: …` 는 R1(파싱) 문구.
+    fn redirect_outcome(auth: &AuthClient, input: &str) -> &'static str {
+        match auth.create_authorization_request_with_redirect(input) {
+            Ok(_) => "accepted",
+            Err(KeycloakError::Config(m)) if m == REDIRECT_R2 => "R2",
+            Err(KeycloakError::Config(m)) if m == REDIRECT_R3 => "R3",
+            Err(KeycloakError::Config(m)) if m.starts_with("invalid redirect_uri: ") => "R1",
+            Err(e) => panic!("{input:?}: expected KeycloakError::Config, got {e:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn authorization_request_refuses_a_shape_keycloak_cannot_parse() {
+        let auth = test_auth();
+        let cases = [
+            // R4 — `URI.create` 가 거부하고 `Url::parse` 는 받는 값.
+            ("myapp:", "R3"),
+            ("https://app/c[b", "R3"),
+            ("https://app/c]b", "R3"),
+            ("myapp:/c[b", "R3"),
+            ("https://[::1]/c[b", "R3"),
+            ("https://u[@[::1]/cb", "R3"),
+            // `Url::parse`(R1)가 먼저 거부한다 — `https:/` 는 `URI.create` 가 받지만 WHATWG 파서가 빈 호스트로 거부한다
+            // (R1 이 Keycloak 보다 좁은 자리 — 이 시험은 그대로임을 적어 둔다).
+            ("https:", "R1"),
+            ("https:/", "R1"),
+            ("https://app[1]/cb", "R1"),
+            ("https://[::1]]/cb", "R1"),
+            ("https://[::1][::2]/cb", "R1"),
+            ("https://[::1]:x/cb", "R1"),
+            // 순서 — R2 가 R4 보다 먼저, R3 · R4 둘 다면 R3 의 칸(같은 문구 — 갈래는 redirect_uri.rs 의 시험이 본다).
+            ("https://app/c[b#f", "R2"),
+            ("https://app/c[b c", "R3"),
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter_map(|(input, want)| {
+                let got = redirect_outcome(&auth, input);
+                (got != *want).then(|| format!("{input:?} → {got}, want {want}"))
+            })
+            .collect();
+        assert!(wrong.is_empty(), "redirect_uri outcomes: {wrong:#?}");
+    }
+
+    /// 벡터 표(Keycloak 의 `URI.create` 판정 — `redirect_uri.rs`)의 행 전부를 공개 메서드로. R1(`url::Url` — WHATWG)이 먼저
+    /// 거부하는 행은 파싱 문구이고, R1 을 지난 행은 Keycloak 과 같다 — 받는 행은 URL 에 그대로 실리고, 거부 행은 R3 문구다
+    /// (zone id 셋도 R3 — 의도한 차이). R1 은 Keycloak 보다 좁다: 빈 호스트 · 앞 0 이 붙은 IPv4 조각 · zone id · 65535 위의
+    /// 포트 · 숫자 아닌 포트 · 범위 밖 IPv4 호스트는 받는 행이어도 R1 에서 끝난다(이 시험은 그대로임을 적어 둔다).
+    #[tokio::test]
+    async fn authorization_request_judges_the_uri_create_vectors_as_keycloak_does() {
+        use crate::redirect_uri::{URI_CREATE_VECTORS, ZONE_ID_R3};
+        let auth = test_auth();
+        let mut wrong = Vec::new();
+        let mut past_r1 = Vec::new();
+        for &(input, keycloak_accepts) in URI_CREATE_VECTORS {
+            let want = if url::Url::parse(input).is_err() {
+                "R1"
+            } else if keycloak_accepts && !ZONE_ID_R3.contains(&input) {
+                "accepted"
+            } else {
+                "R3"
+            };
+            let got = redirect_outcome(&auth, input);
+            if got != want {
+                wrong.push(format!("{input:?} → {got}, want {want}"));
+            } else if want == "accepted" {
+                let req = auth
+                    .create_authorization_request_with_redirect(input)
+                    .expect("accepted above");
+                let url = url::Url::parse(&req.url).expect("authorization URL");
+                let sent: Vec<String> = url
+                    .query_pairs()
+                    .filter(|(k, _)| k == "redirect_uri")
+                    .map(|(_, v)| v.into_owned())
+                    .collect();
+                assert_eq!(sent, [input], "{input:?}: {}", req.url);
+            }
+            if want != "R1" {
+                past_r1.push(want);
+            }
+        }
+        assert!(wrong.is_empty(), "redirect_uri outcomes: {wrong:#?}");
+        // 표가 R1 에서 다 끝나 이 시험이 아무것도 재지 않는 일이 없다 — R1 을 지난 행에 받음과 R3 이 둘 다 있다.
+        assert!(
+            past_r1.contains(&"accepted") && past_r1.contains(&"R3"),
+            "{past_r1:?}"
+        );
+    }
+
+    /// 생성 때 config 의 redirect_uri 도 같은 R2 · R3 · R4 를 지난다 — 그 값이 `create_authorization_request()` 가 싣는다.
+    /// 대조 — config 에 redirect_uri 가 없으면 issuer 가 그 자리다: IPv6 호스트의 서버(괄호 친 호스트)도 만들어진다.
+    #[tokio::test]
+    async fn construction_applies_r4_to_the_config_redirect_uri() {
+        for (input, want) in [
+            ("https://app/c[b", REDIRECT_R3),
+            ("myapp:", REDIRECT_R3),
+            ("myapp://", REDIRECT_R3),
+        ] {
+            let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+                .unwrap()
+                .with_redirect_uri(input);
+            match crate::client::KeycloakClient::new(config) {
+                Err(KeycloakError::Config(m)) => assert_eq!(m, want, "{input:?}"),
+                Err(e) => panic!("{input:?}: expected Config, got {e:?}"),
+                Ok(_) => panic!("{input:?}: an unusable config redirect_uri was accepted"),
+            }
+        }
+        let config = KeycloakConfig::new("http://[::1]:8080", "it-realm", "it-client").unwrap();
+        let client = crate::client::KeycloakClient::new(config).expect("an IPv6 server constructs");
+        let req = client.auth().create_authorization_request();
+        let url = url::Url::parse(&req.url).expect("authorization URL");
+        let sent: Vec<String> = url
+            .query_pairs()
+            .filter(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        assert_eq!(sent, ["http://[::1]:8080/realms/it-realm"], "{}", req.url);
+    }
+
+    /// 생성 때 config 의 redirect_uri 도 같은 R2 · R3 를 지난다 — 그 값이 `create_authorization_request()` 가 싣는다.
+    #[tokio::test]
+    async fn construction_refuses_a_config_redirect_uri_with_a_fragment_or_invalid_chars() {
+        let config = |uri: &str| {
+            KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+                .unwrap()
+                .with_redirect_uri(uri)
+        };
+        let cases = [
+            ("https://app/cb#".to_string(), REDIRECT_R2),
+            ("https://app/cb#f".to_string(), REDIRECT_R2),
+            ("https://app/c b#f".to_string(), REDIRECT_R2),
+            ("https://app/c b".to_string(), REDIRECT_R3),
+            ("https://app/cb\n".to_string(), REDIRECT_R3),
+            (with_char(0x3000), REDIRECT_R3),
+        ];
+        for (input, want) in cases {
+            match crate::client::KeycloakClient::new(config(&input)) {
+                Err(KeycloakError::Config(m)) => assert_eq!(m, want, "{input:?}"),
+                Err(e) => panic!("{input:?}: expected Config, got {e:?}"),
+                Ok(_) => panic!("{input:?}: an unusable config redirect_uri was accepted"),
+            }
+        }
+        // 대조 — fragment 가 없으면 만들어지고, 인자 없는 인가요청이 그 값을 그대로 싣는다.
+        let client =
+            crate::client::KeycloakClient::new(config("HTTP://LOCALHOST/cb")).expect("constructs");
+        let req = client.auth().create_authorization_request();
+        let url = url::Url::parse(&req.url).expect("authorization URL");
+        let sent: Vec<String> = url
+            .query_pairs()
+            .filter(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        assert_eq!(sent, vec!["HTTP://LOCALHOST/cb".to_string()], "{}", req.url);
+    }
+
+    /// 교환은 바뀌지 않는다 — R2 · R3 은 인가요청 쪽에만 걸었다(공유 `redirect_url` 에 넣지 않았다). 교환은 호출자의
+    /// 문자열을 그대로 보낸다 — R3 이 원본을 보는 까닭이기도 하다(oauth2 5.0.0 은 정규화하지 않는다).
+    #[tokio::test]
+    async fn exchange_with_redirect_is_unchanged_and_sends_the_value_verbatim() {
+        for input in ["https://app/cb#f", "https://app/c b"] {
+            let (auth, server) = public_client_token_fixture().await;
+            auth.exchange_code_with_redirect("code", "verifier", input, None)
+                .await
+                .unwrap_or_else(|e| panic!("{input:?}: the exchange does not judge it: {e:?}"));
+            let reqs = server
+                .received_requests()
+                .await
+                .expect("received_requests available");
+            let token = reqs
+                .iter()
+                .find(|r| r.url.path().ends_with("/token"))
+                .expect("token endpoint must have been called");
+            let sent: Vec<String> = url::form_urlencoded::parse(&token.body)
+                .filter(|(k, _)| k == "redirect_uri")
+                .map(|(_, v)| v.into_owned())
+                .collect();
+            assert_eq!(sent, vec![input.to_string()], "{input:?}");
+        }
+    }
+
     #[tokio::test]
     async fn create_authorization_request_returns_nonce() {
         let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client").unwrap();
@@ -712,6 +1068,95 @@ mod tests {
             req.url.contains("nonce="),
             "nonce must be on the authorization URL"
         );
+    }
+
+    // ── 인가요청의 scope — openid 는 한 번 (등록부 rust-authz-scope-openid-duplicated) ──
+    //
+    // openidconnect 의 `authorize_url(AuthenticationFlow…)` 는 `openid` 를 늘 맨 앞에 더한다. 설정의 scope(기본
+    // `["openid"]`)를 그대로 더하면 URL 이 `scope=openid+openid` 였다. 인가요청에서만 설정의 정확한 `openid` 를
+    // 빼고, client_credentials 는 설정 그대로 보낸다.
+    fn scoped_auth(server_uri: &str, scopes: Option<&[&str]>) -> AuthClient {
+        let mut config = KeycloakConfig::new(server_uri, "it-realm", "it-client").unwrap();
+        if let Some(scopes) = scopes {
+            config.scopes = scopes.iter().map(|s| s.to_string()).collect();
+        }
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap()
+    }
+
+    fn scope_values(pairs: url::form_urlencoded::Parse<'_>) -> Vec<String> {
+        pairs
+            .filter(|(k, _)| k == "scope")
+            .map(|(_, v)| v.into_owned())
+            .collect()
+    }
+
+    /// 기본(설정을 건드리지 않음) · 빈 목록 · `openid` 가 든 목록은 `openid` 한 번, `openid` 가 없는 목록은 그 앞에
+    /// `openid` — 두 인가요청 메서드 모두.
+    #[tokio::test]
+    async fn authorization_request_sends_openid_once() {
+        let cases: [(Option<&[&str]>, &str); 5] = [
+            (None, "openid"),
+            (Some(&[]), "openid"),
+            (Some(&["openid", "profile"]), "openid profile"),
+            (Some(&["profile"]), "openid profile"),
+            (
+                Some(&["profile", "openid", "email"]),
+                "openid profile email",
+            ),
+        ];
+        let mut wrong = Vec::new();
+        for (scopes, want) in cases {
+            let auth = scoped_auth("http://kc:8080", scopes);
+            let per_call = auth
+                .create_authorization_request_with_redirect("https://app/cb")
+                .expect("valid redirect uri");
+            for url in [auth.create_authorization_request().url, per_call.url] {
+                let parsed = url::Url::parse(&url).expect("authorization URL");
+                let sent = scope_values(parsed.query_pairs());
+                if sent != vec![want.to_string()] {
+                    wrong.push(format!("{scopes:?} → {sent:?}, want {want:?}"));
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "scope parameter: {wrong:#?}");
+    }
+
+    /// 대조 — client_credentials 는 설정의 scope 를 그대로 보낸다(빈 목록은 `openid` 폴백, 오늘과 같다).
+    #[tokio::test]
+    async fn client_credentials_sends_the_configured_scopes_unchanged() {
+        let cases: [(Option<&[&str]>, &str); 4] = [
+            (None, "openid"),
+            (Some(&[]), "openid"),
+            (Some(&["openid", "profile"]), "openid profile"),
+            (Some(&["profile"]), "profile"),
+        ];
+        for (scopes, want) in cases {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/realms/it-realm/protocol/openid-connect/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "access_token": "AT", "token_type": "Bearer", "expires_in": 300
+                })))
+                .mount(&server)
+                .await;
+            let auth = scoped_auth(&server.uri(), scopes);
+            auth.client_credentials_token()
+                .await
+                .expect("client_credentials");
+            let reqs = server
+                .received_requests()
+                .await
+                .expect("received_requests available");
+            assert_eq!(reqs.len(), 1, "{scopes:?}");
+            assert_eq!(
+                scope_values(url::form_urlencoded::parse(&reqs[0].body)),
+                vec![want.to_string()],
+                "{scopes:?}"
+            );
+        }
     }
 
     #[tokio::test]

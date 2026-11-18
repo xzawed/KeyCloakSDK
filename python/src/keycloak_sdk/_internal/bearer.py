@@ -10,12 +10,13 @@ Latin-1·끝 SP 를 그대로 보내고 aio(httpx·h11)는 거부했다(실측
 `tests/unit/test_admin_bearer_header.py`).
 
 **어디서.** 받는 자리(`admin_grant.py` 의 그랜트 래퍼 — 토큰 세터 앞이다. 거부한 토큰은
-캐시되지 않고 다음 호출이 다시 그랜트하며, 받아들인 토큰은 다듬은 값으로 세터에 넘긴다:
-python-keycloak 의 401 재시도는 보내는 자리를 거치지 않고 세터가 실은 값을 다시 보낸다)와
-보내는 자리(`admin_guard.py` 의 갱신 뒤 검사 — 그랜트를 거치지 않고 실린 bearer, 곧
-주입·토큰 세터의 것을 다듬은 값으로 바꿔 싣거나 거부한다). 타입은 쓸 수 없는 access_token
-의 선례(`tokens._usable_access_token`)와 같은 `KeycloakAuthError` 이고, 메시지는 토큰을
-인용하지 않는다 — 규칙만 말한다.
+캐시되지 않고 다음 호출이 다시 그랜트하며, 받아들인 토큰은 다듬은 값으로 세터에 넘긴다)와
+보내는 자리 둘(`admin_guard.py`): 갱신 뒤 검사 — 그랜트를 거치지 않고 연결의 헤더에 실린
+bearer, 곧 주입·토큰 세터의 것을 다듬은 값으로 바꿔 싣거나 거부한다 — 와, 그것을 거치지 않는
+python-keycloak 의 401 재시도까지 지나는 송신 자리의 검사(나갈 헤더 그대로 — 세션 기본값과
+합친 것, 이름·scheme 의 대소문자 무관). 타입은 쓸 수 없는 access_token 의
+선례(`tokens._usable_access_token`)와 같은 `KeycloakAuthError` 이고, 메시지는 토큰을 인용하지
+않는다 — 규칙만 말한다.
 """
 
 from __future__ import annotations

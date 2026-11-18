@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- 단위 미도달 장부 자가테스트의 dotnet 픽스처 — 실제 dotnet/coverlet.runsettings 와 같은 꼴(<Exclude> 타입 필터가 경계의 SSOT).
+     데이터는 도구의 `unit dotnet` 이 만든다(scripts/test/test-unit-unreached.sh 머리). -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>[*]Kc.AuthClient</Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

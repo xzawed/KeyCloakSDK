@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.requireEncodableBody
 import org.keycloak.representations.idm.RoleRepresentation
 
 // Roles.kt — RolesResource: 공식 admin-client의 org.keycloak.admin.client.resource.RolesResource를
@@ -11,6 +12,7 @@ public class RolesResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.RolesResource,
 ) {
     public suspend fun create(representation: RoleRepresentation) {
+        requireEncodableBody(representation)
         adminCall { delegate.create(representation) }
     }
 
@@ -27,6 +29,7 @@ public class RolesResource internal constructor(
         name: String,
         representation: RoleRepresentation,
     ) {
+        requireEncodableBody(representation)
         adminCall { delegate.get(name).update(representation) }
     }
 

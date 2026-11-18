@@ -31,7 +31,7 @@ cd go && go build ./... && go test ./...
 
 ## Quickstart
 
-The SDK is synchronous and every network method takes a `context.Context` as its first argument (only `CreateAuthorizationRequest` needs no context — it performs no I/O).
+The SDK is synchronous and every network method takes a `context.Context` as its first argument (only `BuildAuthorizationRequest` needs no context — it performs no I/O; it replaces the deprecated `CreateAuthorizationRequest`, which cannot report an invalid redirect URI).
 
 ```go
 package main

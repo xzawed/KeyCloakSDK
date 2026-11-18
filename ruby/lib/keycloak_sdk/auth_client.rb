@@ -30,8 +30,14 @@ module KeycloakSdk
       @endpoints = OidcEndpoints.from_config(config)
     end
 
+    # The start URL of a PKCE (S256) authorization-code flow. `redirect_uri` must be an absolute URI without a fragment
+    # that Keycloak can parse (RFC 6749 §3.1.2 · RFC 3986 §2, `RedirectUri.check!`) — anything else raises ConfigError
+    # before the verifier is generated. A value that is not a String is turned into one with `to_s`, as before (a `URI`
+    # object works; nil does not); the String checked is the String sent, exactly as given — pass the same value to
+    # `exchange_code`.
     def create_authorization_request(redirect_uri:, scopes: nil, state: SecureRandom.urlsafe_base64(24),
                                      nonce: SecureRandom.urlsafe_base64(24))
+      redirect_uri = RedirectUri.check!(redirect_uri)
       verifier = SecureRandom.urlsafe_base64(64)
       challenge = Base64.urlsafe_encode64(Digest::SHA256.digest(verifier), padding: false)
       params = {

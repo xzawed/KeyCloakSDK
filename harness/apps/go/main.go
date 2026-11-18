@@ -207,7 +207,8 @@ func logoutH(w http.ResponseWriter, r *http.Request) {
 func authzURLH(w http.ResponseWriter, r *http.Request) {
 	redirectURI := r.URL.Query().Get("redirect_uri")
 	if redirectURI == "" { redirectURI = "http://x/cb" }
-	ar := kc.Auth.CreateAuthorizationRequest(redirectURI)
+	ar, err := kc.Auth.BuildAuthorizationRequest(redirectURI)
+	if err != nil { fail(w, 500, err.Error()); return }
 	writeJSON(w, 200, map[string]string{"url": ar.URL, "state": ar.State})
 }
 

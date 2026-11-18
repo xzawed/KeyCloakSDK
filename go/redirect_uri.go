@@ -1,0 +1,157 @@
+package keycloak
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
+
+// checkedAuthorizationRequest 는 BuildAuthorizationRequest 의 몸통이다 — 검사가 먼저이고(PKCE·state·nonce 를 만들기
+// 전), 통과한 값만 build(CreateAuthorizationRequest)에 그대로 넘긴다. 분기를 auth.go 가 아니라 여기 두는 까닭: auth.go 는
+// 단위 커버리지 경계이고 통합 커버리지 하한(scripts/integration-coverage.json)이 재는 파일인데, 통합 실행은 거부 분기를
+// 밟지 않는다 — 거기 두면 안 도는 문장이 하나 는다.
+func checkedAuthorizationRequest(redirectURI string, build func(string) AuthorizationRequest) (AuthorizationRequest, error) {
+	if err := checkRedirectURI(redirectURI); err != nil {
+		return AuthorizationRequest{}, err
+	}
+	return build(redirectURI), nil
+}
+
+// redirectScheme 는 RFC 3986 §3.1 의 scheme 과 뒤따르는 ":" 이다 — 이것으로 시작하는 값이 절대 URI 다(§4.3).
+var redirectScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+
+// uriExcludedASCII 는 RFC 3986 §2 에 없는 ASCII 문장부호 중 Keycloak 의 java.net.URI.create 가 던지는 아홉이다.
+const uriExcludedASCII = "\"<>\\^`{|}"
+
+// checkRedirectURI 는 인가요청의 redirect_uri 를 보고, 쓸 수 없으면 *ConfigError 를 낸다(등록부
+// authz-request-redirect-unvalidated · redirect-uri-r3-narrower-than-keycloak). 순서가 계약이다 — R1 · R2 · R3 · R4:
+//
+//	R1  RFC 6749 §3.1.2 "MUST be an absolute URI" — scheme ":" 으로 시작한다.
+//	R2  같은 절 "MUST NOT include a fragment component" — `#` 가 어디에도 없다(빈 fragment `…#` 도 fragment 다).
+//	R3  RFC 3986 §2 밖 — Keycloak 은 받은 값을 java.net.URI.create 로 파싱해 그것이 던지면 어느 클라이언트 등록에서도
+//	    거부한다(RedirectUtils.toUri). 그 실측 집합과 잘못된 UTF-8 이다(uriChars).
+//	R4  문자는 R3 안이지만 URI.create 가 거부하는 모양 — R3 과 같은 문구다(uriShape). 괄호 친 호스트의 내용(IPv6
+//	    리터럴 · zone id)과 포트의 크기까지 본다(R4c–R4e).
+//
+// 의도된 차이 하나 — URI.create 는 zone id 의 맨 '%'(`https://[fe80::1%eth0]/cb`)를 받지만 R3 는 거기서도 16진 두 자리가
+// 따르지 않는 '%' 를 거부한다: RFC 6874 §2 는 URI 안에서 그 '%' 를 "%25" 로 쓰라고 한다(`[fe80::1%25eth0]` 는 받는다).
+//
+// 검사만 한다 — 값을 고치지 않는다. ExchangeCode 는 호출자의 문자열을 그대로 보내므로 인가요청 쪽만 정규화하면 두 요청의
+// redirect_uri 가 갈라진다(#1133 의 결함). 문구는 입력을 인용하지 않는다.
+func checkRedirectURI(redirectURI string) error {
+	switch {
+	case !redirectScheme.MatchString(redirectURI):
+		return &ConfigError{Msg: "invalid redirect_uri: not an absolute URI (RFC 6749 §3.1.2)"}
+	case strings.Contains(redirectURI, "#"):
+		return &ConfigError{Msg: "invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)"}
+	case !uriChars(redirectURI), !uriShape(redirectURI):
+		return &ConfigError{Msg: "invalid redirect_uri: not a valid URI (RFC 3986 §2)"}
+	}
+	return nil
+}
+
+// ipv6Literal 은 괄호 안에 올 수 있는 것이다 — RFC 3986 §3.2.2 의 IPv6address 에 Java 의 dec-octet(앞자리 0 을 받는다:
+// `01` · `0001` · `00000000255`)을 넣은 것. `[zz]` · IPvFuture `[v1.x]` 는 URI.create 가 거부한다.
+const (
+	h16         = `[0-9A-Fa-f]{1,4}`
+	decOctet    = `0*(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])`
+	ls32        = `(?:` + h16 + `:` + h16 + `|` + decOctet + `\.` + decOctet + `\.` + decOctet + `\.` + decOctet + `)`
+	ipv6Literal = `(?:(?:` + h16 + `:){6}` + ls32 +
+		`|::(?:` + h16 + `:){5}` + ls32 +
+		`|(?:` + h16 + `)?::(?:` + h16 + `:){4}` + ls32 +
+		`|(?:(?:` + h16 + `:){0,1}` + h16 + `)?::(?:` + h16 + `:){3}` + ls32 +
+		`|(?:(?:` + h16 + `:){0,2}` + h16 + `)?::(?:` + h16 + `:){2}` + ls32 +
+		`|(?:(?:` + h16 + `:){0,3}` + h16 + `)?::` + h16 + `:` + ls32 +
+		`|(?:(?:` + h16 + `:){0,4}` + h16 + `)?::` + ls32 +
+		`|(?:(?:` + h16 + `:){0,5}` + h16 + `)?::` + h16 +
+		`|(?:(?:` + h16 + `:){0,6}` + h16 + `)?::)`
+)
+
+// bracketedAuthority 는 R4 가 query 앞에서 `[` `]` 를 허용하는 유일한 자리다 — 호스트가 괄호 친 IPv6 리터럴 하나인
+// authority. userinfo 와 포트(숫자만, 비어도 된다 — 크기는 portFits 가 잰다)는 있어도 되고, zone id 는 Java 의 scope_id
+// (영숫자 · `_` · `.`, '%' 뒤가 비면 아니다)다.
+var bracketedAuthority = regexp.MustCompile(`^(?:[^@\[\]/]*@)?\[` + ipv6Literal + `(?:%[A-Za-z0-9_.]+)?\](?::([0-9]*))?$`)
+
+// uriShape 는 R4 다 — R1 을 지난 값(scheme ":" 으로 시작한다)에서 URI.create 가 거부하는 모양이 없는가(JDK 21.0.8 실측):
+//
+//	R4a  scheme 의 ":" 뒤가 비었다(`https:` · `myapp:` — "Expected scheme-specific part").
+//	R4b  ":" 뒤가 "/" 로 시작하면 첫 "?" 앞을 본다: "//" 로 시작하면 authority(다음 "/" 또는 끝까지)는 `[` `]` 를
+//	     괄호 친 호스트 하나(bracketedAuthority)로만 가질 수 있고, 그 밖(경로)의 `[` `]` 는 거부다(`https://app/c[b` ·
+//	     `myapp:/c[b` · `https://app[1]/cb` · `https://[::1]]/cb`). 불투명 값(`myapp:c[b` · `urn:x[y]`)과 query 는
+//	     괄호를 가질 수 있다.
+//	R4c  ":" 뒤가 "//" 하나뿐이다(`https://` · `myapp://` — "Expected authority"). 뒤에 무엇이든 있으면 빈 authority 도
+//	     받는다(`https:///cb` · `https://?x=1` · `https://u@/cb`).
+//	R4d  괄호 친 호스트의 안이 IPv6 리터럴(zone id 는 scope_id)이 아니다(`[zz]` · `[v1.x]` · `[::1::2]` · `[fe80::1%25en-1]`
+//	     · `a@b@[::1]` — "Malformed IPv6 address" 외).
+//	R4e  괄호 친 호스트 뒤의 포트가 2147483647 을 넘는다("Malformed port number" — portFits).
+func uriShape(s string) bool {
+	rest := s[strings.IndexByte(s, ':')+1:]
+	if rest == "" {
+		return false
+	}
+	if rest[0] != '/' {
+		return true
+	}
+	hier, _, _ := strings.Cut(rest, "?")
+	if after, ok := strings.CutPrefix(hier, "//"); ok {
+		if rest == "//" {
+			return false
+		}
+		authority, path, _ := strings.Cut(after, "/")
+		if strings.ContainsAny(authority, "[]") && !isBracketedAuthority(authority) {
+			return false
+		}
+		hier = path
+	}
+	return !strings.ContainsAny(hier, "[]")
+}
+
+// isBracketedAuthority 는 R4d · R4e 다 — authority 가 bracketedAuthority 에 통째로 맞고 그 포트가 portFits 인가.
+func isBracketedAuthority(authority string) bool {
+	m := bracketedAuthority.FindStringSubmatch(authority)
+	return m != nil && portFits(m[1])
+}
+
+// portFits 는 R4e 다 — 비지 않은 포트가 수로 2147483647(Java 의 int) 이하인가. 앞의 0 은 몇 개든 된다(실측: `:2147483647`
+// · `:00000000000000000080` 받음, `:2147483648` · `:99999999999` 거부). 숫자열(정규식이 보장한다)을 32 비트 부호 있는 수로
+// 읽어 범위를 넘으면 아니다 — 앞의 0 을 떼고 열 자리 안에서 재는 것과 같다.
+func portFits(port string) bool {
+	if port == "" {
+		return true
+	}
+	_, err := strconv.ParseInt(port, 10, 32)
+	return err == nil
+}
+
+// uriChars 는 R3 이다 — s 가 올바른 UTF-8 이고, U+0000–U+0020 · U+007F–U+00A0 · 유니코드 공백 구분자 ·
+// uriExcludedASCII 의 문자도, 16진 숫자 두 개가 따르지 않는 '%' 도 없는가.
+func uriChars(s string) bool {
+	if !utf8.ValidString(s) {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r <= 0x20, r >= 0x7f && r <= 0xa0, isSpaceSeparator(r), strings.ContainsRune(uriExcludedASCII, r):
+			return false
+		case r == '%' && (i+2 >= len(s) || !isHexDigit(s[i+1]) || !isHexDigit(s[i+2])):
+			return false
+		}
+	}
+	return true
+}
+
+// isSpaceSeparator 는 U+00A0 위의 유니코드 공백 구분자(Zs · Zl · Zp)다 — java.net.URI 는 이것을 Character.isSpaceChar 로
+// 거부한다(JDK 21.0.8 실측: U+1680 · U+2000–U+200A · U+2028 · U+2029 · U+202F · U+205F · U+3000 거부, 이웃
+// U+200B · U+FEFF 수락). 표를 unicode.Zs 에 맡기지 않는다 — 판정 기준은 Keycloak 의 JDK 이지 Go 의 유니코드 판이 아니다.
+func isSpaceSeparator(r rune) bool {
+	switch {
+	case r == 0x1680, r >= 0x2000 && r <= 0x200a, r == 0x2028, r == 0x2029, r == 0x202f, r == 0x205f, r == 0x3000:
+		return true
+	}
+	return false
+}
+
+func isHexDigit(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}

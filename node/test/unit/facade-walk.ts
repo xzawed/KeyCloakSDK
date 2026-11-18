@@ -110,6 +110,12 @@ export interface Walk {
   readonly rendered: string[]
   readonly leaks: string[]
   readonly knownSeen: Set<string>
+  /**
+   * SDK 클래스 인스턴스의 자기 데이터 프로퍼티마다 — `가장 가까운 SDK 클래스 이름.프로퍼티` → 닿은 인스턴스 가운데 하나라도
+   * 빈 값이 아니었는가. 비밀 이름 필드가 빈 값으로만 닿았는지를 `facade-dump.test.ts` 가 가른다(등록부
+   * facade-dump-reached-empty-secret-field). 기록만 한다 — 걷기와 적대 경로 행렬의 결과는 바뀌지 않는다.
+   */
+  readonly ownFields: Map<string, boolean>
 }
 
 export function newWalk(
@@ -127,7 +133,41 @@ export function newWalk(
     rendered: [],
     leaks: [],
     knownSeen: new Set(),
+    ownFields: new Map(),
   }
+}
+
+/**
+ * 빈 값 — null · undefined · 길이 0 문자열 · 길이 0 배열 · 바이트 길이 0 형식 배열 · 빈 Map · Set · 빈 평범한 객체(JS 의 사전).
+ * 그 밖의 값(참·거짓 · 수 · 그 밖의 객체)은 비지 않았다.
+ */
+export function isEmptyValue(v: unknown): boolean {
+  if (v === null || v === undefined) return true
+  if (typeof v === 'string' || Array.isArray(v)) return v.length === 0
+  if (ArrayBuffer.isView(v)) return v.byteLength === 0
+  if (v instanceof Map || v instanceof Set) return v.size === 0
+  return isObject(v) && isContainer(v) && Reflect.ownKeys(v).length === 0
+}
+
+/**
+ * `node/src` 의 ES `#private` **필드** 선언 전수(`파일:#이름`) — 메서드(`#x(`)·접근자(`get #x`)·사용(`this.#x`)은 빼고, 멤버
+ * 머리(줄 처음 · `;` `{` `}` 뒤, 선택 변경자 static · readonly · declare · override · accessor)의 `#이름` 뒤에 `?`/`!` 와
+ * `:` `=` `;` 줄 끝이 오는 것만 읽는다. 주석은 먼저 지운다. 걷기는 `#private` 을 못 보므로 비밀 이름인 것은 이 선언 파생과
+ * `facade-dump.test.ts` 의 표가 대조한다.
+ */
+export function privateFieldDeclarations(): string[] {
+  const out: string[] = []
+  const field =
+    /(?:^|[;{}])[ \t]*(?:(?:static|readonly|declare|override|accessor)[ \t]+)*#([A-Za-z_$][\w$]*)[ \t]*(?:[?!][ \t]*)?(?=[:=;\n]|$)/gm
+  for (const rel of readdirSync(SRC, { recursive: true, encoding: 'utf8' })) {
+    if (!rel.endsWith('.ts') || rel.endsWith('.d.ts')) continue
+    const text = readFileSync(join(SRC, rel), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ''))
+      .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1')
+    for (const m of text.matchAll(field)) out.push(`${rel.replaceAll('\\', '/')}:#${m[1] ?? ''}`)
+  }
+  // 코드 포인트 순 — 로캘에 기대지 않는다(표와 대조하는 결과다).
+  return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
 }
 
 /**
@@ -199,7 +239,15 @@ export function visit(v: unknown, path: string, root: string, w: Walk): void {
   if (own.length === 0 && !isContainer(v)) return
   for (const key of Reflect.ownKeys(v)) {
     const d = Object.getOwnPropertyDescriptor(v, key)
-    if (d !== undefined && 'value' in d) visit(d.value, `${path}.${String(key)}`, root, w)
+    if (d === undefined || !('value' in d)) continue
+    // 자기 프로퍼티를 가장 가까운 SDK 클래스의 것으로 센다 — 런타임에는 어느 생성자가 달았는지 모른다. SDK 밖 부모(Error)가 다는
+    // stack · message · cause 는 비밀 이름이 아니라 판정에 닿지 않는다.
+    const nearest = own[0]
+    if (nearest !== undefined && typeof key === 'string') {
+      const k = `${nearest[0]}.${key}`
+      w.ownFields.set(k, (w.ownFields.get(k) ?? false) || !isEmptyValue(d.value))
+    }
+    visit(d.value, `${path}.${String(key)}`, root, w)
   }
   if (v instanceof Map) {
     for (const [k, x] of v) {

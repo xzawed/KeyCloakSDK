@@ -8,6 +8,7 @@ use Fschmtt\Keycloak\Keycloak;
 use Fschmtt\Keycloak\Http\Criteria;
 use Fschmtt\Keycloak\Representation\User;
 use Fschmtt\Keycloak\Collection\UserCollection;
+use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class UsersResource
 {
@@ -31,6 +32,7 @@ final class UsersResource
      */
     public function create(#[\SensitiveParameter] User $user): void
     {
+        EncodableBody::check($user);
         ErrorTranslation::call(fn () => $this->kc->users()->create($this->realm, $user));
     }
 
@@ -45,6 +47,7 @@ final class UsersResource
      */
     public function update(string $userId, #[\SensitiveParameter] User $user): void
     {
+        EncodableBody::check($user);
         ErrorTranslation::call(fn () => $this->kc->users()->update($this->realm, $userId, $user));
     }
 

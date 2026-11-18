@@ -23,9 +23,10 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// cycle were SDK errors, because <c>CallTypedAsync</c> caught <c>JsonException</c> alone; the creates and the raw writes
 /// caught none of the three. The body is serialized lazily inside the transport (every raw stack ran through
 /// <c>System.Net.Http.HttpConnection</c>), so every write meets it in <c>BearerHandler</c>.</para>
-/// <para>Not covered here: a lone surrogate in a string is not refused — the serializer writes U+FFFD in its place
-/// (measured: the server received U+FFFD where the surrogate was), and a <c>default(JsonElement)</c> value is wrapped by
-/// the transport into <c>HttpRequestException</c>, already "admin request failed".</para>
+/// <para>Not covered here: a lone surrogate in a string, which the serializer does not refuse — it writes U+FFFD in its
+/// place (measured: the server received U+FFFD where the surrogate was) — so <c>EncodableBody</c> refuses it before the
+/// token is asked for (<c>UnpairedSurrogateRequestBodyTests</c>); and a <c>default(JsonElement)</c> value, wrapped by the
+/// transport into <c>HttpRequestException</c>, already "admin request failed".</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class UnencodableRequestBodyTests : IDisposable

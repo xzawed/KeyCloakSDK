@@ -24,6 +24,7 @@ public final class RealmsResource {
   }
 
   public void create(RealmRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.create(representation));
   }
 
@@ -46,6 +47,7 @@ public final class RealmsResource {
    * rename into a silent no-op.
    */
   public void update(String realmName, RealmRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.realm(realmName).update(representation));
   }
 

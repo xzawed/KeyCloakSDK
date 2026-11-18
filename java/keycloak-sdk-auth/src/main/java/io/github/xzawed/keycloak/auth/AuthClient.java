@@ -99,6 +99,7 @@ public class AuthClient {
     if (redirectUri == null) {
       throw new IllegalArgumentException("redirectUri must not be null");
     }
+    RedirectUri.requireAbsolute(redirectUri);   // 상대 참조는 Nimbus build() 가 통과시킨다 — 검사만 한다(RedirectUri.java)
     Pkce pkce = Pkce.generate();
     State state = new State(); Nonce nonce = new Nonce();
     Scope scope = configuredScope();

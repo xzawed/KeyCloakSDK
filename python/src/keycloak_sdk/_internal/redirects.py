@@ -40,6 +40,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from ..exceptions import KeycloakConfigError
+from .openid_watch import watch
 
 #: python-keycloak `ConnectionManager`가 requests 세션을 보관하는 (비공개) 속성.
 _SESSION_ATTR = "_s"
@@ -89,10 +90,22 @@ def _harden_connection(connection: Any, *, what: str) -> None:
     setattr(session, _HOOK_ATTR, _refuse_redirects)
 
 
-def harden_openid(openid: Any, *, what: str = "auth back-channel") -> None:
-    """`KeycloakOpenID`의 sync 세션이 3xx를 따라가지 않게 만든다.
+_AUTH = "auth back-channel"
 
-    token·refresh·exchange_code·logout·introspect·certs(JWKS)가 모두 이 한 세션을 쓴다.
+
+def _harden_auth_connection(connection: Any) -> None:
+    """auth 레인의 `KeycloakOpenID` 에 공개 세터로 끼우는 연결 — 끼우기 전에 같은 하드닝."""
+    _harden_connection(connection, what=_AUTH)
+
+
+def harden_openid(openid: Any, *, what: str = _AUTH) -> None:
+    """`KeycloakOpenID`의 sync 세션이 3xx를 따라가지 않게 만든다 — 지금 연결과, 공개 세터
+    `connection` 으로 나중에 끼우는 연결도(`openid_watch.py` — 끼우기 전에 건다).
+
+    token·refresh·exchange_code·logout·introspect·certs(JWKS)가 모두 이 한 세션을 쓴다. 생성 때
+    한 번만 걸면 주입한 객체의 연결을 바꾸는 것으로 하드닝이 사라졌다 — sync 그랜트가 307 을 따라가
+    client_secret 을 넘기고 JWKS 를 리다이렉트 대상에서 받았다(수정 전 실측
+    `tests/unit/test_admin_guard_send_time.py`).
 
     ⚠️ admin 레인은 이 함수를 쓰지 않는다. 세션이 **둘**이고(REST 의 `connection._s` 와, 지연
     프로퍼티 `connection.keycloak_openid` 뒤의 그랜트 세션 — 앞의 것만 막으면 첫 그랜트가
@@ -101,3 +114,4 @@ def harden_openid(openid: Any, *, what: str = "auth back-channel") -> None:
     (`_refuse_redirects`)으로 한다.
     """
     _harden_connection(_require(openid, "connection", what=what), what=what)
+    watch(openid, _harden_auth_connection, what)

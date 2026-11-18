@@ -46,8 +46,11 @@ public sealed class AuthClient : ITokenSource
     }
 
     /// <summary>Starts a PKCE (S256) authorization-code flow. Synchronous — no network.</summary>
+    /// <exception cref="KeycloakConfigException"><paramref name="redirectUri"/> is not an absolute URI, has a fragment, holds
+    /// a character a URI cannot, or has a shape Keycloak's URI parser refuses (RFC 6749 §3.1.2, RFC 3986 §2).</exception>
     public AuthorizationRequest CreateAuthorizationRequest(string redirectUri)
     {
+        RedirectUri.Require(redirectUri);   // 검사만 한다 — 고치지 않는다(RedirectUri.cs)
         var codeVerifier = CryptoRandom.CreateUniqueId(32, CryptoRandom.OutputFormat.Base64Url);
         var codeChallenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
         var state = CryptoRandom.CreateUniqueId(16, CryptoRandom.OutputFormat.Base64Url);

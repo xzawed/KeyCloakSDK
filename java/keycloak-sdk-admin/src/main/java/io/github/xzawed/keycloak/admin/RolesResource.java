@@ -22,6 +22,7 @@ public final class RolesResource {
   }
 
   public void create(RoleRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.create(representation));
   }
 
@@ -40,6 +41,7 @@ public final class RolesResource {
    * <p>⚠️ Do not merge the path ({@code name}) and the body ({@code representation}).
    */
   public void update(String name, RoleRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.get(name).update(representation));
   }
 

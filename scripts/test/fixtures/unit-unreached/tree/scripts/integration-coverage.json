@@ -1,0 +1,20 @@
+{
+  "kotlin": {
+    "pinned": [
+      "kotlin/src/main/kotlin/kc/auth/AuthClient.kt"
+    ],
+    "owners": {}
+  },
+  "php": {
+    "pinned": [
+      "php/src/AuthClient.php"
+    ],
+    "owners": {}
+  },
+  "dotnet": {
+    "pinned": [
+      "dotnet/src/Kc/AuthClient.cs"
+    ],
+    "owners": {}
+  }
+}

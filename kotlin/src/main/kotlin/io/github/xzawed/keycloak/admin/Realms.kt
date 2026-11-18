@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.requireEncodableBody
 import org.keycloak.representations.idm.RealmRepresentation
 
 // Realms.kt — RealmsResource: 공식 admin-client의 org.keycloak.admin.client.resource.RealmsResource를
@@ -13,6 +14,7 @@ public class RealmsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.RealmsResource,
 ) {
     public suspend fun create(representation: RealmRepresentation) {
+        requireEncodableBody(representation)
         adminCall { delegate.create(representation) }
     }
 
@@ -30,6 +32,7 @@ public class RealmsResource internal constructor(
         realmName: String,
         representation: RealmRepresentation,
     ) {
+        requireEncodableBody(representation)
         adminCall { delegate.realm(realmName).update(representation) }
     }
 

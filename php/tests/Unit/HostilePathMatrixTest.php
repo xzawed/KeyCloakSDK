@@ -96,6 +96,17 @@ final class HostilePathMatrixTest extends TestCase
             . '낼 수 없다. 합성기는 GuzzleException 을 만들지 못한다. 동작은 MalformedTokenResponseTest 의 x2 · x3 · x4 · y2 행이 잰다.',
         'Internal\\LogoutAnswer::check' => '정적 판정기 — 받은 상태 숫자만 본다(HTTP 클라이언트를 쥐지 않아 요청을 낼 수 없다). 합성 인자 1 은 '
             . '204 가 아니라 던지므로 가를 수 없다. 동작은 MalformedTokenResponseTest 의 g2–g5 행이 잰다.',
+        'Internal\\EncodableBody::check' => '정적 판정기 — 받은 representation 을 fschmtt 직렬화기로 써 볼 뿐 HTTP 클라이언트를 쥐지 않아 요청을 '
+            . '낼 수 없다. 합성기는 추상 Representation 을 만들지 못한다. 동작은 AdminUnencodableBodyTest 가 잰다(쓰기 열 자리 · 요청 0).',
+        'AuthClient::createAuthorizationRequest' => '네트워크 없는 인가 URL 조립 — 합성 인자(서명한 JWS)는 절대 URI 가 아니라 계약대로 state·PKCE·'
+            . 'nonce 를 만들기 전에 KeycloakConfigError 다(RFC 6749 §3.1.2 · Internal\\RedirectUri). 거부와 받은 값의 조립은 '
+            . 'AuthorizationRedirectUriTest 가 재고, 그 테스트의 클라이언트는 요청하면 던진다(요청 없음도 거기서 잰다).',
+        'Internal\\RedirectUri::check' => '정적 판정기 — 받은 문자열만 본다(HTTP 클라이언트를 쥐지 않아 요청을 낼 수 없다). 합성 인자(서명한 JWS)는 '
+            . '절대 URI 가 아니라 계약대로 거부된다. 입구는 AuthClient::createAuthorizationRequest · KeycloakConfig::__construct 이고 '
+            . '동작은 AuthorizationRedirectUriTest 가 잰다.',
+        'KeycloakConfig::__construct' => '불변 설정 — HTTP 클라이언트를 쥐지 않아 요청을 낼 수 없다. 합성 인자(서명한 JWS)를 redirectUri 로 받으면 '
+            . '절대 URI 가 아니라 계약대로 KeycloakConfigError 다(RFC 6749 §3.1.2 · Internal\\RedirectUri). 동작은 '
+            . 'AuthorizationRedirectUriTest · KeycloakConfigTest 가 잰다.',
     ];
 
     /**

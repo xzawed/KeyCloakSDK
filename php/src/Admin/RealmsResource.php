@@ -8,6 +8,7 @@ use Fschmtt\Keycloak\Collection\RealmCollection;
 use Fschmtt\Keycloak\Http\Criteria;
 use Fschmtt\Keycloak\Keycloak;
 use Fschmtt\Keycloak\Representation\Realm;
+use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class RealmsResource
 {
@@ -42,6 +43,7 @@ final class RealmsResource
      */
     public function import(#[\SensitiveParameter] Realm $realm): Realm
     {
+        EncodableBody::check($realm);
         return ErrorTranslation::call(fn (): Realm => $this->kc->realms()->import($realm));
     }
 
@@ -57,6 +59,7 @@ final class RealmsResource
      */
     public function update(string $realm, #[\SensitiveParameter] Realm $updated): void
     {
+        EncodableBody::check($updated);
         ErrorTranslation::call(fn () => $this->kc->realms()->update($realm, $updated));
     }
 }

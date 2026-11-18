@@ -93,6 +93,10 @@ public sealed class HostilePathMatrixTests
             "internal 설정 리트리버 — 위 BoundedDocumentRetriever 를 감싸 실패한 조회를 백오프한다. 주소는 ConfigurationManager 가 쥔 " +
             "디스커버리 URL 이고 합성 문자열(JWS)은 URI 가 아니라 요청 전에 실패한다. 이것이 내는 요청도 전부 그것을 모는 공개 메서드" +
             "(ValidateAsync → JWKS_FETCH)의 행에 이미 잡힌다",
+        ["AuthClient.CreateAuthorizationRequest(String)"] =
+            "합성 문자열(JWS)은 절대 URI 가 아니라 RedirectUri.Require(R1)가 아무것도 만들기 전에 KeycloakConfigException 으로 거부한다 — " +
+            "동기 메서드이고 요청을 내지 않는다. 받는 값에도 요청이 0 인지는 AuthClientRedirectUriTests 가 기록하는 IdP(WireMock) 위에서 " +
+            "값마다 잰다",
         ["TokenEndpointInvoker.SendAsync(HttpRequestMessage, CancellationToken)"] =
             "internal invoker — Duende 가 만든 요청(토큰 · introspection 엔드포인트의 절대 URI)만 보낸다. 합성 요청은 절대 URI 가 없어 " +
             "HttpClient 가 보내기 전에 거부한다. 이것이 내는 요청은 전부 그것을 모는 공개 메서드(세 그랜트 · IntrospectAsync · " +
@@ -103,7 +107,18 @@ public sealed class HostilePathMatrixTests
         ["TokenResponseNotUtf8Exception.*"] =
             "내부 신호(TokenEndpointInvoker.cs — FacadeDumpTests.Exempt 와 같은 이유) — 인스턴스는 SDK 밖으로 나가지 않아 공개 API 뿌리에서 " +
             "닿지 않고, 생성자는 고정 문구의 예외를 만들 뿐 요청을 내지 않는다(필드 없음)",
+        ["EncodableBody+StringObserver.*"] = ObserverReason,
+        ["EncodableBody+CharObserver.*"] = ObserverReason,
+        ["EncodableBody+NodeObserver.*"] = ObserverReason,
+        ["EncodableBody+UnpairedSurrogateException.*"] =
+            "내부 신호(EncodableBody.cs — FacadeDumpTests.Exempt 와 같은 이유) — 관찰자가 던지고 Require 가 곧바로 잡는다. 인스턴스는 SDK " +
+            "밖으로 나가지 않아 공개 API 뿌리에서 닿지 않고, 생성자는 예외를 만들 뿐 요청을 내지 않는다(필드 없음)",
     };
+
+    private const string ObserverReason =
+        "EncodableBody 의 정적 옵션에만 있는 쓰기 관찰자(FacadeDumpTests.Exempt 와 같은 이유) — 공개 API 뿌리에서 닿지 않아 수신자가 " +
+        "없고, 필드가 없어 요청을 낼 HttpClient 를 쥘 수 없다(Read 는 NotSupportedException, Write 는 받은 writer 에만 쓴다). 그 " +
+        "옵션이 도는 자리(BearerHandler)의 요청은 admin 쓰기 행 · UnpairedSurrogateRequestBodyTests 가 잰다";
 
     private const string JsonConverterReason =
         "System.Text.Json 이 [JsonConverter] 특성에서 만든다(FacadeDumpTests.Exempt 와 같은 이유) — 공개 API 뿌리에서 닿지 않아 수신자가 " +

@@ -12,7 +12,7 @@ type ClientsResource struct{ a *AdminClient }
 
 // Create creates a client and returns its internal id (UUID).
 func (r *ClientsResource) Create(ctx context.Context, client gocloak.Client) (string, error) {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, client)
 	if err != nil {
 		return "", err
 	}
@@ -44,11 +44,11 @@ func (r *ClientsResource) FindByClientID(ctx context.Context, clientID string) (
 
 // Update updates the client identified by internal id.
 func (r *ClientsResource) Update(ctx context.Context, id string, client gocloak.Client) error {
-	tok, err := r.a.token(ctx)
+	client.ID = &id
+	tok, err := r.a.writeToken(ctx, client)
 	if err != nil {
 		return err
 	}
-	client.ID = &id
 	return run(ctx, func(ctx context.Context) error { return r.a.gc.UpdateClient(withoutBody(ctx), tok, r.a.realm, client) })
 }
 

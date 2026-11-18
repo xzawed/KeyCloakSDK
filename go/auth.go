@@ -79,6 +79,12 @@ func (a *AuthClient) codeConfig(redirectURI string) *oauth2.Config {
 
 // CreateAuthorizationRequest builds a PKCE(S256) authorization URL (synchronous,
 // no network). The caller stores CodeVerifier/State/Nonce until the callback.
+//
+// Deprecated: Use BuildAuthorizationRequest. CreateAuthorizationRequest places
+// any string in the URL — a relative value, a fragment, a value Keycloak cannot
+// parse — and cannot report an error; BuildAuthorizationRequest refuses those
+// with a *ConfigError and otherwise builds the same request. The behaviour of
+// CreateAuthorizationRequest is unchanged.
 func (a *AuthClient) CreateAuthorizationRequest(redirectURI string) AuthorizationRequest {
 	verifier := oauth2.GenerateVerifier()
 	state := oauth2.GenerateVerifier()
@@ -89,6 +95,28 @@ func (a *AuthClient) CreateAuthorizationRequest(redirectURI string) Authorizatio
 		oauth2.SetAuthURLParam("nonce", nonce),
 	)
 	return AuthorizationRequest{URL: u, CodeVerifier: verifier, State: state, Nonce: nonce}
+}
+
+// BuildAuthorizationRequest builds a PKCE(S256) authorization URL (synchronous,
+// no network). The caller stores CodeVerifier/State/Nonce until the callback.
+//
+// redirectURI is checked first, before anything is generated, and a value
+// that fails is refused with a *ConfigError whose message does not quote it:
+// it must be an absolute URI and must not include a fragment component, an
+// empty one included (RFC 6749 §3.1.2), and it must be a valid URI (RFC 3986
+// §2) — no control character, space, U+007F–U+00A0 or other Unicode space
+// separator (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000),
+// none of " < > \ ^ ` { | }, every '%' followed by two hex digits, valid UTF-8,
+// something after the scheme's ':' and after a "//" that follows it, and no
+// '[' or ']' before the query of a value whose part after the scheme starts
+// with '/' except around one bracketed IPv6 address (with an optional zone
+// id, its '%' written "%25") as the host of its authority, whose port, if
+// any, is at most 2147483647 — since Keycloak refuses such a value for every
+// client. The checks run in that order. The value is never rewritten:
+// the URL carries redirectURI exactly as given, and ExchangeCode must be
+// passed the same string.
+func (a *AuthClient) BuildAuthorizationRequest(redirectURI string) (AuthorizationRequest, error) {
+	return checkedAuthorizationRequest(redirectURI, a.CreateAuthorizationRequest)
 }
 
 // ClientCredentialsToken obtains a service-account token via the
@@ -109,7 +137,7 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // ExchangeCode exchanges an authorization code + PKCE verifier for tokens.
 //
 // When expectedNonce is non-empty (the nonce returned by
-// CreateAuthorizationRequest), the returned id_token is checked by
+// BuildAuthorizationRequest), the returned id_token is checked by
 // ValidateIDToken — signature, iss, an aud containing Config.ClientID whatever
 // Config.ExpectedAudience is set to, exp, typ "ID" and azp — and its nonce
 // claim is then compared against expectedNonce (OIDC nonce replay protection).

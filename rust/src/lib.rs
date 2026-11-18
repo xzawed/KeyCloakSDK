@@ -9,6 +9,7 @@ pub mod error;
 pub mod jwks;
 pub mod jwt;
 pub mod oidc;
+mod redirect_uri;
 pub mod token_provider;
 pub mod tokens;
 

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import itertools
+import time
 
 import pytest
 
@@ -145,3 +146,15 @@ def test_default_jitter_stays_within_the_band():
     values = [_default_jitter() for _ in range(100)]
     assert all(0.5 <= v < 1.0 for v in values)
     assert len(set(values)) > 1, "jitter 가 상수면 thundering herd 를 흩지 못한다"
+
+
+# 등록부 `python-jitter-constant-on-windows-py310` — Windows 의 CPython 3.10 · 3.12 는
+# `time.monotonic` 이 `GetTickCount64()`(해상도 0.015625 s)라 `monotonic_ns()` 가 언제나
+# 1,000,000 의 배수였고, 그 아래 여섯 자리에서 뽑던 배수가 늘 0.5 였다(실측: 200회 → 1가지).
+# CI 는 ubuntu 라 위 밴드 시험이 그것을 못 봤다 — 그 시계를 흉내 내 어느 OS 에서든 잡는다.
+def test_default_jitter_varies_on_a_millisecond_monotonic_clock(monkeypatch: pytest.MonkeyPatch):
+    ticks = itertools.count(1_000)  # 밀리초마다 가는 시계 — 멈춘 것이 아니라 거친 것이다
+    monkeypatch.setattr(time, "monotonic_ns", lambda: next(ticks) * 1_000_000)
+    values = [_default_jitter() for _ in range(100)]
+    assert all(0.5 <= v < 1.0 for v in values)
+    assert len(set(values)) > 1, f"밀리초 단조 시계에서 jitter 가 상수다: {sorted(set(values))}"
