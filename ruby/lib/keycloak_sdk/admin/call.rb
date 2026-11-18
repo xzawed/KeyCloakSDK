@@ -35,6 +35,7 @@ module KeycloakSdk
       rescue Error
         raise
       rescue StandardError => e
+        UnencodableBody.refuse!(e) # 쓰기 본문을 JSON 이 못 쓴다 — 요청 전이다(errors.rb)
         # 원본을 달면 `Faraday::ParsingError#inspect` 가 요청의 베어러 토큰을, 메시지가 응답 앞부분을 찍는다(실측).
         # Faraday 밖 예외도 감싼다 — net-http 0.10 의 응답 헤더 검증 ArgumentError 는 헤더 이름을 인용한다.
         status = unparsable_error_status(e)

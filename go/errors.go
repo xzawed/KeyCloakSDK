@@ -78,8 +78,9 @@ func (e *AdminError) Is(target error) bool {
 }
 
 // TransportError signals that the request could not be sent (a network failure, a request URL that cannot be built from
-// the Config) or that its response did not arrive in full: a timeout, a body cut short, broken HTTP framing, or a token
-// response over the size cap. On the admin facade's resource
+// the Config, an admin write body JSON cannot carry faithfully — a NaN or infinite number, a string that is not valid
+// UTF-8 — refused before any request) or that its response did not arrive in full: a timeout, a body cut short, broken
+// HTTP framing, or a token response over the size cap. On the admin facade's resource
 // calls it is also any failure gocloak reports without an HTTP status (an undecodable 2xx resource body among them) —
 // except when the call's last request got a response that is not a 2xx in full: that is *AdminError with its status,
 // whatever its body (answeredWithoutStatus in admin.go).

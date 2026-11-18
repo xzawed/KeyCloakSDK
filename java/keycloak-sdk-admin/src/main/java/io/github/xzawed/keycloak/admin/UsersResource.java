@@ -26,6 +26,7 @@ public final class UsersResource {
 
   /** Creates a user, then extracts the new user's id from the response {@code Location} header and returns it. */
   public String create(UserRepresentation representation) {
+    EncodableBody.require(representation);
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
         return CreatedResponseUtil.getCreatedId(r);
@@ -42,6 +43,7 @@ public final class UsersResource {
   }
 
   public void update(String id, UserRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.get(id).update(representation));
   }
 

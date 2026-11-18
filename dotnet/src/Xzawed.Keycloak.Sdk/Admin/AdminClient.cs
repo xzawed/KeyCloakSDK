@@ -136,7 +136,8 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
 
     private const string UndecodableBody = "admin response body could not be decoded";
 
-    /// <summary>The message for a request body System.Text.Json would not write — every admin write, typed or raw.</summary>
+    /// <summary>The message for a request body System.Text.Json would not write, or would rewrite (an unpaired surrogate,
+    /// <see cref="EncodableBody"/>) — every admin write, typed or raw.</summary>
     internal const string UnencodableBody = "admin request failed: the request body could not be encoded as JSON";
 
     /// <summary>Whether <paramref name="ex"/> is .NET refusing the charset a response's <c>Content-Type</c> names — the body

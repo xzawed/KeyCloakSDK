@@ -79,6 +79,14 @@ public sealed class FacadeDumpTests
         // 호출마다 AuthClient.IntrospectAsync 가 만들어 그 호출의 요청 Options 에만 싣는 도착 기록(TokenEndpointInvoker.cs) —
         // 호출이 끝나면 아무 SDK 객체도 쥐지 않는다. 필드는 응답 상태(int) 하나뿐이다.
         ["Xzawed.Keycloak.ResponseArrival"] = "호출 하나의 도착 기록 — 그 요청의 Options 에만 실리고 SDK 객체가 쥐지 않는다 · 상태(int) 하나",
+        // EncodableBody.cs — admin 본문을 보내기 전에 아무 데도 아닌 곳(Stream.Null)으로 한 번 써 보는 관찰자 셋. 정적 옵션 하나에만
+        // 실려 SDK 객체가 쥐지 않고, 자기 필드가 없다 — 쓰는 문자열은 인자로 받아 짝 없는 서로게이트만 보고 보관하지 않는다.
+        ["Xzawed.Keycloak.EncodableBody+StringObserver"] = "EncodableBody 의 정적 옵션에만 있는 쓰기 관찰자 — SDK 객체가 쥐지 않고 자기 필드가 없다",
+        ["Xzawed.Keycloak.EncodableBody+CharObserver"] = "EncodableBody 의 정적 옵션에만 있는 쓰기 관찰자 — SDK 객체가 쥐지 않고 자기 필드가 없다",
+        ["Xzawed.Keycloak.EncodableBody+NodeObserver"] = "EncodableBody 의 정적 옵션에만 있는 쓰기 관찰자 — SDK 객체가 쥐지 않고 자기 필드가 없다",
+        // 관찰자가 던지고 EncodableBody.Require 가 곧바로 잡아 고정 문구의 KeycloakTransportException 으로 바꾸는 신호 — 원인으로도
+        // 달지 않는다. 필드가 없고 메시지는 기본값이다.
+        ["Xzawed.Keycloak.EncodableBody+UnpairedSurrogateException"] = "내부 신호 — Require 밖으로 나가지 않는다(원인으로도 달지 않는다) · 필드 없음",
     };
 
     /// <summary>

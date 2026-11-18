@@ -11,7 +11,7 @@ type GroupsResource struct{ a *AdminClient }
 
 // Create creates a group and returns its new id.
 func (r *GroupsResource) Create(ctx context.Context, group gocloak.Group) (string, error) {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, group)
 	if err != nil {
 		return "", err
 	}
@@ -47,11 +47,11 @@ func (r *GroupsResource) List(ctx context.Context, first, max int) ([]*gocloak.G
 // and when that is empty it dies before HTTP with an `errors.Wrap` (= not an APIError), so `toSDKError`
 // misclassifies it as a TransportError rather than an AdminError. It is the same shape as users/clients.
 func (r *GroupsResource) Update(ctx context.Context, id string, group gocloak.Group) error {
-	tok, err := r.a.token(ctx)
+	group.ID = &id
+	tok, err := r.a.writeToken(ctx, group)
 	if err != nil {
 		return err
 	}
-	group.ID = &id
 	return run(ctx, func(ctx context.Context) error { return r.a.gc.UpdateGroup(withoutBody(ctx), tok, r.a.realm, group) })
 }
 

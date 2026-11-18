@@ -11,7 +11,7 @@ type UsersResource struct{ a *AdminClient }
 
 // Create creates a user and returns its new id.
 func (r *UsersResource) Create(ctx context.Context, user gocloak.User) (string, error) {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, user)
 	if err != nil {
 		return "", err
 	}
@@ -46,11 +46,11 @@ func (r *UsersResource) Search(ctx context.Context, username string, first, max 
 
 // Update updates the user identified by id.
 func (r *UsersResource) Update(ctx context.Context, id string, user gocloak.User) error {
-	tok, err := r.a.token(ctx)
+	user.ID = &id
+	tok, err := r.a.writeToken(ctx, user)
 	if err != nil {
 		return err
 	}
-	user.ID = &id
 	return run(ctx, func(ctx context.Context) error { return r.a.gc.UpdateUser(withoutBody(ctx), tok, r.a.realm, user) })
 }
 

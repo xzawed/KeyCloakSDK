@@ -13,7 +13,7 @@ type RealmsResource struct{ a *AdminClient }
 
 // Create creates a new realm (representation.Realm is the new realm's name).
 func (r *RealmsResource) Create(ctx context.Context, realm gocloak.RealmRepresentation) error {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, realm)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (r *RealmsResource) List(ctx context.Context) ([]*gocloak.RealmRepresentati
 // The error is re-wrapped as `*gocloak.APIError` so that `toSDKError` classifies it **identically** to
 // the other methods — it creates no new error class.
 func (r *RealmsResource) Update(ctx context.Context, realmName string, realm gocloak.RealmRepresentation) error {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, realm)
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,7 @@ type RolesResource struct{ a *AdminClient }
 
 // Create creates a realm role.
 func (r *RolesResource) Create(ctx context.Context, role gocloak.Role) error {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, role)
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func (r *RolesResource) List(ctx context.Context) ([]*gocloak.Role, error) {
 // builds the path from the name argument and sends the body as-is, so injecting `role.Name = &name`
 // turns the rename into a silent no-op (.NET and Ruby also hold the same separation as a contract).
 func (r *RolesResource) Update(ctx context.Context, name string, role gocloak.Role) error {
-	tok, err := r.a.token(ctx)
+	tok, err := r.a.writeToken(ctx, role)
 	if err != nil {
 		return err
 	}

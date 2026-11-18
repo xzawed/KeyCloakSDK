@@ -23,6 +23,7 @@ public final class ClientsResource {
 
   /** Creates a client, then extracts the new client's id from the response {@code Location} header and returns it. */
   public String create(ClientRepresentation representation) {
+    EncodableBody.require(representation);
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
         return CreatedResponseUtil.getCreatedId(r);
@@ -39,6 +40,7 @@ public final class ClientsResource {
   }
 
   public void update(String id, ClientRepresentation representation) {
+    EncodableBody.require(representation);
     AdminExceptions.run(() -> delegate.get(id).update(representation));
   }
 

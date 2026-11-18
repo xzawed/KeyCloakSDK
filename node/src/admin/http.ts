@@ -1,8 +1,12 @@
+import { types } from 'node:util'
 import { KeycloakAdminError, KeycloakTransportError } from '../errors.js'
 import { sendableBearer, type TokenProvider } from '../token-provider.js'
 import { readCapped, TOKEN_RESPONSE_MAX_BYTES } from '../token-response-cap.js'
 
-/** A write whose representation `JSON.stringify` refuses (a cycle, a BigInt) — .NET's message for the same failure. */
+/**
+ * A write whose representation `JSON.stringify` refuses (a cycle, a BigInt) or would rewrite (NaN and ±Infinity become
+ * `null`) — .NET's message for the same failure.
+ */
 export const UNENCODABLE_BODY =
   'admin request failed: the request body could not be encoded as JSON'
 /** A path argument `encodeURIComponent` refuses (an unpaired surrogate). */
@@ -64,6 +68,19 @@ export function orEmpty(value: unknown): unknown {
   return value === undefined ? {} : value
 }
 
+// `JSON.stringify` 의 replacer — NaN · ±Infinity 를 던진다. stringify 는 그 수를 던지지 않고 `null` 로 써(ECMA-262
+// SerializeJSONProperty) 호출자가 보내지 않은 값이 나갔다(등록부 admin-unencodable-body-residuals). replacer 는 `toJSON` 이 돌려준
+// 값을 받는다. 감싼 `Number` 객체는 stringify 가 그 자리에서 수로 푸므로(ToNumber) 여기서 같은 ToNumber 로 풀어 보고 그 수를
+// 돌려준다 — 본 값과 쓰는 값이 하나다(`valueOf` 를 두 번 부르지 않는다). 짝 없는 서로게이트는 stringify 가 `\ud800` 로 그대로
+// 싣는다(ES2019 well-formed) — 여기서 보지 않는다.
+function finiteNumbers(_key: string, value: unknown): unknown {
+  const number = types.isNumberObject(value) ? Number(value) : value
+  if (typeof number === 'number' && !Number.isFinite(number)) {
+    throw new TypeError('a non-finite number (NaN or Infinity) has no JSON form')
+  }
+  return number
+}
+
 /** admin-client 의 `stringifyQueryParams` — `undefined`·`null`·빈 문자열은 뺀다. 순서는 넘긴 순서다. */
 function search(query: ReadonlyArray<readonly [string, unknown]>): string {
   const params = new URLSearchParams()
@@ -80,10 +97,11 @@ function search(query: ReadonlyArray<readonly [string, unknown]>): string {
  * `joinPath` 처럼 이어 `pathname` 에 넣는다 — 점 조각도 URL 이 같게 정규화한다), 리다이렉트는 따르지 않고 기한은
  * 요청마다다. 같은지는 `test/unit/admin-response-body.test.ts` 가 와이어로 대조한다.
  *
- * 본문을 먼저 JSON 으로 쓴다 — 쓸 수 없는 표현(순환 · BigInt)은 {@link UNENCODABLE_BODY} 의 {@link KeycloakTransportError}
- * 이고 토큰도 받지 않는다(python · ruby 도 토큰 전에 인코딩한다). admin-client 는 `JSON.stringify` 의 `TypeError` 를
- * 그대로 던져 SDK 오류 계층 밖으로 나갔다(§4). 그다음 토큰을 얻는다 — admin-client 도 주소를 짓기 전에 얻는다. Bearer
- * 는 {@link sendableBearer} 가 돌려준 값이다(앞뒤 SP·HTAB·CR·LF 를 뗀 값 · `b64token` 이 아니면 요청 전에 거부).
+ * 본문을 먼저 JSON 으로 쓴다 — 쓸 수 없는 표현(순환 · BigInt)과 그대로 싣지 못하는 수(NaN · ±Infinity — stringify 는
+ * `null` 로 바꿔 쓴다)는 {@link UNENCODABLE_BODY} 의 {@link KeycloakTransportError} 이고 토큰도 받지 않는다(python · ruby 도
+ * 토큰 전에 인코딩한다). admin-client 는 `JSON.stringify` 의 `TypeError` 를 그대로 던져 SDK 오류 계층 밖으로 나갔다(§4).
+ * 그다음 토큰을 얻는다 — admin-client 도 주소를 짓기 전에 얻는다. Bearer 는 {@link sendableBearer} 가 돌려준 값이다(앞뒤
+ * SP·HTAB·CR·LF 를 뗀 값 · `b64token` 이 아니면 요청 전에 거부).
  */
 async function send(
   http: AdminHttp,
@@ -94,7 +112,8 @@ async function send(
 ): Promise<Response> {
   let json: string | undefined
   try {
-    json = body === undefined ? undefined : (JSON.stringify(body) as string | undefined)
+    json =
+      body === undefined ? undefined : (JSON.stringify(body, finiteNumbers) as string | undefined)
   } catch (e) {
     throw new KeycloakTransportError(UNENCODABLE_BODY, { cause: e })
   }
