@@ -325,7 +325,7 @@ RSpec.describe KeycloakSdk::Http do
         expect(body_server.requests.map(&:path)).to eq([TokenResponseCapSpec::LOGOUT])
       end
 
-      # 시간을 재지 않는다 — 서버는 1 초 뒤에 답하므로 ReadTimeout 이 났다면 Config 의 0.2 초가 걸린 것이다(기본 10 초).
+      # 시간을 재지 않는다 — 서버는 1 초 뒤에 답하므로 ReadTimeout 이 났다면 Config 의 0.2 초가 걸린 것이다(기본값은 1 초보다 길다).
       it "keeps the Config read timeout" do
         body_server.route(TokenResponseCapSpec::LOGOUT) do
           sleep 1

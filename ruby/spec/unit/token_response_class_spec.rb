@@ -225,9 +225,8 @@ module TokenResponseClassSpec
   module_function
 
   # 본문 중간에서 멈춘 칸만 읽기 타임아웃을 줄인다(그 칸은 타임아웃으로 끝난다) — 나머지는 기본값이다.
-  def config(url, read_timeout: 10)
-    KeycloakSdk::Config.new(server_url: url, realm: REALM, client_id: "c", client_secret: "cs",
-                            read_timeout: read_timeout)
+  def config(url, **over)
+    KeycloakSdk::Config.new(server_url: url, realm: REALM, client_id: "c", client_secret: "cs", **over)
   end
 
   def provider(cfg)

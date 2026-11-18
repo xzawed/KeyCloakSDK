@@ -36,7 +36,7 @@ RSpec.describe KeycloakSdk::Config do
     c = described_class.new(server_url: "https://k", realm: "r", client_id: "c")
     expect(c.scopes).to eq(["openid"])
     expect(c.connect_timeout).to eq(10)
-    expect(c.read_timeout).to eq(10)
+    expect(c.read_timeout).to eq(30) # 자매 SDK 와 같은 값(등록부 php-ruby-read-timeout-default-diverges)
     expect(c.clock_skew).to eq(30)
     expect(c.jwks_min_refetch).to eq(30.0)
     expect(c.client_secret).to be_nil

@@ -32,7 +32,7 @@ module KeycloakSdk
 
     def initialize(server_url:, realm:, client_id:, client_secret: nil,
                    scopes: ["openid"], signature_algorithms: ["RS256"],
-                   connect_timeout: 10, read_timeout: 10, clock_skew: DEFAULT_CLOCK_SKEW,
+                   connect_timeout: 10, read_timeout: 30, clock_skew: DEFAULT_CLOCK_SKEW,
                    jwks_min_refetch: DEFAULT_JWKS_MIN_REFETCH, expected_audience: nil)
       @server_url = strip_trailing_slashes(normalize_required("server_url", server_url))
       # Right after normalization. A relative URL ("kc.example.com") goes out as RuntimeError "No Host Info" on the
