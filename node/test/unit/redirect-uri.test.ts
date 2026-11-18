@@ -16,7 +16,7 @@ import type { AddressInfo } from 'node:net'
 import { AuthClient } from '../../src/auth.js'
 import { defineConfig } from '../../src/config.js'
 import { KeycloakConfigError } from '../../src/errors.js'
-import { passesR4 } from '../../src/redirect-uri.js'
+import { passesR3, passesR4 } from '../../src/redirect-uri.js'
 
 interface Idp {
   url: string
@@ -396,6 +396,200 @@ describe('Keycloak 의 java.net.URI 가 거부하는 redirectUri 는 두 호출 
       }
     })
   }
+})
+
+/**
+ * WHATWG 의 직렬화가 그대로 두는 RFC 3986 §2 밖의 문자 — 등록부 `node-redirect-uri-r3-chars`.
+ *
+ * 다른 언어는 Keycloak 의 `java.net.URI.create` 가 던지는 문자를 R3 로 거부한다 — U+0000–U+0020 · U+007F–U+00A0 · 유니코드 공백
+ * 구분자 · `" < > \ ^ ` { | }` · 16진 두 자리가 따르지 않는 `%` · 잘못된 문자열. node 는 `href` 를 보내는데 WHATWG 는 그 일부를
+ * 인코딩하지 않고 둔다(실측 node v22.18.0 · v22.23.5 · v24.22.3 · v26.13.1 — 같은 표, `^` 만 다르다): 불투명 경로의 아홉과 공백,
+ * 계층 경로의 `|`(비특수 scheme 은 `\` 도), 호스트의 `"` · `` ` `` · `{` · `}`, 깨진 `%`(경로 · 사용자 정보 · 비특수 호스트). 홀로
+ * 선 서로게이트는 `%EF%BF%BD` 로 조용히 바뀐다. 그런 값은 두 호출 모두 요청 없이 R3 문구로 거부한다.
+ */
+describe('href 에 남는 R3 문자는 두 호출 모두 요청 없이 거부한다(R3)', () => {
+  const NOT_URI = 'invalid redirect_uri: not a valid URI (RFC 3986 §2)'
+  const HIGH = String.fromCharCode(0xd800)
+  const LOW = String.fromCharCode(0xdc00)
+  const r3 = (s: string): boolean => passesR3(s, s)
+
+  // [그 자리에 남는 문자, 자리] — 실측 표(위).
+  const KEPT: [string, (c: string) => string][] = [
+    [' "<>\\^`{|}', (c) => `myapp:a${c}b`],
+    ['|', (c) => `https://app/a${c}b`],
+    ['|\\', (c) => `myapp:/a${c}b`],
+    ['|\\', (c) => `myapp://app/a${c}b`],
+    ['"`{}', (c) => `https://a${c}b/cb`],
+    ['"`{}', (c) => `myapp://a${c}b/cb`],
+  ]
+  const REFUSED = [
+    ...KEPT.flatMap(([chars, at]) => [...chars].map(at)),
+    ...['%zz', '%', '%2'].flatMap((p) => [
+      `myapp:a${p}`,
+      `https://app/a${p}`,
+      `myapp:/a${p}`,
+      `myapp://app/a${p}`,
+      `https://u${p}@app/cb`,
+      `https://u:p${p}@app/cb`,
+      `myapp://u${p}@app/cb`,
+      `myapp://a${p}/cb`,
+    ]),
+    // 홀로 선 서로게이트 — 높은 것 · 낮은 것 · 끝의 것. `href` 에는 `%EF%BF%BD` 로만 남아 입력을 본다.
+    `https://app/a${HIGH}b`,
+    `https://app/a${LOW}b`,
+    `https://app/ab${HIGH}`,
+    `myapp:a${LOW}`,
+  ]
+
+  it('남는 문자 · 깨진 % · 홀로 선 서로게이트는 두 호출 모두 요청 없이 R3 문구로 거부한다', async () => {
+    const srv = await idp()
+    try {
+      const auth = client(srv.url)
+      const wrong: string[] = []
+      for (const value of REFUSED) {
+        let atAuthz: unknown
+        try {
+          auth.createAuthorizationRequest(value)
+        } catch (e) {
+          atAuthz = e
+        }
+        const atExchange = await failure(auth.exchangeCode('the-code', value, VERIFIER))
+        for (const e of [atAuthz, atExchange]) {
+          if (!(e instanceof KeycloakConfigError) || e.message !== NOT_URI) wrong.push(value)
+        }
+      }
+      expect(REFUSED).toHaveLength(23 + 24 + 4)
+      expect(wrong).toEqual([])
+      expect(srv.seen).toEqual([])
+    } finally {
+      await srv.close()
+    }
+  })
+
+  // 같은 문자도 인코딩되는 자리에서는 받는다 — 판정은 입력이 아니라 보내는 `href` 를 본다. 기대값은 그 문자 하나의 UTF-8 퍼센트
+  // 인코딩(encodeURIComponent)을 같은 자리에 넣은 것이다. 제어 문자 · U+00A0 · 공백 구분자는 어느 자리에서나 인코딩된다.
+  const SPACES_AND_CONTROLS = String.fromCodePoint(
+    0x01,
+    0x1f,
+    0x7f,
+    0x80,
+    0x9f,
+    0xa0,
+    0x1680,
+    0x2000,
+    0x200a,
+    0x2028,
+    0x2029,
+    0x202f,
+    0x205f,
+    0x3000,
+  )
+  const ENCODED: [string, (c: string) => string][] = [
+    [' "<>`{}', (c) => `https://app/a${c}b`],
+    [' "<>`{}', (c) => `myapp:/a${c}b`],
+    [' "<>^`{|}', (c) => `https://u${c}v@app/cb`],
+    [' "<>\\^`{|}', (c) => `myapp://u${c}v@app/cb`],
+    [SPACES_AND_CONTROLS, (c) => `myapp:a${c}b`],
+    [SPACES_AND_CONTROLS, (c) => `https://app/a${c}b`],
+  ]
+
+  it('인코딩되는 자리의 같은 문자는 인코딩된 href 로 받는다', () => {
+    const auth = client('http://127.0.0.1:1')
+    const wrong: [string, string | null][] = []
+    for (const [chars, at] of ENCODED) {
+      for (const c of chars) {
+        let sent: string | null
+        try {
+          sent = new URL(auth.createAuthorizationRequest(at(c)).url).searchParams.get(
+            'redirect_uri',
+          )
+        } catch (e) {
+          sent = `refused: ${(e as Error).message}`
+        }
+        if (sent !== at(encodeURIComponent(c))) wrong.push([at(c), sent])
+      }
+    }
+    expect(wrong).toEqual([])
+  })
+
+  // `^` 는 판에 따라 다르다 — node 22 는 계층 경로에 그대로 두고, node 24 · 26 은 인코딩한다(실측 v24.22.3 · v26.13.1 — WHATWG 가
+  // path percent-encode set 에 `^` 를 더했다). 어느 쪽이든 맨 `^` 는 나가지 않는다: 남으면 R3 로 거부, 인코딩되면 `%5E` 로 받는다.
+  for (const value of ['https://app/a^b', 'myapp:/a^b', 'myapp://app/a^b']) {
+    it(`${JSON.stringify(value)} 는 맨 ^ 를 보내지 않는다`, () => {
+      const auth = client('http://127.0.0.1:1')
+      if (new URL(value).href.includes('^')) {
+        const e = thrown(() => auth.createAuthorizationRequest(value))
+        expect(e).toBeInstanceOf(KeycloakConfigError)
+        expect((e as Error).message).toBe(NOT_URI)
+      } else {
+        const sent = new URL(auth.createAuthorizationRequest(value).url).searchParams.get(
+          'redirect_uri',
+        )
+        expect(sent).toBe(value.replace('^', '%5E'))
+      }
+    })
+  }
+
+  // 순서 — 앞 규칙에도 걸리는 값은 앞 규칙의 문구다(fragment · 쿼리가 R3 보다 먼저).
+  for (const [value, message] of [
+    ['myapp:a|b#f', 'invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)'],
+    [
+      `https://app/a${HIGH}b#f`,
+      'invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)',
+    ],
+    [
+      'https://app/a%zz?x=1',
+      'invalid redirect_uri: a query is not supported (the code exchange sends the redirect URI without it)',
+    ],
+  ] as const) {
+    it(`${JSON.stringify(value)} 는 앞 규칙의 문구다`, () => {
+      const e = thrown(() => client('http://127.0.0.1:1').createAuthorizationRequest(value))
+      expect(e).toBeInstanceOf(KeycloakConfigError)
+      expect((e as Error).message).toBe(message)
+    })
+  }
+
+  // 판정 그 자체 — 다른 언어의 R3 와 같은 문자 집합 전부(U+0000–U+0020 · U+007F–U+00A0 · 공백 구분자 · ASCII 아홉)와 경계 바로
+  // 밖(U+0021 · U+007E · U+00A1 · U+00AD · U+200B · U+FEFF · U+1F600 — java.net.URI 가 받는다).
+  it('R3 는 다른 언어의 R3 와 같은 문자 집합을 거부한다', () => {
+    const codePoints: number[] = []
+    for (let n = 0; n <= 0x20; n++) codePoints.push(n)
+    for (let n = 0x7f; n <= 0xa0; n++) codePoints.push(n)
+    for (let n = 0x2000; n <= 0x200a; n++) codePoints.push(n)
+    codePoints.push(0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000)
+    for (const c of '"<>\\^`{|}') codePoints.push(c.codePointAt(0)!)
+    expect(codePoints).toHaveLength(33 + 34 + 11 + 6 + 9)
+    const at = (n: number): string => `https://app/c${String.fromCodePoint(n)}b`
+    expect(codePoints.map(at).filter(r3)).toEqual([])
+    const neighbours = [0x21, 0x7e, 0xa1, 0xad, 0x200b, 0xfeff, 0x1f600].map(at)
+    expect(neighbours.filter((v) => !r3(v))).toEqual([])
+  })
+
+  it('R3 는 16진 두 자리가 따르지 않는 % 를 거부한다 — zone id 안에서도', () => {
+    const broken = ['https://app/cb%', 'https://app/cb%2', 'https://app/c%2zb', 'https://app/c%z2b']
+    expect(broken.filter(r3)).toEqual([])
+    expect(['https://app/c%%20b', 'https://app/c%zzb'].filter(r3)).toEqual([])
+    expect(
+      ['https://app/c%20b', 'https://app/c%aFb', 'https://app/cb%2F'].filter((v) => !r3(v)),
+    ).toEqual([])
+    // 의도된 차이 — java.net.URI 는 받는 zone id 셋을 다른 언어처럼 거부한다(RFC 6874 §2: URI 안에서는 `%25`).
+    const zoneIds = ['https://[fe80::1%eth0]/cb', 'https://[::1%1]/cb', 'https://[::1%zz]/cb']
+    expect(zoneIds.filter(r3)).toEqual([])
+    expect(r3('https://[fe80::1%25eth0]/cb')).toBe(true)
+  })
+
+  it('R3 는 홀로 선 서로게이트가 있는 입력을 거부한다 — href 에는 U+FFFD 의 인코딩으로만 남는다', () => {
+    for (const value of [
+      `https://app/a${HIGH}b`,
+      `https://app/a${LOW}b`,
+      `https://app/ab${HIGH}`,
+    ]) {
+      expect(passesR3(value, new URL(value).href)).toBe(false)
+    }
+    const pair = `https://app/a${String.fromCodePoint(0x1f600)}b`
+    expect(passesR3(pair, new URL(pair).href)).toBe(true)
+    expect(passesR3(`https://app/a${LOW}${HIGH}b`, 'https://app/ab')).toBe(false)
+  })
 })
 
 describe('쿼리 · fragment 가 있는 redirectUri 는 두 호출 모두 요청 없이 거부한다', () => {

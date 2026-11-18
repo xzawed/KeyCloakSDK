@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "ESNext.Disposable"],
+    "lib": ["ES2022", "ES2024.String", "ESNext.Disposable"],
     "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
