@@ -1,11 +1,13 @@
 """인가 요청의 redirect_uri — RFC 6749 §3.1.2 가 금하는 값은 URL 에 싣지 않는다.
 
 등록부 `authz-request-redirect-unvalidated`. 예전에는 sync·aio 의 `authorization_url` 이 어떤
-문자열이든 그대로 실었다(`cb` · `not a url` · `https://app/cb#f`). 규칙은 순서대로 셋이다.
+문자열이든 그대로 실었다(`cb` · `not a url` · `https://app/cb#f`). 규칙은 순서대로 넷이다.
 
 - R1 절대 URI: scheme 과 `:` 로 시작한다. 문자열이 아닌 값도 R1 이다.
 - R2 fragment 없음: `#` 가 어디에도 없다. 빈 fragment(`https://app/cb#`)도 fragment 다.
 - R3 Keycloak 이 읽는 URI: 서버는 `java.net.URI.create` 가 던지는 값을 거부한다(RFC 3986 §2).
+- R4 R3 를 지나도 서버가 던지는 값 — scheme 의 `:` 뒤가 빔, `?` 앞 경로나 authority 의 괄호
+  호스트 밖의 `[`·`]`(등록부 `redirect-uri-r3-narrower-than-keycloak`). 문구는 R3 와 같다.
 
 위반은 `KeycloakConfigError` 이고 메시지는 입력을 인용하지 않는다. 받은 값은 고쳐 쓰지 않는다 —
 교환이 같은 문자열을 그대로 보낸다(고쳐 쓰면 두 요청이 갈린다 — #1133 의 결함 부류).
@@ -61,9 +63,9 @@ def _refusal(build: Build, value: object) -> str:
 
 
 @pytest.mark.parametrize("facade", FACADES)
-@pytest.mark.parametrize("value", ["", "cb", "/cb", "//app/cb", "not a url", "cb#f"])
+@pytest.mark.parametrize("value", ["", "cb", "/cb", "//app/cb", "not a url", "cb#f", "1x:"])
 def test_a_value_that_is_not_an_absolute_uri_is_refused(facade: str, value: str) -> None:
-    """`cb#f` 는 순서의 증명이다 — R1 이 R2 보다 앞이다."""
+    """`cb#f` · `1x:` 는 순서의 증명이다 — R1 이 R2 · R4 보다 앞이다(`1x:` 는 R4 도 어긴다)."""
     assert _refusal(_authorization_url(facade), value) == NOT_ABSOLUTE
 
 
@@ -140,9 +142,12 @@ def test_a_url_object_is_carried_as_its_string(facade: str, value: object, sent:
 
 
 @pytest.mark.parametrize("facade", FACADES)
-@pytest.mark.parametrize("value", ["https://app/cb#", "https://app/cb#f", "https://app/c b#f"])
+@pytest.mark.parametrize(
+    "value", ["https://app/cb#", "https://app/cb#f", "https://app/c b#f", "https://app/c[b#f"]
+)
 def test_a_fragment_is_refused(facade: str, value: str) -> None:
-    """`https://app/c b#f` 는 순서의 증명이다 — R2 가 R3 보다 앞이다."""
+    """`https://app/c b#f` · `https://app/c[b#f` 는 순서의 증명이다 — R2 가 R3 · R4 보다
+    앞이다."""
     assert _refusal(_authorization_url(facade), value) == FRAGMENT
 
 
@@ -163,10 +168,40 @@ def test_a_fragment_is_refused(facade: str, value: str) -> None:
         "https://app/c\udfffb",
         "https://app/c\U00003000b",  # 이데오그래픽 공백 — java.net.URI 가 거부한다
         "https://app/c\U00002028b",  # 줄 구분자
+        # R4 — R1-R3 를 지나도 java.net.URI.create 가 던지는 값(JDK 21.0.8 실측): scheme 의 `:`
+        # 뒤가 비었다(R4a), 또는 `:` 뒤가 `/` 인 값의 `?` 앞에서 `[`·`]` 가 authority 의 괄호
+        # 호스트 하나 밖에 있다(R4b). 문구는 R3 와 같다.
+        "https:",
+        "myapp:",
+        "https://app/c[b",
+        "https://app/c]b",
+        "myapp:/c[b",
+        "https://[::1]/c[b",
+        "https://app[1]/cb",
+        "https://[::1]]/cb",
+        "https://app/c b[",  # R3 와 R4 를 함께 어긴다 — 문구가 같다(R3 가 먼저인 것은 아래 시험)
     ],
 )
 def test_a_value_keycloak_cannot_parse_is_refused(facade: str, value: str) -> None:
     assert _refusal(_authorization_url(facade), value) == NOT_VALID
+
+
+@pytest.mark.parametrize("facade", FACADES)
+def test_r3_decides_before_r4(monkeypatch: pytest.MonkeyPatch, facade: str) -> None:
+    """R3 와 R4 는 문구가 같아 글로는 순서가 안 보인다 — R4 를 부르면 실패하게 바꿔 두고, 둘을
+    함께 어기는 값이 R3 에서 거부되는지 본다. 대조: R3 를 지나는 값은 R4 에 닿는다."""
+    reached: list[str] = []
+
+    def r4(text: str) -> bool:
+        reached.append(text)
+        return False
+
+    monkeypatch.setattr("keycloak_sdk._internal.redirect_uri._parsable", r4)
+    build = _authorization_url(facade)
+    assert _refusal(build, "https://app/c b[") == NOT_VALID
+    assert reached == [], "R3 가 거부할 값에 R4 가 불렸다"
+    assert _refusal(build, "https://app/c[b") == NOT_VALID
+    assert reached == ["https://app/c[b"]
 
 
 @pytest.mark.parametrize("facade", FACADES)
@@ -240,6 +275,14 @@ def test_the_message_does_not_quote_the_value(facade: str, value: str, message: 
         "https://app/c\U0000e000b",  # 서로게이트 범위 바로 뒤
         "https://app/c\U0000200bb",  # U+200B — 공백 구분자 범위 바로 뒤(java.net.URI 가 받는다)
         "https://app/c\U00003001b",  # U+3001 — 같다
+        # R4 가 받는 것(JDK 21.0.8 실측) — authority 의 괄호 호스트 하나, 쿼리의 괄호, 불투명 값.
+        "https://[::1]/cb",
+        "https://[::1]:8443/cb",
+        "https://u@[::1]:8443/cb",
+        "https://[::1]?x=[1]",
+        "myapp:c[b",
+        "urn:x[y]",
+        "https:/",
     ],
 )
 def test_an_absolute_uri_is_carried_exactly_as_given(facade: str, value: str) -> None:

@@ -15,8 +15,10 @@ import (
 //	R2  같은 절 "MUST NOT include a fragment component" — `#` 가 어디에도 없다(빈 fragment 도 fragment 다).
 //	R3  RFC 3986 §2 밖의 문자 — Keycloak 은 받은 redirect_uri 를 java.net.URI.create 로 파싱하고, 그것이 던지면
 //	    어느 클라이언트 등록에서도 거부한다(RedirectUtils.toUri). 잘못된 UTF-8 도 여기다.
+//	R4  문자는 R3 안이지만 URI.create 가 거부하는 모양 — scheme 뒤가 빈 값, query 앞의 `[` `]`(괄호 친 호스트 하나
+//	    밖). 문구는 R3 과 같다(등록부 redirect-uri-r3-narrower-than-keycloak).
 //
-// 순서는 R1 · R2 · R3 이고, 거부만 한다 — URL 은 호출자의 문자열을 그대로 싣는다(코드 교환이 그 문자열을 그대로
+// 순서는 R1 · R2 · R3 · R4 이고, 거부만 한다 — URL 은 호출자의 문자열을 그대로 싣는다(코드 교환이 그 문자열을 그대로
 // 보내므로 한쪽만 고치면 #1133 의 결함이다). 문구는 정확히 아래 셋이고 입력을 인용하지 않는다.
 const (
 	wantRedirectR1 = "invalid redirect_uri: not an absolute URI (RFC 6749 §3.1.2)"
@@ -83,6 +85,24 @@ func TestBuildAuthorizationRequestRefusesRedirectURIs(t *testing.T) {
 		// R3 — U+00A0 위의 유니코드 공백 구분자(Amendment 3).
 		{"ideographic-space", "https://app/c" + string(rune(0x3000)) + "b", wantRedirectR3},
 		{"line-separator", "https://app/c" + string(rune(0x2028)) + "b", wantRedirectR3},
+		// R4 — 문자는 RFC 3986 §2 안이지만 Keycloak 의 URI.create 가 거부하는 모양(JDK 21.0.8 실측, 등록부
+		// redirect-uri-r3-narrower-than-keycloak). 문구는 R3 과 같다.
+		{"empty-after-scheme", "https:", wantRedirectR3},
+		{"empty-after-opaque-scheme", "myapp:", wantRedirectR3},
+		{"open-bracket-in-path", "https://app/c[b", wantRedirectR3},
+		{"close-bracket-in-path", "https://app/c]b", wantRedirectR3},
+		{"bracket-in-path-without-authority", "myapp:/c[b", wantRedirectR3},
+		{"bracket-in-path-after-ipv6-host", "https://[::1]/c[b", wantRedirectR3},
+		{"bracket-in-reg-name", "https://app[1]/cb", wantRedirectR3},
+		{"stray-bracket-after-ipv6-host", "https://[::1]]/cb", wantRedirectR3},
+		{"two-bracketed-hosts", "https://[::1][::2]/cb", wantRedirectR3},
+		{"bracket-in-userinfo", "https://u[@[::1]/cb", wantRedirectR3},
+		{"non-digit-port-after-ipv6-host", "https://[::1]:x/cb", wantRedirectR3},
+		// 순서 — R1 · R2 가 R4 보다 먼저다. R3 과 R4 둘 다 걸리면 R3 의 칸이다(같은 문구 — 갈래는
+		// TestRedirectURIR3IsJudgedBeforeR4 가 잰다).
+		{"r4-without-scheme", "//[::1]]/cb", wantRedirectR1},
+		{"r4-with-fragment", "https://app/c[b#f", wantRedirectR2},
+		{"r3-and-r4", "https://app/c[b c", wantRedirectR3},
 	} {
 		t.Run(c.name, func(t *testing.T) { requireRedirectRefused(t, a, c.in, c.want) })
 	}
@@ -117,6 +137,22 @@ func TestBuildAuthorizationRequestR3CharacterSet(t *testing.T) {
 		"https://app/c\x80b", "https://app/c\xc3", "https://app/c\xed\xa0\x80b")
 	for _, in := range refused {
 		requireRedirectRefused(t, a, in, wantRedirectR3)
+	}
+}
+
+// R3 과 R4 가 둘 다 거부하는 값은 R3 의 칸이다 — 문구가 같아 바깥에서는 안 보이므로 술어를 직접 본다: 둘 다 그 값을
+// 거부하고, checkRedirectURI 는 R3 의 문구를 낸다(switch 의 순서). R4 만 거부하는 값의 대조도 함께.
+func TestRedirectURIR3IsJudgedBeforeR4(t *testing.T) {
+	both := "https://app/c[b c"
+	if uriChars(both) || uriShape(both) {
+		t.Fatalf("%q must fail R3 (%v) and R4 (%v)", both, uriChars(both), uriShape(both))
+	}
+	if err := checkRedirectURI(both); err == nil || err.Error() != "keycloak: "+wantRedirectR3 {
+		t.Fatalf("checkRedirectURI(%q) = %v, want R3", both, err)
+	}
+	onlyR4 := "https://app/c[b"
+	if !uriChars(onlyR4) || uriShape(onlyR4) {
+		t.Fatalf("%q must pass R3 (%v) and fail R4 (%v)", onlyR4, uriChars(onlyR4), uriShape(onlyR4))
 	}
 }
 
@@ -166,6 +202,10 @@ func TestBuildAuthorizationRequestAcceptsAbsoluteURIs(t *testing.T) {
 		// 공백 구분자가 아닌 이웃 — URI.create 가 받는다(JDK 21.0.8 실측): U+00AD · U+200B · U+FEFF · U+1F600.
 		"https://app/c" + string(rune(0xad)) + "b", "https://app/c" + string(rune(0x200b)) + "b",
 		"https://app/c" + string(rune(0xfeff)) + "b", "https://app/c" + string(rune(0x1f600)) + "b",
+		// R4 대조 — URI.create 가 받는다(JDK 21.0.8 실측): 괄호 친 호스트 하나(userinfo · 포트 포함) · 쿼리의 괄호 ·
+		// 불투명 값의 괄호 · scheme 뒤 "/" 하나. 괄호 친 호스트의 내용은 보지 않는다(남은 틈 — `[zz]` · `[v1.x]`).
+		"https://[::1]/cb", "https://[::1]:8443/cb", "https://u@[::1]:8443/cb", "https://[::1]", "https://[::1]:/cb",
+		"https://[::1]?x=[2]", "myapp:c[b", "urn:x[y]", "https:/",
 	} {
 		requireRedirectAccepted(t, a, in)
 	}

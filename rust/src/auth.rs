@@ -116,8 +116,8 @@ fn now_secs() -> u64 {
 
 impl AuthClient {
     /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`, and so is a
-    /// config `redirect_uri` that [`Self::create_authorization_request_with_redirect`] would refuse (a fragment, or a
-    /// character outside RFC 3986 §2).
+    /// config `redirect_uri` that [`Self::create_authorization_request_with_redirect`] would refuse (a fragment, a
+    /// character outside RFC 3986 §2, or a shape Keycloak cannot parse).
     /// The shared `http` (with the TLS, timeout and SSRF policies injected) is used as-is; no client of its own is built.
     pub fn new(
         config: KeycloakConfig,
@@ -147,7 +147,7 @@ impl AuthClient {
         let redirect =
             RedirectUrl::new(config.redirect_uri.clone().unwrap_or_else(|| base.clone()))
                 .map_err(|e| KeycloakError::Config(format!("redirect uri: {e}")))?;
-        // `create_authorization_request()` 가 이 값을 싣는다 — 호출당 판과 같은 R2 · R3.
+        // `create_authorization_request()` 가 이 값을 싣는다 — 호출당 판과 같은 R2 · R3 · R4.
         check_redirect_uri(&redirect)?;
         let oidc = core
             .set_auth_uri(
@@ -192,8 +192,9 @@ impl AuthClient {
     /// parse error do not leak out of the facade. So is, in this order, a value with a fragment component, an empty
     /// one included (RFC 6749 §3.1.2), and a value Keycloak cannot parse (RFC 3986 §2): a control character, a space,
     /// U+007F–U+00A0 or another Unicode space separator (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
-    /// U+3000), one of `"` `<` `>` `\` `^` `` ` `` `{` `|` `}`, or a `%` not followed by two hex digits. An accepted
-    /// value is sent exactly as given.
+    /// U+3000), one of `"` `<` `>` `\` `^` `` ` `` `{` `|` `}`, or a `%` not followed by two hex digits — then nothing
+    /// after the scheme's `:`, or a `[` or `]` before the query of a value whose part after the scheme starts with `/`,
+    /// except around one bracketed host in its authority. An accepted value is sent exactly as given.
     pub fn create_authorization_request_with_redirect(
         &self,
         redirect_uri: &str,
@@ -837,6 +838,15 @@ mod tests {
             "https://app/cb?x=[1]",
             "https://app/c'b",
             "https://app/cb?x=$&y=(+*,;=)@:",
+            // R4 대조 — 괄호 친 호스트 하나(userinfo · 포트 포함) · query 의 괄호 · 불투명 값의 괄호(JDK 21.0.8 실측).
+            "https://[::1]/cb",
+            "https://[::1]:8443/cb",
+            "https://u@[::1]:8443/cb",
+            "https://[::1]",
+            "https://[::1]:/cb",
+            "https://[::1]?x=[2]",
+            "myapp:c[b",
+            "urn:x[y]",
         ]
         .map(String::from)
         .to_vec();
@@ -854,6 +864,82 @@ mod tests {
                 .collect();
             assert_eq!(sent, vec![input.to_string()], "{input:?}: {}", req.url);
         }
+    }
+
+    // ── R4 — Keycloak 의 `URI.create` 가 거부하는 모양 (등록부 redirect-uri-r3-narrower-than-keycloak) ──
+    //
+    // 문자는 R3 안이지만 JDK 21.0.8 의 `URI.create` 가 거부한다: scheme 뒤가 빈 값, query 앞의 `[` `]`(괄호 친 호스트
+    // 하나 밖). 문구는 R3 과 같다. R1 은 `url::Url` 파싱이다 — 그것이 먼저 거부하는 값은 파싱 문구 그대로다(WHATWG
+    // 파서는 호스트 자리의 괄호 · 숫자 아닌 포트 · 빈 호스트를 거부한다). 판정은 원본 문자열이다 — 그것이 나간다.
+
+    /// 호출당 인가요청 하나의 판정 — 받음 · R2 · R3 문구, 그 밖의 `invalid redirect_uri: …` 는 R1(파싱) 문구.
+    fn redirect_outcome(auth: &AuthClient, input: &str) -> &'static str {
+        match auth.create_authorization_request_with_redirect(input) {
+            Ok(_) => "accepted",
+            Err(KeycloakError::Config(m)) if m == REDIRECT_R2 => "R2",
+            Err(KeycloakError::Config(m)) if m == REDIRECT_R3 => "R3",
+            Err(KeycloakError::Config(m)) if m.starts_with("invalid redirect_uri: ") => "R1",
+            Err(e) => panic!("{input:?}: expected KeycloakError::Config, got {e:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn authorization_request_refuses_a_shape_keycloak_cannot_parse() {
+        let auth = test_auth();
+        let cases = [
+            // R4 — `URI.create` 가 거부하고 `Url::parse` 는 받는 값.
+            ("myapp:", "R3"),
+            ("https://app/c[b", "R3"),
+            ("https://app/c]b", "R3"),
+            ("myapp:/c[b", "R3"),
+            ("https://[::1]/c[b", "R3"),
+            ("https://u[@[::1]/cb", "R3"),
+            // `Url::parse`(R1)가 먼저 거부한다 — `https:/` 는 `URI.create` 가 받지만 WHATWG 파서가 빈 호스트로 거부한다
+            // (R1 이 Keycloak 보다 좁은 자리 — 이 시험은 그대로임을 적어 둔다).
+            ("https:", "R1"),
+            ("https:/", "R1"),
+            ("https://app[1]/cb", "R1"),
+            ("https://[::1]]/cb", "R1"),
+            ("https://[::1][::2]/cb", "R1"),
+            ("https://[::1]:x/cb", "R1"),
+            // 순서 — R2 가 R4 보다 먼저, R3 · R4 둘 다면 R3 의 칸(같은 문구 — 갈래는 redirect_uri.rs 의 시험이 본다).
+            ("https://app/c[b#f", "R2"),
+            ("https://app/c[b c", "R3"),
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter_map(|(input, want)| {
+                let got = redirect_outcome(&auth, input);
+                (got != *want).then(|| format!("{input:?} → {got}, want {want}"))
+            })
+            .collect();
+        assert!(wrong.is_empty(), "redirect_uri outcomes: {wrong:#?}");
+    }
+
+    /// 생성 때 config 의 redirect_uri 도 같은 R2 · R3 · R4 를 지난다 — 그 값이 `create_authorization_request()` 가 싣는다.
+    /// 대조 — config 에 redirect_uri 가 없으면 issuer 가 그 자리다: IPv6 호스트의 서버(괄호 친 호스트)도 만들어진다.
+    #[tokio::test]
+    async fn construction_applies_r4_to_the_config_redirect_uri() {
+        for (input, want) in [("https://app/c[b", REDIRECT_R3), ("myapp:", REDIRECT_R3)] {
+            let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+                .unwrap()
+                .with_redirect_uri(input);
+            match crate::client::KeycloakClient::new(config) {
+                Err(KeycloakError::Config(m)) => assert_eq!(m, want, "{input:?}"),
+                Err(e) => panic!("{input:?}: expected Config, got {e:?}"),
+                Ok(_) => panic!("{input:?}: an unusable config redirect_uri was accepted"),
+            }
+        }
+        let config = KeycloakConfig::new("http://[::1]:8080", "it-realm", "it-client").unwrap();
+        let client = crate::client::KeycloakClient::new(config).expect("an IPv6 server constructs");
+        let req = client.auth().create_authorization_request();
+        let url = url::Url::parse(&req.url).expect("authorization URL");
+        let sent: Vec<String> = url
+            .query_pairs()
+            .filter(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.into_owned())
+            .collect();
+        assert_eq!(sent, ["http://[::1]:8080/realms/it-realm"], "{}", req.url);
     }
 
     /// 생성 때 config 의 redirect_uri 도 같은 R2 · R3 를 지난다 — 그 값이 `create_authorization_request()` 가 싣는다.

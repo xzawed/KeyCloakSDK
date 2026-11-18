@@ -3,6 +3,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.github.xzawed.keycloak.core.KeycloakConfig;
 import io.github.xzawed.keycloak.core.exception.KeycloakConfigException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -53,6 +54,22 @@ class AuthClientRedirectUriTest {
         assertEquals(uri, queryValue(url, "redirect_uri"), url.toString());
       }
     }
+  }
+
+  // 등록부 redirect-uri-r3-narrower-than-keycloak — 다른 언어가 R4 로 거부하는 모양(경로의 `[` · scheme 뒤 빈 값)은 이 API 에 올 수
+  // 없다: 인자가 java.net.URI 이고, Keycloak 이 redirect_uri 를 파싱하는 같은 파서가 그 문자열로 URI 를 만들지 않는다. 성분 생성자는
+  // `[` 를 %5B 로 인용해 다른 URI 를 만들고(그것이 URL 에 그대로 실린다 — Keycloak 이 받는 모양이다), scheme 뒤가 빈 URI 는 성분으로도
+  // 만들 수 없다. 그래서 Java 에는 R4 를 더하지 않는다 — 이 시험이 그 판정을 고정한다.
+  @Test void shapesKeycloaksParserRefuses_cannotReachThePublicEntryPoint() throws Exception {
+    for (String value : List.of("https://app/c[b", "https:")) {
+      IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+          () -> client().createAuthorizationRequest(URI.create(value)), value);
+      assertInstanceOf(URISyntaxException.class, e.getCause(), value);
+    }
+    URI quoted = new URI("https", "app", "/c[b", null);
+    assertEquals("https://app/c%5Bb", quoted.toString());
+    assertEquals("https://app/c%5Bb", queryValue(client().createAuthorizationRequest(quoted).getAuthorizationUrl(), "redirect_uri"));
+    assertThrows(URISyntaxException.class, () -> new URI("https", "", null));
   }
 
   // scope 에 openid 가 있는 OIDC 경로와 없는 플레인 OAuth2 경로 — build() 가 둘이라 둘 다 본다. 네트워크는 쓰지 않는다.

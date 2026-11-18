@@ -16,6 +16,7 @@ import type { AddressInfo } from 'node:net'
 import { AuthClient } from '../../src/auth.js'
 import { defineConfig } from '../../src/config.js'
 import { KeycloakConfigError } from '../../src/errors.js'
+import { passesR4 } from '../../src/redirect-uri.js'
 
 interface Idp {
   url: string
@@ -125,6 +126,124 @@ describe('URL 이 아닌 redirectUri 는 인가 요청에서도 KeycloakConfigEr
       expect(e).toBeInstanceOf(KeycloakConfigError)
       expect((e as Error).message).toBe('invalid redirect_uri: Invalid URL')
       expect(((e as Error).cause as Error).name).toBe('TypeError')
+    })
+  }
+})
+
+/**
+ * WHATWG 가 받지만 Keycloak 은 받지 않는 값 — 등록부 `redirect-uri-r3-narrower-than-keycloak`.
+ *
+ * Keycloak 은 받은 redirect_uri 를 `java.net.URI.create` 로 파싱한다(`RedirectUtils.toUri`). WHATWG URL 은 경로의 `[` · `]` 를
+ * 그대로 두고 비특수 scheme 의 빈 값(`myapp:`)도 받아, SDK 가 보내는 `href` 를 Keycloak 이 거부했다(JDK 21.0.8: "Illegal
+ * character in path" · "Expected scheme-specific part"). R4 가 보내는 `href` 를 본다 — (R4a) scheme 의 `:` 뒤가 비면 거부,
+ * (R4b) `:` 뒤가 `/` 로 시작하면 `?` 앞에서 — `//` 로 시작하면 다음 `/` 까지(없으면 끝까지)가 authority 이고 거기 `[` · `]` 는
+ * 괄호 호스트 하나로만 올 수 있다, 그 밖(경로)의 `[` · `]` 는 거부. 불투명한 값과 쿼리는 괄호를 가져도 된다. 문구는 다른 언어의
+ * R3 와 같다. 인가 요청과 교환이 같은 `href` 를 보내므로 둘 다 요청 없이 거부한다.
+ */
+describe('Keycloak 의 java.net.URI 가 거부하는 redirectUri 는 두 호출 모두 요청 없이 거부한다(R4)', () => {
+  const NOT_URI = 'invalid redirect_uri: not a valid URI (RFC 3986 §2)'
+  for (const value of [
+    'myapp:',
+    'https://app/c[b',
+    'https://app/c]b',
+    'myapp:/c[b',
+    'https://[::1]/c[b',
+    'myapp://[::1]/c[b',
+  ]) {
+    it(JSON.stringify(value), async () => {
+      const srv = await idp()
+      try {
+        const auth = client(srv.url)
+        const atAuthz = thrown(() => auth.createAuthorizationRequest(value))
+        expect(atAuthz).toBeInstanceOf(KeycloakConfigError)
+        expect((atAuthz as Error).message).toBe(NOT_URI)
+        const atExchange = await failure(auth.exchangeCode('the-code', value, VERIFIER))
+        expect(atExchange).toBeInstanceOf(KeycloakConfigError)
+        expect((atExchange as Error).message).toBe(NOT_URI)
+        expect(srv.seen).toEqual([])
+      } finally {
+        await srv.close()
+      }
+    })
+  }
+
+  // 같은 목록의 나머지는 WHATWG 가 먼저 거부한다 — 오늘의 파싱 문구 그대로다(`https:/` 는 java.net.URI 가 받는다 — WHATWG 가
+  // 더 엄격한 자리다).
+  for (const value of ['https:', 'https://app[1]/cb', 'https://[::1]]/cb', 'https:/']) {
+    it(`${JSON.stringify(value)} 는 파서가 먼저 거부한다`, () => {
+      const e = thrown(() => client('http://127.0.0.1:1').createAuthorizationRequest(value))
+      expect(e).toBeInstanceOf(KeycloakConfigError)
+      expect((e as Error).message).toBe('invalid redirect_uri: Invalid URL')
+    })
+  }
+
+  // 순서 — 앞 규칙에도 걸리는 값은 앞 규칙의 문구다.
+  for (const [value, message] of [
+    ['https://app/c[b#f', 'invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)'],
+    [
+      'https://app/c[b?x=1',
+      'invalid redirect_uri: a query is not supported (the code exchange sends the redirect URI without it)',
+    ],
+  ] as const) {
+    it(`${JSON.stringify(value)} 는 앞 규칙의 문구다`, () => {
+      const e = thrown(() => client('http://127.0.0.1:1').createAuthorizationRequest(value))
+      expect(e).toBeInstanceOf(KeycloakConfigError)
+      expect((e as Error).message).toBe(message)
+    })
+  }
+
+  // 판정 그 자체 — `java.net.URI.create`(JDK 21.0.8)로 잰 표 그대로. WHATWG 가 먼저 거부하는 값과 authority 갈래(WHATWG 의
+  // href 로는 닿지 않는다)도 여기서 잰다.
+  it('R4 는 java.net.URI 가 거부한 값을 거부하고 받은 값을 받는다', () => {
+    const refused = [
+      'https:',
+      'myapp:',
+      'https://app/c[b',
+      'https://app/c]b',
+      'myapp:/c[b',
+      'https://[::1]/c[b',
+      'https://app[1]/cb',
+      'https://[::1]]/cb',
+      'myapp://a]b',
+    ]
+    const accepted = [
+      'https://[::1]/cb',
+      'https://[::1]:8443/cb',
+      'https://u@[::1]:8443/cb',
+      'https://app/cb?x=[1]',
+      'myapp:c[b',
+      'urn:x[y]',
+      'https:/',
+      'myapp://[::1]',
+    ]
+    expect(refused.filter(passesR4)).toEqual([])
+    expect(accepted.filter((v) => !passesR4(v))).toEqual([])
+  })
+
+  // 대조군 — java.net.URI 가 받는 값은 그대로 실린다(인가 URL 의 redirect_uri 와 토큰 요청의 redirect_uri 가 같은 href).
+  for (const value of [
+    'https://[::1]/cb',
+    'https://[::1]:8443/cb',
+    'https://u@[::1]:8443/cb',
+    'myapp:c[b',
+    'urn:x[y]',
+    'myapp://[::1]/cb',
+    'myapp://[::1]',
+  ]) {
+    it(`${JSON.stringify(value)} 는 받는다`, async () => {
+      const srv = await idp()
+      try {
+        const auth = client(srv.url)
+        const authz = new URL(auth.createAuthorizationRequest(value).url).searchParams.get(
+          'redirect_uri',
+        )
+        expect(authz).toBe(value)
+        await failure(auth.exchangeCode('the-code', value, VERIFIER))
+        expect(srv.tokenBodies).toHaveLength(1)
+        expect(new URLSearchParams(srv.tokenBodies[0]).get('redirect_uri')).toBe(value)
+      } finally {
+        await srv.close()
+      }
     })
   }
 })

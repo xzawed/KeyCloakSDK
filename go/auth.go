@@ -106,10 +106,13 @@ func (a *AuthClient) CreateAuthorizationRequest(redirectURI string) Authorizatio
 // empty one included (RFC 6749 §3.1.2), and it must be a valid URI (RFC 3986
 // §2) — no control character, space, U+007F–U+00A0 or other Unicode space
 // separator (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000),
-// none of " < > \ ^ ` { | }, every '%' followed by two hex digits, valid UTF-8
-// — since Keycloak refuses such a value for every client. The checks run in
-// that order. The value is never rewritten: the URL carries redirectURI
-// exactly as given, and ExchangeCode must be passed the same string.
+// none of " < > \ ^ ` { | }, every '%' followed by two hex digits, valid UTF-8,
+// something after the scheme's ':', and no '[' or ']' before the query of a
+// value whose part after the scheme starts with '/' except around one
+// bracketed host in its authority — since Keycloak refuses such a value for
+// every client. The checks run in that order. The value is never rewritten:
+// the URL carries redirectURI exactly as given, and ExchangeCode must be
+// passed the same string.
 func (a *AuthClient) BuildAuthorizationRequest(redirectURI string) (AuthorizationRequest, error) {
 	return checkedAuthorizationRequest(redirectURI, a.CreateAuthorizationRequest)
 }

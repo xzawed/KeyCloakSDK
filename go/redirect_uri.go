@@ -24,14 +24,14 @@ var redirectScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
 const uriExcludedASCII = "\"<>\\^`{|}"
 
 // checkRedirectURI 는 인가요청의 redirect_uri 를 보고, 쓸 수 없으면 *ConfigError 를 낸다(등록부
-// authz-request-redirect-unvalidated). 순서가 계약이다 — R1 · R2 · R3:
+// authz-request-redirect-unvalidated · redirect-uri-r3-narrower-than-keycloak). 순서가 계약이다 — R1 · R2 · R3 · R4:
 //
 //	R1  RFC 6749 §3.1.2 "MUST be an absolute URI" — scheme ":" 으로 시작한다.
 //	R2  같은 절 "MUST NOT include a fragment component" — `#` 가 어디에도 없다(빈 fragment `…#` 도 fragment 다).
 //	R3  RFC 3986 §2 밖 — Keycloak 은 받은 값을 java.net.URI.create 로 파싱해 그것이 던지면 어느 클라이언트 등록에서도
-//	    거부한다(RedirectUtils.toUri). 그 실측 집합과 잘못된 UTF-8 이다(uriChars). ⚠️ 남은 틈(구현하지 않는다 —
-//	    Amendment 3): URI.create 는 query·host 밖의 `[` `]`(`https://app/c[b`)와 scheme 뒤가 빈 값(`https:`)도 거부하는데
-//	    R1–R3 은 받는다.
+//	    거부한다(RedirectUtils.toUri). 그 실측 집합과 잘못된 UTF-8 이다(uriChars).
+//	R4  문자는 R3 안이지만 URI.create 가 거부하는 모양 — R3 과 같은 문구다(uriShape). ⚠️ 남은 틈(구현하지 않는다):
+//	    괄호 친 호스트의 내용은 보지 않는다 — URI.create 는 `https://[zz]/cb` · IPvFuture `[v1.x]` 도 거부한다.
 //
 // 검사만 한다 — 값을 고치지 않는다. ExchangeCode 는 호출자의 문자열을 그대로 보내므로 인가요청 쪽만 정규화하면 두 요청의
 // redirect_uri 가 갈라진다(#1133 의 결함). 문구는 입력을 인용하지 않는다.
@@ -41,10 +41,40 @@ func checkRedirectURI(redirectURI string) error {
 		return &ConfigError{Msg: "invalid redirect_uri: not an absolute URI (RFC 6749 §3.1.2)"}
 	case strings.Contains(redirectURI, "#"):
 		return &ConfigError{Msg: "invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)"}
-	case !uriChars(redirectURI):
+	case !uriChars(redirectURI), !uriShape(redirectURI):
 		return &ConfigError{Msg: "invalid redirect_uri: not a valid URI (RFC 3986 §2)"}
 	}
 	return nil
+}
+
+// bracketedHost 는 R4 가 query 앞에서 `[` `]` 를 허용하는 유일한 자리다 — 호스트가 괄호 친 리터럴 하나인 authority
+// (userinfo · 포트는 있어도 된다). URI.create 가 IPv6 호스트로 읽는 꼴이다.
+var bracketedHost = regexp.MustCompile(`^([^@\[\]/]*@)?\[[^\[\]/]+\](:[0-9]*)?$`)
+
+// uriShape 는 R4 다 — R1 을 지난 값(scheme ":" 으로 시작한다)에서 URI.create 가 거부하는 모양이 없는가(JDK 21.0.8 실측):
+//
+//	R4a  scheme 의 ":" 뒤가 비었다(`https:` · `myapp:` — "Expected scheme-specific part").
+//	R4b  ":" 뒤가 "/" 로 시작하면 첫 "?" 앞을 본다: "//" 로 시작하면 authority(다음 "/" 또는 끝까지)는 `[` `]` 를
+//	     괄호 친 호스트 하나(bracketedHost)로만 가질 수 있고, 그 밖(경로)의 `[` `]` 는 거부다(`https://app/c[b` ·
+//	     `myapp:/c[b` · `https://app[1]/cb` · `https://[::1]]/cb`). 불투명 값(`myapp:c[b` · `urn:x[y]`)과 query 는
+//	     괄호를 가질 수 있다.
+func uriShape(s string) bool {
+	rest := s[strings.IndexByte(s, ':')+1:]
+	if rest == "" {
+		return false
+	}
+	if rest[0] != '/' {
+		return true
+	}
+	hier, _, _ := strings.Cut(rest, "?")
+	if after, ok := strings.CutPrefix(hier, "//"); ok {
+		authority, path, _ := strings.Cut(after, "/")
+		if strings.ContainsAny(authority, "[]") && !bracketedHost.MatchString(authority) {
+			return false
+		}
+		hier = path
+	}
+	return !strings.ContainsAny(hier, "[]")
 }
 
 // uriChars 는 R3 이다 — s 가 올바른 UTF-8 이고, U+0000–U+0020 · U+007F–U+00A0 · 유니코드 공백 구분자 ·
