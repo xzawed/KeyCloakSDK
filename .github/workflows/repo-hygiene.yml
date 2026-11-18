@@ -165,7 +165,13 @@ jobs:
       - name: 통합 전용 커버리지의 레인 게이트 배선(아홉 레인이 리포트의 종료코드를 그대로 받는다 — 실제 트리)
         # 레인이 `[ "$rc" -le 1 ]` 로 소유 문제를 경고로 받던 동안 main 이 DRIFT 인 채 초록이었다(등록부
         # integration-coverage-drift-is-warning-only). 레인 워크플로는 `paths:` 뒤라 그것을 고친 PR 에서만 돈다 — 배선은 여기서 본다.
+        # 단위 미도달 장부(`unit kotlin` · `unit php`)의 레인 줄도 같은 판정이다.
         run: sh scripts/test/test-integration-coverage-gate.sh
+      - name: 단위 미도달 장부 자가테스트(측정 = 장부 0 · 새 미도달 · 바뀐 수 · 낡은 항목 · 닫힌 id 1 · 무결성 2 — 픽스처만)
+        # 경계 파일 안에서 단위 시험이 안 닿는 줄 · 가지를 함수마다 장부(`scripts/unit-unreached.json`)와 대조하는 게이트
+        # (`scripts/integration-coverage.mjs` 의 unit · unit-report · check)의 종료코드를 고정한다(등록부 coverage-exclusion-hides-untested-branches).
+        # 데이터는 실제 도구가 낸 픽스처라(출처는 자가테스트 머리) Docker · JDK · PHP 가 필요 없다.
+        run: sh scripts/test/test-unit-unreached.sh
 
       - name: .NET 취약 패키지 감사 판정 자가테스트(JSON — 한 대상만 취약 · 전이 · problems · 비-JSON · 픽스처만)
         # dotnet-ci · security-audit 의 감사 단계가 쓰는 판정기(`scripts/check-dotnet-vulnerable.mjs`)다. 옛 텍스트 grep 은

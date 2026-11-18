@@ -14,6 +14,8 @@
 #   (4) 그 워크플로에 `shell:` 키가 없다(스텝 · 잡 `defaults` · 최상위 `defaults` · 인라인 맵 어디든) — 사용자 셸
 #       `bash -c "bash {0} || true"` 가 (1)–(3) 을 지나며 종료코드를 삼켰다(Grok 레그).
 #   (5) 리포트를 부르는 주석 밖 줄은 워크플로 전체에서 언어 수만큼이다 — 언어 인자를 변수로 감싼 사본도 센다.
+# 단위 미도달 장부(`unit <L>` — 언어는 장부가 내보낸 `unit-langs`)도 같은 다섯을 본다: 레인이 그 종료코드(0 · 1 DRIFT · 2 FAIL)를 그대로
+# 받아야 장부와 다른 측정이 레인을 빨갛게 만든다(등록부 coverage-exclusion-hides-untested-branches).
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -40,24 +42,39 @@ gate_knobs() {
   ' "$1"
 }
 
-n=0
-for L in $LANGS; do
-  n=$((n + 1))
-  want="node scripts/integration-coverage.mjs report $L --out \"\$RUNNER_TEMP/integration-coverage\""
-  hits="$(cd "$WF" && grep -nE "^[^#]*integration-coverage\.mjs report $L( |\$)" -- *.yml || true)"
-  assert_eq 1 "$(printf '%s\n' "$hits" | grep -c .)" "[$L] 리포트를 부르는 주석 밖 워크플로 줄이 정확히 하나다 — ${hits:-없음}"
+# gate_line <명령> <언어> <--out 디렉터리 이름> — 위 (2)–(4) 를 그 언어의 게이트 줄 하나에 단언한다.
+gate_line() {
+  want="node scripts/integration-coverage.mjs $1 $2 --out \"\$RUNNER_TEMP/$3\""
+  hits="$(cd "$WF" && grep -nE "^[^#]*integration-coverage\.mjs $1 $2( |\$)" -- *.yml || true)"
+  assert_eq 1 "$(printf '%s\n' "$hits" | grep -c .)" "[$2] \`$1\` 을 부르는 주석 밖 워크플로 줄이 정확히 하나다 — ${hits:-없음}"
   f="${hits%%:*}"
   rest="${hits#*:}"
   at="${rest%%:*}"
   line="${rest#*:}"
   run="$(printf '%s' "$line" | sed -n 's/^[[:space:]]*\(- \)\{0,1\}run:[[:space:]]*//p' | sed 's/[[:space:]]*$//')"
-  assert_eq "$want" "$run" "[$L] $f:$at 은 리포트를 맨 \`run:\` 명령으로 부른다(종료코드를 그대로 받는다) — 줄: $line"
-  [ -n "$f" ] || continue
-  assert_eq '' "$(gate_knobs "$WF/$f" "$at")" "[$L] $f:$at 의 스텝과 잡 머리에 if · continue-on-error 가 없다"
+  assert_eq "$want" "$run" "[$2] $f:$at 은 \`$1\` 을 맨 \`run:\` 명령으로 부른다(종료코드를 그대로 받는다) — 줄: $line"
+  [ -n "$f" ] || return 0
+  assert_eq '' "$(gate_knobs "$WF/$f" "$at")" "[$2] $f:$at 의 스텝과 잡 머리에 if · continue-on-error 가 없다"
   assert_eq 0 "$(grep -cE '^[^#]*(^|[^A-Za-z0-9_-])shell[[:space:]]*:' "$WF/$f" || true)" \
-    "[$L] $f 에 shell: 키가 없다(사용자 셸이 종료코드를 삼킬 수 있다)"
+    "[$2] $f 에 shell: 키가 없다(사용자 셸이 종료코드를 삼킬 수 있다)"
+}
+
+n=0
+for L in $LANGS; do
+  n=$((n + 1))
+  gate_line report "$L" integration-coverage
 done
 assert_eq "$n" "$(cd "$WF" && grep -hcE '^[^#]*integration-coverage\.mjs report' -- *.yml | awk '{ s += $1 } END { print s + 0 }')" \
   "리포트를 부르는 주석 밖 워크플로 줄의 수 = 언어 수($n)"
+
+ULANGS="$(node "$ROOT/scripts/integration-coverage.mjs" unit-langs | sed -n 's/^covered //p')"
+assert_ok test -n "$ULANGS"
+n=0
+for L in $ULANGS; do
+  n=$((n + 1))
+  gate_line unit "$L" unit-unreached
+done
+assert_eq "$n" "$(cd "$WF" && grep -hcE '^[^#]*integration-coverage\.mjs unit(-report)? ' -- *.yml | awk '{ s += $1 } END { print s + 0 }')" \
+  "단위 미도달 장부를 부르는 주석 밖 워크플로 줄의 수 = 그 언어 수($n)"
 
 assert_report

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<phpunit xmlns="https://schema.phpunit.de/coverage/1.0">
+  <build time="Wed Nov 18 12:24:33 UTC 2026" phpunit="12.5.33" coverage="12.5.7">
+    <runtime name="PHP" version="8.3.36" url="https://www.php.net/"/>
+    <driver name="xdebug" version="3.5.3"/>
+  </build>
+  <project source="@ROOT@\php\src">
+    <tests>
+      <test name="DriveTest::testDrive" size="unknown" status="success" time="0.006752"/>
+    </tests>
+    <directory name="/">
+      <totals>
+        <lines total="58" comments="8" code="50" executable="13" executed="10" percent="76.92"/>
+        <methods count="6" tested="3" percent="50.00"/>
+        <functions count="0" tested="0" percent="0"/>
+        <classes count="1" tested="0" percent="0.00"/>
+        <traits count="0" tested="0" percent="0"/>
+      </totals>
+      <file name="AuthClient.php" href="AuthClient.php.xml" hash="208860a49de16a454efc5883fbff2a05c96a5709">
+        <totals>
+          <lines total="58" comments="8" code="50" executable="13" executed="10" percent="76.92"/>
+          <methods count="6" tested="3" percent="50.00"/>
+          <functions count="0" tested="0" percent="0"/>
+          <classes count="1" tested="0" percent="0.00"/>
+          <traits count="0" tested="0" percent="0"/>
+        </totals>
+      </file>
+    </directory>
+  </project>
+</phpunit>

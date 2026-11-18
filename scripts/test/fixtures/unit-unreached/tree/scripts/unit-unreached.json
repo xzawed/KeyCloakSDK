@@ -1,0 +1,43 @@
+{
+  "kotlin": {
+    "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.exchange": {
+      "lines": 1,
+      "branches": 1,
+      "why": "defensive: the drive never sends a blank code"
+    },
+    "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.elvis": {
+      "lines": 0,
+      "branches": 1,
+      "why": "open-gap"
+    },
+    "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.pick": {
+      "lines": 0,
+      "branches": 1,
+      "why": "unreachable: the branch sits in pick's lambda — the key is the source function"
+    },
+    "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.token": {
+      "lines": 0,
+      "branches": 2,
+      "why": "integration: the require branch inside an inline function"
+    },
+    "kotlin/src/main/kotlin/kc/auth/AuthClient.kt:AuthClient.unused": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it"
+    }
+  },
+  "php": {
+    "php/src/AuthClient.php:AuthClient::exchange": {
+      "lines": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "php/src/AuthClient.php:AuthClient::apply": {
+      "lines": 1,
+      "why": "open-gap"
+    },
+    "php/src/AuthClient.php:AuthClient::logoutUrl": {
+      "lines": 1,
+      "why": "integration: the drive never calls it"
+    }
+  }
+}
