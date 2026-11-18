@@ -18,6 +18,7 @@ final class KeycloakConfigTest extends TestCase
         self::assertSame(['openid'], $c->scopes);
         self::assertSame(30, $c->clockSkew);
         self::assertSame(5.0, $c->connectTimeout);
+        self::assertSame(30.0, $c->readTimeout);             // 자매 SDK 와 같은 값(등록부 php-ruby-read-timeout-default-diverges)
         self::assertSame(30, $c->jwksMinRefetchSeconds);
         self::assertNull($c->expectedAudience);              // 미설정 = 기대 aud는 clientId
     }

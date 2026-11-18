@@ -50,7 +50,7 @@ final readonly class KeycloakConfig implements \JsonSerializable
         #[\SensitiveParameter] public ?string $clientSecret = null,
         array $scopes = ['openid'],
         public float $connectTimeout = 5.0,
-        public float $readTimeout = 10.0,
+        public float $readTimeout = 30.0,
         public int $clockSkew = 30,
         /**
          * The callback URL `createAuthorizationRequest()` sends when it is given none. When set, it must be an absolute URI
