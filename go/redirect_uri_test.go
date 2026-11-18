@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,8 +16,9 @@ import (
 //	R2  같은 절 "MUST NOT include a fragment component" — `#` 가 어디에도 없다(빈 fragment 도 fragment 다).
 //	R3  RFC 3986 §2 밖의 문자 — Keycloak 은 받은 redirect_uri 를 java.net.URI.create 로 파싱하고, 그것이 던지면
 //	    어느 클라이언트 등록에서도 거부한다(RedirectUtils.toUri). 잘못된 UTF-8 도 여기다.
-//	R4  문자는 R3 안이지만 URI.create 가 거부하는 모양 — scheme 뒤가 빈 값, query 앞의 `[` `]`(괄호 친 호스트 하나
-//	    밖). 문구는 R3 과 같다(등록부 redirect-uri-r3-narrower-than-keycloak).
+//	R4  문자는 R3 안이지만 URI.create 가 거부하는 모양 — scheme 뒤가 빈 값, scheme 뒤가 "//" 뿐인 값, query 앞의 `[` `]`
+//	    (괄호 친 IPv6 호스트 하나 밖), 괄호 안이 IPv6 리터럴이 아닌 값, 2147483647 을 넘는 포트. 문구는 R3 과 같다(등록부
+//	    redirect-uri-r3-narrower-than-keycloak · redirect-uri-create-residuals).
 //
 // 순서는 R1 · R2 · R3 · R4 이고, 거부만 한다 — URL 은 호출자의 문자열을 그대로 싣는다(코드 교환이 그 문자열을 그대로
 // 보내므로 한쪽만 고치면 #1133 의 결함이다). 문구는 정확히 아래 셋이고 입력을 인용하지 않는다.
@@ -202,12 +204,107 @@ func TestBuildAuthorizationRequestAcceptsAbsoluteURIs(t *testing.T) {
 		// 공백 구분자가 아닌 이웃 — URI.create 가 받는다(JDK 21.0.8 실측): U+00AD · U+200B · U+FEFF · U+1F600.
 		"https://app/c" + string(rune(0xad)) + "b", "https://app/c" + string(rune(0x200b)) + "b",
 		"https://app/c" + string(rune(0xfeff)) + "b", "https://app/c" + string(rune(0x1f600)) + "b",
-		// R4 대조 — URI.create 가 받는다(JDK 21.0.8 실측): 괄호 친 호스트 하나(userinfo · 포트 포함) · 쿼리의 괄호 ·
-		// 불투명 값의 괄호 · scheme 뒤 "/" 하나. 괄호 친 호스트의 내용은 보지 않는다(남은 틈 — `[zz]` · `[v1.x]`).
+		// R4 대조 — URI.create 가 받는다(JDK 21.0.8 실측): 괄호 친 IPv6 호스트 하나(userinfo · 포트 포함) · 쿼리의 괄호 ·
+		// 불투명 값의 괄호 · scheme 뒤 "/" 하나. 괄호 안의 내용 · 포트의 크기 · 빈 authority 는 아래 표가 잰다
+		// (TestBuildAuthorizationRequestFollowsTheJDKTable).
 		"https://[::1]/cb", "https://[::1]:8443/cb", "https://u@[::1]:8443/cb", "https://[::1]", "https://[::1]:/cb",
 		"https://[::1]?x=[2]", "myapp:c[b", "urn:x[y]", "https:/",
 	} {
 		requireRedirectAccepted(t, a, in)
+	}
+}
+
+// java.net.URI.create 의 실측 표(JDK 21.0.8, 83 값 — 빈 authority · 괄호 호스트의 내용 · zone id · 포트 · userinfo · 괄호
+// 없는 호스트, 등록부 redirect-uri-create-residuals). 줄 끝은 JDK 의 거부 문구다.
+var jdkRefusedRedirectURIs = []string{
+	"https://",                           // Expected authority
+	"myapp://",                           // Expected authority
+	"https://[zz]/cb",                    // Malformed IPv6 address
+	"https://[v1.x]/cb",                  // Malformed IPv6 address
+	"https://[::1::2]/cb",                // Expected hex digits or IPv4 address
+	"https://[1:2:3:4:5:6:7:8:9]/cb",     // IPv6 address too long
+	"https://[1:2:3:4:5:6:7:8::]/cb",     // Malformed IPv6 address
+	"https://[::1:2:3:4:5:6:7:8]/cb",     // Malformed IPv6 address
+	"https://[1:2:3:4:5:6:7]/cb",         // IPv6 address too short
+	"https://[:]/cb",                     // Malformed IPv6 address
+	"https://[:::]/cb",                   // Expected hex digits or IPv4 address
+	"https://[1:::2]/cb",                 // Expected hex digits or IPv4 address
+	"https://[::1:]/cb",                  // Expected digits for an IPv6 address
+	"https://[:1::2]/cb",                 // Malformed IPv6 address
+	"https://[1::2:]/cb",                 // Expected digits for an IPv6 address
+	"https://[12345::]/cb",               // IPv6 hexadecimal digit sequence too long
+	"https://[1.2.3.4]/cb",               // Malformed IPv6 address
+	"https://[::ffff:256.2.3.4]/cb",      // Malformed IPv4 address
+	"https://[::ffff:1.2.3]/cb",          // Malformed IPv4 address
+	"https://[::ffff:1.2.3.4.5]/cb",      // Malformed IPv4 address
+	"https://[::ffff:1.2.3.]/cb",         // Malformed IPv4 address
+	"https://[::ffff:.1.2.3]/cb",         // Expected digits for an IPv6 address
+	"https://[::ffff:1..2.3]/cb",         // Malformed IPv4 address
+	"https://[1:2:3:4:5:6:7:1.2.3.4]/cb", // IPv6 address too long
+	"https://[1:2:3:4:5:1.2.3.4]/cb",     // IPv6 address too short
+	"https://[1:2:3:4:5:6::1.2.3.4]/cb",  // Malformed IPv6 address
+	"https://[::1.2.3.4:5]/cb",           // Expected hex digits or IPv4 address
+	"https://[1.2.3.4::]/cb",             // Malformed IPv6 address
+	"https://[::99999999999.2.3.4]/cb",   // NumberFormatException
+	"https://[::1.2.3.9999999999999]/cb", // NumberFormatException
+	"https://[fe80::1%]/cb",              // scope id expected
+	"https://[fe80::1%25en-1]/cb",        // Illegal character in scope id
+	"https://[fe80::1%25a%25b]/cb",       // Illegal character in scope id
+	"https://[fe80::1%25a~b]/cb",         // Illegal character in scope id
+	"https://[fe80::1%25é]/cb",           // Illegal character in scope id
+	"https://[%25::1]/cb",                // Malformed IPv6 address
+	"https://[::1]:2147483648/cb",        // Malformed port number
+	"https://[::1]:99999999999/cb",       // Malformed port number
+	"https://a@b@[::1]/cb",               // Illegal character in hostname
+	"myapp://[zz]/cb",                    // Malformed IPv6 address
+}
+
+var jdkAcceptedRedirectURIs = []string{
+	"https:///", "https:///cb", "https://?x=1", "https://u@/cb", "https://:80/cb", "https://@/cb", "https:/",
+	"https://[::1]/cb", "https://[1:2:3:4:5:6:7:8]/cb", "https://[1:2:3:4:5:6:7::]/cb", "https://[::1:2:3:4:5:6:7]/cb",
+	"https://[::]/cb", "https://[ABCD::EF]/cb", "https://[abcd:EF01::]/cb", "https://[0001:2:3:4:5:6:7:8]/cb",
+	"https://[::ffff:1.2.3.4]/cb", "https://[::1.2.3.4]/cb", "https://[::ffff:01.2.3.4]/cb",
+	"https://[::ffff:0001.2.3.4]/cb", "https://[::ffff:00000000255.2.3.4]/cb", "https://[1:2:3:4:5:6:1.2.3.4]/cb",
+	"https://[1::1.2.3.4]/cb", "https://[1:2:3:4:5::1.2.3.4]/cb",
+	"https://[fe80::1%eth0]/cb", "https://[fe80::1%25eth0]/cb", "https://[fe80::1%25]/cb",
+	"https://[fe80::1%25a_b.c]/cb", "https://[::1%1]/cb", "https://[::1%zz]/cb",
+	"https://[::1]:/cb", "https://[::1]:8443/cb", "https://[::1]:2147483647/cb", "https://[::1]:00000000000000000080/cb",
+	"https://h:99999999999/cb", "https://u@[::1]:8443/cb", "https://u:p@[::1]/cb", "https://[::1]", "https://[::1]?x=[1]",
+	"myapp://[::1]/cb", "https://my_host/cb", "https://999.1.1.1/cb", "https://host:abc/cb", "https://hé/cb",
+}
+
+// 의도된 차이 — URI.create 는 zone id 의 맨 '%'(16진 두 자리가 따르지 않는다)를 받지만 R3 가 거부한다: RFC 6874 §2 는 URI
+// 안에서 zone id 구분자를 "%25" 로 쓰라고 한다(`[fe80::1%25eth0]` 는 둘 다 받는다).
+var zoneIDsRefusedByR3 = []string{"https://[fe80::1%eth0]/cb", "https://[::1%1]/cb", "https://[::1%zz]/cb"}
+
+// 표 그대로 — URI.create 가 받은 값은 그대로 실리고, 거부한 값은 R3 의 문구로 거부된다. 단 zone id 셋은 받은 값이지만 거부다.
+func TestBuildAuthorizationRequestFollowsTheJDKTable(t *testing.T) {
+	if len(jdkRefusedRedirectURIs) != 40 || len(jdkAcceptedRedirectURIs) != 43 {
+		t.Fatalf("the JDK table has 40 refused and 43 accepted rows, got %d and %d",
+			len(jdkRefusedRedirectURIs), len(jdkAcceptedRedirectURIs))
+	}
+	a := newRedirectTestClient(t).Auth
+	for _, in := range jdkRefusedRedirectURIs {
+		t.Run("refused "+in, func(t *testing.T) { requireRedirectRefused(t, a, in, wantRedirectR3) })
+	}
+	for _, in := range jdkAcceptedRedirectURIs {
+		if slices.Contains(zoneIDsRefusedByR3, in) {
+			t.Run("zone id "+in, func(t *testing.T) { requireRedirectRefused(t, a, in, wantRedirectR3) })
+			continue
+		}
+		t.Run("accepted "+in, func(t *testing.T) { requireRedirectAccepted(t, a, in) })
+	}
+}
+
+// 그 차이가 R3 의 것임을 술어로 본다 — 바깥 문구는 R3 와 R4 가 같다. R4 는 zone id 셋을 Java 처럼 받는다.
+func TestRedirectURIZoneIDNeedsPercent25(t *testing.T) {
+	for _, in := range zoneIDsRefusedByR3 {
+		if uriChars(in) || !uriShape(in) {
+			t.Errorf("%q: want R3 to refuse (got %v) and R4 to accept (got %v)", in, uriChars(in), uriShape(in))
+		}
+	}
+	if in := "https://[fe80::1%25eth0]/cb"; !uriChars(in) || !uriShape(in) {
+		t.Errorf("%q: want R3 and R4 to accept, got %v and %v", in, uriChars(in), uriShape(in))
 	}
 }
 
