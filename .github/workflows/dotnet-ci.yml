@@ -2,6 +2,7 @@ name: dotnet-ci
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
+  # `scripts/unit-unreached.json` — unit-unreached 잡의 장부다(장부만 고친 PR 에서도 실제 단위 실행과 대조한다).
   push:
     branches: [main]
     paths: ['dotnet/**', '.github/workflows/dotnet-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/unit-unreached.json','scripts/coverage-boundary.mjs', 'scripts/check-known-gaps.mjs', 'scripts/check-coverage.mjs', 'scripts/check-dotnet-vulnerable.mjs', 'scripts/dotnet-tfms.mjs', 'scripts/lib/dotnet-tfm.mjs']
@@ -155,3 +156,22 @@ jobs:
       # `scripts/test/test-integration-coverage-gate.sh`.
       - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
         run: node scripts/integration-coverage.mjs report dotnet --out "$RUNNER_TEMP/integration-coverage"
+
+  # 단위 미도달 장부 — coverlet <Exclude> 가 단위 게이트에서 빼는 경계 파일을 단위 스위트(`--filter "Category!=Integration"`)로 계측해,
+  # 함수마다 단위 시험이 안 닿는 줄 · 가지를 `scripts/unit-unreached.json` 과 대조한다(등록부 coverage-omit-hides-security-paths — 통합
+  # 장부는 함수 단위라 이미 도는 함수 안의 새 실패 갈래를 못 본다). Docker 가 필요 없어 build-test 와 나란히 돈다. 명령(생성한 컬렉터 설정 ·
+  # 가장 낮은 대상 하나 · trx · 기록)과 종료코드의 뜻(0 · 1 DRIFT · 2 FAIL)은 `scripts/integration-coverage.mjs` 머리가 소유한다 — 종료코드를
+  # 그대로 받는다(배선 고정: `scripts/test/test-integration-coverage-gate.sh`).
+  unit-unreached:
+    name: unit-unreached ledger (dotnet — boundary code the unit suite never reaches)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          # build-test 와 같다 — SDK 10 이 두 대상을 빌드하고, run 이 재는 가장 낮은 대상(net8.0)은 SDK 8 이 함께 까는 .NET 8 런타임에서 돈다.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: 단위 미도달 장부 — 경계의 놓친 줄 · 가지 ↔ scripts/unit-unreached.json
+        run: node scripts/integration-coverage.mjs unit dotnet --out "$RUNNER_TEMP/unit-unreached"

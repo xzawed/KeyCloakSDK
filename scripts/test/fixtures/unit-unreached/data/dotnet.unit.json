@@ -1,0 +1,205 @@
+{
+  "Kc.dll": {
+    "@ROOT@\\dotnet\\src\\Kc\\AuthClient.cs": {
+      "Kc.AuthClient": {
+        "System.String Kc.AuthClient::get_Realm()": {
+          "Lines": {
+            "15": 1
+          },
+          "Branches": []
+        },
+        "System.String Kc.AuthClient::Exchange(System.String)": {
+          "Lines": {
+            "20": 1,
+            "22": 0,
+            "24": 1
+          },
+          "Branches": [
+            {
+              "Line": 20,
+              "Offset": 6,
+              "EndOffset": 8,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 20,
+              "Offset": 6,
+              "EndOffset": 19,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 1
+            }
+          ]
+        },
+        "System.String Kc.AuthClient::Pick(System.String)": {
+          "Lines": {
+            "28": 1
+          },
+          "Branches": [
+            {
+              "Line": 28,
+              "Offset": 2,
+              "EndOffset": 4,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 28,
+              "Offset": 2,
+              "EndOffset": 16,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 1
+            }
+          ]
+        },
+        "System.Int32[] Kc.AuthClient::Lengths(System.String[])": {
+          "Lines": {
+            "31": 3
+          },
+          "Branches": [
+            {
+              "Line": 31,
+              "Offset": 6,
+              "EndOffset": 8,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 2
+            },
+            {
+              "Line": 31,
+              "Offset": 6,
+              "EndOffset": 15,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        },
+        "System.String Kc.AuthClient::Guarded(System.Func`1<System.String>)": {
+          "Lines": {
+            "52": 2,
+            "54": 1,
+            "56": 0,
+            "58": 1
+          },
+          "Branches": []
+        },
+        "System.String Kc.AuthClient::Describe()": {
+          "Lines": {
+            "61": 0
+          },
+          "Branches": []
+        },
+        "System.String Kc.AuthClient::Describe(System.Int32)": {
+          "Lines": {
+            "63": 1
+          },
+          "Branches": [
+            {
+              "Line": 63,
+              "Offset": 2,
+              "EndOffset": 4,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 63,
+              "Offset": 2,
+              "EndOffset": 10,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 1
+            }
+          ]
+        },
+        "System.String Kc.AuthClient::LogoutUrl(System.String)": {
+          "Lines": {
+            "66": 0
+          },
+          "Branches": []
+        },
+        "System.Void Kc.AuthClient::.ctor(Kc.Config)": {
+          "Lines": {
+            "9": 1,
+            "11": 1,
+            "12": 1
+          },
+          "Branches": []
+        },
+        "System.Void Kc.AuthClient::.cctor()": {
+          "Lines": {
+            "6": 1
+          },
+          "Branches": []
+        }
+      },
+      "Kc.AuthClient/<TokenAsync>d__8": {
+        "System.Void Kc.AuthClient/<TokenAsync>d__8::MoveNext()": {
+          "Lines": {
+            "38": 1,
+            "39": 1,
+            "41": 0,
+            "43": 1,
+            "44": 1
+          },
+          "Branches": [
+            {
+              "Line": 39,
+              "Offset": 128,
+              "EndOffset": 130,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 0
+            },
+            {
+              "Line": 39,
+              "Offset": 128,
+              "EndOffset": 138,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 1
+            }
+          ]
+        }
+      }
+    },
+    "@ROOT@\\dotnet\\src\\Kc\\Config.cs": {
+      "Kc.Config": {
+        "System.String Kc.Config::get_ServerUrl()": {
+          "Lines": {
+            "4": 6
+          },
+          "Branches": []
+        },
+        "System.Boolean Kc.Config::Valid()": {
+          "Lines": {
+            "6": 1
+          },
+          "Branches": [
+            {
+              "Line": 6,
+              "Offset": 12,
+              "EndOffset": 14,
+              "Path": 0,
+              "Ordinal": 0,
+              "Hits": 1
+            },
+            {
+              "Line": 6,
+              "Offset": 12,
+              "EndOffset": 29,
+              "Path": 1,
+              "Ordinal": 1,
+              "Hits": 0
+            }
+          ]
+        }
+      }
+    }
+  }
+}
