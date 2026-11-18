@@ -9,8 +9,8 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// R2 — fragment 성분이 없다(빈 fragment <c>#</c> 도 성분이다) · R3 — Keycloak 이 받는 URI 문자열이다(RFC 3986 §2 — Keycloak 의
 /// <c>RedirectUtils.toUri</c> 는 <c>java.net.URI.create</c> 가 던지면 어느 클라이언트 등록에서든 거부한다: U+0000–U+0020 ·
 /// U+007F–U+00A0 · 그 위의 Unicode 공백 구분자 열일곱 · <c>" &lt; &gt; \ ^ ` { | }</c> · 뒤에 16진 두 자리가 없는 <c>%</c> — 그리고 짝
-/// 없는 서로게이트, Duende 가 U+FFFD 로 바꿔 쓰는 것). 순서는 R1 → R2 → R3 이고, 메시지는 셋 다
-/// 고정 문구라 입력을 싣지 않는다.
+/// 없는 서로게이트, Duende 가 U+FFFD 로 바꿔 쓰는 것) · R4 — 그 문자들로도 <c>URI.create</c> 가 거부하는 모양(R3 와 같은 문구).
+/// 순서는 R1 → R2 → R3 → R4 이고, 메시지는 넷 다 고정 문구라 입력을 싣지 않는다.
 /// </summary>
 /// <remarks>검사만 하고 고치지 않는다 — URL 의 <c>redirect_uri</c> 는 호출자 문자열 그대로다. 코드 교환이 그 문자열을 그대로
 /// 보내므로 두 요청 중 하나만 정규화하면 두 값이 갈린다(#1133). 고치기 전(2026-11-18 실측)에는 <c>cb</c> · <c>not a url</c> ·
