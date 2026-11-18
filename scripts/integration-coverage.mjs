@@ -3376,7 +3376,7 @@ function unitReport(l) {
         rows.push({ ...u, key, why: e ? e.why : 'NONE' })
         if (!e) drift(l, `unrecorded unreached code ${key} — the unit suite never reaches ${unitCounts(l, u)} of it: test that code, or record why in ${UNIT}`)
         else if (e.lines !== u.lines || (l === 'kotlin' && e.branches !== u.branches))
-          drift(l, `${key}: the unit run leaves ${unitCounts(l, u)} unreached, ${UNIT} records ${unitCounts(l, e)} — test the new code, or correct the entry and its why`)
+          drift(l, `${key}: the unit run leaves ${unitCounts(l, u)} unreached, ${UNIT} records ${unitCounts(l, e)} — ${u.lines > e.lines || (u.branches ?? 0) > (e.branches ?? 0) ? 'test what the unit suite does not reach, or record why and correct the counts' : 'the unit suite reaches more of it now: lower the counts and check the why'}`)
       }
       for (const [key, e] of Object.entries(led)) {
         const at = key.indexOf(':')

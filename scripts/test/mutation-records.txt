@@ -1764,3 +1764,47 @@ TEST:scripts/test/test-probe.sh
 OLD:PYTHONDONTWRITEBYTECODE=1
 NEW:PYTHONDONTWRITEBYTECODE= # PROBE-REC
 SITE:PYTHONDONTWRITEBYTECODE= # PROBE-REC
+
+# ── 단위 미도달 장부의 판정 — 그 갈래마다(coverage-exclusion-hides-untested-branches, 2026-11-18)
+
+### unit-ledger-unrecorded
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (!e) drift(l, `unrecorded unreached code ${key} — the unit suite never reaches ${unitCounts(l, u)} of it: test that code, or record why in ${UNIT}`)
+NEW:        if (!e) void 0 // PROBE-REC unrecorded
+SITE:void 0 // PROBE-REC unrecorded
+
+### unit-ledger-count
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        else if (e.lines !== u.lines || (l === 'kotlin' && e.branches !== u.branches))
+NEW:        else if (false) // PROBE-REC count
+SITE:else if (false) // PROBE-REC count
+
+### unit-ledger-stale
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        else if (!unitMissed(u)) drift(l, `stale entry ${key} — the unit run reaches all of it now; drop the entry`)
+NEW:        else if (!unitMissed(u)) void 0 // PROBE-REC stale
+SITE:void 0 // PROBE-REC stale
+
+### unit-ledger-why-open
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  return reg && !reg.open.has(why) ? `${key}: why "${why}" is neither ${UNIT_WHY.join(' · ')} with a reason nor an open item of ${REGISTRY}` : null
+NEW:  return null // PROBE-REC why-open
+SITE:return null // PROBE-REC why-open
+
+### unit-ledger-lambda-rollup
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      units.push({ file: f, name: key, line: ls.length ? Math.min(...ls) : 0, lines: ps.reduce((a, p) => a + p.missed, 0), branches: ps.reduce((a, p) => a + p.bmissed, 0) })
+NEW:      units.push({ file: f, name: key, line: ls.length ? Math.min(...ls) : 0, lines: ps.reduce((a, p) => a + p.missed, 0), branches: ps.filter((p) => p.kind === 'plain').reduce((a, p) => a + p.bmissed, 0) }) // PROBE-REC rollup
+SITE:// PROBE-REC rollup
+
+### unit-ledger-suite
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  const ofSuite = (r) => isObj(r) && r.run === l && (r.suite ?? 'integration') === SUITE
+NEW:  const ofSuite = (r) => isObj(r) && r.run === l // PROBE-REC suite
+SITE:// PROBE-REC suite

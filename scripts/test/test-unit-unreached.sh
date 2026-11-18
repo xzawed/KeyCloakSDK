@@ -113,7 +113,12 @@ ufresh
 sed -i '/AuthClient\.exchange"/,/}/ s#"branches": 1,#"branches": 2,#' "$L"
 run unit-report kotlin "$T" --out "$D"
 assert_eq 1 "$RC" "[kotlin] 수가 다르면 exit 1 — 출력: $OUT"
-assert_contains "$OUT" "DRIFT [kotlin] $K:AuthClient.exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 1 line · 2 branches" "[kotlin] 바뀐 수"
+assert_contains "$OUT" "DRIFT [kotlin] $K:AuthClient.exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 1 line · 2 branches — the unit suite reaches more of it now: lower the counts" "[kotlin] 바뀐 수 — 장부보다 덜 놓쳤다"
+ufresh
+sed -i '/AuthClient\.exchange"/,/}/ s#"lines": 1,#"lines": 0,#' "$L"
+run unit-report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[kotlin] 장부보다 더 놓쳐도 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [kotlin] $K:AuthClient.exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 0 lines · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[kotlin] 바뀐 수 — 장부보다 더 놓쳤다"
 ufresh
 sed -i '/AuthClient::exchange"/,/}/ s#"lines": 1,#"lines": 2,#' "$L"
 run unit-report php "$T" --out "$D"
