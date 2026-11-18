@@ -54,6 +54,18 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    것을 되돌린 뒤 `KeycloakConfigError` 로 거부한다. 그래프를 읽다 난 실패는 무엇을 던졌든
    그 거부이고, 훅은 되돌림과 같은 통로(인스턴스 `__dict__`, 그랜트 객체의 클래스)로 쓰며, 설치
    도중의 재진입은 거부한다(`_install`·`_apply`).
+6. **업로드가 갈아 끼운 헤더.** python-keycloak 의 `upload_certificate`·`a_upload_certificate` 는
+   연결의 헤더를 multipart `Content-Type` 사본으로 갈아 끼운 채 보내고, 보내기가 **돌아온 뒤에만**
+   되돌린다(`try`/`finally` 없음, 7.1.1 실측). 던지면 — aio 는 위 3 의 `IN_URL` 로 언제나, sync 는
+   전송 실패에서, 취소도 — 그 admin 의 이후 요청이 전부 multipart 로 나갔다(등록부
+   `python-upload-certificate-headers-not-restored`,
+   `tests/unit/test_admin_upload_certificate_headers.py`).
+   감시 클래스가 둘을 덮는다: `connection` 을 읽어(무장) 그 연결과 헤더 값을 기억하고, 감싼
+   클래스의 것을 부를 때 MRO 대로 찾아(소비자의 하위 클래스·클래스 패치도) 같은 인자로 부른 뒤,
+   무엇을 던지든(`BaseException`) 그 연결에 그 값을 되돌리고 같은 예외를 다시 던진다. 성공이면
+   아무것도 하지 않는다. 되돌리는 값은 python-keycloak 이 성공 뒤 되돌리는 값처럼 부르기 **전**의
+   것이다. ⚠️ 보내는 **동안**의 multipart 는 그대로다 — 연결 하나를 함께 쓰므로 그 사이 다른
+   스레드의 요청, 업로드 안의 그랜트를 기다리는 동안 다른 태스크의 요청은 multipart 로 나간다.
 
 **지키는 범위.** 비공개 상태를 쓰지 않고 닿는 것 — 파사드, `raw` 의 python-keycloak 공개 API
 (메서드·프로퍼티 세터), 여러 스레드·태스크가 함께 쓰는 클라이언트, python-keycloak 자신의 동작
@@ -80,6 +92,7 @@ python-keycloak 의 `KeycloakConnectionError` 로 바뀐다. 게터가 치르는
 
 from __future__ import annotations
 
+import functools
 import inspect
 import threading
 import weakref
@@ -591,8 +604,24 @@ def arm_grant_connection(conn: Any) -> None:
         _install(lambda: _planned_grant(conn))
 
 
+def _headers_restorer(conn: Any) -> Callable[[], None]:
+    """`conn` 에 지금의 `headers` 값을 되돌리는 함수(머리 주석 6) — 그 연결 하나에만 쓴다."""
+    headers = conn.headers
+
+    def restore() -> None:
+        conn.headers = headers
+
+    return restore
+
+
+def _unwatched(watched: type[KeycloakAdmin], admin: KeycloakAdmin) -> KeycloakAdmin:
+    """감시 클래스 **다음부터** 찾는 `admin`(`super`) — 감싼 클래스의 메서드가 MRO 대로 묶인다."""
+    return cast("KeycloakAdmin", super(watched, admin))
+
+
 def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
-    """`cls` 의 하위 클래스 — `connection` 을 읽을 때마다 살아 있는 연결을 무장한다."""
+    """`cls` 의 하위 클래스 — `connection` 을 읽을 때마다 살아 있는 연결을 무장하고, multipart
+    업로드 둘이 던지면 그 연결의 헤더를 되돌린다."""
     if _BASE in vars(cls):
         return cls
     cached = _WATCHED.get(cls)
@@ -610,15 +639,35 @@ def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
         arm_connection(conn)
         return conn
 
+    # 머리 주석 6 — 읽기가 무장이다(던지면 아무것도 바뀌지 않았다). 감싼 클래스의 것을 부를 때
+    # 찾는다(`_unwatched`): 소비자의 하위 클래스가 덮은 업로드도, 클래스에 건 패치도 그대로 돈다.
+    def upload_certificate(self: KeycloakAdmin, *args: Any, **kwargs: Any) -> Any:
+        restore = _headers_restorer(self.connection)
+        try:
+            return _unwatched(watched, self).upload_certificate(*args, **kwargs)
+        except BaseException:
+            restore()
+            raise
+
+    async def a_upload_certificate(self: KeycloakAdmin, *args: Any, **kwargs: Any) -> Any:
+        restore = _headers_restorer(self.connection)
+        try:
+            return await _unwatched(watched, self).a_upload_certificate(*args, **kwargs)
+        except BaseException:  # 취소(`CancelledError`)도
+            restore()
+            raise
+
     # 이름·모듈은 감싼 클래스 그대로다 — `raw` 는 여전히 python-keycloak 의 객체로 보이고
     # 읽힌다(§4(b) 의 탈출구, 오류 수집기·걷기 도구의 분류도 그대로). 피클은 원래도 안 됐다
     # (python-keycloak 의 `lambda`·`RLock`, 실측). 달라지는 것은 `type(raw) is KeycloakAdmin`
-    # 하나다 — `isinstance` 는 참이다.
+    # 하나다 — `isinstance` 는 참이고, 덮은 업로드 둘도 감싼 메서드의 이름·문서·서명 그대로다.
     namespace = {
         "__slots__": (),
         "__module__": cls.__module__,
         "__qualname__": cls.__qualname__,
         "connection": property(connection, prop.fset, prop.fdel, prop.__doc__),
+        "upload_certificate": functools.wraps(cls.upload_certificate)(upload_certificate),
+        "a_upload_certificate": functools.wraps(cls.a_upload_certificate)(a_upload_certificate),
         _BASE: prop,
     }
     try:
