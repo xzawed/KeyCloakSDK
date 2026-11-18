@@ -22,12 +22,17 @@ Four rules, in this order:
   a `str` never holds a paired one) is refused here too: `urlencode` encodes UTF-8 strictly and
   would raise `UnicodeEncodeError` outside the SDK's errors.
 - R4 what `java.net.URI.create` still refuses once R1-R3 hold (same message as R3, measured on
-  JDK 21.0.8): nothing after the scheme's `:` (`https:`); and, when the part after the `:`
+  JDK 21.0.8): nothing after the scheme's `:` (`https:`, R4a); and, when the part after the `:`
   starts with `/`, a `[` or `]` before the first `?` anywhere but in the authority's one
-  bracketed host (`https://[::1]:8443/cb`) -- `https://app/c[b`, `https://app[1]/cb`,
-  `myapp:/c[b`. An opaque value (`myapp:c[b`, `urn:x[y]`) and the query may hold brackets.
-  Not checked: what a bracketed host holds (`[zz]`, `[v1.x]`), and an empty authority
-  (`https://`).
+  bracketed host -- `https://app/c[b`, `https://app[1]/cb`, `myapp:/c[b` (R4b); `//` with
+  nothing after it (`https://`, `myapp://` -- R4c; `https:///cb` and `https://?x=1` are read);
+  a bracketed host that is not an RFC 3986 IPv6 address with Java's dotted quads (leading zeros
+  allowed), optionally followed by a zone id of letters, digits, `_` and `.` after a `%`
+  (`[zz]`, `[v1.x]`, `[::1::2]` -- R4d); and a port after that host above 2147483647 once its
+  leading zeros are dropped (R4e). An opaque value (`myapp:c[b`, `urn:x[y]`) and the query may
+  hold brackets. R3 still refuses a zone id whose `%` is not followed by two hex digits
+  (`[fe80::1%eth0]`), which `URI.create` reads, because RFC 6874 §2 writes that `%` as `%25`
+  in a URI (`[fe80::1%25eth0]`).
 
 A refusal is `KeycloakConfigError` with a fixed message: it never quotes the value.
 """
@@ -50,13 +55,49 @@ _UNREADABLE = re.compile(
     r"[\x00-\x20\x7f-\xa0\U00001680\U00002000-\U0000200a\U00002028\U00002029\U0000202f"
     r'\U0000205f\U00003000\ud800-\udfff"<>\\^`{|}]|%(?![0-9A-Fa-f]{2})'
 )
-#: R4 -- the one bracketed host an authority may hold: optional user info, `[`, no bracket or
-#: `/`, `]`, optional port. `fullmatch` anchors it at both ends.
-_BRACKETED_HOST = re.compile(r"([^@\[\]/]*@)?\[[^\[\]/]+\](:[0-9]*)?")
+#: R4d -- RFC 3986's `h16`, and its `dec-octet` as Java reads it (leading zeros allowed: `01`,
+#: `00000000255`).
+_H16 = "[0-9A-Fa-f]{1,4}"
+_DEC = "0*(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])"
+_LS32 = rf"(?:{_H16}:{_H16}|{_DEC}\.{_DEC}\.{_DEC}\.{_DEC})"
+#: R4d -- RFC 3986's `IPv6address`, one alternative per line in the RFC's own terms, then spelled
+#: out (`_LS32` and `_H16` hold neither token, so the two replacements cannot interfere).
+_IPV6 = (
+    (
+        "(?:(?:H16:){6}LS32"
+        "|::(?:H16:){5}LS32"
+        "|(?:H16)?::(?:H16:){4}LS32"
+        "|(?:(?:H16:){0,1}H16)?::(?:H16:){3}LS32"
+        "|(?:(?:H16:){0,2}H16)?::(?:H16:){2}LS32"
+        "|(?:(?:H16:){0,3}H16)?::H16:LS32"
+        "|(?:(?:H16:){0,4}H16)?::LS32"
+        "|(?:(?:H16:){0,5}H16)?::H16"
+        "|(?:(?:H16:){0,6}H16)?::)"
+    )
+    .replace("LS32", _LS32)
+    .replace("H16", _H16)
+)
+#: R4d -- the one bracketed host an authority may hold: optional user info, `[`, an IPv6 address,
+#: an optional zone id (Java's scope_id: letters, digits, `_`, `.`), `]`, an optional port (group
+#: 1 -- R4e reads it). `fullmatch` anchors it at both ends.
+_BRACKETED_AUTHORITY = re.compile(rf"(?:[^@\[\]/]*@)?\[{_IPV6}(?:%[A-Za-z0-9_.]+)?\](?::([0-9]*))?")
+#: R4e -- Java's `Integer.MAX_VALUE`: `URI` reads a port with `Integer.parseInt`.
+_PORT_MAX = 2147483647
 
 
 def _bracketed(part: str) -> bool:
     return "[" in part or "]" in part
+
+
+def _bracketed_host(authority: str) -> bool:
+    """R4d and R4e on an authority that holds a bracket: its one bracketed host, then the port's
+    digits without their leading zeros -- at most ten (so `int()` never meets more than ten), and
+    no larger than `_PORT_MAX`."""
+    host = _BRACKETED_AUTHORITY.fullmatch(authority)
+    if host is None:
+        return False
+    digits = (host.group(1) or "").lstrip("0")
+    return len(digits) <= 10 and int(digits or "0") <= _PORT_MAX
 
 
 def _parsable(text: str) -> bool:
@@ -69,8 +110,10 @@ def _parsable(text: str) -> bool:
     head = rest.partition("?")[0]
     if not head.startswith("//"):
         return not _bracketed(head)
+    if rest == "//":
+        return False
     authority, _, path = head[2:].partition("/")
-    if _bracketed(authority) and _BRACKETED_HOST.fullmatch(authority) is None:
+    if _bracketed(authority) and not _bracketed_host(authority):
         return False
     return not _bracketed(path)
 
