@@ -108,6 +108,11 @@ TEST:test-integration-coverage-harness.sh
 JUDGE:coverage-boundary.mjs
 WHY:위와 같다 — 같은 픽스처로 하네스 소유만 떼어 낸 시험이다(파생 도구의 종료 코드를 쓰지 않는다)
 
+### exclude-unit-unreached-boundary
+TEST:test-unit-unreached.sh
+JUDGE:coverage-boundary.mjs
+WHY:위와 같다 — 단위 미도달 장부도 integration-coverage 의 같은 파생(coverage-boundary 의 JSON findings)을 읽고 그 종료 코드를 쓰지 않는다. 판정기는 integration-coverage.mjs 다(그 쌍은 이 시험의 M1)
+
 ### exclude-lang-universe-ledger
 TEST:test-lang-universe.sh
 JUDGE:integration-coverage.mjs
@@ -116,7 +121,7 @@ WHY:언어 집합을 내보낸 출력(`langs`)만 읽는다 — 실패 종료가
 ### exclude-ic-gate-ledger
 TEST:test-integration-coverage-gate.sh
 JUDGE:integration-coverage.mjs
-WHY:언어 집합을 내보낸 출력(`langs`)만 읽는다 — 실패 종료가 없는 경로라 M1 이 바꾸는 것이 없다. 이 시험의 판정(레인 배선)은 시험 자신이고, 그 음성 대조는 아래 ic-gate-* 줄 변이다
+WHY:언어 집합을 내보낸 출력(`langs` · `unit-langs`)만 읽는다 — 실패 종료가 없는 경로라 M1 이 바꾸는 것이 없다. 이 시험의 판정(레인 배선)은 시험 자신이고, 그 음성 대조는 아래 ic-gate-* · unit-gate-* 줄 변이다
 
 ### exclude-rules-commands-coverage
 TEST:test-check-rules-commands.sh
@@ -1689,6 +1694,20 @@ TEST:scripts/test/test-integration-coverage-gate.sh
 OLD:      - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
 NEW:      - shell: bash -c "bash {0} || true" # PROBE-REC
 SITE:bash {0} || true" # PROBE-REC
+
+### unit-gate-or-true
+FILE:.github/workflows/kotlin-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:        run: node scripts/integration-coverage.mjs unit kotlin --out "$RUNNER_TEMP/unit-unreached"
+NEW:        run: node scripts/integration-coverage.mjs unit kotlin --out "$RUNNER_TEMP/unit-unreached" || true # PROBE-REC
+SITE:|| true # PROBE-REC
+
+### unit-gate-step-continue
+FILE:.github/workflows/php-ci.yml
+TEST:scripts/test/test-integration-coverage-gate.sh
+OLD:      - name: 단위 미도달 장부 — 경계의 놓친 줄 ↔ scripts/unit-unreached.json
+NEW:      - continue-on-error: true # PROBE-REC
+SITE:continue-on-error: true # PROBE-REC
 
 ### probe-deps-no-copy
 FILE:scripts/probe.sh
