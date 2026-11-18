@@ -66,6 +66,16 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    아무것도 하지 않는다. 되돌리는 값은 python-keycloak 이 성공 뒤 되돌리는 값처럼 부르기 **전**의
    것이다. ⚠️ 보내는 **동안**의 multipart 는 그대로다 — 연결 하나를 함께 쓰므로 그 사이 다른
    스레드의 요청, 업로드 안의 그랜트를 기다리는 동안 다른 태스크의 요청은 multipart 로 나간다.
+7. **업로드가 던진 오류의 프레임 로컬.** 그 둘이 던지면 python-keycloak 의 업로드
+   (`orig_headers`·`new_headers`)와 `raw_post`·`a_raw_post`(`kwargs`), httpx `request`(`params`·
+   `headers`·`request` — 토큰이 URL 문자열 안이다)·requests·urllib3(`headers`), 위 3 의
+   `sent`(`request`) 프레임이 bearer 를 쥔 채 오류 수집기(Sentry Python 기본값 ·
+   `TracebackException(capture_locals=True)`)에 찍혔다(등록부
+   `python-raw-upload-traceback-locals-bearer`, `tests/unit/test_admin_upload_traceback_locals.py`).
+   감시 클래스가 6 의 되돌림 뒤에 그 예외에서 닿는 traceback 마다 끝난 프레임의 로컬을 비우고
+   (`_clear_locals`) 같은 객체를 다시 던진다. 타입·메시지·사슬·프레임(줄 번호)은 그대로다 —
+   `_internal/frames.py` 처럼 traceback 을 떼지 않는다: 탈출구의 traceback 은 python-keycloak 의
+   것이다(§4(b)).
 
 **지키는 범위.** 비공개 상태를 쓰지 않고 닿는 것 — 파사드, `raw` 의 python-keycloak 공개 API
 (메서드·프로퍼티 세터), 여러 스레드·태스크가 함께 쓰는 클라이언트, python-keycloak 자신의 동작
@@ -92,9 +102,11 @@ python-keycloak 의 `KeycloakConnectionError` 로 바뀐다. 게터가 치르는
 
 from __future__ import annotations
 
+import builtins
 import functools
 import inspect
 import threading
+import traceback
 import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from types import FunctionType
@@ -160,6 +172,11 @@ _UNUSABLE = "send an unusable access token to the admin API"
 _UNBOUNDED = "read an unbounded token grant response into memory"
 _UNREAD = "read an unbounded admin error response, or a response body it never uses, into memory"
 _LATE = "keep an admin request waiting on a trickled response past its timeout"
+#: 3.11 부터의 내장 `BaseExceptionGroup`(`_clear_locals`) — 3.10 에는 없어 빈 튜플이고,
+#: `isinstance(x, ())` 는 늘 거짓이다. `if` 문이 아니라 값으로 가른다 — 100 % 커버리지 게이트가
+#: 3.10 ~ 3.14 모두에서 돌므로 판마다 한쪽만 지나는 분기를 남기지 않는다.
+_GROUP = getattr(builtins, "BaseExceptionGroup", None)
+_GROUPS: tuple[type[BaseException], ...] = () if _GROUP is None else (_GROUP,)
 
 #: (걸 객체, 속성 이름, 걸 값, 메시지에 쓸 자리). 클래스로 두지 않는다 — 공개 뿌리에서 닿지
 #: 않는 SDK 선언은 `test_facade_dump.py` 가 면제를 요구한다.
@@ -614,6 +631,28 @@ def _headers_restorer(conn: Any) -> Callable[[], None]:
     return restore
 
 
+def _clear_locals(exc: BaseException) -> None:
+    """`exc` 에서 닿는 traceback 마다 끝난 프레임의 로컬을 비운다(머리 주석 7).
+
+    `__cause__`·`__context__` 와 그룹의 구성원(`.exceptions`)을 따라 예외마다 한 번 — 순환이어도
+    끝난다. 아직 도는 프레임(업로드 래퍼 자신)은 `traceback.clear_frames` 가 건너뛴다. 프레임·줄
+    번호·사슬은 그대로다. ⚠️ 3.12 이하의 `clear_frames` 는 traceback 에 든 **멈춘** 제너레이터·
+    코루틴을 끝낸다(3.13 은 건너뛴다 — 실측 3.10.21 · 3.12.14 · 3.13.11). 업로드 실패의 사슬에는
+    끝나지 않은 제너레이터·코루틴의 프레임이 없다(실측: 전송 실패 · 404 · `IN_URL`) — 다른 자리에서
+    부르려면 그것부터 잰다."""
+    seen: set[int] = set()
+    todo: list[BaseException | None] = [exc]
+    while todo:
+        node = todo.pop()
+        if node is None or id(node) in seen:
+            continue
+        seen.add(id(node))
+        traceback.clear_frames(node.__traceback__)
+        # 타입 검사는 3.10 기준(`python_version`)이라 그 내장의 `.exceptions` 를 모른다 — `getattr`.
+        members = getattr(node, "exceptions", ()) if isinstance(node, _GROUPS) else ()
+        todo += [node.__cause__, node.__context__, *members]
+
+
 def _unwatched(watched: type[KeycloakAdmin], admin: KeycloakAdmin) -> KeycloakAdmin:
     """감시 클래스 **다음부터** 찾는 `admin`(`super`) — 감싼 클래스의 메서드가 MRO 대로 묶인다."""
     return cast("KeycloakAdmin", super(watched, admin))
@@ -621,7 +660,7 @@ def _unwatched(watched: type[KeycloakAdmin], admin: KeycloakAdmin) -> KeycloakAd
 
 def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
     """`cls` 의 하위 클래스 — `connection` 을 읽을 때마다 살아 있는 연결을 무장하고, multipart
-    업로드 둘이 던지면 그 연결의 헤더를 되돌린다."""
+    업로드 둘이 던지면 그 연결의 헤더를 되돌리고 그 오류의 프레임 로컬을 비운다."""
     if _BASE in vars(cls):
         return cls
     cached = _WATCHED.get(cls)
@@ -639,22 +678,24 @@ def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
         arm_connection(conn)
         return conn
 
-    # 머리 주석 6 — 읽기가 무장이다(던지면 아무것도 바뀌지 않았다). 감싼 클래스의 것을 부를 때
-    # 찾는다(`_unwatched`): 소비자의 하위 클래스가 덮은 업로드도, 클래스에 건 패치도 그대로 돈다.
+    # 머리 주석 6 · 7 — 읽기가 무장이다(던지면 아무것도 바뀌지 않았다). 감싼 클래스의 것을 부를
+    # 때 찾는다(`_unwatched`): 소비자의 하위 클래스가 덮은 업로드도, 클래스에 건 패치도 그대로 돈다.
     def upload_certificate(self: KeycloakAdmin, *args: Any, **kwargs: Any) -> Any:
         restore = _headers_restorer(self.connection)
         try:
             return _unwatched(watched, self).upload_certificate(*args, **kwargs)
-        except BaseException:
+        except BaseException as exc:
             restore()
+            _clear_locals(exc)
             raise
 
     async def a_upload_certificate(self: KeycloakAdmin, *args: Any, **kwargs: Any) -> Any:
         restore = _headers_restorer(self.connection)
         try:
             return await _unwatched(watched, self).a_upload_certificate(*args, **kwargs)
-        except BaseException:  # 취소(`CancelledError`)도
+        except BaseException as exc:  # 취소(`CancelledError`)도
             restore()
+            _clear_locals(exc)
             raise
 
     # 이름·모듈은 감싼 클래스 그대로다 — `raw` 는 여전히 python-keycloak 의 객체로 보이고
