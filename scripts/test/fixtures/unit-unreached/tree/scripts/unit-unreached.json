@@ -39,5 +39,47 @@
       "lines": 1,
       "why": "integration: the drive never calls it"
     }
+  },
+  "dotnet": {
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Exchange": {
+      "lines": 1,
+      "branches": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Pick": {
+      "lines": 0,
+      "branches": 1,
+      "why": "open-gap"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Lengths": {
+      "lines": 0,
+      "branches": 1,
+      "why": "unreachable: the branch sits in Lengths' lambda — the key is the source member"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.TokenAsync": {
+      "lines": 1,
+      "branches": 1,
+      "why": "integration: the state machine's line and branch fold into the method"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Guarded": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the catch filter declined — only the body's line shows"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Describe()": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls this overload"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Describe(System.Int32)": {
+      "lines": 0,
+      "branches": 1,
+      "why": "defensive: the drive passes a positive depth only"
+    },
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.LogoutUrl": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it — DriveIT does, outside the unit run"
+    }
   }
 }

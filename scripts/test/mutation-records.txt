@@ -1777,7 +1777,7 @@ SITE:void 0 // PROBE-REC unrecorded
 ### unit-ledger-count
 FILE:scripts/integration-coverage.mjs
 TEST:scripts/test/test-unit-unreached.sh
-OLD:        else if (e.lines !== u.lines || (l === 'kotlin' && e.branches !== u.branches))
+OLD:        else if (e.lines !== u.lines || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
 NEW:        else if (false) // PROBE-REC count
 SITE:else if (false) // PROBE-REC count
 
@@ -1808,3 +1808,33 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:  const ofSuite = (r) => isObj(r) && r.run === l && (r.suite ?? 'integration') === SUITE
 NEW:  const ofSuite = (r) => isObj(r) && r.run === l // PROBE-REC suite
 SITE:// PROBE-REC suite
+
+# ── 같은 장부의 dotnet 판정(coverage-omit-hides-security-paths, 2026-11-19)
+
+### unit-ledger-dotnet-branches
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      units.push({ file: f, line: at, name: key, lines: [...ls.values()].filter((c) => c === 0).length, branches: bs.filter((b) => b.Hits === 0).length })
+NEW:      units.push({ file: f, line: at, name: key, lines: [...ls.values()].filter((c) => c === 0).length, branches: 0 }) // PROBE-REC dotnet-branches
+SITE:// PROBE-REC dotnet-branches
+
+### unit-ledger-dotnet-overload-branches
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:          own.branches.push(...branches)
+NEW:          void 0 // PROBE-REC dotnet-own
+SITE:void 0 // PROBE-REC dotnet-own
+
+### unit-ledger-dotnet-suite
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        return c === undefined || suite.has(c)
+NEW:        return false // PROBE-REC dotnet-suite
+SITE:return false // PROBE-REC dotnet-suite
+
+### unit-ledger-dotnet-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (!rec || rec.run !== 'dotnet' || (rec.suite ?? 'integration') !== SUITE) {
+NEW:  if (!rec || rec.run !== 'dotnet') { // PROBE-REC dotnet-record
+SITE:// PROBE-REC dotnet-record

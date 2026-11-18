@@ -11,5 +11,12 @@
       "lines": 2,
       "why": "open-admin"
     }
+  },
+  "dotnet": {
+    "dotnet/src/Kc/AuthClient.cs:AuthClient.Unused": {
+      "lines": 2,
+      "branches": 0,
+      "why": "defensive: check reads no data — only the shape, the boundary and the why"
+    }
   }
 }

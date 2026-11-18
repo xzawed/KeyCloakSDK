@@ -78,21 +78,39 @@
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
 // 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
-// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php, 등록부 coverage-exclusion-hides-untested-branches) ──
+// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet, 등록부 coverage-exclusion-hides-untested-branches ·
+// coverage-omit-hides-security-paths) ──
 // 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
 // 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
 // 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin 은 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친 실행
-// 가능 줄. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport)가 낸다: kotlin 의 람다 · 로컬 함수 · 기본 인자 다리 · 익명
-// 객체는 ktFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다). 정적 초기화는
-// `<타입>.<clinit>` 이다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin 만), why }) —
-// why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위 소유자와 같은 판정).
-// run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크) — kotlin 은 그
-// 태스크의 Kover 에이전트를 Kover 의 DSL(`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그 손잡이)로 꺼서 한
-// 클래스를 에이전트 둘이 고쳐 쓰지 않게 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
+// 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport ·
+// dotnetReport)가 낸다: kotlin 의 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, dotnet 의 상태 기계 · 람다 · 로컬 함수는
+// dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다). 정적 초기화는 kotlin
+// `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin ·
+// dotnet), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위 소유자와 같은 판정).
+// run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크, dotnet 은 같은
+// 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`) — kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL
+// (`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게
+// 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
 // ⚠️ php 는 줄만 센다 — 행복 경로가 이미 도는 줄에 붙은 실패 갈래(`$x = $y ?? throw …` · 한 줄 `?:` · 삼항 · `match`)는 줄 수를 안
 // 바꿔 이 장부가 못 본다. `--path-coverage`(Xdebug)로도 `--coverage-xml` 에는 가지 · 경로 수가 없다(실측 2026-11-18 — PHPUnit 12.5.33 ·
 // php-code-coverage 12.5.7 · Xdebug 3.5.3: `<method>` 는 줄 수뿐이고 Report/Xml/Method.php 가 그것만 쓴다 · clover 는 클래스 단위
 // conditionals · cobertura 는 메서드의 branch-rate 비율뿐이다). kotlin 은 한 줄의 실패 갈래도 가지로 센다.
+// ⚠️ dotnet 도 가지를 센다 — coverlet(10.1.0)은 컴파일러가 만든 갈래 대부분을 싣지 않는다: 상태 기계의 분기 · finally 의 가드 · using 의
+// null 검사 · 람다 · 메서드 그룹 캐시, 그리고 Task · ValueTask(ConfigureAwait 여부와 무관)를 await 할 때의 IsCompleted 검사(실측 2026-11-19,
+// 실제 트리 · net8.0 Release: 경계의 상태 기계 31 개에 await 40 개 — 그중 18 개는 실린 가지가 0 개다 · AdminAsync 의 IL 조건 점프 10 개 중
+// 실린 것은 소스의 결정 넷이다). 실린 가지 182 개는 전부 소스의 결정(if · ?: · ?? · ?. · 패턴 · && · || · switch · 반복)이 있는 문장의 것이고,
+// 같은 트리의 net8.0 세 실행 · net10.0 한 실행이 경계 메서드 97 개의 줄 · 가지 수와 놓친 가지의 자리(오프셋 · 경로)까지 같았다.
+// 싣는 것 하나: 다른 awaiter 의 IsCompleted 검사(측정: `Task.Yield()` 의 YieldAwaiter 는 싣고 Task · 완료된 Task · ValueTask · 설정한 둘 ·
+// SemaphoreSlim.WaitAsync 는 안 싣는다) — 그 가지의 멈추는 쪽은 그 await 가 한 번이라도 멈춘 실행에서만 돈다(실행마다 갈릴 수 있다). 경계
+// 파일의 await 40 개는 전부 Task · ValueTask 다(실린 가지 0). 못 보는 것 둘: `catch … when (…)` 필터 안의 결정은 가지로 안 실린다(IL 의
+// endfilter 블록 — GetJsonAsync 의 두 필터에 조건 점프 넷, 데이터에 0) — 필터가 거른 쪽은 그 catch 몸통의 줄로만 보인다. 그리고 async
+// 메서드(상태 기계) 안에서는 갈래의 횟수를 도착한 자리로 센다 — 한 갈래가 다른 갈래의 도착 자리로 흘러 들어가면(else 없는 if · ??=) 안
+// 탄 그 갈래도 돈 것으로 센다(측정: 그 꼴의 async 메서드 셋은 안 탄 쪽이 1 회 · 같은 꼴의 동기 메서드 둘은 바르게 0 · 실제 트리의
+// AdminAsync L64 `??=` 는 두 쪽 합 3078(1531 + 1547)이 그 줄에 온 1547 회보다 크다). 그래서 async 메서드의 놓친 가지 수는 하한이다(늘지는
+// 않는다).
+// ⚠️ 수로 대조하는 장부의 한계(세 언어 공통) — 한 함수 안에서 시험이 옛 미도달 하나를 덮고 새 미도달 하나가 생기면 수가 같아 통과한다.
+// 장부는 함수마다 「얼마나」를 대조할 뿐 「어느 줄 · 가지」인지는 대조하지 않는다.
 // 종료코드(`unit` · `unit-report`): 0 측정 = 장부 · 1 DRIFT — 장부에 없는 미도달 · 수가 다르다 · 낡았거나 경계 밖 · 데이터에 없는 함수를
 // 가리키는 항목 · 까닭이 아니거나 열린 항목이 아닌 why(그 줄이 할 일을 말한다 — 시험을 쓰거나 까닭을 적는다) · 2 FAIL — 아래 표의
 // 무결성과 같다(데이터가 없다 · 다른 트리나 바이트의 것이다 · **단위 스위트의 성공한 실행이 아니다** · 경계 파일이 데이터에 없다 ·
@@ -125,9 +143,9 @@
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자 · 단위 장부(데이터·Docker 불필요)
-//   node scripts/integration-coverage.mjs unit        <kotlin|php> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께 돌리고 단위 미도달
-//                                                                                       장부와 대조한다(Docker 불필요 — 레인 게이트)
-//   node scripts/integration-coverage.mjs unit-report <kotlin|php> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
+//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께 돌리고 단위
+//                                                                                              미도달 장부와 대조한다(Docker 불필요 — 레인 게이트)
+//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
@@ -166,8 +184,10 @@ const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
 const JVM_LANGS = new Set(['java', 'kotlin'])
 // 단위 미도달 장부(머리 주석) — 재는 언어와 why 의 까닭 머리. 등록부 id 가 아닌 why 는 이 셋 중 하나로 시작해야 한다.
 const UNIT = 'scripts/unit-unreached.json'
-const UNIT_LANGS = ['kotlin', 'php']
+const UNIT_LANGS = ['kotlin', 'php', 'dotnet']
 const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
+// 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없다(머리 주석).
+const UNIT_BRANCHES = new Set(['kotlin', 'dotnet'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -1997,9 +2017,10 @@ function rubyReport(d) {
 }
 
 // ── dotnet — coverlet 컬렉터의 고유 JSON ──────────────────────────────────────────────────
-const DOTNET_DATA = () => join(out, 'dotnet.json')
-const DOTNET_TRX = () => join(out, 'dotnet.trx')
-const DOTNET_RUN = () => join(out, 'dotnet.run.json')
+// 단위(`unit dotnet`)는 `.unit` 이 붙은 이름이다(SUITE).
+const DOTNET_DATA = () => join(out, `dotnet${TAG}.json`)
+const DOTNET_TRX = () => join(out, `dotnet${TAG}.trx`)
+const DOTNET_RUN = () => join(out, `dotnet${TAG}.run.json`)
 // run 이 쓰는 컬렉터 설정 — 형식만 json 이고 **거르지 않는다**(경계는 리포트가 파일 경로로 고른다). 단위 설정의 `<Exclude>` 를
 // 뒤집은 `<Include>` 는 컴파일러가 만든 중첩 타입(async 상태 기계 · 람다 클래스)을 떨어뜨린다 — 실측(2026-11-06, 실제 트리):
 // 경계 10 파일의 428 줄 중 바깥 타입의 것은 175 뿐이다(머리 주석의 211/312 와 같은 꼴).
@@ -2107,11 +2128,13 @@ function dotnetSuite(dir) {
 // 같은 모델이다(열이 모두 1–2 · visited 가 모두 true — 실측).
 // 데이터에 소스 해시가 없다 — run 이 경계 파일의 sha1 을 실행 앞뒤로 재 기록에 싣고(같을 때만), report 가 트리의 바이트와 대조한다.
 // 문서 키는 절대 경로다 — CI 의 결정적 빌드(`ContinuousIntegrationBuild` — PDB 에는 `/_/`)에서도 컬렉터가 실제 경로로 되돌린다(실측).
+// 가지는 메서드마다의 `Branches`(가지 점마다 경로 둘 — `Line` · `Hits`)다 — 줄과 같이 접고 오버로드로 가른다. 단위 미도달 장부만 쓴다
+// (`units` — 머리 주석의 「dotnet 도 가지를 센다」).
 function dotnetReport(d) {
   const path = DOTNET_DATA()
   const shown = path.replace(/\\/g, '/')
   if (!existsSync(path)) {
-    fail('dotnet', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run dotnet)`)
+    fail('dotnet', `no coverage data at ${shown} — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} dotnet)`)
     return null
   }
   const bytes = readFileSync(path)
@@ -2141,7 +2164,7 @@ function dotnetReport(d) {
     }
   }
   for (const rel of docs.keys()) if (!existsSync(join(root, rel))) fail('dotnet', `${rel} is in the data but not in the tree — the data belongs to another checkout`)
-  // trx — 이 실행의 테스트 결과. 통합 스위트만 · 전부 통과.
+  // trx — 이 실행의 테스트 결과. 그 스위트(SUITE)만 · 전부 통과.
   const trxPath = DOTNET_TRX()
   const trxShown = trxPath.replace(/\\/g, '/')
   let trx = null
@@ -2151,7 +2174,7 @@ function dotnetReport(d) {
     trx = null
   }
   let note = 'coverlet json'
-  if (trx === null) fail('dotnet', `no test results at ${trxShown} — run the integration suite through the script (node scripts/integration-coverage.mjs run dotnet)`)
+  if (trx === null) fail('dotnet', `no test results at ${trxShown} — run the ${SUITE} suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} dotnet)`)
   else {
     const attr = (tag, a) => new RegExp(`\\b${a}="([^"]*)"`).exec(tag)?.[1]
     // 테스트 어셈블리도 이 트리의 것이어야 한다(다른 체크아웃의 결과가 아니다).
@@ -2178,16 +2201,31 @@ function dotnetReport(d) {
     }
     const { set: suite, stray } = dotnetSuite(join(root, d.dir))
     for (const f of sortU(stray)) fail('dotnet', `${toRepoPath(f, d.dir)} has a [Trait("Category", "Integration")] that is not on a class declaration — this reader reads the suite from class-level traits only`)
-    const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
-    if (foreign.length) {
-      const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
-      fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes whose declaration carries [Trait("Category", "Integration")])`)
+    if (SUITE === 'unit') {
+      // 단위 스위트는 통합 스위트 밖의 시험이다(레인의 `--filter "Category!=Integration"`). 정의에 잇지 못하는 결과는 어느 쪽인지 모르므로
+      // 섞인 것으로 본다(통합 판정이 그것을 스위트 밖으로 보는 것과 같은 쪽 — 모르면 수치를 내지 않는다).
+      const mixed = results.filter((r) => {
+        const c = classOf.get(r.id)
+        return c === undefined || suite.has(c)
+      })
+      if (mixed.length) {
+        const eg = sortU(mixed.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
+        fail('dotnet', `the run included tests of the integration suite or tests it cannot place (${eg}) — the data would not be unit-only (unit dotnet runs --filter "Category!=Integration"; the integration suite = classes whose declaration carries [Trait("Category", "Integration")])`)
+      }
+    } else {
+      const foreign = results.filter((r) => !suite.has(classOf.get(r.id)))
+      if (foreign.length) {
+        const eg = sortU(foreign.map((r) => r.name ?? '?')).slice(0, 3).join(' · ')
+        fail('dotnet', `the run included tests outside the integration suite (${eg}) — the report would not be integration-only (the suite = classes whose declaration carries [Trait("Category", "Integration")])`)
+      }
     }
     const rt = /\(64-bit \.NET ([\d.]+)\)/.exec(trx)?.[1]
-    note = `.NET ${rt ?? '?'} · coverlet json · ${results.length} test${results.length === 1 ? '' : 's'}`
+    note = `.NET ${rt ?? '?'} · coverlet json · ${results.length} ${SUITE === 'unit' ? 'unit ' : ''}test${results.length === 1 ? '' : 's'}`
   }
   const files = []
   const never = []
+  // 함수마다 0 회인 줄 · 0 회인 가지 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다).
+  const units = []
   for (const f of d.files) {
     const e = docs.get(f)
     if (!e) {
@@ -2215,6 +2253,13 @@ function dotnetReport(d) {
           broken = true
           break
         }
+        // 가지 — coverlet 은 가지가 없는 메서드에도 빈 배열을 싣는다(실측). 없거나 꼴이 다르면 가지 수를 셀 수 없다.
+        const branches = v?.Branches
+        if (!Array.isArray(branches) || !branches.every((b) => isObj(b) && Number.isInteger(b.Line) && b.Line >= 1 && isCount(b.Hits))) {
+          fail('dotnet', `${f}: cannot read the branch counts of ${sig} in ${shown}`)
+          broken = true
+          break
+        }
         const fo = dotnetFold(cls, sig)
         if (!fo) {
           fail('dotnet', `${f}: cannot name ${cls}::${sig.replace(/^.*?::/, '')} — not a generated name this reader knows`)
@@ -2222,11 +2267,11 @@ function dotnetReport(d) {
           break
         }
         const key = `${fo.type}.${fo.member}`
-        const m = methods.get(key) ?? { plain: new Map(), machines: new Set(), lambdas: 0, lines: new Map() }
+        const m = methods.get(key) ?? { plain: new Map(), machines: new Set(), lambdas: 0, lines: new Map(), branches: [] }
         if (fo.kind === 'sm') m.machines.add(fo.machine)
         else if (fo.kind === 'lambda') m.lambdas++
-        // 시그니처마다 따로 든다 — 오버로드면 그것으로 가른다(아래).
-        const own = fo.kind === 'plain' ? (m.plain.get(fo.params) ?? new Map()) : null
+        // 시그니처마다 따로 든다 — 오버로드면 그것으로 가른다(아래). 가지도 줄과 같이 그 시그니처의 것이다.
+        const own = fo.kind === 'plain' ? (m.plain.get(fo.params) ?? { lines: new Map(), branches: [] }) : null
         for (const [k, c] of Object.entries(lines)) {
           const ln = Number(k)
           if (ln > nlines) {
@@ -2235,10 +2280,20 @@ function dotnetReport(d) {
             break
           }
           m.lines.set(ln, (m.lines.get(ln) ?? 0) + c)
-          if (own) own.set(ln, (own.get(ln) ?? 0) + c)
+          if (own) own.lines.set(ln, (own.lines.get(ln) ?? 0) + c)
         }
         if (broken) break
-        if (own) m.plain.set(fo.params, own)
+        const past = branches.find((b) => b.Line > nlines)
+        if (past) {
+          fail('dotnet', `${f}: ${key} counts a branch on line ${past.Line}, past the ${nlines} lines of the file — the data contradicts the tree`)
+          broken = true
+          break
+        }
+        m.branches.push(...branches)
+        if (own) {
+          own.branches.push(...branches)
+          m.plain.set(fo.params, own)
+        }
         methods.set(key, m)
       }
       if (broken) break
@@ -2248,18 +2303,21 @@ function dotnetReport(d) {
     const per = new Map()
     let amb = null
     for (const [key, m] of methods) {
-      if (m.plain.size + m.machines.size <= 1) per.set(key, m.lines)
+      if (m.plain.size + m.machines.size <= 1) per.set(key, m)
       else if (m.machines.size || m.lambdas) amb ??= key
-      else for (const [p, ls] of m.plain) per.set(`${key}(${p})`, ls)
+      else for (const [p, own] of m.plain) per.set(`${key}(${p})`, own)
     }
     if (amb) {
       fail('dotnet', `${f}: ${amb} has overloads and a state machine or lambda folds into one of them — this reader cannot tell which`)
       continue
     }
     const fileLines = new Map()
-    for (const [key, ls] of per) {
+    for (const [key, { lines: ls, branches: bs }] of per) {
       for (const [ln, c] of ls) fileLines.set(ln, (fileLines.get(ln) ?? 0) + c)
       if (ls.size && [...ls.values()].every((c) => c === 0)) never.push({ file: f, line: Math.min(...ls.keys()), name: key, stmts: ls.size })
+      // 자리는 첫 줄이다 — 줄 없이 가지만 실린 이름(같은 줄의 람다)은 첫 가지의 줄.
+      const at = ls.size ? Math.min(...ls.keys()) : bs.length ? Math.min(...bs.map((b) => b.Line)) : 0
+      units.push({ file: f, line: at, name: key, lines: [...ls.values()].filter((c) => c === 0).length, branches: bs.filter((b) => b.Hits === 0).length })
     }
     const covered = [...fileLines.values()].filter((c) => c > 0).length
     // coverlet 은 메서드 밖 줄을 싣지 않는다(필드 초기화는 생성자 · 정적 생성자의 줄이다).
@@ -2274,8 +2332,9 @@ function dotnetReport(d) {
     rec = null
   }
   const sha = (b) => createHash('sha1').update(b).digest('hex')
-  if (!rec || rec.run !== 'dotnet') {
-    fail('dotnet', `no record that \`run dotnet\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run dotnet) so the report can tell a complete, successful run`)
+  // 기록의 `suite` 는 단위 실행만 쓴다(`unit` — 없으면 통합이다). 다른 스위트의 기록이면 기록이 없는 것과 같다.
+  if (!rec || rec.run !== 'dotnet' || (rec.suite ?? 'integration') !== SUITE) {
+    fail('dotnet', `no record that \`${RUN_CMD} dotnet\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} dotnet) so the report can tell a complete, successful run`)
     return null
   }
   if (rec.exit !== 0) {
@@ -2283,11 +2342,11 @@ function dotnetReport(d) {
     return null
   }
   if (rec.data_sha1 !== sha(bytes)) {
-    fail('dotnet', `${shown} is not the data \`run dotnet\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    fail('dotnet', `${shown} is not the data \`${RUN_CMD} dotnet\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
   if (trx !== null && rec.trx_sha1 !== sha(readFileSync(trxPath))) {
-    fail('dotnet', `${trxShown} is not the test result \`run dotnet\` recorded — another run wrote over it`)
+    fail('dotnet', `${trxShown} is not the test result \`${RUN_CMD} dotnet\` recorded — another run wrote over it`)
     return null
   }
   if (!isObj(rec.files)) {
@@ -2298,7 +2357,7 @@ function dotnetReport(d) {
     const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
     if (rec.files[f] !== now) fail('dotnet', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
   }
-  return { path, note, files, never }
+  return { path, note, files, never, units }
 }
 
 // ── java ─────────────────────────────────────────────────────────────────────────────────
@@ -3333,8 +3392,8 @@ function unitLedgerFor(l) {
     fail(l, `${UNIT} has no ${l} object — an empty ledger is {}, not a missing one`)
     return null
   }
-  // kotlin 은 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
-  const want = l === 'kotlin' ? ['branches', 'lines', 'why'] : ['lines', 'why']
+  // kotlin · dotnet 은 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
+  const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : ['lines', 'why']
   for (const [k, v] of Object.entries(e)) {
     const ok = v !== null && typeof v === 'object' && !Array.isArray(v) && sortU(Object.keys(v)).join() === want.join() && want.every((x) => (x === 'why' ? typeof v.why === 'string' && v.why !== '' : isCount(v[x])))
     if (!ok) {
@@ -3351,7 +3410,7 @@ function whyProblem(reg, key, why) {
   if (head) return why.slice(head.length).trim() ? null : `${key}: why "${why}" names a kind but not the reason — say why after "${head}"`
   return reg && !reg.open.has(why) ? `${key}: why "${why}" is neither ${UNIT_WHY.join(' · ')} with a reason nor an open item of ${REGISTRY}` : null
 }
-const unitCounts = (l, x) => (l === 'kotlin' ? `${x.lines} line${x.lines === 1 ? '' : 's'} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : `${x.lines} line${x.lines === 1 ? '' : 's'}`)
+const unitCounts = (l, x) => (UNIT_BRANCHES.has(l) ? `${x.lines} line${x.lines === 1 ? '' : 's'} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : `${x.lines} line${x.lines === 1 ? '' : 's'}`)
 const unitMissed = (u) => u.lines > 0 || (u.branches ?? 0) > 0
 // `unit` · `unit-report` — 측정(단위 실행의 데이터)과 장부를 함수마다 대조한다. 종료코드는 머리 주석의 단위 표다.
 function unitReport(l) {
@@ -3361,7 +3420,7 @@ function unitReport(l) {
   const led = unitLedgerFor(l)
   // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x) }[l]
+  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport }[l]
   const data = fails(l) ? null : reader(d)
   const rows = []
   if (data && !fails(l)) {
@@ -3375,7 +3434,7 @@ function unitReport(l) {
         const e = led[key]
         rows.push({ ...u, key, why: e ? e.why : 'NONE' })
         if (!e) drift(l, `unrecorded unreached code ${key} — the unit suite never reaches ${unitCounts(l, u)} of it: test that code, or record why in ${UNIT}`)
-        else if (e.lines !== u.lines || (l === 'kotlin' && e.branches !== u.branches))
+        else if (e.lines !== u.lines || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
           drift(l, `${key}: the unit run leaves ${unitCounts(l, u)} unreached, ${UNIT} records ${unitCounts(l, e)} — ${u.lines > e.lines || (u.branches ?? 0) > (e.branches ?? 0) ? 'test what the unit suite does not reach, or record why and correct the counts' : 'the unit suite reaches more of it now: lower the counts and check the why'}`)
       }
       for (const [key, e] of Object.entries(led)) {
@@ -3414,7 +3473,9 @@ function printUnit(l, d, data, rows) {
   console.log(
     l === 'kotlin'
       ? '  (counts = JaCoCo method counters — missed lines · missed branches — summed over the methods folded into each source function: lambdas, local functions, default-argument bridges, anonymous objects)'
-      : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
+      : l === 'dotnet'
+        ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
+        : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
   )
   const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
   for (const r of sorted) console.log(`  UNREACHED ${r.file}:${r.line} ${r.name} · ${unitCounts(l, r)} · ${r.why}`)
@@ -3817,11 +3878,12 @@ function run(l) {
     return rc
   }
   if (l === 'dotnet') {
-    // 옛 데이터 · trx · 기록 · 결과 디렉터리를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    // 옛 데이터 · trx · 기록 · 결과 디렉터리를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게). 단위 미도달
+    // 장부(`unit dotnet`)는 같은 길로 단위 스위트를 돈다 — 이름은 `.unit` 이 붙는다(SUITE).
     const data = DOTNET_DATA()
     const trx = DOTNET_TRX()
-    const results = join(out, 'dotnet-results')
-    const settings = join(out, 'dotnet.runsettings')
+    const results = join(out, `dotnet${TAG}-results`)
+    const settings = join(out, `dotnet${TAG}.runsettings`)
     for (const f of [data, trx, DOTNET_RUN(), settings]) rmSync(f, { force: true })
     rmSync(results, { recursive: true, force: true })
     const stop = (msg) => {
@@ -3838,17 +3900,20 @@ function run(l) {
     const recorded = sortU([...d.files, ...surfaceOf(l)])
     const shas = () => Object.fromEntries(recorded.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
     const before = shas()
-    // 레인의 명령(`dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"`)과 같은 해 · 구성 · 필터다.
+    // 레인의 명령(통합 `dotnet test dotnet/Keycloak.Sdk.sln -c Release --filter "Category=Integration"` · 단위는 같은 해 · 구성에
+    // `--filter "Category!=Integration"`)과 같은 해 · 구성 · 필터다.
     // ⚠️ 대상이 여럿(`<TargetFrameworks>` — 읽는 규칙은 scripts/lib/dotnet-tfm.mjs)이면 **가장 낮은 대상 하나**만 돈다 —
     // 대상마다 첨부가 하나씩 생겨 아래 「첨부 하나」 불변식이 멈추고, 두 대상의 데이터를 합치면 같은 경계 파일을 두 번 센다.
-    // 하한(소비자가 받는 가장 낮은 자산)이 재는 대상이다. 나머지 대상의 통합은 레인 잡이 커버리지 없이 돈다.
+    // 하한(소비자가 받는 가장 낮은 자산)이 재는 대상이다. 나머지 대상의 통합은 레인 잡이 커버리지 없이 돈다. 단위 장부도 같은 대상이다 —
+    // 두 장부가 같은 컴파일 결과의 이름 · 줄을 읽는다(실측 2026-11-19: net10.0 의 단위 실행도 경계 메서드마다 줄 · 가지 수가 같았다).
     const props = join(cwd, 'Directory.Build.props')
     const tfms = existsSync(props) ? dotnetTfms(readFileSync(props, 'utf8')) : []
     const framework = tfms.length > 1 ? ['--framework', tfms[0]] : []
+    const filter = SUITE === 'unit' ? 'Category!=Integration' : 'Category=Integration'
     const rc = spawnStep(
       'dotnet',
-      ['test', slns[0], '-c', 'Release', ...framework, '--filter', 'Category=Integration', '--collect:XPlat Code Coverage', '--settings', settings,
-        '--results-directory', results, '--logger', 'trx;LogFileName=dotnet.trx'],
+      ['test', slns[0], '-c', 'Release', ...framework, '--filter', filter, '--collect:XPlat Code Coverage', '--settings', settings,
+        '--results-directory', results, '--logger', `trx;LogFileName=${basename(trx)}`],
       cwd,
     )
     const after = shas()
@@ -3859,10 +3924,11 @@ function run(l) {
     if (att.length > 1) return stop(`the run left ${att.length} coverage attachments — this reader knows one test project per solution`)
     if (att.length === 1) {
       copyFileSync(att[0], data)
-      if (existsSync(join(results, 'dotnet.trx'))) copyFileSync(join(results, 'dotnet.trx'), trx)
+      if (existsSync(join(results, basename(trx)))) copyFileSync(join(results, basename(trx)), trx)
       const sha = (p) => (existsSync(p) ? createHash('sha1').update(readFileSync(p)).digest('hex') : null)
       const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
-      writeFileSync(DOTNET_RUN(), `${JSON.stringify({ run: 'dotnet', exit: rc, data_sha1: sha(data), trx_sha1: sha(trx), files: same ? before : null })}\n`)
+      const facts = { data_sha1: sha(data), trx_sha1: sha(trx), files: same ? before : null }
+      writeFileSync(DOTNET_RUN(), `${JSON.stringify(SUITE === 'unit' ? { run: 'dotnet', suite: 'unit', exit: rc, ...facts } : { run: 'dotnet', exit: rc, ...facts })}\n`)
     }
     return rc
   }

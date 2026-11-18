@@ -10,5 +10,11 @@
       "php/src/AuthClient.php"
     ],
     "owners": {}
+  },
+  "dotnet": {
+    "pinned": [
+      "dotnet/src/Kc/AuthClient.cs"
+    ],
+    "owners": {}
   }
 }
