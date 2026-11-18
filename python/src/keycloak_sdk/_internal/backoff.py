@@ -68,8 +68,14 @@ class JwksFailureBackoff:
 def _default_jitter() -> float:
     """[0.5, 1.0) 배수 — thundering herd 를 흩는다.
 
-    ⚠️ **PRNG API 를 쓰지 않고 나노초 시계에서 뽑는다.** 이 값은 비밀이 아니지만, 보안 민감
-    코드에서 약한 PRNG 를 호출하면 정적분석이 정당하게 막는다(실측: sonar S2245 · ruff S311 ·
-    gosec G404). 일곱 언어가 **같은 관용**을 쓴다.
+    ⚠️ **PRNG API 를 쓰지 않고 고해상도 시계(`perf_counter_ns`)에서 뽑는다.** 이 값은 비밀이
+    아니지만, 보안 민감 코드에서 약한 PRNG 를 호출하면 정적분석이 정당하게 막는다(실측: sonar
+    S2245 · ruff S311 · gosec G404). 일곱 언어가 **같은 관용**을 쓴다.
+
+    ⚠️ **`monotonic_ns` 로 되돌리지 말 것 — 단위가 나노초여도 해상도는 아니다.** Windows 의
+    CPython 3.10.21 · 3.12.14 는 `monotonic` 이 `GetTickCount64()`(해상도 0.015625 s)라 값이
+    언제나 1,000,000 의 배수였고, 아래 여섯 자리에서 뽑은 배수가 늘 0.5 였다(실측: 200회 → 1가지,
+    등록부 `python-jitter-constant-on-windows-py310`). 같은 자리의 `perf_counter` 는
+    `QueryPerformanceCounter()`(1e-07 s)로 200가지다. 3.13.11 은 두 시계 모두 QPC 다.
     """
-    return 0.5 + (time.monotonic_ns() % 1_000_000) / 2_000_000
+    return 0.5 + (time.perf_counter_ns() % 1_000_000) / 2_000_000
