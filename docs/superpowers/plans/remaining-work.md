@@ -80,7 +80,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `323`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `326`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -167,7 +167,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ---
 
-## A. 확정 결함 — 13건 (열림 2)
+## A. 확정 결함 — 13건 (열림 1)
 
 3렌즈 만장일치 + 오케스트레이터 재실행 확인.
 
@@ -184,7 +184,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `check-coverage-arg-parsing-silently-disarms-gate` **[M/S]** check-coverage.mjs의 인자 파싱이 임계값을 조용히 0/NaN으로 만든다 — 실측으로 `--min-line=99`가 「임계 0/0」으로 통과했다 · `scripts/check-coverage.mjs:29`
 - [x] `php-default-serializers-bypass-masking` **[M/S]** [weak·채택] PHP는 마스킹을 __toString에만 걸어 json_encode()가 accessToken·refreshToken·clientSecret을 원문으로 뱉는다 · `php/src/Token/TokenSet.php:9`
 - [x] `java-rules-close-scope-ambiguous` **[L/S · 닫힘 2026-09-06 #423]** [weak·채택] .claude/rules/java.md가 close()의 정리 범위를 java/README.md와 반대로 읽히게 적는다 · `.claude/rules/java.md:33`
-- [ ] `python-raw-upload-certificate-bearer-in-url` **[M/S · 신규 2026-11-18]** aio `a_upload_certificate`(python-keycloak 7.1.1)가 `headers=` 를 쿼리로 보내 admin bearer 가 URL 에 실린다(`raw` 경로 실측) · `python/src/keycloak_sdk/_internal/admin_guard.py`
+- [x] `python-raw-upload-certificate-bearer-in-url` **[M/S · 닫힘 2026-11-18 #1145]** URL 에 실릴 bearer 는 보내지 않는다
 - [ ] `auto-bump-manifest-crosscheck-skip` **[L/M]** [weak·보류] auto 범프 4개 언어의 매니페스트 대조 스킵 — 기각 근거가 유효하다(잔여는 버전 역행뿐) · `.github/workflows/dispatch-release.yml:194`
 
 ## B. 재검증 대상 — 52건 (열림 2)
@@ -252,26 +252,29 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 159건 (열림 37)
+## C. 품질 부채 — 162건 (열림 37)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 93
+### 9언어 소스 — 96
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
 - [x] `jwks-refetch-budget-overclaimed` **[M/M · 닫힘 2026-09-07]** JWKS 재조회 예산 문서가 실제보다 강하게 약속했다 — cold 로드가 예산을 안 쓴다 · `rust/src/jwks.rs:34-49`
 - [x] `jwks-response-not-validated` **[M/M · 닫힘 2026-09-07 #440]** JWKS 응답을 검증 없이 신뢰했다 — JVM 둘의 본문 크기 무제한은 #400 이 `DEFAULT_HTTP_SIZE_LIMIT` 를 되살려 닫았고, **Rust 의 상태코드 미확인은 #440 이 닫았다**(그 전 실측: `error_for_status`·`.status()` **0건**) · `rust/src/jwks.rs:34`
 - [x] `authcode-flow-verification-defeated` **[M/L · 닫힘 2026-11-17 #1131]** 토큰 종류 혼동을 `typ` · `azp` 로 닫음(아홉 언어, 변이 27/27) · 잔여는 #1135 · #1136
-- [x] `access-token-typ-deny-list` **[L/S · 닫힘 2026-11-17 #1136]** Keycloak 의 허용 목록으로 — `typ` 이 `Bearer` · `DPoP`(ASCII 대소문자 무시)일 때만; 거부 목록은 `typ` 없는 JARM 응답 JWT 를 받았다
-- [x] `id-token-validator-not-public` **[M/M · 닫힘 2026-11-17 #1135]** 아홉 언어 `validateIdToken` 류 · id_token 경로는 `typ` 이 정확히 `ID`
-- [x] `python-admin-unencodable-body-message-false` **[L/S · 닫힘 2026-11-17 #1134]** 같은 인코더로 먼저 써 보고 node 와 같은 문구
-- [x] `node-authz-request-redirect-unvalidated` **[L/S · 닫힘 2026-11-17 #1133]** 두 요청이 같은 정규형 `redirect_uri` 를 싣는다(갈려서 Keycloak 이 교환을 거부했다) · 쿼리 · fragment 거부
+- [x] `access-token-typ-deny-list` **[L/S · 닫힘 2026-11-17 #1136]** 허용 목록 `Bearer` · `DPoP`
+- [x] `id-token-validator-not-public` **[M/M · 닫힘 2026-11-17 #1135]** 아홉 언어 `validateIdToken` 류
+- [x] `python-admin-unencodable-body-message-false` **[L/S · 닫힘 2026-11-17 #1134]** node 와 같은 문구
+- [x] `node-authz-request-redirect-unvalidated` **[L/S · 닫힘 2026-11-17 #1133]** 두 요청이 같은 정규형 `redirect_uri`
 - [x] `authz-request-redirect-unvalidated` **[L/S · 닫힘 2026-11-18 #1140]** 여덟 언어 R1 · R2 · R3, go `BuildAuthorizationRequest`
 - [x] `php-admin-unencodable-body-class` **[L/S · 닫힘 2026-11-18 #1139]** 요청 전 `KeycloakTransportError`
-- [ ] `redirect-uri-r3-narrower-than-keycloak` **[L/S · 신규 2026-11-18]** R3 가 `URI.create` 보다 좁다 — 쿼리 · 호스트 밖 `[` `]` · scheme 뒤 빈 값(`https:`) · `go/redirect_uri.go`
-- [ ] `rust-authz-scope-openid-duplicated` **[L/S · 신규 2026-11-18]** Rust 인가 URL 에 `scope=openid+openid` · `rust/src/auth.rs`
-- [ ] `admin-unencodable-body-residuals` **[L/S · 신규 2026-11-18]** Ruby · Go 문구가 갈린다 · 값을 조용히 바꾼다(.NET 서로게이트 · Go 잘못된 UTF-8 → U+FFFD, JVM 맵의 NaN → `"NaN"`) · `go/admin_users.go`
+- [x] `redirect-uri-r3-narrower-than-keycloak` **[L/S · 닫힘 2026-11-18 #1147]** R4 — 빈 scheme 뒤 · 경로의 대괄호(일곱 언어)
+- [x] `rust-authz-scope-openid-duplicated` **[L/S · 닫힘 2026-11-18 #1144]** `openid` 한 번
+- [x] `admin-unencodable-body-residuals` **[L/S · 닫힘 2026-11-18 #1146]** NaN · ±Inf · 바꿔 쓰던 텍스트는 요청 전 공통 문구(일곱 언어)
+- [ ] `redirect-uri-create-residuals` **[L/S · 신규 2026-11-18]** R4 가 받는 `URI.create` 거부 — 빈 authority(`https://`) · 대괄호 호스트 내용(`[zz]`) · `go/redirect_uri.go`
+- [ ] `node-redirect-uri-r3-chars` **[L/S · 신규 2026-11-18]** Node href 에 R3 문자가 남는다(`^` `|` 깨진 `%` 등) · `node/src/redirect-uri.ts`
+- [ ] `python-upload-certificate-headers-not-restored` **[L/S · 신규 2026-11-18]** 실패한 `upload_certificate` 뒤 다음 호출이 multipart `Content-Type` 으로 나간다(상류 · 실측) · `python/src/keycloak_sdk/_internal/admin_guard.py`
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** rust·python·ruby·php·dotnet 이 비었거나 문자열이 아닌 `access_token` 으로 TokenSet 을 만들었다 — 불변식(그런 응답은 TokenSet 이 아니다)을 `test-security-defaults.sh` 축 1c 가 집행한다, 변이 7/7 CAUGHT · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
   - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다. 셋째 자리(java 레그 2026-10-05): admin 토큰 400·응답 없는 전송 실패의 원인 사슬에 jakarta `ProcessingException` 이 남는다(토큰 인용 없음).
