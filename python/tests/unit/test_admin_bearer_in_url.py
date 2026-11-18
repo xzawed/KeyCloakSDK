@@ -53,6 +53,9 @@ _UPLOAD = "/admin/realms/r/clients/c1/certificates/jwt.credential/upload-certifi
 class _Seen:
     method: str
     target: str  # 경로와 쿼리 — 받은 그대로
+    #: 받은 `Content-Type` — 대조(`==`)에는 들지 않는다. 헤더 복원 시험
+    #: (`test_admin_upload_certificate_headers.py`)이 읽는다.
+    content_type: str | None = field(default=None, compare=False)
 
 
 @dataclass
@@ -63,6 +66,11 @@ class _Idp:
     url: str = ""
     seen: list[_Seen] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    #: 주면 `held_path` 의 다음 요청 하나를 붙잡는다 — `holding` 을 알리고 이것이 설정될 때까지
+    #: 기다렸다가 응답 없이 끊는다(보낸 쪽에는 전송 실패다). 그 뒤의 요청은 답한다.
+    hold: threading.Event | None = None
+    held_path: str = _TOKEN
+    holding: threading.Event = field(default_factory=threading.Event)
 
     def admin_requests(self) -> list[_Seen]:
         with self.lock:
@@ -80,9 +88,17 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
             length = int(self.headers.get("Content-Length") or 0)
             if length:
                 self.rfile.read(length)
-            with idp.lock:
-                idp.seen.append(_Seen(self.command, self.path))
             path = urlsplit(self.path).path
+            with idp.lock:
+                idp.seen.append(_Seen(self.command, self.path, self.headers.get("Content-Type")))
+                hold = idp.hold if path == idp.held_path else None
+                if hold is not None:
+                    idp.hold = None
+            if hold is not None:
+                idp.holding.set()
+                hold.wait(10)
+                self.close_connection = True
+                return
             status, obj = 404, {}
             if path == _TOKEN:
                 status = 200
