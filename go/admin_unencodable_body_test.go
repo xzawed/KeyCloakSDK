@@ -54,7 +54,8 @@ func newWriteProbe(t *testing.T) *writeProbe {
 		p.bodies = append(p.bodies, string(b))
 		p.mu.Unlock()
 		if r.Method == http.MethodPost {
-			w.Header().Set("Location", r.URL.Path+"/new-id")
+			// 고정 값 — gocloak 은 Location 의 마지막 조각만 id 로 읽는다(요청 입력을 되울리지 않는다: SonarCloud S5146).
+			w.Header().Set("Location", "/admin/realms/r/created/new-id")
 			w.WriteHeader(http.StatusCreated)
 			return
 		}
