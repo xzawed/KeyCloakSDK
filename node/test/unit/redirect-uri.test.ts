@@ -525,7 +525,7 @@ describe('href 에 남는 R3 문자는 두 호출 모두 요청 없이 거부한
         const sent = new URL(auth.createAuthorizationRequest(value).url).searchParams.get(
           'redirect_uri',
         )
-        expect(sent).toBe(value.replace('^', '%5E'))
+        expect(sent).toBe(value.replaceAll('^', '%5E'))
       }
     })
   }
