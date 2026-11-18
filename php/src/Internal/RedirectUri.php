@@ -20,10 +20,14 @@ use Xzawed\Keycloak\Exception\KeycloakConfigError;
  *    followed by two hex digits (measured on JDK 21.0.8). A string that is not valid UTF-8 is refused here too: with
  *    `/u`, `preg_match` returns false for it instead of matching, and false is a refusal.
  *  - R4 what `java.net.URI.create` still refuses after R1–R3 (same message as R3, measured on JDK 21.0.8): nothing after
- *    the scheme's `:` (`https:`); and, when the part after the `:` starts with `/`, a `[` or `]` before the first `?`
- *    anywhere but in the authority's one bracketed host (`https://[::1]:8443/cb`) — `https://app/c[b`,
- *    `https://app[1]/cb`, `myapp:/c[b`. An opaque value (`myapp:c[b`, `urn:x[y]`) and the query may hold brackets. Not
- *    checked: what a bracketed host holds (`[zz]`, `[v1.x]`), and an empty authority (`https://`).
+ *    the scheme's `:` (`https:`, R4a); and, when the part after the `:` starts with `/`, a `[` or `]` before the first `?`
+ *    anywhere but in the authority's one bracketed host — `https://app/c[b`, `https://app[1]/cb`, `myapp:/c[b` (R4b);
+ *    `//` with nothing after it (`https://`, `myapp://` — R4c; `https:///cb` and `https://?x=1` are read); a bracketed
+ *    host that is not an RFC 3986 IPv6 address with Java's dotted quads (leading zeros allowed), optionally followed by a
+ *    zone id of letters, digits, `_` and `.` after a `%` (`[zz]`, `[v1.x]`, `[::1::2]` — R4d); and a port after that
+ *    host above 2147483647 once its leading zeros are dropped (R4e). An opaque value (`myapp:c[b`, `urn:x[y]`) and the
+ *    query may hold brackets. R3 still refuses a zone id whose `%` is not followed by two hex digits (`[fe80::1%eth0]`),
+ *    which `URI.create` reads, because RFC 6874 §2 writes that `%` as `%25` in a URI (`[fe80::1%25eth0]`).
  *
  * R1, R2 and R4 read bytes (no `/u`), so an invalid UTF-8 string still gets R1 and R2 first; R4 runs only on what R3 let
  * through. A refusal is a KeycloakConfigError whose message never quotes the value.
@@ -42,8 +46,32 @@ final class RedirectUri
     private const UNREADABLE = '/[\x{00}-\x{20}\x{7F}-\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}'
         . '"<>\\\\^`{|}]|%(?![0-9A-Fa-f]{2})/u';
 
-    /** R4 — the one bracketed host an authority may hold: optional user info, `[`, no bracket or `/`, `]`, optional port. */
-    private const BRACKETED_HOST = '~^([^@\[\]/]*@)?\[[^\[\]/]+\](:[0-9]*)?$~D';
+    /** R4d — RFC 3986's `h16`. */
+    private const H16 = '[0-9A-Fa-f]{1,4}';
+    /** R4d — RFC 3986's `dec-octet` as Java reads it: leading zeros allowed (`01`, `0001`, `00000000255`). */
+    private const DEC = '0*(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])';
+    /** R4d — RFC 3986's `ls32`. */
+    private const LS32 = '(?:' . self::H16 . ':' . self::H16
+        . '|' . self::DEC . '\.' . self::DEC . '\.' . self::DEC . '\.' . self::DEC . ')';
+    /** R4d — RFC 3986's `IPv6address`, one alternative per line. */
+    private const IPV6 = '(?:(?:' . self::H16 . ':){6}' . self::LS32
+        . '|::(?:' . self::H16 . ':){5}' . self::LS32
+        . '|(?:' . self::H16 . ')?::(?:' . self::H16 . ':){4}' . self::LS32
+        . '|(?:(?:' . self::H16 . ':){0,1}' . self::H16 . ')?::(?:' . self::H16 . ':){3}' . self::LS32
+        . '|(?:(?:' . self::H16 . ':){0,2}' . self::H16 . ')?::(?:' . self::H16 . ':){2}' . self::LS32
+        . '|(?:(?:' . self::H16 . ':){0,3}' . self::H16 . ')?::' . self::H16 . ':' . self::LS32
+        . '|(?:(?:' . self::H16 . ':){0,4}' . self::H16 . ')?::' . self::LS32
+        . '|(?:(?:' . self::H16 . ':){0,5}' . self::H16 . ')?::' . self::H16
+        . '|(?:(?:' . self::H16 . ':){0,6}' . self::H16 . ')?::)';
+
+    /**
+     * R4d — the one bracketed host an authority may hold: optional user info, `[`, an IPv6 address, an optional zone id
+     * (Java's scope_id: letters, digits, `_`, `.`), `]`, an optional port (group 1 — R4e reads it).
+     */
+    private const BRACKETED_AUTHORITY = '~^(?:[^@\[\]/]*@)?\[' . self::IPV6 . '(?:%[A-Za-z0-9_.]+)?\](?::([0-9]*))?$~D';
+
+    /** R4e — Java's `Integer.MAX_VALUE`: `URI` reads a port with `Integer.parseInt`. */
+    private const PORT_MAX = 2147483647;
 
     public static function check(?string $redirectUri): void
     {
@@ -74,9 +102,26 @@ final class RedirectUri
         if (!str_starts_with($head, '//')) {
             return strpbrk($head, '[]') === false;
         }
+        if ($rest === '//') {
+            return false;
+        }
         [$authority, $path] = explode('/', substr($head, 2), 2) + [1 => ''];
 
-        return (strpbrk($authority, '[]') === false || preg_match(self::BRACKETED_HOST, $authority) === 1)
+        return (strpbrk($authority, '[]') === false || self::bracketedHost($authority))
             && strpbrk($path, '[]') === false;
+    }
+
+    /**
+     * R4d and R4e on an authority that holds a bracket: its one bracketed host, then the port's digits without their
+     * leading zeros — at most ten, and no larger than PORT_MAX.
+     */
+    private static function bracketedHost(string $authority): bool
+    {
+        if (preg_match(self::BRACKETED_AUTHORITY, $authority, $host) !== 1) {
+            return false;
+        }
+        $digits = ltrim($host[1] ?? '', '0');
+
+        return strlen($digits) <= 10 && (int) $digits <= self::PORT_MAX;
     }
 }

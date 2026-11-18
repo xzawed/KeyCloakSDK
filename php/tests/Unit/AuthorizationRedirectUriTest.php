@@ -27,8 +27,9 @@ use Xzawed\Keycloak\OidcEndpoints;
  * 예전에는 `createAuthorizationRequest()` 가 어떤 문자열이든 실었다(`cb` · `not a url` · `https://app/cb#f`). 규칙은
  * 순서대로 넷이다 — R1 절대 URI(scheme 과 `:`) · R2 fragment 없음(`#` 가 어디에도 없다 — 빈 fragment 도) · R3 Keycloak 이
  * 읽는 URI(서버의 `java.net.URI.create` 가 던지는 값 — RFC 3986 §2. 잘못된 UTF-8 도 R3) · R4 R3 를 지나도 서버가 던지는 값
- * (scheme 의 `:` 뒤가 빔 · `?` 앞 경로나 authority 의 괄호 호스트 밖의 `[`·`]` — 등록부 `redirect-uri-r3-narrower-than-keycloak`,
- * 문구는 R3 와 같다). 인자가 null 이면 검사하지 않는다 — 그때 실리는 것은 config 값이고, 그 값은 `KeycloakConfig` 생성자가 같은
+ * (scheme 의 `:` 뒤가 빔 · `?` 앞 경로나 authority 의 괄호 호스트 밖의 `[`·`]` — 등록부 `redirect-uri-r3-narrower-than-keycloak`.
+ * `//` 뒤가 빔 · IPv6 주소가 아닌 괄호 호스트 · Java int 를 넘는 포트 — 등록부 `redirect-uri-create-residuals`. 문구는 R3 와
+ * 같다). 인자가 null 이면 검사하지 않는다 — 그때 실리는 것은 config 값이고, 그 값은 `KeycloakConfig` 생성자가 같은
  * 규칙으로 본다.
  *
  * 위반은 KeycloakConfigError 이고 메시지는 입력을 인용하지 않는다. 받은 값은 고쳐 쓰지 않는다 — 교환이 같은 문자열을
@@ -39,6 +40,11 @@ final class AuthorizationRedirectUriTest extends TestCase
     private const NOT_ABSOLUTE = 'invalid redirect_uri: not an absolute URI (RFC 6749 §3.1.2)';
     private const FRAGMENT = 'invalid redirect_uri: a fragment is not allowed (RFC 6749 §3.1.2)';
     private const NOT_VALID = 'invalid redirect_uri: not a valid URI (RFC 3986 §2)';
+    /**
+     * 일부러 다른 셋 — JDK 는 받지만 R3 가 거부한다: zone id 의 `%` 뒤가 16진 두 자리가 아니다. RFC 6874 §2 는 URI 에서 그
+     * `%` 를 `%25` 로 쓴다(`[fe80::1%25eth0]` 는 둘 다 받는다).
+     */
+    private const ZONE_ID_R3 = ['https://[fe80::1%eth0]/cb', 'https://[::1%1]/cb', 'https://[::1%zz]/cb'];
 
     /** @return iterable<string, array{string}> */
     public static function notAbsolute(): iterable
@@ -121,6 +127,128 @@ final class AuthorizationRedirectUriTest extends TestCase
         }
     }
 
+    /**
+     * `java.net.URI.create` 의 판정(JDK 21.0.8 실측 83 행) — 값과, JDK 가 받는가. 거부 행의 주석은 JDK 의 메시지다.
+     *
+     * @return list<array{string, bool}>
+     */
+    private static function uriCreateTable(): array
+    {
+        return [
+            ['https://', false],   // Expected authority
+            ['myapp://', false],   // Expected authority
+            ['https:///', true],
+            ['https:///cb', true],
+            ['https://?x=1', true],
+            ['https://u@/cb', true],
+            ['https://:80/cb', true],
+            ['https://@/cb', true],
+            ['https:/', true],
+            ['https://[::1]/cb', true],
+            ['https://[zz]/cb', false],   // Malformed IPv6 address
+            ['https://[v1.x]/cb', false],   // Malformed IPv6 address
+            ['https://[::1::2]/cb', false],   // Expected hex digits or IPv4 address
+            ['https://[1:2:3:4:5:6:7:8:9]/cb', false],   // IPv6 address too long
+            ['https://[1:2:3:4:5:6:7:8]/cb', true],
+            ['https://[1:2:3:4:5:6:7::]/cb', true],
+            ['https://[::1:2:3:4:5:6:7]/cb', true],
+            ['https://[1:2:3:4:5:6:7:8::]/cb', false],   // Malformed IPv6 address
+            ['https://[::1:2:3:4:5:6:7:8]/cb', false],   // Malformed IPv6 address
+            ['https://[1:2:3:4:5:6:7]/cb', false],   // IPv6 address too short
+            ['https://[::]/cb', true],
+            ['https://[:]/cb', false],   // Malformed IPv6 address
+            ['https://[:::]/cb', false],   // Expected hex digits or IPv4 address
+            ['https://[1:::2]/cb', false],   // Expected hex digits or IPv4 address
+            ['https://[::1:]/cb', false],   // Expected digits for an IPv6 address
+            ['https://[:1::2]/cb', false],   // Malformed IPv6 address
+            ['https://[1::2:]/cb', false],   // Expected digits for an IPv6 address
+            ['https://[12345::]/cb', false],   // IPv6 hexadecimal digit sequence too long
+            ['https://[ABCD::EF]/cb', true],
+            ['https://[abcd:EF01::]/cb', true],
+            ['https://[0001:2:3:4:5:6:7:8]/cb', true],
+            ['https://[::ffff:1.2.3.4]/cb', true],
+            ['https://[::1.2.3.4]/cb', true],
+            ['https://[1.2.3.4]/cb', false],   // Malformed IPv6 address
+            ['https://[::ffff:01.2.3.4]/cb', true],
+            ['https://[::ffff:0001.2.3.4]/cb', true],
+            ['https://[::ffff:00000000255.2.3.4]/cb', true],
+            ['https://[::ffff:256.2.3.4]/cb', false],   // Malformed IPv4 address
+            ['https://[::ffff:1.2.3]/cb', false],   // Malformed IPv4 address
+            ['https://[::ffff:1.2.3.4.5]/cb', false],   // Malformed IPv4 address
+            ['https://[::ffff:1.2.3.]/cb', false],   // Malformed IPv4 address
+            ['https://[::ffff:.1.2.3]/cb', false],   // Expected digits for an IPv6 address
+            ['https://[::ffff:1..2.3]/cb', false],   // Malformed IPv4 address
+            ['https://[1:2:3:4:5:6:1.2.3.4]/cb', true],
+            ['https://[1:2:3:4:5:6:7:1.2.3.4]/cb', false],   // IPv6 address too long
+            ['https://[1:2:3:4:5:1.2.3.4]/cb', false],   // IPv6 address too short
+            ['https://[1::1.2.3.4]/cb', true],
+            ['https://[1:2:3:4:5::1.2.3.4]/cb', true],
+            ['https://[1:2:3:4:5:6::1.2.3.4]/cb', false],   // Malformed IPv6 address
+            ['https://[::1.2.3.4:5]/cb', false],   // Expected hex digits or IPv4 address
+            ['https://[1.2.3.4::]/cb', false],   // Malformed IPv6 address
+            ['https://[::99999999999.2.3.4]/cb', false],   // NumberFormatException
+            ['https://[::1.2.3.9999999999999]/cb', false],   // NumberFormatException
+            ['https://[fe80::1%eth0]/cb', true],
+            ['https://[fe80::1%25eth0]/cb', true],
+            ['https://[fe80::1%25]/cb', true],
+            ['https://[fe80::1%]/cb', false],   // scope id expected
+            ['https://[fe80::1%25en-1]/cb', false],   // Illegal character in scope id
+            ['https://[fe80::1%25a_b.c]/cb', true],
+            ['https://[fe80::1%25a%25b]/cb', false],   // Illegal character in scope id
+            ['https://[fe80::1%25a~b]/cb', false],   // Illegal character in scope id
+            ['https://[fe80::1%25' . self::utf8(0xE9) . ']/cb', false],   // Illegal character in scope id
+            ['https://[%25::1]/cb', false],   // Malformed IPv6 address
+            ['https://[::1%1]/cb', true],
+            ['https://[::1%zz]/cb', true],
+            ['https://[::1]:/cb', true],
+            ['https://[::1]:8443/cb', true],
+            ['https://[::1]:2147483647/cb', true],
+            ['https://[::1]:2147483648/cb', false],   // Malformed port number
+            ['https://[::1]:00000000000000000080/cb', true],
+            ['https://[::1]:99999999999/cb', false],   // Malformed port number
+            ['https://h:99999999999/cb', true],
+            ['https://u@[::1]:8443/cb', true],
+            ['https://u:p@[::1]/cb', true],
+            ['https://a@b@[::1]/cb', false],   // Illegal character in hostname
+            ['https://[::1]', true],
+            ['https://[::1]?x=[1]', true],
+            ['myapp://[::1]/cb', true],
+            ['myapp://[zz]/cb', false],   // Malformed IPv6 address
+            ['https://my_host/cb', true],
+            ['https://999.1.1.1/cb', true],
+            ['https://host:abc/cb', true],
+            ['https://h' . self::utf8(0xE9) . '/cb', true],
+        ];
+    }
+
+    /**
+     * 표에서 이 SDK 가 그대로 싣는 행 — JDK 가 받고 zone id 셋이 아니다.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function uriCreateCarried(): iterable
+    {
+        foreach (self::uriCreateTable() as [$value, $jdkReads]) {
+            if ($jdkReads && !\in_array($value, self::ZONE_ID_R3, true)) {
+                yield $value => [$value];
+            }
+        }
+    }
+
+    /**
+     * 표에서 이 SDK 가 R3·R4 문구로 거부하는 행 — JDK 가 거부하는 행과 zone id 셋.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function uriCreateRefused(): iterable
+    {
+        foreach (self::uriCreateTable() as [$value, $jdkReads]) {
+            if (!$jdkReads || \in_array($value, self::ZONE_ID_R3, true)) {
+                yield $value => [$value];
+            }
+        }
+    }
+
     #[DataProvider('notAbsolute')]
     public function testANonAbsoluteValueIsRefused(string $value): void
     {
@@ -194,6 +322,37 @@ final class AuthorizationRedirectUriTest extends TestCase
         self::assertSame([$value], self::queryValues($url, 'redirect_uri'));
     }
 
+    /** 표 전체가 두 갈래로 나뉜다 — 빈 표나 빠진 행이면 아래 두 시험이 공허하게 통과한다. */
+    public function testTheUriCreateTableIsWholeAndTheZoneIdsAreAmongWhatTheJdkReads(): void
+    {
+        $table = self::uriCreateTable();
+        self::assertCount(83, $table);
+        self::assertCount(83, [...self::uriCreateCarried(), ...self::uriCreateRefused()]);
+        $read = array_column(array_filter($table, static fn (array $row): bool => $row[1]), 0);
+        self::assertSame([], array_values(array_diff(self::ZONE_ID_R3, $read)));
+    }
+
+    /**
+     * R4 의 authority — `java.net.URI.create` 가 받는 값은 그대로 싣는다(`https:///cb` · `https://?x=1` · `[::1]` · 앞의 0 이
+     * 붙은 포트 · `%25` zone id · 괄호 없는 authority 의 큰 포트).
+     */
+    #[DataProvider('uriCreateCarried')]
+    public function testAnAuthorityUriCreateReadsIsCarriedExactlyAsGiven(string $value): void
+    {
+        $url = self::auth()->createAuthorizationRequest($value)->url;
+        self::assertSame([$value], self::queryValues($url, 'redirect_uri'));
+    }
+
+    /**
+     * R4 의 authority — `java.net.URI.create` 가 거부하는 값은 R3·R4 문구로 거부한다: `//` 뒤가 빔(R4c) · IPv6 주소가 아닌
+     * 괄호 호스트(R4d) · 앞의 0 을 떼고 Java int 를 넘는 포트(R4e). zone id 셋은 JDK 가 받지만 R3 가 거부한다(ZONE_ID_R3).
+     */
+    #[DataProvider('uriCreateRefused')]
+    public function testAnAuthorityUriCreateRefusesIsRefused(string $value): void
+    {
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::auth()->createAuthorizationRequest($value)));
+    }
+
     /** 거부는 state·PKCE 를 만들기 전이다 — league 프로바이더는 그 둘을 자기 상태로 쥔다(만들었다면 남는다). */
     public function testTheCheckRunsBeforeStateOrPkceIsGenerated(): void
     {
@@ -248,6 +407,9 @@ final class AuthorizationRedirectUriTest extends TestCase
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config("https://app/c\xFFb")));
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https:')));
         self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https://app/c[b')));
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https://')));
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https://[zz]/cb')));
+        self::assertSame(self::NOT_VALID, self::refusal(fn () => self::config('https://[::1]:2147483648/cb')));
     }
 
     public function testConfigKeepsNullAndAnAbsoluteRedirectUriAsGiven(): void
