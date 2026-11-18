@@ -192,9 +192,9 @@ impl AuthClient {
     /// parse error do not leak out of the facade. So is, in this order, a value with a fragment component, an empty
     /// one included (RFC 6749 §3.1.2), and a value Keycloak cannot parse (RFC 3986 §2): a control character, a space,
     /// U+007F–U+00A0 or another Unicode space separator (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
-    /// U+3000), one of `"` `<` `>` `\` `^` `` ` `` `{` `|` `}`, or a `%` not followed by two hex digits — then nothing
-    /// after the scheme's `:`, or a `[` or `]` before the query of a value whose part after the scheme starts with `/`,
-    /// except around one bracketed host in its authority. An accepted value is sent exactly as given.
+    /// U+3000), one of `"` `<` `>` `\` `^` `` ` `` `{` `|` `}`, or a `%` not followed by two hex digits — then nothing,
+    /// or only `//`, after the scheme's `:`, or a `[` or `]` before the query of a value whose part after the scheme
+    /// starts with `/`, except around one bracketed host in its authority. An accepted value is sent exactly as given.
     pub fn create_authorization_request_with_redirect(
         &self,
         redirect_uri: &str,
@@ -916,11 +916,60 @@ mod tests {
         assert!(wrong.is_empty(), "redirect_uri outcomes: {wrong:#?}");
     }
 
+    /// 벡터 표(Keycloak 의 `URI.create` 판정 — `redirect_uri.rs`)의 행 전부를 공개 메서드로. R1(`url::Url` — WHATWG)이 먼저
+    /// 거부하는 행은 파싱 문구이고, R1 을 지난 행은 Keycloak 과 같다 — 받는 행은 URL 에 그대로 실리고, 거부 행은 R3 문구다
+    /// (zone id 셋도 R3 — 의도한 차이). R1 은 Keycloak 보다 좁다: 빈 호스트 · 앞 0 이 붙은 IPv4 조각 · zone id · 65535 위의
+    /// 포트 · 숫자 아닌 포트 · 범위 밖 IPv4 호스트는 받는 행이어도 R1 에서 끝난다(이 시험은 그대로임을 적어 둔다).
+    #[tokio::test]
+    async fn authorization_request_judges_the_uri_create_vectors_as_keycloak_does() {
+        use crate::redirect_uri::{URI_CREATE_VECTORS, ZONE_ID_R3};
+        let auth = test_auth();
+        let mut wrong = Vec::new();
+        let mut past_r1 = Vec::new();
+        for &(input, keycloak_accepts) in URI_CREATE_VECTORS {
+            let want = if url::Url::parse(input).is_err() {
+                "R1"
+            } else if keycloak_accepts && !ZONE_ID_R3.contains(&input) {
+                "accepted"
+            } else {
+                "R3"
+            };
+            let got = redirect_outcome(&auth, input);
+            if got != want {
+                wrong.push(format!("{input:?} → {got}, want {want}"));
+            } else if want == "accepted" {
+                let req = auth
+                    .create_authorization_request_with_redirect(input)
+                    .expect("accepted above");
+                let url = url::Url::parse(&req.url).expect("authorization URL");
+                let sent: Vec<String> = url
+                    .query_pairs()
+                    .filter(|(k, _)| k == "redirect_uri")
+                    .map(|(_, v)| v.into_owned())
+                    .collect();
+                assert_eq!(sent, [input], "{input:?}: {}", req.url);
+            }
+            if want != "R1" {
+                past_r1.push(want);
+            }
+        }
+        assert!(wrong.is_empty(), "redirect_uri outcomes: {wrong:#?}");
+        // 표가 R1 에서 다 끝나 이 시험이 아무것도 재지 않는 일이 없다 — R1 을 지난 행에 받음과 R3 이 둘 다 있다.
+        assert!(
+            past_r1.contains(&"accepted") && past_r1.contains(&"R3"),
+            "{past_r1:?}"
+        );
+    }
+
     /// 생성 때 config 의 redirect_uri 도 같은 R2 · R3 · R4 를 지난다 — 그 값이 `create_authorization_request()` 가 싣는다.
     /// 대조 — config 에 redirect_uri 가 없으면 issuer 가 그 자리다: IPv6 호스트의 서버(괄호 친 호스트)도 만들어진다.
     #[tokio::test]
     async fn construction_applies_r4_to_the_config_redirect_uri() {
-        for (input, want) in [("https://app/c[b", REDIRECT_R3), ("myapp:", REDIRECT_R3)] {
+        for (input, want) in [
+            ("https://app/c[b", REDIRECT_R3),
+            ("myapp:", REDIRECT_R3),
+            ("myapp://", REDIRECT_R3),
+        ] {
             let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
                 .unwrap()
                 .with_redirect_uri(input);

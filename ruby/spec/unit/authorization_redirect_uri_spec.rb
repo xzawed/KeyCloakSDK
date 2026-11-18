@@ -6,12 +6,15 @@ require "uri"
 
 # 인가 요청의 redirect_uri — RFC 6749 §3.1.2 가 금하는 값은 URL 에 싣지 않는다(등록부
 # `authz-request-redirect-unvalidated`). 예전에는 `create_authorization_request` 가 어떤 값이든 실었다(`cb` ·
-# `https://app/cb#f` · nil 은 redirect_uri 없는 URL). 규칙은 순서대로 셋이다:
+# `https://app/cb#f` · nil 은 redirect_uri 없는 URL). 규칙은 순서대로 넷이다:
 #   R1 절대 URI — scheme 과 `:` 로 시작한다. String 이 아닌 값(nil 포함)도 R1 이다.
 #   R2 fragment 없음 — `#` 가 어디에도 없다. 빈 fragment(`https://app/cb#`)도 fragment 다.
 #   R3 Keycloak 이 읽는 URI — 서버는 `java.net.URI.create` 가 던지는 값을 거부한다(RFC 3986 §2). 바이트가 UTF-8 로
 #      읽히지 않는 값도 R3 이다. ⚠️ 어느 정규식도 던지지 않는다 — 깨진 문자열에 정규식을 걸면 ArgumentError,
 #      ASCII 호환이 아닌 인코딩(UTF-16)이면 Encoding::CompatibilityError 다(수정 전에는 둘 다 raw 로 샜다).
+#   R4 R3 를 지나도 서버가 던지는 값(문구는 R3 와 같다) — scheme 의 `:` 뒤가 빔(R4a) · `?` 앞 경로나 authority 의 괄호
+#      호스트 밖의 `[`·`]`(R4b) · `//` 뒤가 빔(R4c) · 괄호 호스트가 IPv6 주소가 아님(R4d) · 그 포트가 Java int 를
+#      넘음(R4e). 등록부 `redirect-uri-r3-narrower-than-keycloak` · `redirect-uri-create-residuals`.
 # 위반은 ConfigError 이고 메시지는 입력을 인용하지 않는다. 받은 값은 고쳐 쓰지 않는다 — 교환이 같은 문자열을 그대로
 # 보낸다(고쳐 쓰면 두 요청이 갈린다).
 module AuthzRedirectUriSpec
@@ -23,6 +26,101 @@ module AuthzRedirectUriSpec
   SPACE_SEPARATORS = [0x1680, *0x2000..0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000].freeze
   R3_CHARS = ([*0x00..0x20, *0x7F..0xA0, *SPACE_SEPARATORS].map { |c| c.chr(Encoding::UTF_8) } +
               %w[" < > \\ ^ ` { | }]).freeze
+
+  # é — 편집 도구가 이스케이프를 글자로 바꾸지 않게 코드로 만든다.
+  E_ACUTE = 0xE9.chr(Encoding::UTF_8)
+  # `java.net.URI.create` 의 판정(JDK 21.0.8 실측 83 행) — 값과, JDK 가 받는가. 거부 행의 주석은 JDK 의 메시지다.
+  URI_CREATE = [
+    ["https://", false], # Expected authority
+    ["myapp://", false], # Expected authority
+    ["https:///", true],
+    ["https:///cb", true],
+    ["https://?x=1", true],
+    ["https://u@/cb", true],
+    ["https://:80/cb", true],
+    ["https://@/cb", true],
+    ["https:/", true],
+    ["https://[::1]/cb", true],
+    ["https://[zz]/cb", false], # Malformed IPv6 address
+    ["https://[v1.x]/cb", false], # Malformed IPv6 address
+    ["https://[::1::2]/cb", false], # Expected hex digits or IPv4 address
+    ["https://[1:2:3:4:5:6:7:8:9]/cb", false], # IPv6 address too long
+    ["https://[1:2:3:4:5:6:7:8]/cb", true],
+    ["https://[1:2:3:4:5:6:7::]/cb", true],
+    ["https://[::1:2:3:4:5:6:7]/cb", true],
+    ["https://[1:2:3:4:5:6:7:8::]/cb", false], # Malformed IPv6 address
+    ["https://[::1:2:3:4:5:6:7:8]/cb", false], # Malformed IPv6 address
+    ["https://[1:2:3:4:5:6:7]/cb", false], # IPv6 address too short
+    ["https://[::]/cb", true],
+    ["https://[:]/cb", false], # Malformed IPv6 address
+    ["https://[:::]/cb", false], # Expected hex digits or IPv4 address
+    ["https://[1:::2]/cb", false], # Expected hex digits or IPv4 address
+    ["https://[::1:]/cb", false], # Expected digits for an IPv6 address
+    ["https://[:1::2]/cb", false], # Malformed IPv6 address
+    ["https://[1::2:]/cb", false], # Expected digits for an IPv6 address
+    ["https://[12345::]/cb", false], # IPv6 hexadecimal digit sequence too long
+    ["https://[ABCD::EF]/cb", true],
+    ["https://[abcd:EF01::]/cb", true],
+    ["https://[0001:2:3:4:5:6:7:8]/cb", true],
+    ["https://[::ffff:1.2.3.4]/cb", true],
+    ["https://[::1.2.3.4]/cb", true],
+    ["https://[1.2.3.4]/cb", false], # Malformed IPv6 address
+    ["https://[::ffff:01.2.3.4]/cb", true],
+    ["https://[::ffff:0001.2.3.4]/cb", true],
+    ["https://[::ffff:00000000255.2.3.4]/cb", true],
+    ["https://[::ffff:256.2.3.4]/cb", false], # Malformed IPv4 address
+    ["https://[::ffff:1.2.3]/cb", false], # Malformed IPv4 address
+    ["https://[::ffff:1.2.3.4.5]/cb", false], # Malformed IPv4 address
+    ["https://[::ffff:1.2.3.]/cb", false], # Malformed IPv4 address
+    ["https://[::ffff:.1.2.3]/cb", false], # Expected digits for an IPv6 address
+    ["https://[::ffff:1..2.3]/cb", false], # Malformed IPv4 address
+    ["https://[1:2:3:4:5:6:1.2.3.4]/cb", true],
+    ["https://[1:2:3:4:5:6:7:1.2.3.4]/cb", false], # IPv6 address too long
+    ["https://[1:2:3:4:5:1.2.3.4]/cb", false], # IPv6 address too short
+    ["https://[1::1.2.3.4]/cb", true],
+    ["https://[1:2:3:4:5::1.2.3.4]/cb", true],
+    ["https://[1:2:3:4:5:6::1.2.3.4]/cb", false], # Malformed IPv6 address
+    ["https://[::1.2.3.4:5]/cb", false], # Expected hex digits or IPv4 address
+    ["https://[1.2.3.4::]/cb", false], # Malformed IPv6 address
+    ["https://[::99999999999.2.3.4]/cb", false], # NumberFormatException
+    ["https://[::1.2.3.9999999999999]/cb", false], # NumberFormatException
+    ["https://[fe80::1%eth0]/cb", true],
+    ["https://[fe80::1%25eth0]/cb", true],
+    ["https://[fe80::1%25]/cb", true],
+    ["https://[fe80::1%]/cb", false], # scope id expected
+    ["https://[fe80::1%25en-1]/cb", false], # Illegal character in scope id
+    ["https://[fe80::1%25a_b.c]/cb", true],
+    ["https://[fe80::1%25a%25b]/cb", false], # Illegal character in scope id
+    ["https://[fe80::1%25a~b]/cb", false], # Illegal character in scope id
+    ["https://[fe80::1%25#{E_ACUTE}]/cb", false], # Illegal character in scope id
+    ["https://[%25::1]/cb", false], # Malformed IPv6 address
+    ["https://[::1%1]/cb", true],
+    ["https://[::1%zz]/cb", true],
+    ["https://[::1]:/cb", true],
+    ["https://[::1]:8443/cb", true],
+    ["https://[::1]:2147483647/cb", true],
+    ["https://[::1]:2147483648/cb", false], # Malformed port number
+    ["https://[::1]:00000000000000000080/cb", true],
+    ["https://[::1]:99999999999/cb", false], # Malformed port number
+    ["https://h:99999999999/cb", true],
+    ["https://u@[::1]:8443/cb", true],
+    ["https://u:p@[::1]/cb", true],
+    ["https://a@b@[::1]/cb", false], # Illegal character in hostname
+    ["https://[::1]", true],
+    ["https://[::1]?x=[1]", true],
+    ["myapp://[::1]/cb", true],
+    ["myapp://[zz]/cb", false], # Malformed IPv6 address
+    ["https://my_host/cb", true],
+    ["https://999.1.1.1/cb", true],
+    ["https://host:abc/cb", true],
+    ["https://h#{E_ACUTE}/cb", true]
+  ].freeze
+  # 일부러 다른 셋 — JDK 는 받지만 R3 가 거부한다: zone id 의 `%` 뒤가 16진 두 자리가 아니다. RFC 6874 §2 는 URI 에서 그
+  # `%` 를 `%25` 로 쓴다(`[fe80::1%25eth0]` 는 둘 다 받는다).
+  ZONE_ID_R3 = ["https://[fe80::1%eth0]/cb", "https://[::1%1]/cb", "https://[::1%zz]/cb"].freeze
+
+  # 표의 한 행을 이 SDK 가 싣는가 — JDK 가 받고, zone id 셋이 아니다.
+  def self.carried?(value, jdk_reads) = jdk_reads && !ZONE_ID_R3.include?(value)
 
   # `to_s` 가 그 값인 객체 — rack-oauth2 는 값을 `to_s` 로 실었다(그래서 `URI(...)` 가 동작했다).
   Shown = Struct.new(:shown) do
@@ -156,6 +254,24 @@ RSpec.describe KeycloakSdk::AuthClient, "#create_authorization_request redirect_
    "urn:x[y]", "https:/", "https://[::1]?x=[1]"].each do |value|
     it "carries #{value.inspect} exactly as given" do
       expect(sent_redirect_uri(value)).to eq([value])
+    end
+  end
+
+  it "holds the whole URI.create table, the three zone ids among the values the JDK reads" do
+    table = AuthzRedirectUriSpec::URI_CREATE
+    expect(table.size).to eq(83) # 빈 표면 아래 예제가 공허하게 통과한다
+    expect(AuthzRedirectUriSpec::ZONE_ID_R3 - table.select(&:last).map(&:first)).to eq([])
+  end
+
+  # R4 의 authority — `java.net.URI.create` 가 받는 값은 그대로 싣고 거부하는 값은 R3·R4 문구로 거부한다. `//` 뒤가 비면
+  # 거부(R4c), 괄호 호스트는 IPv6 주소여야 하고(R4d) 포트는 앞의 0 을 떼고 Java int 안이어야 한다(R4e). zone id 셋만
+  # JDK 와 다르다 — R3 가 거부한다(위 ZONE_ID_R3). 결과 하나(거부 문구, 아니면 실린 값)를 표의 기대와 견준다.
+  AuthzRedirectUriSpec::URI_CREATE.each do |value, jdk_reads|
+    verb = AuthzRedirectUriSpec.carried?(value, jdk_reads) ? "carries" : "refuses"
+    zone_id = " (R3: a zone id the JDK reads)" if AuthzRedirectUriSpec::ZONE_ID_R3.include?(value)
+    it "#{verb} #{value.inspect}#{zone_id} as java.net.URI.create does" do
+      expected = AuthzRedirectUriSpec.carried?(value, jdk_reads) ? [value] : not_valid
+      expect(refusal(value) || sent_redirect_uri(value)).to eq(expected)
     end
   end
 

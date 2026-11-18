@@ -15,10 +15,15 @@ module KeycloakSdk
   #   `%` that is not followed by two hex digits (measured on JDK 21.0.8). Bytes that are not UTF-8 are refused here
   #   too.
   # - R4 what `java.net.URI.create` still refuses after R1-R3 (same message as R3, measured on JDK 21.0.8): nothing
-  #   after the scheme's `:` (`https:`); and, when the part after the `:` starts with `/`, a `[` or `]` before the
-  #   first `?` anywhere but in the authority's one bracketed host (`https://[::1]:8443/cb`) — `https://app/c[b`,
-  #   `https://app[1]/cb`, `myapp:/c[b`. An opaque value (`myapp:c[b`, `urn:x[y]`) and the query may hold brackets.
-  #   Not checked: what a bracketed host holds (`[zz]`, `[v1.x]`), and an empty authority (`https://`).
+  #   after the scheme's `:` (`https:`, R4a); and, when the part after the `:` starts with `/`, a `[` or `]` before the
+  #   first `?` anywhere but in the authority's one bracketed host — `https://app/c[b`, `https://app[1]/cb`,
+  #   `myapp:/c[b` (R4b); `//` with nothing after it (`https://`, `myapp://` — R4c; `https:///cb` and `https://?x=1`
+  #   are read); a bracketed host that is not an RFC 3986 IPv6 address with Java's dotted quads (leading zeros allowed),
+  #   optionally followed by a zone id of letters, digits, `_` and `.` after a `%` (`[zz]`, `[v1.x]`, `[::1::2]` — R4d);
+  #   and a port after that host above 2147483647 once its leading zeros are dropped (R4e). An opaque value
+  #   (`myapp:c[b`, `urn:x[y]`) and the query may hold brackets. R3 still refuses a zone id whose `%` is not followed by
+  #   two hex digits (`[fe80::1%eth0]`), which `URI.create` reads, because RFC 6874 §2 writes that `%` as `%25` in a URI
+  #   (`[fe80::1%25eth0]`).
   #
   # The rules read the String's bytes — what the URL carries — so no regex runs on a String it could raise on (a broken
   # encoding raises ArgumentError, a non-ASCII-compatible one Encoding::CompatibilityError): R1 and R2 look at a binary
@@ -33,10 +38,29 @@ module KeycloakSdk
     # literal space — U+0020 is `\u{20}`).
     UNREADABLE = /[\u{0}-\u{20}\u{7F}-\u{A0}\u{1680}\u{2000}-\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}"<>\\^`{|}]
                   | %(?![0-9A-Fa-f]{2})/x
-    # R4 — the one bracketed host an authority may hold: optional user info, `[`, no bracket or `/`, `]`, optional port.
-    BRACKETED_HOST = %r{\A([^@\[\]/]*@)?\[[^\[\]/]+\](:[0-9]*)?\z}
+    # R4d — RFC 3986's IPv6address, with `dec-octet` as Java reads it (leading zeros allowed: `01`, `00000000255`).
+    H16 = "[0-9A-Fa-f]{1,4}"
+    DEC = "0*(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])"
+    LS32 = "(?:#{H16}:#{H16}|#{DEC}\\.#{DEC}\\.#{DEC}\\.#{DEC})".freeze
+    IPV6 = [
+      "(?:#{H16}:){6}#{LS32}",
+      "::(?:#{H16}:){5}#{LS32}",
+      "(?:#{H16})?::(?:#{H16}:){4}#{LS32}",
+      "(?:(?:#{H16}:){0,1}#{H16})?::(?:#{H16}:){3}#{LS32}",
+      "(?:(?:#{H16}:){0,2}#{H16})?::(?:#{H16}:){2}#{LS32}",
+      "(?:(?:#{H16}:){0,3}#{H16})?::#{H16}:#{LS32}",
+      "(?:(?:#{H16}:){0,4}#{H16})?::#{LS32}",
+      "(?:(?:#{H16}:){0,5}#{H16})?::#{H16}",
+      "(?:(?:#{H16}:){0,6}#{H16})?::"
+    ].join("|").freeze
+    # R4d — the one bracketed host an authority may hold: optional user info, `[`, an IPv6 address, an optional zone id
+    # (Java's scope_id: letters, digits, `_`, `.`), `]`, an optional port (group 1 — R4e reads it).
+    BRACKETED_AUTHORITY = %r{\A(?:[^@\[\]/]*@)?\[(?:#{IPV6})(?:%[A-Za-z0-9_.]+)?\](?::([0-9]*))?\z}
+    # R4e — Java's `Integer.MAX_VALUE`: `URI` reads a port with `Integer.parseInt`.
+    PORT_MAX = 2_147_483_647
     BRACKET = /[\[\]]/
-    private_constant :NOT_ABSOLUTE, :FRAGMENT, :NOT_VALID, :SCHEME, :UNREADABLE, :BRACKETED_HOST, :BRACKET
+    private_constant :NOT_ABSOLUTE, :FRAGMENT, :NOT_VALID, :SCHEME, :UNREADABLE, :H16, :DEC, :LS32, :IPV6,
+                     :BRACKETED_AUTHORITY, :PORT_MAX, :BRACKET
 
     # Returns the String the URL carries — `value.to_s` as a plain String — once it passes R1, R2, R3 and R4; otherwise
     # raises ConfigError. A plain String, because a `to_s` may return a String subclass whose own `to_s` (which the URL
@@ -64,10 +88,22 @@ module KeycloakSdk
 
       head = rest.partition("?").first
       return !head.match?(BRACKET) unless head.start_with?("//")
+      return false if rest == "//"
 
       authority, _slash, path = head.delete_prefix("//").partition("/")
-      (!authority.match?(BRACKET) || authority.match?(BRACKETED_HOST)) && !path.match?(BRACKET)
+      (!authority.match?(BRACKET) || bracketed_host?(authority)) && !path.match?(BRACKET)
     end
     private_class_method :parsable?
+
+    # R4d and R4e on an authority that holds a bracket: its one bracketed host, then the port's digits without their
+    # leading zeros — at most ten, and no larger than PORT_MAX.
+    def self.bracketed_host?(authority)
+      host = BRACKETED_AUTHORITY.match(authority)
+      return false unless host
+
+      digits = host[1].to_s.sub(/\A0+/, "")
+      digits.length <= 10 && digits.to_i <= PORT_MAX
+    end
+    private_class_method :bracketed_host?
   end
 end

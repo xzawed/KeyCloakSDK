@@ -9,8 +9,8 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// R2 — fragment 성분이 없다(빈 fragment <c>#</c> 도 성분이다) · R3 — Keycloak 이 받는 URI 문자열이다(RFC 3986 §2 — Keycloak 의
 /// <c>RedirectUtils.toUri</c> 는 <c>java.net.URI.create</c> 가 던지면 어느 클라이언트 등록에서든 거부한다: U+0000–U+0020 ·
 /// U+007F–U+00A0 · 그 위의 Unicode 공백 구분자 열일곱 · <c>" &lt; &gt; \ ^ ` { | }</c> · 뒤에 16진 두 자리가 없는 <c>%</c> — 그리고 짝
-/// 없는 서로게이트, Duende 가 U+FFFD 로 바꿔 쓰는 것). 순서는 R1 → R2 → R3 이고, 메시지는 셋 다
-/// 고정 문구라 입력을 싣지 않는다.
+/// 없는 서로게이트, Duende 가 U+FFFD 로 바꿔 쓰는 것) · R4 — 그 문자들로도 <c>URI.create</c> 가 거부하는 모양(R3 와 같은 문구).
+/// 순서는 R1 → R2 → R3 → R4 이고, 메시지는 넷 다 고정 문구라 입력을 싣지 않는다.
 /// </summary>
 /// <remarks>검사만 하고 고치지 않는다 — URL 의 <c>redirect_uri</c> 는 호출자 문자열 그대로다. 코드 교환이 그 문자열을 그대로
 /// 보내므로 두 요청 중 하나만 정규화하면 두 값이 갈린다(#1133). 고치기 전(2026-11-18 실측)에는 <c>cb</c> · <c>not a url</c> ·
@@ -156,6 +156,7 @@ public sealed class AuthClientRedirectUriTests : IDisposable
     [InlineData("https://[a[b]/cb")]
     [InlineData("https://app/c[b?x")]
     [InlineData("https://u@[::1]/c]b")]
+    [InlineData("https://[::1/cb")]   // "Expected closing bracket for IPv6 address"
     public void Shape_java_net_uri_refuses_is_refused(string redirectUri) => AssertRefused(redirectUri, NotUri);
 
     // 대조군 — 같은 측정에서 java.net.URI 가 받는 값: 괄호 호스트 하나(사용자 정보 · 포트 · 빈 포트와 함께) · 불투명한 값과 쿼리의 괄호 ·
@@ -171,6 +172,8 @@ public sealed class AuthClientRedirectUriTests : IDisposable
     [InlineData("myapp://[::1]:8443")]
     [InlineData("https://[::1]:/cb")]
     [InlineData("https://[::1]?x=[1]")]
+    [InlineData("myapp:///cb")]    // R4c 의 이웃 — "//" 뒤에 경로 · 쿼리가 있다
+    [InlineData("myapp://?x=1")]
     public void Shape_java_net_uri_accepts_is_carried_verbatim(string redirectUri) => AssertCarried(redirectUri);
 
     // 순서 — 앞 규칙에도 걸리는 값은 앞 규칙의 문구다(R3 와 R4 는 문구가 같아 문구만 본다).
@@ -180,14 +183,132 @@ public sealed class AuthClientRedirectUriTests : IDisposable
     [InlineData("https://app/c[b c", NotUri)]
     public void An_earlier_rule_answers_first(string redirectUri, string message) => AssertRefused(redirectUri, message);
 
-    // 남긴 것(문서화된 잔여) — Keycloak 의 java.net.URI 는 이것들도 거부하지만(JDK 21.0.8 실측: "Expected authority" · 괄호 안의 값 —
-    // "Malformed IPv6 address") R4 는 받는다. 괄호 안의 값은 판정하지 않기로 했다(브리프의 잔여). 이 행이 바뀌면 그 판정을 다시 연 것이다.
+    // 예전의 잔여(등록부 redirect-uri-create-residuals) — Keycloak 의 java.net.URI 가 거부하는데(JDK 21.0.8 실측: "Expected authority" ·
+    // 괄호 안의 값 — "Malformed IPv6 address") R4 가 받던 값. 이제 R4c(scheme 의 ':' 뒤가 "//" 뿐)와 R4d(괄호 안이 IPv6 리터럴이 아니다)가
+    // 거부한다.
     [Theory]
     [InlineData("https://")]
     [InlineData("myapp://")]
     [InlineData("https://[zz]/cb")]
     [InlineData("https://[v1.x]/cb")]
-    public void Documented_residual_is_carried_verbatim(string redirectUri) => AssertCarried(redirectUri);
+    public void Former_residual_is_refused(string redirectUri) => AssertRefused(redirectUri, NotUri);
+
+    /// <summary>R4c–R4e 의 표 — Keycloak 의 <c>RedirectUtils.toUri</c>(<c>java.net.URI.create</c>)가 각 값에 내린 판정(JDK 21.0.8 실측,
+    /// 등록부 redirect-uri-create-residuals 의 벡터 표 83 행 그대로; true = 받음). 받는 행은 URL 에 그대로 실리고, 거부 행은 R3/R4
+    /// 문구다 — <see cref="ZoneIdPercentNotWrittenAs25"/> 셋만 빼고(의도한 차이).</summary>
+    public static TheoryData<string, bool> UriCreateVectors => new()
+    {
+        { "https://", false },
+        { "myapp://", false },
+        { "https:///", true },
+        { "https:///cb", true },
+        { "https://?x=1", true },
+        { "https://u@/cb", true },
+        { "https://:80/cb", true },
+        { "https://@/cb", true },
+        { "https:/", true },
+        { "https://[::1]/cb", true },
+        { "https://[zz]/cb", false },
+        { "https://[v1.x]/cb", false },
+        { "https://[::1::2]/cb", false },
+        { "https://[1:2:3:4:5:6:7:8:9]/cb", false },
+        { "https://[1:2:3:4:5:6:7:8]/cb", true },
+        { "https://[1:2:3:4:5:6:7::]/cb", true },
+        { "https://[::1:2:3:4:5:6:7]/cb", true },
+        { "https://[1:2:3:4:5:6:7:8::]/cb", false },
+        { "https://[::1:2:3:4:5:6:7:8]/cb", false },
+        { "https://[1:2:3:4:5:6:7]/cb", false },
+        { "https://[::]/cb", true },
+        { "https://[:]/cb", false },
+        { "https://[:::]/cb", false },
+        { "https://[1:::2]/cb", false },
+        { "https://[::1:]/cb", false },
+        { "https://[:1::2]/cb", false },
+        { "https://[1::2:]/cb", false },
+        { "https://[12345::]/cb", false },
+        { "https://[ABCD::EF]/cb", true },
+        { "https://[abcd:EF01::]/cb", true },
+        { "https://[0001:2:3:4:5:6:7:8]/cb", true },
+        { "https://[::ffff:1.2.3.4]/cb", true },
+        { "https://[::1.2.3.4]/cb", true },
+        { "https://[1.2.3.4]/cb", false },
+        { "https://[::ffff:01.2.3.4]/cb", true },
+        { "https://[::ffff:0001.2.3.4]/cb", true },
+        { "https://[::ffff:00000000255.2.3.4]/cb", true },
+        { "https://[::ffff:256.2.3.4]/cb", false },
+        { "https://[::ffff:1.2.3]/cb", false },
+        { "https://[::ffff:1.2.3.4.5]/cb", false },
+        { "https://[::ffff:1.2.3.]/cb", false },
+        { "https://[::ffff:.1.2.3]/cb", false },
+        { "https://[::ffff:1..2.3]/cb", false },
+        { "https://[1:2:3:4:5:6:1.2.3.4]/cb", true },
+        { "https://[1:2:3:4:5:6:7:1.2.3.4]/cb", false },
+        { "https://[1:2:3:4:5:1.2.3.4]/cb", false },
+        { "https://[1::1.2.3.4]/cb", true },
+        { "https://[1:2:3:4:5::1.2.3.4]/cb", true },
+        { "https://[1:2:3:4:5:6::1.2.3.4]/cb", false },
+        { "https://[::1.2.3.4:5]/cb", false },
+        { "https://[1.2.3.4::]/cb", false },
+        { "https://[::99999999999.2.3.4]/cb", false },
+        { "https://[::1.2.3.9999999999999]/cb", false },
+        { "https://[fe80::1%eth0]/cb", true },
+        { "https://[fe80::1%25eth0]/cb", true },
+        { "https://[fe80::1%25]/cb", true },
+        { "https://[fe80::1%]/cb", false },
+        { "https://[fe80::1%25en-1]/cb", false },
+        { "https://[fe80::1%25a_b.c]/cb", true },
+        { "https://[fe80::1%25a%25b]/cb", false },
+        { "https://[fe80::1%25a~b]/cb", false },
+        { "https://[fe80::1%25é]/cb", false },
+        { "https://[%25::1]/cb", false },
+        { "https://[::1%1]/cb", true },
+        { "https://[::1%zz]/cb", true },
+        { "https://[::1]:/cb", true },
+        { "https://[::1]:8443/cb", true },
+        { "https://[::1]:2147483647/cb", true },
+        { "https://[::1]:2147483648/cb", false },
+        { "https://[::1]:00000000000000000080/cb", true },
+        { "https://[::1]:99999999999/cb", false },
+        { "https://h:99999999999/cb", true },
+        { "https://u@[::1]:8443/cb", true },
+        { "https://u:p@[::1]/cb", true },
+        { "https://a@b@[::1]/cb", false },
+        { "https://[::1]", true },
+        { "https://[::1]?x=[1]", true },
+        { "myapp://[::1]/cb", true },
+        { "myapp://[zz]/cb", false },
+        { "https://my_host/cb", true },
+        { "https://999.1.1.1/cb", true },
+        { "https://host:abc/cb", true },
+        { "https://hé/cb", true },
+    };
+
+    // 의도한 차이(유지한다) — zone id 안에서도 뒤에 16진 두 자리가 없는 '%' 는 R3 가 거부한다. URI.create 는 받지만(표의 받는 행), RFC 6874
+    // §2 가 URI 안의 zone id 앞 '%' 를 "%25" 로 쓰게 한다 — 그렇게 쓴 값은 둘 다 받는다.
+    private static readonly string[] ZoneIdPercentNotWrittenAs25 =
+        { "https://[fe80::1%eth0]/cb", "https://[::1%1]/cb", "https://[::1%zz]/cb" };
+
+    [Theory]
+    [MemberData(nameof(UriCreateVectors))]
+    public void Uri_create_vector_is_judged_as_keycloak_judges_it(string redirectUri, bool uriCreateAccepts)
+    {
+        if (uriCreateAccepts && Array.IndexOf(ZoneIdPercentNotWrittenAs25, redirectUri) < 0)
+            AssertCarried(redirectUri);
+        else
+            AssertRefused(redirectUri, NotUri);
+    }
+
+    [Fact]
+    public void Zone_id_percent_not_written_as_25_is_refused_although_uri_create_accepts_it()
+    {
+        foreach (var redirectUri in ZoneIdPercentNotWrittenAs25)
+        {
+            Assert.Contains(UriCreateVectors, row => (string)row[0] == redirectUri && (bool)row[1]);
+            AssertRefused(redirectUri, NotUri);
+        }
+        AssertCarried("https://[fe80::1%25eth0]/cb");   // RFC 6874 §2 대로 쓴 값
+        AssertCarried("https://[::1%251]/cb");
+    }
 
     /// <summary>R3 — 짝 없는 서로게이트(뒤에 낮은 것이 없는 높은 것 · 앞에 높은 것이 없는 낮은 것). 고치기 전에는 Duende 의 인코더가
     /// 그것을 U+FFFD 로 바꿔 썼다(실측 <c>…c%EF%BF%BDb</c>) — 값을 고친 것이다. 코드 단위로 잇는다(가운데 · 끝).</summary>
