@@ -74,6 +74,16 @@ async function refusal(call: Promise<unknown>): Promise<Error> {
   return outcome
 }
 
+/**
+ * JWT 서명 부분의 **첫** 글자를 바꾼다 — 마지막 글자는 패딩 비트만 바뀌어 같은 바이트로 풀릴 수 있다(rust 통합의
+ * `tamper_signature` 와 같다).
+ */
+function tamperSignature(jwt: string): string {
+  const at = jwt.lastIndexOf('.') + 1
+  expect(at).toBeGreaterThan(0)
+  return `${jwt.slice(0, at)}${jwt[at] === 'A' ? 'B' : 'A'}${jwt.slice(at + 1)}`
+}
+
 /** 원인 사슬의 고리들(바깥 → 안). */
 function links(error: Error): Array<{ name: string; message: string; code: unknown }> {
   const out = []
@@ -179,6 +189,23 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
     expect(links(ended)[1]?.code).toBe(SERVER_REFUSED)
     expect((ended as KeycloakAuthError).oauthError).toBe('invalid_grant')
     expect((await kc.auth.introspect(refreshed.accessToken)).active).toBe(false)
+
+    // 서버가 거부한 로그아웃은 성공으로 삼켜지면 안 된다 — 그 답(400 의 오류 본문)은 끝까지 오므로 transport 가 아니라 상태의
+    // KeycloakAuthError 다(등록부 logout-body-unread-class-divergent · rust 통합과 같은 칸). ⚠️ 끝난 세션을 **같은** refresh
+    // token 으로 또 끝내는 것은 거부가 아니다 — Keycloak 26.6 은 204 로 받는다(rust 통합 실측). 서명이 깨진 토큰을 쓴다.
+    const tampered = tamperSignature(refreshed.refreshToken as string)
+    const refusedLogout = await refusal(kc.auth.logout(tampered))
+    expect(refusedLogout).toBeInstanceOf(KeycloakAuthError)
+    expect(refusedLogout.message).toBe('Logout failed (HTTP 400)')
+    expect((refusedLogout as KeycloakAuthError).oauthError).toBeUndefined()
+    const printed = renderings(refusedLogout)
+    const hidden = [
+      tokens.refreshToken as string,
+      refreshed.refreshToken as string,
+      tampered,
+      WEB_CLIENT_SECRETS['it-web'],
+    ]
+    for (const value of hidden) expect(printed).not.toContain(value)
   })
 
   it('서버가 서명하지 않은 nonce 를 거부한다', async () => {

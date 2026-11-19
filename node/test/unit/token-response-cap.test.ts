@@ -10,11 +10,14 @@
  * (응답을 다 받지 않았다 — 등록부 `token-response-class-divergent`, 1.0.7 까지는 `KeycloakAuthError`)로 실패하며
  * 메시지가 정확하다. admin 은 admin 요청을 보내지 않는다. Keycloak 26.6 이 기본 설정으로 받아들이는 가장 긴
  * Bearer(65,459 바이트)는 모든 레인에서 통과한다.
+ *
+ * logout 의 204 가 아닌 답도 같은 상한으로 읽는다(아래 `logout` 블록) — 판정은 상태가 하지만, 그 응답이 끝까지
+ * 왔는지는 본문을 읽어야 안다(등록부 `logout-body-unread-class-divergent`).
  */
 import type { ReadableStreamReadResult } from 'node:stream/web'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose'
-import { KeycloakTransportError, KeycloakClient } from '../../src/index.js'
+import { KeycloakAuthError, KeycloakTransportError, KeycloakClient } from '../../src/index.js'
 import {
   discoveryDocument,
   startFakeIdp,
@@ -52,6 +55,7 @@ afterAll(async () => {
 afterEach(() => {
   vi.restoreAllMocks()
   idp.discovery = undefined
+  idp.logout = undefined
   idp.token = { head: tokenResponse('access') }
   idp.introspect = {
     head: JSON.stringify({ active: true, sub: 'u1', client_id: 'c', username: 'u1' }),
@@ -295,5 +299,42 @@ describe('discovery 응답', () => {
     const refused = await refusal(client().auth.clientCredentialsToken())
     expect(refused).toBeInstanceOf(KeycloakTransportError)
     expect(refused.message).toBe(`OIDC discovery failed: ${EXCEEDS}`)
+  })
+})
+
+/**
+ * logout 의 204 가 아닌 답 — 판정은 상태가 하고 본문은 버리지만, 그 응답이 끝까지 왔는지는 본문을 읽어야 안다. 같은
+ * 상한으로 읽는다: 정확히 1,048,576 바이트(푼 뒤)면 지금처럼 상태의 `KeycloakAuthError`, 한 바이트 넘으면 다 받지 않은
+ * 응답이라 `KeycloakTransportError` 다. 고치기 전(main 6d9c0c4f)에는 본문을 읽지 않아 1,048,577 바이트도 32 MiB 도
+ * `KeycloakAuthError`(`Logout failed (HTTP 200)`)였다.
+ */
+describe('logout — 204 가 아닌 답의 본문', () => {
+  it.each<Transfer>(['chunked', 'cl', 'gzip'])(
+    '정확히 1,048,576 바이트(푼 뒤) 본문은 상태가 판정한다 — KeycloakAuthError (%s)',
+    async (transfer) => {
+      idp.logout = { head: '{}', total: CAP, transfer }
+      const refused = await refusal(client().auth.logout('refresh'))
+      expect(refused).toBeInstanceOf(KeycloakAuthError)
+      expect(refused).not.toBeInstanceOf(KeycloakTransportError)
+      expect(refused.message).toBe('Logout failed (HTTP 200)')
+    },
+  )
+
+  it.each<Transfer>(['chunked', 'cl', 'gzip'])(
+    '1,048,577 바이트(푼 뒤) 본문은 KeycloakTransportError 로 실패한다 — 메시지가 정확하다 (%s)',
+    async (transfer) => {
+      idp.logout = { head: '{}', total: CAP + 1, transfer }
+      const refused = await refusal(client().auth.logout('refresh'))
+      expect(refused).toBeInstanceOf(KeycloakTransportError)
+      expect(refused.message).toBe(`Logout failed (HTTP 200): ${EXCEEDS}`)
+    },
+  )
+
+  it('32 MiB 본문은 상한에서 읽기를 멈춘다 — 서버도 본문을 끝까지 보내지 못한다', async () => {
+    idp.logout = { head: '{}', total: 32 * MIB, transfer: 'chunked' }
+    const refused = await refusal(client().auth.logout('refresh'))
+    expect(refused).toBeInstanceOf(KeycloakTransportError)
+    expect(refused.message).toBe(`Logout failed (HTTP 200): ${EXCEEDS}`)
+    expect(idp.bytesWritten).toBeLessThan(16 * MIB)
   })
 })
