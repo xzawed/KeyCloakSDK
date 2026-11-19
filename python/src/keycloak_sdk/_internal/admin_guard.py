@@ -102,7 +102,6 @@ python-keycloak 의 `KeycloakConnectionError` 로 바뀐다. 게터가 치르는
 
 from __future__ import annotations
 
-import builtins
 import functools
 import inspect
 import threading
@@ -122,6 +121,7 @@ from ..tokens import _usable_access_token
 from .admin_body import abounded_send, bounded_send
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
 from .bearer import _TRIM, SENDING, sendable
+from .frames import reachable
 from .openid_watch import HARDENERS, watched_type
 from .redirects import _refuse_redirects, _require, _unsupported
 from .retries import NO_RETRY, retrying_adapters
@@ -172,11 +172,6 @@ _UNUSABLE = "send an unusable access token to the admin API"
 _UNBOUNDED = "read an unbounded token grant response into memory"
 _UNREAD = "read an unbounded admin error response, or a response body it never uses, into memory"
 _LATE = "keep an admin request waiting on a trickled response past its timeout"
-#: 3.11 부터의 내장 `BaseExceptionGroup`(`_clear_locals`) — 3.10 에는 없어 빈 튜플이고,
-#: `isinstance(x, ())` 는 늘 거짓이다. `if` 문이 아니라 값으로 가른다 — 100 % 커버리지 게이트가
-#: 3.10 ~ 3.14 모두에서 돌므로 판마다 한쪽만 지나는 분기를 남기지 않는다.
-_GROUP = getattr(builtins, "BaseExceptionGroup", None)
-_GROUPS: tuple[type[BaseException], ...] = () if _GROUP is None else (_GROUP,)
 
 #: (걸 객체, 속성 이름, 걸 값, 메시지에 쓸 자리). 클래스로 두지 않는다 — 공개 뿌리에서 닿지
 #: 않는 SDK 선언은 `test_facade_dump.py` 가 면제를 요구한다.
@@ -634,23 +629,16 @@ def _headers_restorer(conn: Any) -> Callable[[], None]:
 def _clear_locals(exc: BaseException) -> None:
     """`exc` 에서 닿는 traceback 마다 끝난 프레임의 로컬을 비운다(머리 주석 7).
 
-    `__cause__`·`__context__` 와 그룹의 구성원(`.exceptions`)을 따라 예외마다 한 번 — 순환이어도
-    끝난다. 아직 도는 프레임(업로드 래퍼 자신)은 `traceback.clear_frames` 가 건너뛴다. 프레임·줄
-    번호·사슬은 그대로다. ⚠️ 3.12 이하의 `clear_frames` 는 traceback 에 든 **멈춘** 제너레이터·
-    코루틴을 끝낸다(3.13 은 건너뛴다 — 실측 3.10.21 · 3.12.14 · 3.13.11). 업로드 실패의 사슬에는
-    끝나지 않은 제너레이터·코루틴의 프레임이 없다(실측: 전송 실패 · 404 · `IN_URL`) — 다른 자리에서
-    부르려면 그것부터 잰다."""
-    seen: set[int] = set()
-    todo: list[BaseException | None] = [exc]
-    while todo:
-        node = todo.pop()
-        if node is None or id(node) in seen:
-            continue
-        seen.add(id(node))
+    닿는 예외는 `frames.reachable` 이 정한다 — `__cause__`·`__context__` 와 그룹의 구성원
+    (`.exceptions` — 3.10 은 백포트 `exceptiongroup` 의 그룹)을 따라 예외마다 한 번, 순환이어도
+    끝난다. 공개 메서드의 traceback 떼기(`frames._detached`)와 같은 걸음이다. 아직 도는
+    프레임(업로드 래퍼 자신)은 `traceback.clear_frames` 가 건너뛴다. 프레임·줄 번호·사슬은
+    그대로다. ⚠️ 3.12 이하의 `clear_frames` 는 traceback 에 든 **멈춘** 제너레이터·코루틴을
+    끝낸다(3.13 은 건너뛴다 — 실측 3.10.21 · 3.12.14 · 3.13.11). 업로드 실패의 사슬에는 끝나지 않은
+    제너레이터·코루틴의 프레임이 없다(실측: 전송 실패 · 404 · `IN_URL`) — 다른 자리에서 부르려면
+    그것부터 잰다."""
+    for node in reachable(exc):
         traceback.clear_frames(node.__traceback__)
-        # 타입 검사는 3.10 기준(`python_version`)이라 그 내장의 `.exceptions` 를 모른다 — `getattr`.
-        members = getattr(node, "exceptions", ()) if isinstance(node, _GROUPS) else ()
-        todo += [node.__cause__, node.__context__, *members]
 
 
 def _unwatched(watched: type[KeycloakAdmin], admin: KeycloakAdmin) -> KeycloakAdmin:
