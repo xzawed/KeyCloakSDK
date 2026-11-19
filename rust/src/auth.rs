@@ -6,7 +6,7 @@
 //! hardened `JwtValidator` instead of openidconnect's own validator, so the `JsonWebKeySet` is left empty.
 use crate::config::KeycloakConfig;
 use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
-use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
+use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, drain_capped, read_capped};
 use crate::jwt::JwtValidator;
 use crate::oidc::{OidcEndpoints, authorization_scopes};
 use crate::redirect_uri::check_redirect_uri;
@@ -463,17 +463,9 @@ impl AuthClient {
         // Keycloak 의 성공은 204 뿐이다 — is_success()(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
         // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
         if status != reqwest::StatusCode::NO_CONTENT {
-            // 판정은 상태가 하고 본문은 버리지만, 계급은 그 답이 끝까지 왔는가가 정한다 — 본문을 상한까지 읽는다. 끊김 · 기한
-            // 초과는 `token_http_error`, 상한 초과는 `Transport` 다(token_provider 의 `fetch` 와 같은 읽기 · 같은 문구 모양 —
-            // 등록부 logout-body-unread-class-divergent: 일곱 언어와 같다).
-            read_capped(&mut resp, TOKEN_RESPONSE_MAX_BYTES)
-                .await
-                .map_err(|e| token_http_error(&e, format!("logout response: {e}")))?
-                .ok_or_else(|| {
-                    KeycloakError::Transport(format!(
-                        "logout response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"
-                    ))
-                })?;
+            // 판정은 상태가 하고 본문은 버리지만, 계급은 그 답이 끝까지 왔는가가 정한다 — 끊김 · 기한 · 상한 초과는
+            // `Transport` 다(측정되는 `jwks.rs` 의 `drain_capped` · 등록부 logout-body-unread-class-divergent: 일곱 언어와 같다).
+            drain_capped(&mut resp, TOKEN_RESPONSE_MAX_BYTES, "logout response").await?;
             return Err(KeycloakError::Auth {
                 message: format!("logout failed (HTTP {})", status.as_u16()),
                 oauth_error: None,

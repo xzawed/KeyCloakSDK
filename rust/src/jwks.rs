@@ -1,6 +1,6 @@
 //! DoS-safe JWKS: kid cache (key-set lifetime 300 seconds), within which only an unresolved kid triggers a refetch,
 //! rate-limit + single-flight.
-use crate::error::{KeycloakError, Result};
+use crate::error::{KeycloakError, Result, token_http_error};
 use jsonwebtoken::jwk::{AlgorithmParameters, Jwk, JwkSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -61,6 +61,22 @@ pub(crate) async fn read_capped(
         body.extend_from_slice(&chunk);
     }
     Ok(Some(body))
+}
+
+/// 상태로 판정하는 응답(logout 의 204 아닌 답)의 본문을 `cap` 바이트까지 읽어 버린다 — 끝까지 왔으면 `Ok(())`, 읽기가
+/// 실패하면(끊김 · 기한) [`token_http_error`] 의 계급으로 `"{what}: {e}"`, 상한을 넘으면 `Transport("{what} exceeds {cap}
+/// bytes")`. 계급은 그 답이 끝까지 왔는가가 정한다(등록부 logout-body-unread-class-divergent). ⚠️ 이 판정을 경계 파일
+/// (`auth.rs` — 커버리지 밖)에 두지 않는다 — node 의 `drainCapped` 와 같은 자리다.
+pub(crate) async fn drain_capped(
+    resp: &mut reqwest::Response,
+    cap: usize,
+    what: &str,
+) -> Result<()> {
+    read_capped(resp, cap)
+        .await
+        .map_err(|e| token_http_error(&e, format!("{what}: {e}")))?
+        .ok_or_else(|| KeycloakError::Transport(format!("{what} exceeds {cap} bytes")))?;
+    Ok(())
 }
 
 /// 게이트 상태. **하나의 뮤텍스가 두 축을 함께 소유한다** — 강제 재조회의 30초 rate-limit 과
