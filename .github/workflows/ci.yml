@@ -2,6 +2,7 @@ name: CI
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — 통합 리포트를 붙인 다른 레인과 같다).
+  # `scripts/unit-unreached.json` — unit-unreached 잡의 장부다(장부만 고친 PR 에서도 실제 단위 실행과 대조한다).
   push: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/unit-unreached.json','scripts/coverage-boundary.mjs', 'scripts/lib/dotnet-tfm.mjs', 'scripts/check-known-gaps.mjs', 'scripts/check-jvm-bytecode-floor.mjs', 'scripts/check-central-bundle.mjs'] }
   pull_request: { branches: [main], paths: ['java/**', '.github/workflows/ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/unit-unreached.json','scripts/coverage-boundary.mjs', 'scripts/lib/dotnet-tfm.mjs', 'scripts/check-known-gaps.mjs', 'scripts/check-jvm-bytecode-floor.mjs', 'scripts/check-central-bundle.mjs'] }
   # 주간 레인 건강검진. ⚠️ `schedule` 은 `paths` 를 타지 않는다(실측: harness 스케줄이 6일 연속
@@ -82,6 +83,21 @@ jobs:
       # `scripts/test/test-integration-coverage-gate.sh`.
       - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
         run: node scripts/integration-coverage.mjs report java --out "$RUNNER_TEMP/integration-coverage"
+
+  # 단위 미도달 장부 — JaCoCo <excludes> 가 단위 게이트에서 빼는 경계 파일을 단위 스위트(레인의 `test -DskipITs=true`)로 계측해, 함수마다
+  # 단위 시험이 안 닿는 줄 · 가지를 `scripts/unit-unreached.json` 과 대조한다(등록부 coverage-omit-hides-security-paths — 통합 장부는
+  # 함수 단위라 이미 도는 함수 안의 새 실패 갈래를 못 본다). Docker 가 필요 없어 build 와 나란히 돈다(JDK 는 integration 잡과 같은 21 —
+  # 두 장부가 같은 컴파일러의 클래스 파일을 읽는다). 명령(`clean` · exec 자리 · JaCoCo CLI · javap)과 종료코드의 뜻(0 · 1 DRIFT · 2 FAIL)은
+  # `scripts/integration-coverage.mjs` 머리가 소유한다 — 종료코드를 그대로 받는다(배선 고정: `scripts/test/test-integration-coverage-gate.sh`).
+  unit-unreached:
+    name: unit-unreached ledger (java — boundary code the unit suite never reaches)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+      - name: 단위 미도달 장부 — 경계의 놓친 줄 · 가지 ↔ scripts/unit-unreached.json
+        run: node scripts/integration-coverage.mjs unit java --out "$RUNNER_TEMP/unit-unreached"
 
   # SECURITY.md가 약속하는 "언어별 의존성 취약점 감사"의 Java 구현.
   #

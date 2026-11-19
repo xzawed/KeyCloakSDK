@@ -16,5 +16,12 @@
       "dotnet/src/Kc/AuthClient.cs"
     ],
     "owners": {}
+  },
+  "java": {
+    "pinned": [
+      "java/kc-auth/src/main/java/kc/auth/AuthClient.java",
+      "java/kc-examples/src/main/java/kc/examples/QuickStart.java"
+    ],
+    "owners": {}
   }
 }

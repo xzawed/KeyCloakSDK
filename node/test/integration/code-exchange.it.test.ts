@@ -19,9 +19,8 @@ import { startKeycloak, type KeycloakHarness } from './support.js'
  * `it-web-hs256`(id_token 을 HS256 서명)이 짝이다.
  *
  * ⚠️ 거부 사유는 오류의 **원인 사슬**로 가린다 — `KeycloakError` 가 정화해 남기는 이름·메시지·code 다
- * (`src/errors.ts` 의 `scrubCause`). node 의 `KeycloakAuthError` 는 OAuth `error` 코드(`invalid_grant`)를
- * 싣지 않으므로(python 의 `.error` 에 해당하는 것이 없다), 서버의 거부는 `OAUTH_RESPONSE_BODY_ERROR`
- * (토큰 엔드포인트가 오류 본문으로 답했다)까지만 공개 표면에서 보인다.
+ * (`src/errors.ts` 의 `scrubCause`). 서버의 거부는 `OAUTH_RESPONSE_BODY_ERROR`(토큰 엔드포인트가 오류 본문으로
+ * 답했다)이고, 그 OAuth `error` 코드는 `KeycloakAuthError.oauthError` 다(python 의 `.error` — `invalid_grant`).
  */
 
 const REDIRECT_URI = 'http://localhost/it-callback'
@@ -178,6 +177,7 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
     expect(ended).toBeInstanceOf(KeycloakAuthError)
     expect(ended.message).toMatch(/^Token refresh failed: /)
     expect(links(ended)[1]?.code).toBe(SERVER_REFUSED)
+    expect((ended as KeycloakAuthError).oauthError).toBe('invalid_grant')
     expect((await kc.auth.introspect(refreshed.accessToken)).active).toBe(false)
   })
 
@@ -200,6 +200,7 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
       kc.auth.exchangeCode(code, REDIRECT_URI, request.codeVerifier, request.nonce),
     )
     expect(links(replay)[1]?.code).toBe(SERVER_REFUSED)
+    expect((replay as KeycloakAuthError).oauthError).toBe('invalid_grant')
   })
 
   it('nonce 클레임이 없는 id_token 은 nonce 를 기대할 때 거부한다', async () => {
@@ -297,6 +298,7 @@ describe('인가 코드 교환 E2E (실제 Keycloak 26.6 · 브라우저 없는 
     expect(reused).toBeInstanceOf(KeycloakAuthError)
     expect(reused.message).toMatch(/^Authorization code exchange failed: /)
     expect(links(reused)[1]?.code).toBe(SERVER_REFUSED)
+    expect((reused as KeycloakAuthError).oauthError).toBe('invalid_grant')
 
     const printed = renderings(reused) + printedBySdk.join('\n')
     const secret = WEB_CLIENT_SECRETS['it-web']
