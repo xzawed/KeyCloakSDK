@@ -7,7 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestProviderCachesBeforeExpiry(t *testing.T) {
@@ -49,29 +48,49 @@ func TestProviderNilTokenSetIsAnErrorNotAPanic(t *testing.T) {
 	}
 }
 
+// Callers that all missed the cache while one refresh was running get that refresh's token, and the source is asked
+// once. The source holds the refresh until afterMiss has seen every caller miss, so they overlap it by construction.
+// The test used to lean on a 50 ms sleep in the source for that, and failed whenever a caller reached the group only
+// after the refresh had left it (TestProviderMissAsRefreshEndsReusesCachedToken pins that order).
 func TestProviderSingleFlight(t *testing.T) {
-	var calls int32
+	const callers = 20
+	var calls atomic.Int32
+	started, gate := make(chan struct{}, callers), make(chan struct{})
 	p := NewClientCredentialsTokenProvider(func(context.Context) (*TokenSet, error) {
-		atomic.AddInt32(&calls, 1)
-		time.Sleep(50 * time.Millisecond) // hold the flight so goroutines pile up
+		calls.Add(1)
+		started <- struct{}{}
+		<-gate // hold the refresh until every caller has missed the cache
 		return &TokenSet{AccessToken: "AT", ExpiresIn: 300}, nil
-	}, 30)
+	}, 30).(*clientCredentialsProvider)
+	var missed sync.WaitGroup
+	missed.Add(callers)
+	p.afterMiss = missed.Done
 
-	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() { defer wg.Done(); _, _ = p.Token(context.Background()) }()
+	var done sync.WaitGroup
+	toks, errs := make([]string, callers), make([]error, callers)
+	for i := range callers {
+		done.Add(1)
+		go func() { defer done.Done(); toks[i], errs[i] = p.Token(context.Background()) }()
 	}
-	wg.Wait()
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	mustReturn(t, async(func() error { <-started; missed.Wait(); return nil }),
+		"the refresh starting and every caller missing the cache")
+	close(gate)
+	mustReturn(t, async(func() error { done.Wait(); return nil }), "the callers")
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("source called %d times under concurrency, want 1 (single-flight)", got)
+	}
+	for i := range callers {
+		if errs[i] != nil || toks[i] != "AT" {
+			t.Fatalf("caller %d: Token() = %q, %v — want the shared refresh's token", i, toks[i], errs[i])
+		}
 	}
 }
 
 // A caller that missed the cache just before a refresh stored its token, and asked for the shared refresh just after
 // that refresh had left the single-flight group, started a refresh of its own: the source was asked again and a second
-// token issued although a fresh one was cached (registry token-provider-cache-invariants). afterMiss holds that caller
-// between its miss and the group while the refresh runs to its end — no sleep sets the order.
+// token issued although a fresh one was cached (registry token-provider-cache-invariants). Its flight now finds the
+// cached token. afterMiss holds that caller between its miss and the group while the refresh runs to its end — no sleep
+// sets the order.
 func TestProviderMissAsRefreshEndsReusesCachedToken(t *testing.T) {
 	var calls atomic.Int32
 	p := NewClientCredentialsTokenProvider(func(context.Context) (*TokenSet, error) {
