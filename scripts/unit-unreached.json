@@ -224,11 +224,6 @@
       "branches": 2,
       "why": "unreachable: 두 갈래 — TryDecode 의 false(위 TryDecode 와 같은 까닭) · 디코드한 code 가 null(GetString 은 JsonValueKind.Null 에서만 null 이고 바로 앞에서 String 을 확인했다)"
     },
-    "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": {
-      "lines": 0,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
     "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.ErrorMember": {
       "lines": 0,
       "branches": 1,

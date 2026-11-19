@@ -363,9 +363,15 @@ public sealed class AuthClient : ITokenSource
 
     private static bool IsNqsChar(char c) => c is >= '\x20' and <= '\x21' or >= '\x23' and <= '\x5B' or >= '\x5D' and <= '\x7E';
 
-    // Why a 400 carried no code — a string that is not carried is still a JSON string, so it gets its own words.
-    private static string NoCodeReason(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } ? "error value withheld" : "error is not a JSON string";
+    // Why a 400 carried no code — a string that is not carried is still a JSON string, so it gets its own words, and so does a
+    // body with no error member at all ({}, an error_description alone, an empty body): Duende flags that 400 too (ErrorType
+    // Protocol, IsError true), where "not a JSON string" was false (measured: OAuthErrorCodeGrammarTests). JSON null is a value.
+    private static string NoCodeReason(JsonElement? json) => ErrorMember(json) switch
+    {
+        null => "error is missing",
+        { ValueKind: JsonValueKind.String } => "error value withheld",
+        _ => "error is not a JSON string",
+    };
     private static JsonElement? ErrorMember(JsonElement? json) =>
         json is { ValueKind: JsonValueKind.Object } j && j.TryGetProperty("error", out var e) ? e : null;
 
