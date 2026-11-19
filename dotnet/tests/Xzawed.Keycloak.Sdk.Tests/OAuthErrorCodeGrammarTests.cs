@@ -110,13 +110,16 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
 
     private delegate Task<object> Call(KeycloakClient kc);
 
-    /// <summary>Every public call that reads the OAuth <c>error</c> member, with its failure prefix.</summary>
+    /// <summary>Every public call that reads the OAuth <c>error</c> member itself, with its failure prefix — the three grants
+    /// and introspection — and <c>AdminAsync</c>, which reads it through its token provider's client-credentials grant and so
+    /// carries that grant's prefix.</summary>
     private static readonly (string Name, string Prefix, Call Run)[] Calls =
     {
         ("ClientCredentialsTokenAsync", "Client credentials grant failed", async kc => await kc.Auth.ClientCredentialsTokenAsync()),
         ("RefreshAsync", "Token refresh failed", async kc => await kc.Auth.RefreshAsync("rt-sent")),
         ("ExchangeCodeAsync", "Authorization code exchange failed",
             async kc => await kc.Auth.ExchangeCodeAsync("code", "https://app/cb", new string('v', 43), "n1")),
+        ("AdminAsync", "Client credentials grant failed", async kc => await kc.AdminAsync()),
         ("IntrospectAsync", "Token introspection failed", async kc => await kc.Auth.IntrospectAsync("tok-sent")),
     };
 
