@@ -78,20 +78,25 @@
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
 // 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
-// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet, 등록부 coverage-exclusion-hides-untested-branches ·
+// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java, 등록부 coverage-exclusion-hides-untested-branches ·
 // coverage-omit-hides-security-paths) ──
 // 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
 // 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
-// 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin 은 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친 실행
-// 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport ·
-// dotnetReport)가 낸다: kotlin 의 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, dotnet 의 상태 기계 · 람다 · 로컬 함수는
-// dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다). 정적 초기화는 kotlin
-// `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin ·
-// dotnet), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위 소유자와 같은 판정).
+// 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin · java 는 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친
+// 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport ·
+// dotnetReport)가 낸다: kotlin 의 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역
+// 클래스는 javaFold 가, dotnet 의 상태 기계 · 람다 · 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의
+// 수다(키가 합성 이름이 되지 않는다 — java 의 이름 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). 정적 초기화는 kotlin ·
+// java `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines,
+// branches(kotlin · dotnet · java), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부
+// id 다(위 소유자와 같은 판정).
 // run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크, dotnet 은 같은
-// 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`) — kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL
+// 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`, java 는 같은 리액터 · 같은 exec 자리로 레인의 단위 골 `test
+// -DskipITs=true` — failsafe 는 그 뒤 단계라 안 돈다) — kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL
 // (`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게
 // 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
+// ⚠️ java 의 jacoco.skip 모듈(예제 — 파생이 forced 로 넣는다)에는 에이전트가 안 붙고 단위 시험도 없다: 그 파일은 데이터에 줄 · 가지 전부를
+// 놓친 것으로 든다(설치 하네스만 돌린다 — why 는 `integration:`).
 // ⚠️ php 는 줄만 센다 — 행복 경로가 이미 도는 줄에 붙은 실패 갈래(`$x = $y ?? throw …` · 한 줄 `?:` · 삼항 · `match`)는 줄 수를 안
 // 바꿔 이 장부가 못 본다. `--path-coverage`(Xdebug)로도 `--coverage-xml` 에는 가지 · 경로 수가 없다(실측 2026-11-18 — PHPUnit 12.5.33 ·
 // php-code-coverage 12.5.7 · Xdebug 3.5.3: `<method>` 는 줄 수뿐이고 Report/Xml/Method.php 가 그것만 쓴다 · clover 는 클래스 단위
@@ -109,7 +114,7 @@
 // 탄 그 갈래도 돈 것으로 센다(측정: 그 꼴의 async 메서드 셋은 안 탄 쪽이 1 회 · 같은 꼴의 동기 메서드 둘은 바르게 0 · 실제 트리의
 // AdminAsync L64 `??=` 는 두 쪽 합 3078(1531 + 1547)이 그 줄에 온 1547 회보다 크다). 그래서 async 메서드의 놓친 가지 수는 하한이다(늘지는
 // 않는다).
-// ⚠️ 수로 대조하는 장부의 한계(세 언어 공통) — 한 함수 안에서 시험이 옛 미도달 하나를 덮고 새 미도달 하나가 생기면 수가 같아 통과한다.
+// ⚠️ 수로 대조하는 장부의 한계(모든 언어 공통) — 한 함수 안에서 시험이 옛 미도달 하나를 덮고 새 미도달 하나가 생기면 수가 같아 통과한다.
 // 장부는 함수마다 「얼마나」를 대조할 뿐 「어느 줄 · 가지」인지는 대조하지 않는다.
 // 종료코드(`unit` · `unit-report`): 0 측정 = 장부 · 1 DRIFT — 장부에 없는 미도달 · 수가 다르다 · 낡았거나 경계 밖 · 데이터에 없는 함수를
 // 가리키는 항목 · 까닭이 아니거나 열린 항목이 아닌 why(그 줄이 할 일을 말한다 — 시험을 쓰거나 까닭을 적는다) · 2 FAIL — 아래 표의
@@ -143,9 +148,10 @@
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자 · 단위 장부(데이터·Docker 불필요)
-//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께 돌리고 단위
-//                                                                                              미도달 장부와 대조한다(Docker 불필요 — 레인 게이트)
-//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
+//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께 돌리고
+//                                                                                                   단위 미도달 장부와 대조한다(Docker
+//                                                                                                   불필요 — 레인 게이트)
+//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
@@ -184,10 +190,10 @@ const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
 const JVM_LANGS = new Set(['java', 'kotlin'])
 // 단위 미도달 장부(머리 주석) — 재는 언어와 why 의 까닭 머리. 등록부 id 가 아닌 why 는 이 셋 중 하나로 시작해야 한다.
 const UNIT = 'scripts/unit-unreached.json'
-const UNIT_LANGS = ['kotlin', 'php', 'dotnet']
+const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java']
 const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
 // 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없다(머리 주석).
-const UNIT_BRANCHES = new Set(['kotlin', 'dotnet'])
+const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -3184,13 +3190,16 @@ function jvmReport(l, d) {
   const t = rec.tests
   const other = SUITE === 'unit' ? rec.integration : rec.unit
   if (!isObj(t) || !isCount(t.completed) || !isCount(t.failures) || !isCount(t.errors) || !isCount(other)) {
-    const from = SUITE === 'unit' ? 'the JUnit XML of test and integrationTest' : l === 'kotlin' ? 'the JUnit XML of integrationTest and test' : 'failsafe-summary.xml and the surefire reports'
+    const unitFrom = l === 'kotlin' ? 'the JUnit XML of test and integrationTest' : 'the surefire and failsafe reports (TEST-*.xml)'
+    const from = SUITE === 'unit' ? unitFrom : l === 'kotlin' ? 'the JUnit XML of integrationTest and test' : 'failsafe-summary.xml and the surefire reports'
     fail(l, `the record has no test counts — ${RUN_CMD} ${l} reads them from ${from}`)
     return null
   }
   if (t.completed === 0) fail(l, `the run recorded no ${SUITE} tests — a report over no tests is vacuous`)
   if (t.failures + t.errors) fail(l, `${t.failures + t.errors} of ${t.completed} ${SUITE} tests failed — the data of a failed run is partial`)
-  if (other && SUITE === 'unit') fail(l, `the run included ${other} integration test report${other > 1 ? 's' : ''} — the data would not be unit-only (unit ${l} runs test only)`)
+  // 단위 실행에 통합 시험의 보고가 있다 — kotlin 은 integrationTest 의 결과, java 는 failsafe 의 보고다(단위 골 `test` 는 failsafe 앞에서 멈춘다).
+  const unitOnly = l === 'kotlin' ? 'unit kotlin runs test only' : 'unit java runs the test phase only — failsafe binds after it'
+  if (other && SUITE === 'unit') fail(l, `the run included ${other} integration test report${other > 1 ? 's' : ''} — the data would not be unit-only (${unitOnly})`)
   else if (other) fail(l, `the run included ${rec.unit} unit test report${rec.unit > 1 ? 's' : ''} — the report would not be integration-only (${l === 'kotlin' ? 'run runs integrationTest only' : 'run skips surefire: -Dtest=NONE'})`)
   if (!isObj(rec.files)) {
     fail(l, 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
@@ -3392,7 +3401,7 @@ function unitLedgerFor(l) {
     fail(l, `${UNIT} has no ${l} object — an empty ledger is {}, not a missing one`)
     return null
   }
-  // kotlin · dotnet 은 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
+  // kotlin · dotnet · java 는 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
   const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : ['lines', 'why']
   for (const [k, v] of Object.entries(e)) {
     const ok = v !== null && typeof v === 'object' && !Array.isArray(v) && sortU(Object.keys(v)).join() === want.join() && want.every((x) => (x === 'why' ? typeof v.why === 'string' && v.why !== '' : isCount(v[x])))
@@ -3420,7 +3429,7 @@ function unitReport(l) {
   const led = unitLedgerFor(l)
   // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport }[l]
+  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x) }[l]
   const data = fails(l) ? null : reader(d)
   const rows = []
   if (data && !fails(l)) {
@@ -3473,9 +3482,11 @@ function printUnit(l, d, data, rows) {
   console.log(
     l === 'kotlin'
       ? '  (counts = JaCoCo method counters — missed lines · missed branches — summed over the methods folded into each source function: lambdas, local functions, default-argument bridges, anonymous objects)'
-      : l === 'dotnet'
-        ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
-        : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
+      : l === 'java'
+        ? '  (counts = JaCoCo method counters — missed lines · missed branches — summed over the methods folded into each source method: lambdas, anonymous and local classes; a named nested class is its own type, overloads are told apart by their parameters)'
+        : l === 'dotnet'
+          ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
+          : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
   )
   const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
   for (const r of sorted) console.log(`  UNREACHED ${r.file}:${r.line} ${r.name} · ${unitCounts(l, r)} · ${r.why}`)
@@ -3706,11 +3717,12 @@ function run(l) {
     return rc
   }
   if (l === 'java') {
-    // 옛 데이터 · exec · javap 출력 · 기록 · CLI 를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    // 옛 데이터 · exec · javap 출력 · 기록 · CLI 를 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게). 단위
+    // 미도달 장부(`unit java`)는 같은 길로 단위 스위트(surefire)를 돈다 — 이름은 `.unit` 이 붙는다(SUITE).
     const data = JVM_DATA(l)
     const exec = JVM_EXEC(l)
     const javap = JVM_JAVAP(l)
-    const cli = join(out, 'java-cli')
+    const cli = join(out, `java${TAG}-cli`)
     for (const f of [data, exec, javap, JVM_RUN(l)]) rmSync(f, { force: true })
     rmSync(cli, { recursive: true, force: true })
     const stop = (msg) => {
@@ -3737,7 +3749,11 @@ function run(l) {
     // 레인의 명령(`mvn -B -f java/pom.xml verify`)과 같은 리액터 · 골이다. 더하는 것: `clean`(지난 실행의 클래스 · 테스트 보고가 남지
     // 않게) · 단위 테스트 끄기(`-Dtest=NONE` — surefire 와 failsafe 가 같은 에이전트 인자를 써 단위와 IT 가 한 exec 에 합쳐진다 — 실측) ·
     // exec 를 <out> 으로(`-Djacoco.destFile` — 모듈의 report · check 는 그 모듈에 데이터가 없어 건너뛴다).
-    const rc = spawnMaven(['-B', '-f', 'pom.xml', 'clean', 'verify', '-Dtest=NONE', '-Dsurefire.failIfNoSpecifiedTests=false', `-Djacoco.destFile=${exec}`], cwd)
+    // 단위 미도달 장부는 레인의 단위 명령(`mvn -f java/pom.xml test -DskipITs=true` — .claude/rules/java.md)에 같은 `clean` · exec 자리를
+    // 더한다: `test` 단계는 failsafe(integration-test · verify)와 report · check · japicmp(verify) 앞에서 멈춘다 — 모듈마다 surefire 가
+    // 같은 exec 에 세션을 덧붙인다.
+    const goals = SUITE === 'unit' ? ['clean', 'test', '-DskipITs=true'] : ['clean', 'verify', '-Dtest=NONE', '-Dsurefire.failIfNoSpecifiedTests=false']
+    const rc = spawnMaven(['-B', '-f', 'pom.xml', ...goals, `-Djacoco.destFile=${exec}`], cwd)
     const after = shas()
     if (!existsSync(exec)) return rc
     const rcCli = spawnMaven(['-B', '-q', 'dependency:copy', `-Dartifact=org.jacoco:org.jacoco.cli:${ver}:jar:nodeps`, `-DoutputDirectory=${cli}`], cwd)
@@ -3769,8 +3785,32 @@ function run(l) {
       text += jp.stdout
     }
     writeFileSync(javap, text)
-    // 테스트 — failsafe 의 요약(모듈마다)을 합치고, surefire 의 보고가 없는지 센다(단위 테스트는 돌지 않았어야 한다).
+    const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
+    const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
     const tests = { completed: 0, failures: 0, errors: 0, skipped: 0 }
+    const reportsOf = (dir) => (existsSync(dir) ? readdirSync(dir).filter((n) => /^TEST-.*\.xml$/.test(n)) : [])
+    if (SUITE === 'unit') {
+      // 테스트 — surefire 의 보고(모듈마다 TEST-*.xml — 머리 `<testsuite>` 의 tests · failures · errors · skipped)를 합치고, failsafe 의
+      // 보고가 없는지 센다(통합 시험은 돌지 않았어야 한다 — clean 뒤라 이 실행이 쓴 것만 있다). kotlin 의 단위 기록과 같은 꼴이다.
+      let integration = 0
+      for (const e of readdirSync(cwd, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue
+        const rep = join(cwd, e.name, 'target', 'surefire-reports')
+        for (const n of reportsOf(rep)) {
+          const head = /<testsuite\b[^>]*>/.exec(readFileSync(join(rep, n), 'utf8'))?.[0] ?? ''
+          const attr = (k) => Number(new RegExp(`\\b${k}="(\\d+)"`).exec(head)?.[1] ?? NaN)
+          tests.completed += attr('tests')
+          tests.failures += attr('failures')
+          tests.errors += attr('errors')
+          tests.skipped += attr('skipped')
+        }
+        integration += reportsOf(join(cwd, e.name, 'target', 'failsafe-reports')).length
+      }
+      const facts = { jacoco: ver, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests }
+      writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'java', suite: 'unit', exit: rc, ...facts, integration, files: same ? before : null })}\n`)
+      return rc
+    }
+    // 테스트 — failsafe 의 요약(모듈마다)을 합치고, surefire 의 보고가 없는지 센다(단위 테스트는 돌지 않았어야 한다).
     let unit = 0
     for (const e of readdirSync(cwd, { withFileTypes: true })) {
       if (!e.isDirectory()) continue
@@ -3782,8 +3822,6 @@ function run(l) {
       const rep = join(cwd, e.name, 'target', 'surefire-reports')
       if (existsSync(rep)) unit += readdirSync(rep).filter((n) => /^TEST-.*\.xml$/.test(n)).length
     }
-    const sha = (p) => createHash('sha1').update(readFileSync(p)).digest('hex')
-    const same = recorded.every((f) => before[f] !== null && before[f] === after[f])
     writeFileSync(JVM_RUN(l), `${JSON.stringify({ run: 'java', exit: rc, jacoco: ver, data_sha1: sha(data), javap_sha1: sha(javap), exec_sha1: sha(exec), tests, unit, files: same ? before : null })}\n`)
     return rc
   }

@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet, 등록부
+# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java, 등록부
 # coverage-exclusion-hides-untested-branches · coverage-omit-hides-security-paths) 자가테스트 — **종료코드**를 단언한다(0 측정 = 장부 ·
 # 1 DRIFT · 2 FAIL — 뜻은 그 도구 머리가 소유한다). 문구는 무엇을 잡았는지 가리는 데만 쓴다.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · PHP · .NET 이 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는 실제
-# 도구가 낸 것이다(kotlin · php 2026-11-18 · dotnet 2026-11-19):
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET 이 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
+# 실제 도구가 낸 것이다(kotlin · php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19):
 #   fixtures/unit-unreached/data/kotlin.unit.xml · kotlin.unit.javap.txt   도구의 `unit kotlin`(JDK 21.0.8 · kotlin 2.4.21 · Kover 0.9.11 ·
 #       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼 + java/pom.xml(JaCoCo 판을 거기서 읽는다). 세션 id 를
 #       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다
@@ -13,12 +13,16 @@
 #   fixtures/unit-unreached/data/dotnet.unit.json · dotnet.unit.trx   도구의 `unit dotnet`(.NET SDK 10.0.102 → net8.0 · coverlet.collector
 #       10.1.0) — 임시 루트에 tree 사본. 생성 루트를 `@ROOT@`(trx 의 소문자 `storage` 는 `@root@`)로, 기계 · 사용자 이름을 HOST · USER 로,
 #       trx 의 줄끝을 LF 로 바꿨다(치환마다 되돌린 바이트가 원본과 같다)
-# 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests)은 빈 code · null · 빈 user · 빈 문자열을 안 보내고
-# unused · logoutUrl · LogoutUrl · Describe() 를 안 부른다. dotnet 의 Guarded 는 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만
-# 불린다 — 통합 시험(DriveIT)은 단위 실행의 필터(Category!=Integration)가 거른다. 숫자를 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 —
-# 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
+#   fixtures/unit-unreached/data/java.unit.xml · java.unit.javap.txt   도구의 `unit java`(JDK 21.0.8 · Maven 3.9.9 · JaCoCo 0.8.16) — 임시
+#       루트에 tree 사본. 세션 id 를 HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `java/` 부터로만 바꿨다
+#       (치환마다 되돌린 바이트가 원본과 같다)
+# 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test)은 빈 code · null · 빈
+# user · 빈 문자열 · 빈 값을 안 보내고 unused · logoutUrl · LogoutUrl · Describe() · token(String, int) 를 안 부른다. dotnet 의 Guarded 는
+# 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은 단위 실행의 필터(Category!=Integration)가 거른다.
+# java 의 DriveIT 는 failsafe 의 것이라 단위 실행(test 단계)이 안 돌고, QuickStart 는 jacoco.skip 모듈(단위 시험이 없다)의 것이다. 숫자를
+# 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
 # `check` 의 장부 판정(데이터 없이 — 꼴 · 경계 · why)은 통합 커버리지 픽스처 트리(`ic-fixture.sh` 의 fresh)에서 잰다 — check 는 아홉
-# 언어를 다 보므로 kotlin · php · dotnet 뿐인 이 트리로는 못 잰다.
+# 언어를 다 보므로 kotlin · php · dotnet · java 뿐인 이 트리로는 못 잰다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -33,6 +37,8 @@ BOUNDARY="$DIR/../coverage-boundary.mjs"
 K=kotlin/src/main/kotlin/kc/auth/AuthClient.kt
 P=php/src/AuthClient.php
 N=dotnet/src/Kc/AuthClient.cs
+J=java/kc-auth/src/main/java/kc/auth/AuthClient.java
+Q=java/kc-examples/src/main/java/kc/examples/QuickStart.java
 L="$T/scripts/unit-unreached.json"
 
 # 단위 픽스처 트리 + 그 트리의 파생 도구 + 데이터와 그 기록(run 이 쓰는 꼴).
@@ -48,9 +54,12 @@ ufresh() {
   # coverlet 의 문서 키 · trx 의 테스트 어셈블리 경로도 절대 경로다(통합 픽스처의 dotnet_data 와 같은 치환).
   sed "s#@ROOT@#$_r#g" "$UFIX/data/dotnet.unit.json" > "$D/dotnet.unit.json"
   sed "s#@ROOT@#$_r#g; s#@root@#$_r#g" "$UFIX/data/dotnet.unit.trx" > "$D/dotnet.unit.trx"
+  # JaCoCo XML · javap 출력에는 절대 경로가 없다(javap 의 `Classfile` 은 생성 때 `java/` 부터로 바꿨다 — 리더는 그 줄의 경로를 안 읽는다).
+  cp "$UFIX/data/java.unit.xml" "$UFIX/data/java.unit.javap.txt" "$D/"
   kmark 0
   pmark 0
   dmark 0
+  jmark 0
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -69,6 +78,13 @@ pmark() { # exit
 dmark() { # exit
   printf '{"run":"dotnet","suite":"unit","exit":%s,"data_sha1":"%s","trx_sha1":"%s","files":{"%s":"%s"}}\n' "$1" \
     "$(sha1sum "$D/dotnet.unit.json" | cut -d' ' -f1)" "$(sha1sum "$D/dotnet.unit.trx" | cut -d' ' -f1)" "$N" "$(sha1sum "$T/$N" | cut -d' ' -f1)" > "$D/dotnet.unit.run.json"
+}
+# `unit java` 의 기록 — 데이터 · javap 출력 · 경계 파일 둘(jacoco.skip 예제 포함)의 지금 sha1. 인자: 종료코드 [시험 수] [실패 수]
+# [failsafe 보고 수](kmark 와 같은 꼴 — 통합 보고 수가 failsafe 의 TEST-*.xml 이다).
+jmark() { # exit [completed] [failures] [integration]
+  printf '{"run":"java","suite":"unit","exit":%s,"jacoco":"0.8.16","data_sha1":"%s","javap_sha1":"%s","exec_sha1":"0","tests":{"completed":%s,"failures":%s,"errors":0,"skipped":0},"integration":%s,"files":{"%s":"%s","%s":"%s"}}\n' \
+    "$1" "$(sha1sum "$D/java.unit.xml" | cut -d' ' -f1)" "$(sha1sum "$D/java.unit.javap.txt" | cut -d' ' -f1)" \
+    "${2:-1}" "${3:-0}" "${4:-0}" "$J" "$(sha1sum "$T/$J" | cut -d' ' -f1)" "$Q" "$(sha1sum "$T/$Q" | cut -d' ' -f1)" > "$D/java.unit.run.json"
 }
 
 # ── (1) 양성 — 측정 = 장부 → 0 ───────────────────────────────────────────────────────────────────
@@ -115,6 +131,25 @@ assert_not_contains "$OUT" "get_Realm" "[dotnet] 다 닿는 멤버는 목록에 
 assert_not_contains "$OUT" "Config" "[dotnet] 경계 밖 파일은 목록에 없다"
 assert_line "$OUT" "unit-unreached [dotnet]: OK — 8 functions with code the unit suite never reaches (5 lines · 5 branches), each recorded in scripts/unit-unreached.json" "[dotnet] 요약"
 
+run unit-report java "$T" --out "$D"
+assert_eq 0 "$RC" "[java] 측정이 장부와 같으면 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "/java.unit.xml (JaCoCo 0.8.16 · 1 session · 1 unit test)" "[java] 데이터 · JaCoCo 판 · 세션 · 단위 시험 수를 찍는다"
+assert_line "$OUT" "  UNREACHED $J:23 AuthClient.exchange · 1 line · 1 branch · defensive: the drive never sends a blank code" "[java] 제 줄의 실패 갈래 — 놓친 줄 · 놓친 가지"
+assert_line "$OUT" "  UNREACHED $J:31 AuthClient.pick · 0 lines · 1 branch · open-gap" "[java] 행복 경로가 도는 줄의 실패 갈래(조건식)도 가지로 센다 · why 가 열린 항목 id"
+assert_line "$OUT" "  UNREACHED $J:36 AuthClient.later · 0 lines · 1 branch · unreachable: the branch sits in later's lambda — the key is the source method" "[java] 람다 안의 놓친 가지는 소스 메서드 later 의 수다"
+assert_not_contains "$OUT" 'lambda$' "[java] 람다의 합성 이름(lambda\$later\$0)이 키로 새지 않는다"
+assert_line "$OUT" "  UNREACHED $J:41 AuthClient.sorted · 1 line · 1 branch · unreachable: the line and branch sit in the anonymous Comparator — they fold into sorted" "[java] 익명 클래스의 놓친 줄 · 가지는 감싼 메서드 sorted 의 수다"
+assert_not_contains "$OUT" 'AuthClient$1' "[java] 익명 클래스의 이름(AuthClient\$1)이 키로 새지 않는다"
+assert_line "$OUT" "  UNREACHED $J:61 AuthClient.token(String, int) · 1 line · 0 branches · integration: the drive never calls this overload" "[java] 오버로드는 매개변수로 가른다"
+assert_not_contains "$OUT" "AuthClient.token(String) ·" "[java] 다 닿는 오버로드는 목록에 없다"
+assert_line "$OUT" "  UNREACHED $J:66 AuthClient.logoutUrl · 1 line · 0 branches · integration: the drive never calls it — DriveIT does, outside the unit run" "[java] 통합 시험(DriveIT)만 부르는 메서드 — 단위 실행의 test 단계는 failsafe 앞에서 멈춘다"
+assert_line "$OUT" "  UNREACHED $J:82 AuthClient.Token.value · 0 lines · 1 branch · defensive: the drive never asks for an empty value — a named nested class keys as its own type" "[java] 이름 붙은 중첩 클래스는 제 타입이다"
+assert_line "$OUT" "  UNREACHED $Q:8 QuickStart.main · 2 lines · 0 branches · integration: a jacoco.skip module — no unit test and no agent there" "[java] jacoco.skip 모듈의 파일(파생의 forced)은 줄 전부를 놓친다"
+assert_line "$OUT" "  UNREACHED $Q:12 QuickStart.env · 2 lines · 2 branches · integration: main's helper — the same as main" "[java] 그 파일의 가지도 센다"
+assert_not_contains "$OUT" "AuthClient.realm" "[java] 다 닿는 메서드는 목록에 없다"
+assert_not_contains "$OUT" "Config" "[java] 경계 밖 파일은 목록에 없다"
+assert_line "$OUT" "unit-unreached [java]: OK — 9 functions with code the unit suite never reaches (8 lines · 7 branches), each recorded in scripts/unit-unreached.json" "[java] 요약"
+
 # ── (2) 음성 — 장부와 다르면 DRIFT(1) ────────────────────────────────────────────────────────────
 # 새로 생긴 미도달 — 데이터에서 다 닿던 realm 을 안 닿게 바꾼다(장부에 없다).
 ufresh
@@ -143,6 +178,21 @@ dmark 0
 run unit-report dotnet "$T" --out "$D"
 assert_eq 1 "$RC" "[dotnet] 줄 수가 같아도 놓친 가지가 늘면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [dotnet] $N:AuthClient.Exchange: the unit run leaves 1 line · 2 branches unreached, scripts/unit-unreached.json records 1 line · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[dotnet] 가지만 바뀐 수"
+ufresh
+sed -i 's#<method name="realm" desc="()Ljava/lang/String;" line="18"><counter type="INSTRUCTION" missed="0" covered="3"/><counter type="LINE" missed="0" covered="1"/>#<method name="realm" desc="()Ljava/lang/String;" line="18"><counter type="INSTRUCTION" missed="3" covered="0"/><counter type="LINE" missed="1" covered="0"/>#' "$D/java.unit.xml"
+jmark 0
+assert_contains "$(cat "$D/java.unit.xml")" '<method name="realm" desc="()Ljava/lang/String;" line="18"><counter type="INSTRUCTION" missed="3" covered="0"/>' "(변이가 착지했는지 먼저 본다)"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 장부에 없는 미도달 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] unrecorded unreached code $J:AuthClient.realm — the unit suite never reaches 1 line · 0 branches of it: test that code, or record why in scripts/unit-unreached.json" "[java] 새 미도달"
+# 줄은 그대로인데 가지 하나가 새로 안 돈다 — 익명 Comparator 의 compare 에서(그 수는 감싼 메서드 sorted 의 것이다).
+ufresh
+sed -i 's#<method name="compare" desc="(Ljava/lang/String;Ljava/lang/String;)I" line="45"><counter type="INSTRUCTION" missed="2" covered="6"/><counter type="BRANCH" missed="1" covered="1"/>#<method name="compare" desc="(Ljava/lang/String;Ljava/lang/String;)I" line="45"><counter type="INSTRUCTION" missed="2" covered="6"/><counter type="BRANCH" missed="2" covered="0"/>#' "$D/java.unit.xml"
+jmark 0
+assert_contains "$(cat "$D/java.unit.xml")" '<counter type="BRANCH" missed="2" covered="0"/>' "(변이가 착지했는지 먼저 본다)"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 줄 수가 같아도 놓친 가지가 늘면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] $J:AuthClient.sorted: the unit run leaves 1 line · 2 branches unreached, scripts/unit-unreached.json records 1 line · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[java] 익명 클래스의 가지가 감싼 메서드의 수를 바꾼다"
 
 # 람다 안의 놓친 가지 — 장부에서 pick 을 지우면 소스 함수 이름으로 DRIFT 다(합성 메서드로 새지 않는다 — 브리프 보정 1).
 ufresh
@@ -160,6 +210,16 @@ sed -i '/AuthClient\.Lengths"/,/},/d' "$L"
 run unit-report dotnet "$T" --out "$D"
 assert_eq 1 "$RC" "[dotnet] 람다 안의 놓친 가지가 장부에 없으면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [dotnet] unrecorded unreached code $N:AuthClient.Lengths — the unit suite never reaches 0 lines · 1 branch of it" "[dotnet] 람다의 가지 — 소스 멤버 키"
+ufresh
+sed -i '/AuthClient\.java:AuthClient\.later"/,/},/d' "$L"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 람다 안의 놓친 가지가 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] unrecorded unreached code $J:AuthClient.later — the unit suite never reaches 0 lines · 1 branch of it" "[java] 람다의 가지 — 소스 메서드 키"
+ufresh
+sed -i '/AuthClient\.java:AuthClient\.sorted"/,/},/d' "$L"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 익명 클래스 안의 놓친 줄 · 가지가 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] unrecorded unreached code $J:AuthClient.sorted — the unit suite never reaches 1 line · 1 branch of it" "[java] 익명 클래스 — 감싼 메서드 키"
 
 # 수가 바뀌었다 — 장부의 수와 측정이 다르다(가지 하나가 새로 생긴 꼴).
 ufresh
@@ -182,6 +242,11 @@ sed -i '/AuthClient\.Exchange"/,/}/ s#"branches": 1,#"branches": 2,#' "$L"
 run unit-report dotnet "$T" --out "$D"
 assert_eq 1 "$RC" "[dotnet] 수가 다르면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [dotnet] $N:AuthClient.Exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 1 line · 2 branches — the unit suite reaches more of it now: lower the counts" "[dotnet] 바뀐 수 — 장부보다 덜 놓쳤다"
+ufresh
+sed -i '/AuthClient\.java:AuthClient\.exchange"/,/}/ s#"branches": 1,#"branches": 2,#' "$L"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 수가 다르면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] $J:AuthClient.exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 1 line · 2 branches — the unit suite reaches more of it now: lower the counts" "[java] 바뀐 수 — 장부보다 덜 놓쳤다"
 
 # 낡은 항목 — 다 닿는 함수 · 데이터에 없는 함수 · 경계 밖 파일을 가리킨다.
 ufresh
@@ -210,6 +275,13 @@ dmark 0
 run unit-report dotnet "$T" --out "$D"
 assert_eq 1 "$RC" "[dotnet] 다 닿는 함수의 항목은 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [dotnet] stale entry $N:AuthClient.Describe(System.Int32) — the unit run reaches all of it now; drop the entry" "[dotnet] 다 닿는 함수의 항목"
+ufresh
+sed -i "s#\"java\": {#\"java\": {\n    \"$J:AuthClient.realm\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: stale\" },\n    \"$J:AuthClient.gone\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: renamed\" },\n    \"java/kc-auth/src/main/java/kc/auth/Config.java:Config.valid\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: outside\" },#" "$L"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 낡은 항목은 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [java] stale entry $J:AuthClient.realm — the unit run reaches all of it now; drop the entry" "[java] 다 닿는 메서드의 항목"
+assert_contains "$OUT" "DRIFT [java] stale entry $J:AuthClient.gone — the data of $J has no such function (renamed or removed?)" "[java] 없는 메서드의 항목"
+assert_contains "$OUT" "DRIFT [java] scripts/unit-unreached.json: entry java/kc-auth/src/main/java/kc/auth/Config.java:Config.valid names a file outside the boundary derived from java/pom.xml:53" "[java] 경계 밖 파일의 항목"
 
 # why — 닫힌 항목 · 들여쓴 하위 불릿(항목이 아니다) · 모르는 id · 까닭 머리만 있고 말이 없다.
 ufresh
@@ -223,6 +295,9 @@ assert_contains "$OUT" "DRIFT [php] $P:AuthClient::apply: why \"closed-gap\"" "[
 run unit-report dotnet "$T" --out "$D"
 assert_eq 1 "$RC" "[dotnet] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
 assert_contains "$OUT" "DRIFT [dotnet] $N:AuthClient.Pick: why \"closed-gap\"" "[dotnet] 닫힌 id"
+run unit-report java "$T" --out "$D"
+assert_eq 1 "$RC" "[java] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
+assert_contains "$OUT" "DRIFT [java] $J:AuthClient.pick: why \"closed-gap\"" "[java] 닫힌 id"
 ufresh
 sed -i 's#"why": "open-gap"#"why": "nested-open"#' "$L"
 run unit-report kotlin "$T" --out "$D"
@@ -421,10 +496,69 @@ sed -i '/AuthClient\.Exchange"/,/}/ { /"branches": 1,/d }' "$L"
 run unit-report dotnet "$T" --out "$D"
 assert_eq 2 "$RC" "[ledger] dotnet 항목에 branches 가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [dotnet] scripts/unit-unreached.json: dotnet[\"$N:AuthClient.Exchange\"] must be { branches, lines, why }" "[ledger] dotnet 꼴"
+# java — 같은 무결성 판정(데이터 · 다른 바이트 · 단위 기록 · failsafe 보고 · 기록 뒤 바뀐 데이터와 javap 출력 · 실패한 실행 · 데이터에 없는
+# 경계 파일)과 장부의 꼴.
 ufresh
+rm "$D/java.unit.xml"
 run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "run the unit suite first (node scripts/integration-coverage.mjs unit java)" "[java] 다시 돌릴 명령"
+ufresh
+printf '\n// changed after the run\n' >> "$T/$J"
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 다른 바이트의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [java] $J: the data was taken from other bytes" "[java] 다른 바이트"
+ufresh
+sed -i 's#"suite":"unit",##' "$D/java.unit.run.json"
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 통합 실행의 기록(suite 없음)은 exit 2"
+assert_contains "$OUT" "FAIL [java] no record that \`unit java\` wrote this data" "[java] 단위 기록 아님"
+ufresh
+jmark 0 1 0 1
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] failsafe 보고가 섞인 실행은 exit 2"
+assert_contains "$OUT" "FAIL [java] the run included 1 integration test report — the data would not be unit-only (unit java runs the test phase only — failsafe binds after it)" "[java] 통합 섞임"
+ufresh
+sed -i 's#<sessioninfo id="HOST-00000000"#<sessioninfo id="HOST-00000001"#' "$D/java.unit.xml"
+assert_contains "$(cat "$D/java.unit.xml")" '<sessioninfo id="HOST-00000001"' "(변이가 착지했는지 먼저 본다)"
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.unit.xml is not the data \`unit java\` recorded" "[java] 데이터의 sha1"
+ufresh
+printf '\n' >> "$D/java.unit.javap.txt"
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 기록 뒤 바뀐 javap 출력은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/java.unit.javap.txt is not the javap output \`unit java\` recorded" "[java] javap 출력의 sha1"
+ufresh
+jmark 1
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 실패한 실행의 데이터는 exit 2"
+assert_contains "$OUT" "FAIL [java] the run that wrote this data exited 1" "[java] 실패한 실행"
+ufresh
+jmark 0 1 1
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 실패한 단위 시험이 있으면 exit 2"
+assert_contains "$OUT" "FAIL [java] 1 of 1 unit tests failed" "[java] 실패한 시험"
+ufresh
+jmark 0 0
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 단위 시험 0 개의 실행은 exit 2"
+assert_contains "$OUT" "FAIL [java] the run recorded no unit tests" "[java] 공허한 실행"
+ufresh
+sed -i 's#<sourcefile name="QuickStart.java">#<sourcefile name="Other.java">#' "$D/java.unit.xml"
+jmark 0
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[java] 경계 파일이 데이터에 없으면 exit 2"
+assert_contains "$OUT" "FAIL [java] $Q is not in the coverage data" "[java] 데이터에 없는 경계 파일"
+ufresh
+sed -i '/AuthClient\.java:AuthClient\.exchange"/,/}/ { /"branches": 1,/d }' "$L"
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] java 항목에 branches 가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [java] scripts/unit-unreached.json: java[\"$J:AuthClient.exchange\"] must be { branches, lines, why }" "[ledger] java 꼴"
+ufresh
+run unit-report go "$T" --out "$D"
 assert_eq 2 "$RC" "[cli] 재지 않는 언어는 usage(exit 2)"
-assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet — got java" "[cli] usage 문구"
+assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java — got go" "[cli] usage 문구"
 
 # ── (4) check — 데이터 없이 꼴 · 경계 · why(통합 픽스처 트리 — 아홉 언어) ──────────────────────────────
 fresh
@@ -433,6 +567,7 @@ assert_eq 0 "$RC" "[check] 건강한 장부는 exit 0 — 출력: $OUT"
 assert_line "$OUT" "[kotlin] unit-unreached: 1 entry (integration 1)" "[check] kotlin 장부"
 assert_line "$OUT" "[php] unit-unreached: 1 entry (open-admin 1)" "[check] php 장부"
 assert_line "$OUT" "[dotnet] unit-unreached: 1 entry (defensive 1)" "[check] dotnet 장부"
+assert_line "$OUT" "[java] unit-unreached: 1 entry (unreachable 1)" "[check] java 장부"
 fresh
 sed -i 's#"why": "open-admin"#"why": "closed-item"#' "$T/scripts/unit-unreached.json"
 run check "$T"
