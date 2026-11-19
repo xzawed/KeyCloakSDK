@@ -288,6 +288,19 @@ describe('되울린 비밀은 싣지 않는다', () => {
     expect((await authFailure('refresh', null)).oauthError).toBe('invalid_grant')
   })
 
+  // 빈 비밀은 대지 않는다 — 빈 문자열은 모든 코드의 조각이라 대면 코드를 전부 잃는다(dotnet
+  // `An_empty_grant_value_is_not_compared` 의 자리). openid-client 는 빈 시크릿을 보내지 않는다(실측 — 본문에
+  // client_secret 이 없다).
+  it.each(['clientCredentialsToken', 'refresh'])(
+    '%s — 빈 시크릿(clientSecret "")은 대지 않고, 코드를 그대로 싣는다',
+    async (name) => {
+      errorOf = () => 'invalid_grant'
+      const e = await authFailure(name, '')
+      expect(firstSent()['client_secret'] ?? '').toBe('')
+      expect(e.oauthError).toBe('invalid_grant')
+    },
+  )
+
   it.each(['clientCredentialsToken', 'provider', 'admin'])(
     '%s — 값: 시크릿이 등록 코드의 조각이면(client) 그 코드를 잃는다',
     async (name) => {
