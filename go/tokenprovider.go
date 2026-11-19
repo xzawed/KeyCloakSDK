@@ -45,7 +45,10 @@ type clientCredentialsProvider struct {
 	src     TokenSource
 	skewSec int64
 	timeout time.Duration // the deadline of one shared refresh: tokenRefreshTimeout (tests shorten it)
-	group   singleflight.Group
+	// afterMiss runs in Token after the cache missed, just before the caller asks for the shared refresh. It is nil
+	// outside tests, which hold a caller there to order it against a refresh without sleeping.
+	afterMiss func()
+	group     singleflight.Group
 
 	mu       sync.Mutex
 	token    string
@@ -81,15 +84,14 @@ func NewClientCredentialsTokenProvider(src TokenSource, skewSec int64) TokenProv
 }
 
 func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
-	p.mu.Lock()
-	if p.token != "" && time.Now().Unix() < p.expireAt {
-		tok := p.token
-		p.mu.Unlock()
+	if tok, ok := p.cached(); ok {
 		return tok, nil
 	}
-	p.mu.Unlock()
 	if err := ctx.Err(); err != nil { // a caller that has already given up starts nothing
 		return "", abandoned(err)
+	}
+	if p.afterMiss != nil {
+		p.afterMiss()
 	}
 
 	// The refresh runs detached from every caller's cancellation. It used to run on the first caller's ctx, so
@@ -98,6 +100,13 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	// deadline of its own (tokenRefreshTimeout). Both are made inside the flight, from the values of the caller
 	// that starts it, so a caller that joins a refresh in flight allocates no timer.
 	ch := p.group.DoChan("token", func() (any, error) {
+		// The flight asks the cache again before the source. A caller that missed the cache just before the last refresh
+		// stored its token asks for a refresh only after that one has left the group, so it starts a flight of its own —
+		// which used to ask the source for a second token although a fresh one was cached
+		// (TestProviderMissAsRefreshEndsReusesCachedToken). It gets the cached one.
+		if tok, ok := p.cached(); ok {
+			return tok, nil
+		}
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.timeout)
 		defer cancel()
 		ts, err := p.src(rctx)
@@ -128,6 +137,17 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 		return "", r.Err
 	}
 	return r.Val.(string), nil
+}
+
+// cached returns the cached token while it is fresh. Token asks it before it waits on a refresh, and the refresh asks it
+// again before it calls the source — one freshness rule for both.
+func (p *clientCredentialsProvider) cached() (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.token != "" && time.Now().Unix() < p.expireAt {
+		return p.token, true
+	}
+	return "", false
 }
 
 // b64token is RFC 6750's bearer token: ALPHA, DIGIT, "-", ".", "_", "~", "+" and "/", then "=" padding only at the end.
