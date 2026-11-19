@@ -239,5 +239,92 @@
       "branches": 1,
       "why": "coverage-omit-hides-security-paths"
     }
+  },
+  "java": {
+    "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.buildTimeoutClient": {
+      "lines": 0,
+      "branches": 4,
+      "why": "unreachable: 사용자 TLS 갈래 넷(신뢰 저장소 · 키 저장소 · 신뢰 관리자 끄기 · SNI 이름 → customTls 의 참 쪽) — 이 메서드가 지은 RESTEasy 빌더에는 TLS 설정이 없고, 파사드도 패키지 시임(KeycloakConfig 만 받는다)도 그것을 줄 길이 없다. 그 식은 엔진 훅(익명 ClientHttpEngineBuilder43 의 createEngine)의 것이라 이 메서드로 접힌다"
+    },
+    "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.deadlinedPool": {
+      "lines": 3,
+      "branches": 3,
+      "why": "defensive: 소비자 환경 갈래 — ClientConfigProvider 가 클래스패스에 있으면(WildFly Elytron 등) RESTEasy 의 풀을 그대로 돌려준다(return built) · SSLContext.getDefault() 의 NoSuchAlgorithmException(JVM 이 기본 TLS 맥락을 못 지을 때) — 실패 분기가 아니다. customTls 의 이른 반환과 tls != null 쪽은 위 buildTimeoutClient 와 같은 까닭으로 공개 API 로 못 닿는다(이 SDK 는 그 빌더에 SSLContext · 저장소를 걸지 않는다)"
+    },
+    "java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/AdminClient.java:AdminClient.providerLoader": {
+      "lines": 0,
+      "branches": 1,
+      "why": "defensive: 스레드의 문맥 클래스 로더가 null 인 쪽 — 소비자가 그 로더를 지운 스레드에서만 참이다(그때 RESTEasy 와 같이 ClientConfigProvider 의 로더로 찾는다)"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.validator": {
+      "lines": 0,
+      "branches": 1,
+      "why": "defensive: 이중 검사 잠금의 두 번째 검사(synchronized 안의 v == null)가 거짓인 쪽 — 다른 스레드가 검증기를 먼저 만든 경쟁에서만 그렇다(실패 분기가 아니다)"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.buildLogoutRequest": {
+      "lines": 2,
+      "branches": 0,
+      "why": "unreachable: catch (MalformedURLException) — URI.toURL() 의 검사 예외라 컴파일러가 요구하는 catch 다. 끝점은 OidcMetadata.forRealm(생성자는 private)이 KeycloakConfig.requireHttpUrl 이 이미 toURL() 로 확인한 http(s) 루트에 인코딩한 realm 과 고정 경로를 이어 만든다 — 목(mock) 없이는 못 닿는다"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.configuredScope": {
+      "lines": 0,
+      "branches": 1,
+      "why": "unreachable: 필터 람다의 s != null 이 거짓인 쪽 — KeycloakConfig 빌더가 scopes 의 null 원소를 거부한다(requireNoNulls · List.copyOf)"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sentValues": {
+      "lines": 0,
+      "branches": 3,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sentSecrets": {
+      "lines": 0,
+      "branches": 2,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unescapeAt": {
+      "lines": 0,
+      "branches": 6,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unitAt": {
+      "lines": 1,
+      "branches": 4,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.entityAt": {
+      "lines": 0,
+      "branches": 10,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.digit": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexByte": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexDigit": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.maskRun": {
+      "lines": 0,
+      "branches": 3,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.main": {
+      "lines": 14,
+      "branches": 0,
+      "why": "integration: 예제의 main — 모듈이 jacoco.skip 이라 단위 시험도 에이전트도 없다. 설치 하네스(harness/install/consume/java-run.sh)만 실서버에 대고 돌린다(통합 장부의 소유자 harness:install)"
+    },
+    "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.env": {
+      "lines": 2,
+      "branches": 4,
+      "why": "integration: main 이 부르는 환경 변수 읽기 — 위 main 과 같은 까닭(설치 하네스만 돌린다)"
+    }
   }
 }

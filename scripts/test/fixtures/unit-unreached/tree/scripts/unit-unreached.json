@@ -81,5 +81,52 @@
       "branches": 0,
       "why": "integration: the drive never calls it — DriveIT does, outside the unit run"
     }
+  },
+  "java": {
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.exchange": {
+      "lines": 1,
+      "branches": 1,
+      "why": "defensive: the drive never sends a blank code"
+    },
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.pick": {
+      "lines": 0,
+      "branches": 1,
+      "why": "open-gap"
+    },
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.later": {
+      "lines": 0,
+      "branches": 1,
+      "why": "unreachable: the branch sits in later's lambda — the key is the source method"
+    },
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.sorted": {
+      "lines": 1,
+      "branches": 1,
+      "why": "unreachable: the line and branch sit in the anonymous Comparator — they fold into sorted"
+    },
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.token(String, int)": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls this overload"
+    },
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.logoutUrl": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it — DriveIT does, outside the unit run"
+    },
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.Token.value": {
+      "lines": 0,
+      "branches": 1,
+      "why": "defensive: the drive never asks for an empty value — a named nested class keys as its own type"
+    },
+    "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.main": {
+      "lines": 2,
+      "branches": 0,
+      "why": "integration: a jacoco.skip module — no unit test and no agent there"
+    },
+    "java/kc-examples/src/main/java/kc/examples/QuickStart.java:QuickStart.env": {
+      "lines": 2,
+      "branches": 2,
+      "why": "integration: main's helper — the same as main"
+    }
   }
 }

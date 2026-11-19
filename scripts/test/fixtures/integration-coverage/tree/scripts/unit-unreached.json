@@ -18,5 +18,12 @@
       "branches": 0,
       "why": "defensive: check reads no data — only the shape, the boundary and the why"
     }
+  },
+  "java": {
+    "java/kc-auth/src/main/java/kc/auth/AuthClient.java:AuthClient.unused": {
+      "lines": 1,
+      "branches": 0,
+      "why": "unreachable: check reads no data — only the shape, the boundary and the why"
+    }
   }
 }
