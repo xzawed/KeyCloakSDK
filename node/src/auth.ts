@@ -4,6 +4,7 @@ import type { KeycloakConfig } from './config.js'
 import { KeycloakAuthError, KeycloakTransportError } from './errors.js'
 import { JwtValidator } from './jwt.js'
 import { mask } from './masking.js'
+import { oauthErrorOf } from './oauth-error-code.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
 import { redirectUrl } from './redirect-uri.js'
 import {
@@ -95,12 +96,19 @@ function reasonOf(e: unknown): string {
  * 상한 초과) `KeycloakTransportError`, 끝까지 왔지만 쓸 수 없으면 `KeycloakAuthError`(등록부
  * `token-response-class-divergent` — 아홉 언어의 규칙, rust #951 · go #952). 문구는 계급과 무관하게 같다.
  * 1.0.7 까지는 discovery 의 전송 실패 말고는 전부 auth 였다(`test/unit/auth-incomplete-response.test.ts`).
+ *
+ * auth 계급은 IdP 오류 본문의 OAuth `error` 를 `oauthError` 로 싣는다 — `sent` 는 그 요청이 실은 비밀 전부다(되울린
+ * 비밀은 싣지 않는다). 판정은 측정되는 `oauth-error-code.ts` 에 있고, 감싸기(원인 정화) 전의 원본 `e` 를 읽는다.
  */
-function failure(message: string, e: unknown): KeycloakAuthError | KeycloakTransportError {
+function failure(
+  message: string,
+  e: unknown,
+  sent: ReadonlyArray<unknown>,
+): KeycloakAuthError | KeycloakTransportError {
   const reason = `${message}: ${reasonOf(e)}`
   return responseTooLarge(e) !== undefined || transportInChain(e)
     ? new KeycloakTransportError(reason, { cause: e })
-    : new KeycloakAuthError(reason, { cause: e })
+    : new KeycloakAuthError(reason, { cause: e, oauthError: oauthErrorOf(e, sent) })
 }
 
 /**
@@ -179,6 +187,7 @@ export class AuthClient {
           this.#cfg.scopes.length > 0 ? { scope: this.#cfg.scopes.join(' ') } : undefined,
         ),
       'Client credentials grant failed',
+      [this.#cfg.clientSecret],
     )
   }
 
@@ -220,6 +229,7 @@ export class AuthClient {
     const tokens = await this.#grant(
       () => oidc.authorizationCodeGrant(config, currentUrl, checks),
       'Authorization code exchange failed',
+      [this.#cfg.clientSecret, code, codeVerifier],
     )
     if (nonce !== undefined) {
       await this.#verifyIdToken(tokens.idToken)
@@ -259,7 +269,10 @@ export class AuthClient {
   /** Renews the access token with the `refresh_token` grant. */
   async refresh(refreshToken: string): Promise<TokenSet> {
     const config = await this.#discover()
-    return this.#grant(() => oidc.refreshTokenGrant(config, refreshToken), 'Token refresh failed')
+    return this.#grant(() => oidc.refreshTokenGrant(config, refreshToken), 'Token refresh failed', [
+      this.#cfg.clientSecret,
+      refreshToken,
+    ])
   }
 
   /** RFC 7662 token introspection. For an inactive token, claims other than `active` may be omitted. */
@@ -274,7 +287,7 @@ export class AuthClient {
         claims: response as Record<string, unknown>,
       }
     } catch (e) {
-      throw failure('Token introspection failed', e)
+      throw failure('Token introspection failed', e, [this.#cfg.clientSecret, token])
     }
   }
 
@@ -307,7 +320,7 @@ export class AuthClient {
         redirect: 'manual',
       })
     } catch (e) {
-      throw failure('Logout request error', e)
+      throw failure('Logout request error', e, [this.#cfg.clientSecret, refreshToken])
     }
     // Keycloak 의 성공은 204 뿐이다 — `response.ok`(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
     // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
@@ -410,19 +423,26 @@ export class AuthClient {
       if (isTransportError(e)) {
         throw new KeycloakTransportError('OIDC discovery transport failure', { cause: e })
       }
-      throw failure('OIDC discovery failed', e)
+      throw failure('OIDC discovery failed', e, []) // discovery 는 비밀을 싣지 않는다(GET)
     }
     this.#configuration = config
     return config
   }
 
-  /** 그랜트 함수를 실행하고 응답을 TokenSet으로 매핑하며, 실패를 SDK 예외로 변환한다({@link failure}). */
-  async #grant(fn: () => Promise<GrantResponse>, message: string): Promise<TokenSet> {
+  /**
+   * 그랜트 함수를 실행하고 응답을 TokenSet으로 매핑하며, 실패를 SDK 예외로 변환한다({@link failure} — `sent` 는 그 그랜트가
+   * 실은 비밀 전부).
+   */
+  async #grant(
+    fn: () => Promise<GrantResponse>,
+    message: string,
+    sent: ReadonlyArray<unknown>,
+  ): Promise<TokenSet> {
     try {
       const response = await fn()
       return tokenSetFromResponse(response as unknown as Record<string, unknown>)
     } catch (e) {
-      throw failure(message, e)
+      throw failure(message, e, sent)
     }
   }
 }

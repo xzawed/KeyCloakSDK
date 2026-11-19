@@ -121,7 +121,7 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## OAuth error code
 
-⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent, in all nine** (node carries none) — an echoing IdP put the secret there. Tests: `OAuthErrorCodeEcho*` · `*oauth_error_code_echo*`.
+⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent, in all nine** — an echoing IdP put the secret there. Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*`.
 
 ## Token kind
 

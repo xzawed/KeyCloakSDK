@@ -35,8 +35,22 @@ function scrubCause(cause: unknown, depth = 0): Error | undefined {
 
 /** Configuration validation failure (a missing required value, etc.). */
 export class KeycloakConfigError extends KeycloakError {}
-/** Authentication (OIDC/OAuth2) flow failure. */
-export class KeycloakAuthError extends KeycloakError {}
+/**
+ * Authentication (OIDC/OAuth2) flow failure. `oauthError` is the OAuth `error` code of the IdP's error response, as
+ * the other eight languages' auth errors carry it.
+ */
+export class KeycloakAuthError extends KeycloakError {
+  /**
+   * The OAuth `error` code the token or introspection endpoint answered with (`invalid_grant`, `unauthorized_client`,
+   * …) — only when it is `[a-z_]{1,64}` and overlaps no secret the request sent (an echoing IdP puts the secret
+   * there); `undefined` otherwise.
+   */
+  readonly oauthError: string | undefined
+  constructor(message: string, options?: { cause?: unknown; oauthError?: string }) {
+    super(message, options)
+    this.oauthError = options?.oauthError
+  }
+}
 /** JWT signature/expiry/issuer/audience validation failure. */
 export class KeycloakTokenValidationError extends KeycloakError {}
 /**
