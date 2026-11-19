@@ -8,6 +8,7 @@ import { oauthErrorOf } from './oauth-error-code.js'
 import { oidcEndpoints, type OidcEndpoints } from './oidc-metadata.js'
 import { redirectUrl } from './redirect-uri.js'
 import {
+  drainCapped,
   fetchTokenEndpointBounded,
   responseTooLarge,
   responseUnusable,
@@ -294,6 +295,11 @@ export class AuthClient {
   /**
    * Invalidates the session (back-channel logout — refresh_token revoke). POSTs the refresh_token, with client
    * authentication, to the Keycloak logout endpoint (as distinct from a front-channel redirect logout).
+   *
+   * Only HTTP 204, Keycloak's answer, is success. Any other status is a {@link KeycloakAuthError}
+   * (`Logout failed (HTTP <status>)`) once its body has arrived — the body is read up to 1,048,576 bytes and dropped. An
+   * answer that does not arrive in full (its body cut short, stalled past `readTimeoutMs` or over that cap) is a
+   * {@link KeycloakTransportError}, like a network failure.
    */
   async logout(refreshToken: string): Promise<void> {
     const body = new URLSearchParams({
@@ -325,7 +331,15 @@ export class AuthClient {
     // Keycloak 의 성공은 204 뿐이다 — `response.ok`(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
     // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
     if (response.status !== 204) {
-      throw new KeycloakAuthError(`Logout failed (HTTP ${response.status})`)
+      const message = `Logout failed (HTTP ${response.status})`
+      // 판정은 상태가 하고 본문은 버리지만, 계급은 그 답이 끝까지 왔는가가 정한다 — 본문을 상한까지 읽는다. 끊김 · 기한
+      // 초과 · 상한 초과는 `failure` 가 transport 로 낸다(등록부 logout-body-unread-class-divergent — 일곱 언어와 같다).
+      try {
+        await drainCapped(response.body)
+      } catch (e) {
+        throw failure(message, e, [this.#cfg.clientSecret, refreshToken])
+      }
+      throw new KeycloakAuthError(message)
     }
   }
 

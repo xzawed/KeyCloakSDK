@@ -9,6 +9,9 @@
 //! 이웃한 두 상한도 여기서 **수로** 고정한다 — JWKS 본문은 51,200 바이트에서 끊기고(`jwks_body_*`), admin REST
 //! 응답에는 상한이 없다(`admin_rest_response_is_not_capped` — 토큰 상한은 토큰·introspection 응답에만 건다).
 //!
+//! logout 의 204 아닌 답도 같은 상한으로 읽는다(`logout_*`) — 판정은 상태가 하지만, 그 답이 끝까지 왔는지는 본문을
+//! 읽어야 안다(등록부 `logout-body-unread-class-divergent`).
+//!
 //! ⚠️ 상한이 없을 때(실측 2026-10-05): 다섯 레인 모두 쓸 수 있는 토큰 뒤에 JSON 공백 32 MiB 를 붙인 응답을
 //! **받아들였고**, 힙 피크가 ~95 MiB(본문의 ~2.9 배 — reqwest `bytes()` 의 수집 + 연속 사본 + oauth2 의
 //! `to_vec`)였다. 이 파일도 상한 전에는 여섯 레인 × 두 프레이밍 전부가 1,048,577 바이트를 받아들였고, 16 MiB 에
@@ -132,6 +135,8 @@ struct State {
     token: Option<Reply>,
     introspect: Option<Reply>,
     jwks: Option<Reply>,
+    /// end_session 의 응답 — 없으면 404.
+    logout: Option<Reply>,
     /// `GET /admin/realms` 의 응답 — 없으면 `[]`.
     admin: Option<Reply>,
     admin_hits: usize,
@@ -175,6 +180,10 @@ impl Fake {
 
     fn serve_jwks(&self, r: Reply) {
         self.state.lock().unwrap().jwks = Some(r);
+    }
+
+    fn serve_logout(&self, r: Reply) {
+        self.state.lock().unwrap().logout = Some(r);
     }
 
     fn serve_admin(&self, r: Reply) {
@@ -237,6 +246,8 @@ fn serve(mut s: TcpStream, st: &Mutex<State>) -> std::io::Result<()> {
             g.token.clone()
         } else if path.ends_with("/certs") {
             g.jwks.clone()
+        } else if path.ends_with("/logout") {
+            g.logout.clone()
         } else if path == "/admin/realms" {
             g.admin_hits += 1;
             g.admin_auth_len = header("authorization").map(|v| v.len());
@@ -696,6 +707,73 @@ async fn admin_rest_response_is_not_capped() {
     assert!(
         wrong.is_empty(),
         "{} case(s) wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// logout 의 204 아닌 답 — 판정은 상태가 하지만, 그 답이 끝까지 왔는지는 본문을 읽어야 안다. 같은 상한으로 읽는다:
+/// 정확히 상한이면 그 상태의 `Auth`(`logout failed (HTTP 200)`), 한 바이트 넘으면 다 받지 않은 응답이라 상한 문구의
+/// `Transport`. 두 프레이밍 다. 고치기 전(main 6d9c0c4f)에는 본문을 읽지 않아 1,048,577 바이트도 `Auth` 였다.
+#[tokio::test]
+async fn logout_non_204_body_is_judged_at_the_same_cap() {
+    let _serial = SERIAL.lock().await;
+    let mut wrong = Vec::new();
+    for chunked in [false, true] {
+        for total in [CAP, CAP + 1] {
+            let fake = Fake::start();
+            fake.serve_logout(Reply::padded("{}", total, chunked));
+            let r = Sdk::new(&fake).client.auth().logout("rt").await;
+            let as_wanted = match &r {
+                Err(KeycloakError::Auth {
+                    message,
+                    oauth_error: None,
+                }) => total == CAP && message == "logout failed (HTTP 200)",
+                Err(KeycloakError::Transport(m)) => {
+                    total == CAP + 1 && m == "logout response exceeds 1048576 bytes"
+                }
+                _ => false,
+            };
+            if !as_wanted {
+                wrong.push(format!("total={total} chunked={chunked}: {r:?}"));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} case(s) wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// 위쪽 — 16 MiB 의 204 아닌 답도 상한에서 읽기를 멈추고, 그 판정이 잡는 메모리는 토큰 레인과 같은 한도(`3 × CAP`) 안이다.
+#[tokio::test]
+async fn logout_sixteen_mib_body_fails_with_bounded_allocation() {
+    let _serial = SERIAL.lock().await;
+    warm_up().await;
+    let mut wrong = Vec::new();
+    for chunked in [false, true] {
+        let fake = Fake::start();
+        fake.serve_logout(Reply::padded("{}", 16 * MIB, chunked));
+        let sdk = Sdk::new(&fake);
+        let before = mark();
+        let r = sdk.client.auth().logout("rt").await;
+        let grown = PEAK.load(Relaxed).saturating_sub(before);
+        println!("logout chunked={chunked}: peak +{grown} bytes, {r:?}");
+        if !matches!(&r, Err(KeycloakError::Transport(m)) if m == "logout response exceeds 1048576 bytes")
+        {
+            wrong.push(format!("chunked={chunked}: {r:?}"));
+        }
+        if grown >= 3 * CAP {
+            wrong.push(format!(
+                "chunked={chunked}: judging a 16 MiB body grew the heap by {grown} bytes"
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} finding(s):\n{}",
         wrong.len(),
         wrong.join("\n")
     );
