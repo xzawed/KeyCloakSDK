@@ -3,6 +3,7 @@ package keycloak
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -64,6 +65,49 @@ func TestProviderSingleFlight(t *testing.T) {
 	wg.Wait()
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("source called %d times under concurrency, want 1 (single-flight)", got)
+	}
+}
+
+// A caller that missed the cache just before a refresh stored its token, and asked for the shared refresh just after
+// that refresh had left the single-flight group, started a refresh of its own: the source was asked again and a second
+// token issued although a fresh one was cached (registry token-provider-cache-invariants). afterMiss holds that caller
+// between its miss and the group while the refresh runs to its end — no sleep sets the order.
+func TestProviderMissAsRefreshEndsReusesCachedToken(t *testing.T) {
+	var calls atomic.Int32
+	p := NewClientCredentialsTokenProvider(func(context.Context) (*TokenSet, error) {
+		n := calls.Add(1)
+		return &TokenSet{AccessToken: "AT" + strconv.Itoa(int(n)), ExpiresIn: 300}, nil
+	}, 30).(*clientCredentialsProvider)
+	held, release := make(chan struct{}), make(chan struct{})
+	var misses atomic.Int32
+	p.afterMiss = func() {
+		if misses.Add(1) == 1 { // the late caller: it has missed the cache and not yet asked for the refresh
+			close(held)
+			<-release
+		}
+	}
+	var late string
+	lateDone := async(func() error { tok, err := p.Token(context.Background()); late = tok; return err })
+	select {
+	case <-held:
+	case err := <-lateDone:
+		t.Fatalf("the late caller returned (%q, %v) without stopping after its cache miss", late, err)
+	}
+	// The refresh: its Token returns only once singleflight has dropped the key and handed out the result, so the late
+	// caller finds no refresh in flight to join.
+	tok, err := p.Token(context.Background())
+	if err != nil || tok != "AT1" {
+		t.Fatalf("the refresh: Token() = %q, %v", tok, err)
+	}
+	close(release)
+	if err := mustReturn(t, lateDone, "the late caller"); err != nil {
+		t.Fatalf("the late caller: %v", err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("the source was asked %d times, want 1 — the late caller started a second refresh although %q was cached", n, tok)
+	}
+	if late != tok {
+		t.Errorf("the late caller got %q, want the cached %q", late, tok)
 	}
 }
 

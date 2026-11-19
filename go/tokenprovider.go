@@ -45,7 +45,10 @@ type clientCredentialsProvider struct {
 	src     TokenSource
 	skewSec int64
 	timeout time.Duration // the deadline of one shared refresh: tokenRefreshTimeout (tests shorten it)
-	group   singleflight.Group
+	// afterMiss runs in Token after the cache missed, just before the caller asks for the shared refresh. It is nil
+	// outside tests, which hold a caller there to order it against a refresh without sleeping.
+	afterMiss func()
+	group     singleflight.Group
 
 	mu       sync.Mutex
 	token    string
@@ -90,6 +93,9 @@ func (p *clientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	p.mu.Unlock()
 	if err := ctx.Err(); err != nil { // a caller that has already given up starts nothing
 		return "", abandoned(err)
+	}
+	if p.afterMiss != nil {
+		p.afterMiss()
 	}
 
 	// The refresh runs detached from every caller's cancellation. It used to run on the first caller's ctx, so
