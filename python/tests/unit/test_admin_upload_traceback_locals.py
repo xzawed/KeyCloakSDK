@@ -216,3 +216,16 @@ def test_the_walk_follows_the_members_of_an_exception_group() -> None:
     top = RuntimeError("top")
     top.__context__ = outer
     _walked(top, [outer, inner, member, member_cause, shared])
+
+
+def test_the_walk_follows_the_members_of_a_backport_group() -> None:
+    """3.10 의 그룹 — 내장이 없는 판에서 anyio 가 쓰는 백포트(`exceptiongroup`)의 구성원도
+    따라간다. 걸음은 `_internal/frames.reachable` 하나다(등록부
+    `python-scrub-frames-skips-exception-groups` — 예전 3.10 에서는 그 구성원의 로컬이 남았다,
+    실측 3.10.21). 3.11+ 에서 그 백포트는 내장을 다시 내보낸다(깔려 있을 때)."""
+    backport = pytest.importorskip("exceptiongroup").BaseExceptionGroup
+    member = _caught(OSError("member"))
+    group = _caught(backport("group", [member]))
+    top = RuntimeError("top")
+    top.__context__ = group
+    _walked(top, [group, member])

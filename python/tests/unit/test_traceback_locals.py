@@ -14,17 +14,22 @@ HTTP 실패·형식이 틀린 응답 경로(여섯 호출과 적대적 변형의
 
 from __future__ import annotations
 
+import builtins
+import importlib
+import json
 import time
 import traceback
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, NoReturn
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from joserfc import jwt as jjwt
 from joserfc.jwk import RSAKey
 from keycloak import KeycloakOpenID
 
+from keycloak_sdk._internal.frames import ascrub_frames, scrub_frames
 from keycloak_sdk.aio.auth import AsyncAuthClient
 from keycloak_sdk.auth import AuthClient
 from keycloak_sdk.config import KeycloakConfig
@@ -354,3 +359,199 @@ def test_the_rendering_still_names_the_failure(monkeypatch: pytest.MonkeyPatch) 
     assert "KeycloakAuthError: authorization code exchange failed: invalid id_token" in rendered
     assert "TokenSignatureError: JWT signature/algorithm validation failed" in rendered
     assert "caller-local-marker" in rendered
+
+
+# --- 예외 그룹의 구성원 — 등록부 `python-scrub-frames-skips-exception-groups` ------------------
+
+#: 3.11 부터는 내장이고, 3.10 에서는 anyio 가 쓰는 백포트(`exceptiongroup` — 3.10 에서는 anyio 와
+#: pytest 가 끌어온다)다. 3.10 도 건너뛰지 않는다 — 아래 실측 경로의 그룹이 3.10 에서는 그 백포트다.
+_GROUP: Any = (
+    getattr(builtins, "BaseExceptionGroup", None)
+    or importlib.import_module("exceptiongroup").BaseExceptionGroup
+)
+#: 구성원을 던진 프레임이 쥔 로컬의 값 — 오류 수집기가 찍는 그것.
+_HELD = "GM4w8z-group-member-local-canary"
+
+
+def _raise_holding(exc: BaseException) -> NoReturn:
+    client_secret = _HELD  # noqa: F841 — 수집기가 찍는 로컬
+    raise exc
+
+
+def _raised(exc: BaseException) -> BaseException:
+    """`exc` 를 던지고 잡는다 — traceback 은 이 프레임과, 비밀 이름의 로컬을 쥔 `_raise_holding`."""
+    try:
+        _raise_holding(exc)
+    except BaseException as caught:
+        return caught
+    raise AssertionError("not raised")
+
+
+def _reached(err: BaseException) -> list[tuple[str, BaseException]]:
+    """닿는 노드마다 (경로, 노드) — 원인 · 문맥(숨긴 것도) · 그룹의 구성원을 따라 노드마다 한 번.
+    시험 자신의 걸음이다 — SDK 의 걸음으로 재면 SDK 를 SDK 로 잰다."""
+    seen: set[int] = set()
+    reached: list[tuple[str, BaseException]] = []
+    todo: list[tuple[str, BaseException | None]] = [("err", err)]
+    while todo:
+        path, node = todo.pop(0)
+        if node is None or id(node) in seen:
+            continue
+        seen.add(id(node))
+        reached.append((path, node))
+        todo += [(f"{path}.__cause__", node.__cause__), (f"{path}.__context__", node.__context__)]
+        if isinstance(node, _GROUP):
+            todo += [(f"{path}.exceptions[{i}]", m) for i, m in enumerate(node.exceptions)]
+    return reached
+
+
+def _shape(err: BaseException) -> list[tuple[str, int, type[BaseException], str]]:
+    """객체 · 타입 · 메시지 · 사슬 모양 — 경로마다."""
+    return [(path, id(node), type(node), str(node)) for path, node in _reached(err)]
+
+
+def _kept(err: BaseException) -> list[str]:
+    """맨 위가 아닌데 아직 traceback 을 쥔 노드의 경로."""
+    return [path for path, node in _reached(err)[1:] if node.__traceback__ is not None]
+
+
+@scrub_frames
+def _sync_raises(err: BaseException) -> None:
+    raise err
+
+
+@ascrub_frames
+async def _aio_raises(err: BaseException) -> None:
+    raise err
+
+
+async def _through(facade: str, err: BaseException) -> BaseException:
+    """`err` 를 데코레이터(sync · aio)를 지나 던지고 여기서 잡는다."""
+    try:
+        if facade == "sync":
+            _sync_raises(err)
+        else:
+            await _aio_raises(err)
+    except BaseException as caught:
+        return caught
+    raise AssertionError("not raised")
+
+
+@pytest.mark.parametrize("facade", ["sync", "aio"])
+async def test_the_members_of_a_reached_group_lose_their_tracebacks(facade: str) -> None:
+    """원인으로 단 그룹 — 중첩된 그룹, 구성원의 사슬, 두 그룹에 든 구성원, `BaseException` 구성원.
+    예전에는 사슬만 뗐다: 그룹의 구성원은 비밀 이름의 로컬을 쥔 프레임째 수집기에 닿았다."""
+    member_cause = _raised(TypeError("member cause"))
+    member = _raised(OSError("member"))
+    member.__cause__ = member_cause
+    shared = _raised(KeyboardInterrupt())
+    inner = _raised(_GROUP("inner", [member, shared]))
+    outer = _raised(_GROUP("outer", [inner, shared]))
+    top = RuntimeError("top")
+    top.__cause__ = outer
+    before = _shape(top)
+    assert len(before) == 6 and len(_kept(top)) == 5, "전제 — 구성원과 그 사슬이 traceback 을 쥔다"
+    assert _HELD in _render(top), "전제 — 이 렌더가 프레임 로컬을 찍는다"
+
+    err = await _through(facade, top)
+
+    assert err is top
+    assert _shape(err) == before, "객체 · 타입 · 메시지 · 사슬 모양은 그대로다"
+    assert _kept(err) == []
+    assert [f.f_code.co_name for f, _ in traceback.walk_tb(err.__traceback__)] == [
+        "_through",
+        "wrapper",
+    ]
+    assert _HELD not in _render(err)
+
+
+@pytest.mark.parametrize("facade", ["sync", "aio"])
+async def test_the_walk_ends_on_cycles_through_a_group(facade: str) -> None:
+    """구성원의 원인이 자기를 담은 그룹이고 문맥이 자기 자신이다 — 걸음은 끝나고, 순환 위의
+    구성원도 traceback 을 잃는다."""
+    member = _raised(OSError("member"))
+    group = _raised(_GROUP("group", [member]))
+    member.__cause__ = group
+    member.__context__ = member
+    top = RuntimeError("top")
+    top.__context__ = group
+    before = _shape(top)
+
+    err = await _through(facade, top)
+
+    assert err is top
+    assert _shape(err) == before
+    assert _kept(err) == []
+
+
+def _refused_on_every_address(request: httpx.Request) -> NoReturn:
+    """실측한 모양 — 호스트가 주소 여럿으로 풀리고(`localhost` → ::1 · 127.0.0.1) 모두 연결을
+    거부했다. anyio 가 시도마다의 오류를 그룹으로 묶어 `OSError("All connection attempts failed")`
+    의 원인으로 달고, httpcore 의 풀이 그 위의 오류를 `from None` 으로 다시 던져 그룹은 숨긴
+    `__context__` 너머로만 닿는다. 구성원은 비밀 이름의 로컬을 쥔 프레임에서 던져졌다."""
+    refused = [_raised(ConnectionRefusedError(111, "Connection refused")) for _ in range(2)]
+    try:
+        raise OSError("All connection attempts failed") from _GROUP(
+            "multiple connection attempts failed", refused
+        )
+    except OSError:
+        raise httpx.ConnectError("All connection attempts failed", request=request) from None
+
+
+async def _over_failing_jwks() -> tuple[AsyncAuthClient, list[str]]:
+    """진짜 `KeycloakOpenID` 의 httpx 클라이언트를 목 전송으로 바꾼 aio 클라이언트 — 토큰
+    엔드포인트는 토큰 응답을 주고, JWKS 조회는 위 모양으로 실패한다."""
+    hits: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        hits.append(f"{request.method} {request.url.path}")
+        if request.method == "POST":
+            # 스트림으로 준다 — `json=` 은 httpx 가 미리 읽어, SDK 의 원문 읽기(`token_cap`)가
+            # `StreamConsumed` 로 실패한다.
+            body = json.dumps(_response(_jwt(_KEY))).encode()
+            return httpx.Response(
+                200, headers={"Content-Type": "application/json"}, stream=httpx.ByteStream(body)
+            )
+        _refused_on_every_address(request)
+
+    openid = KeycloakOpenID(
+        server_url=_CONFIG.server_url,
+        realm_name=_CONFIG.realm,
+        client_id=_CONFIG.client_id,
+        client_secret_key=SECRET,
+        timeout=5,
+    )
+    created = openid.connection.async_s
+    openid.connection.async_s = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+    await created.aclose()
+    return AsyncAuthClient(_CONFIG, _ENDPOINTS, openid=openid), hits
+
+
+_JWKS_LANES: dict[str, Callable[[AsyncAuthClient], Awaitable[object]]] = {
+    "validate": lambda c: c.validate(_jwt(_KEY)),
+    "validate_id_token": lambda c: c.validate_id_token(_jwt(_KEY)),
+    "exchange_code": lambda c: c.exchange_code(CODE, "https://app/cb", VERIFIER, nonce=NONCE),
+}
+
+
+@pytest.mark.usefixtures("fast_tls")
+@pytest.mark.parametrize("lane", list(_JWKS_LANES))
+async def test_the_group_behind_a_failed_aio_jwks_fetch_loses_its_tracebacks(lane: str) -> None:
+    """실제 경로 — aio JWKS 조회의 전송 실패는 원인으로 남고(`afetch_jwks`) 그 너머에 그룹이 있다.
+    sync 는 urllib3 가 주소를 차례로 시도해 마지막 오류 하나만 남긴다(그룹 없음 — 실측).
+    ⚠️ `TracebackException` 은 숨긴 문맥을 따라가지 않아 렌더로는 못 잰다 — traceback 을 쥔
+    노드를 직접 센다."""
+    client, hits = await _over_failing_jwks()
+    try:
+        err = await _acatch(lambda: _JWKS_LANES[lane](client))
+    finally:
+        await client.aclose()
+
+    assert hits[-1] == f"GET {httpx.URL(_ENDPOINTS.jwks).path}"
+    assert (type(err), str(err)) == (
+        KeycloakTransportError,
+        "JWKS fetch failed: All connection attempts failed",
+    )
+    groups = [path for path, node in _reached(err) if isinstance(node, _GROUP)]
+    assert groups == ["err.__cause__.__context__.__cause__"], "전제 — 숨긴 문맥 너머의 그룹"
+    assert _kept(err) == []
