@@ -28,6 +28,10 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <para>An unpaired UTF-16 surrogate escape (U+D800 alone) is no code either — System.Text.Json will not decode it at all.
 /// It used to leave the SDK as a raw <c>InvalidOperationException</c> (Duende's <c>IsError</c> on 400 and 2xx, the
 /// SDK's own <c>GetString</c> on 401); that case and its messages live in <c>UndecodableResponseTests</c>.</para>
+/// <para>A 400 with no <c>error</c> member at all — <c>{}</c>, only an <c>error_description</c>, an empty body — fails as one
+/// too: Duende flags it (<c>ErrorType</c> <c>Protocol</c>, <c>IsError</c> true, <c>Error</c> null — measured 2026-11-19 on
+/// both targets, every call here). Its tail said <c>error is not a JSON string</c>, false of a member that is not there
+/// (registry dotnet-auth-400-no-error-member-message); it says <c>error is missing</c> now.</para>
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class OAuthErrorCodeGrammarTests : IDisposable
@@ -35,6 +39,7 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
     private const string Oidc = "/realms/r/protocol/openid-connect";
     private const string NotACode = "error value withheld";
     private const string NotAString = "error is not a JSON string";
+    private const string Missing = "error is missing";
     /// <summary>No lowercase letter — no row here overlaps it (the overlap rule is OAuthErrorCodeEchoTests').</summary>
     private const string Secret = "S3CR3T-9";
 
@@ -42,18 +47,21 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
 
     public void Dispose() => _idp.Dispose();
 
-    /// <param name="ErrorJson">The <c>error</c> member's JSON text.</param>
+    /// <param name="Body">The response body — an <c>error</c> member (<see cref="ErrorIs"/>), or a body without one.</param>
     /// <param name="Code">What <c>OAuthError</c> carries — the value itself when it is a code, else <c>null</c>.</param>
     /// <param name="NoCode">The 400 message's tail when it is not one.</param>
     /// <param name="InGrammar">Whether a 2xx carrying it fails — the RFC grammar decides that, not the code shape.</param>
-    private sealed record Row(string ErrorJson, string? Code, string NoCode, bool InGrammar);
+    private sealed record Row(string Body, string? Code, string NoCode, bool InGrammar);
 
-    private static Row Admitted(string value) => new(JsonSerializer.Serialize(value), value, "", true);
+    /// <summary>A body whose only member is <c>error</c>, holding the JSON text <paramref name="errorJson"/>.</summary>
+    private static string ErrorIs(string errorJson) => $$"""{"error":{{errorJson}}}""";
 
-    private static Row Refused(string value) => new(JsonSerializer.Serialize(value), null, NotACode, false);
+    private static Row Admitted(string value) => new(ErrorIs(JsonSerializer.Serialize(value)), value, "", true);
+
+    private static Row Refused(string value) => new(ErrorIs(JsonSerializer.Serialize(value)), null, NotACode, false);
 
     /// <summary>In the RFC grammar but not shaped like a code — no code, yet a 2xx carrying it still fails.</summary>
-    private static Row InGrammarNoCode(string value) => new(JsonSerializer.Serialize(value), null, NotACode, true);
+    private static Row InGrammarNoCode(string value) => new(ErrorIs(JsonSerializer.Serialize(value)), null, NotACode, true);
 
     private static string C(int codePoint) => ((char)codePoint).ToString();
 
@@ -82,8 +90,14 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
         ["a capital letter"] = InGrammarNoCode("Invalid_client"),
         ["the longest code (64)"] = Admitted(new string('a', 64)),
         ["one past the longest (65)"] = InGrammarNoCode(new string('a', 65)),
-        // Not a string at all — keeps its own wording (Duende renders it as raw JSON text).
-        ["number, not a JSON string"] = new("42", null, NotAString, false),
+        // Not a string at all — keeps its own wording (Duende renders it as raw JSON text). JSON null is a value, not a
+        // missing member.
+        ["number, not a JSON string"] = new(ErrorIs("42"), null, NotAString, false),
+        ["null, not a JSON string"] = new(ErrorIs("null"), null, NotAString, false),
+        // No error member at all — Duende still flags the 400, and nothing is there to be a string or not.
+        ["no members"] = new("{}", null, Missing, false),
+        ["an error_description alone"] = new("""{"error_description":"x"}""", null, Missing, false),
+        ["an empty body"] = new("", null, Missing, false),
     };
 
     public static IEnumerable<object[]> Cases =>
@@ -122,7 +136,7 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
     private async Task Check(string row, int status)
     {
         var r = Rows[row];
-        var body = $$"""{"error":{{r.ErrorJson}}}""";
+        var body = r.Body;
         foreach (var path in new[] { $"{Oidc}/token", $"{Oidc}/token/introspect" })
         {
             _idp.Given(Request.Create().WithPath(path).UsingPost())
