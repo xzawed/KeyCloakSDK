@@ -327,8 +327,9 @@ describe('logout (백채널 — refresh_token revoke)', () => {
     fetchSpy.mockRestore()
   })
 
-  // 판정은 상태가 한다 — 본문 스트림이 깨져도 날것의 하위 오류가 새지 않는다(§4). 실행 레그가 살린 편집 「상태 검사 앞에서
-  // `await response.text()`」는 끊긴 200 본문에서 SDK 오류가 아닌 `TypeError: terminated` 를 냈다.
+  // 실패는 상태가 정한다 — 본문 스트림이 깨져도 날것의 하위 오류가 새지 않는다(§4 · 계급은 auth-incomplete-response.test.ts
+  // 가 잰다). 실행 레그가 살린 편집 「상태 검사 앞에서 `await response.text()`」는 끊긴 200 본문에서 SDK 오류가 아닌
+  // `TypeError: terminated` 를 냈다.
   it('204 가 아닌 답의 본문 스트림이 깨져도 SDK 오류다', async () => {
     const broken = new ReadableStream<Uint8Array>({
       start(controller) {

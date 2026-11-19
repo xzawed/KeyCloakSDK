@@ -1,6 +1,6 @@
 //! DoS-safe JWKS: kid cache (key-set lifetime 300 seconds), within which only an unresolved kid triggers a refetch,
 //! rate-limit + single-flight.
-use crate::error::{KeycloakError, Result};
+use crate::error::{KeycloakError, Result, token_http_error};
 use jsonwebtoken::jwk::{AlgorithmParameters, Jwk, JwkSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -31,14 +31,14 @@ const FAILURE_BACKOFF_CAP: Duration = Duration::from_secs(5);
 /// 여기만 바꾸지 말 것. 상한이 없으면 적대적·거대 JWKS 가 그대로 메모리에 올라온다.
 const JWKS_MAX_BYTES: usize = 51200;
 
-/// 토큰 엔드포인트(모든 grant — auth 레인과 admin 레인의 자기 토큰)·introspection 응답 본문의 바이트 상한. 레인이
-/// 몇이든 이 상수 하나다(`auth.rs` 의 `CappedHttp` · `token_provider.rs`). 두 끝과 할당 상한은
-/// `tests/token_response_cap.rs` 가 고정한다.
+/// 토큰 엔드포인트(모든 grant — auth 레인과 admin 레인의 자기 토큰)·introspection 응답 본문과 logout 의 204 아닌 답의
+/// 바이트 상한. 레인이 몇이든 이 상수 하나다(`auth.rs` 의 `CappedHttp` · `logout` · `token_provider.rs`). 두 끝과 할당
+/// 상한은 `tests/token_response_cap.rs` 가 고정한다.
 /// ⚠️ 51200(JWKS 상한)을 빌려 쓰지 말 것 — Keycloak 26.6 이 기본으로 받아들이는 가장 긴 Bearer 가 65,459 바이트다.
 /// ⚠️ 교차언어 가드가 이 값을 뽑는다 — 식(`1 << 20`)이 아니라 맨 십진 리터럴로 둔다.
 pub(crate) const TOKEN_RESPONSE_MAX_BYTES: usize = 1_048_576;
 
-/// 응답 본문을 `cap` 바이트까지만 읽는다 — 넘으면 `Ok(None)`(JWKS · 토큰 · introspection 공용).
+/// 응답 본문을 `cap` 바이트까지만 읽는다 — 넘으면 `Ok(None)`(JWKS · 토큰 · introspection · logout 공용).
 ///
 /// ⚠️ 쥐는 본문은 많아야 `cap` 바이트다 — 넘기는 청크는 복사하지 않고, 벡터는 읽은 만큼만 자라며(선할당 금지)
 /// 용량도 `cap` 에서 멈춘다. 청크 크기는 hyper 가 정한다(읽기 버퍼 최대 8192 + 4096 × 100 = 417,792 바이트) —
@@ -61,6 +61,22 @@ pub(crate) async fn read_capped(
         body.extend_from_slice(&chunk);
     }
     Ok(Some(body))
+}
+
+/// 상태로 판정하는 응답(logout 의 204 아닌 답)의 본문을 `cap` 바이트까지 읽어 버린다 — 끝까지 왔으면 `Ok(())`, 읽기가
+/// 실패하면(끊김 · 기한) [`token_http_error`] 의 계급으로 `"{what}: {e}"`, 상한을 넘으면 `Transport("{what} exceeds {cap}
+/// bytes")`. 계급은 그 답이 끝까지 왔는가가 정한다(등록부 logout-body-unread-class-divergent). ⚠️ 이 판정을 경계 파일
+/// (`auth.rs` — 커버리지 밖)에 두지 않는다 — node 의 `drainCapped` 와 같은 자리다.
+pub(crate) async fn drain_capped(
+    resp: &mut reqwest::Response,
+    cap: usize,
+    what: &str,
+) -> Result<()> {
+    read_capped(resp, cap)
+        .await
+        .map_err(|e| token_http_error(&e, format!("{what}: {e}")))?
+        .ok_or_else(|| KeycloakError::Transport(format!("{what} exceeds {cap} bytes")))?;
+    Ok(())
 }
 
 /// 게이트 상태. **하나의 뮤텍스가 두 축을 함께 소유한다** — 강제 재조회의 30초 rate-limit 과
