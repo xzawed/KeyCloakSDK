@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   AdminClient,
   defineConfig,
+  KeycloakAuthError,
   KeycloakClient,
   KeycloakNotFoundError,
 } from '../../src/index.js'
@@ -40,6 +41,33 @@ describe('Keycloak E2E (testcontainers · 실제 Keycloak 26.6)', () => {
     // 보안 불변식: 토큰 문자열 표현은 마스킹된다(접두 노출 없음).
     expect(String(token)).not.toContain(token.accessToken)
     expect(String(token)).toContain('***')
+  })
+
+  // 틀린 client secret — Keycloak(26.6.9 `ClientIdAndSecretAuthenticator.reportFailedAuth` · `ClientAuthUtil.errorResponse`)은
+  // 401 + JSON `{"error":"unauthorized_client",…}` 로 답한다. 같은 파일의 `WWW-Authenticate` 도전은 Basic 이 아닌
+  // Authorization 머리에 폼의 client_id 가 없을 때뿐이다 — 이 SDK 는 client_secret_post(폼에 client_id)라 그 길이 아니다.
+  // 메시지를 먼저 본다: 도전이 왔다면 「… a challenge in the WWW-Authenticate HTTP Header」로 갈린다. java `AdminOpsIT` ·
+  // kotlin `FullFlowIT` 의 틀린 시크릿 시험은 admin 길의 클래스와 「HTTP 401」 메시지만 본다.
+  it('틀린 client secret 의 client-credentials 그랜트는 KeycloakAuthError 이고 oauthError 는 unauthorized_client 다', async () => {
+    const wrong = KeycloakClient.create({
+      serverUrl: harness.url,
+      realm: 'it-realm',
+      clientId: 'it-client',
+      clientSecret: 'not-the-secret',
+    })
+    try {
+      const refused = await wrong.auth.clientCredentialsToken().then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(refused).toBeInstanceOf(KeycloakAuthError)
+      expect((refused as KeycloakAuthError).message).toBe(
+        'Client credentials grant failed: server responded with an error in the response body',
+      )
+      expect((refused as KeycloakAuthError).oauthError).toBe('unauthorized_client')
+    } finally {
+      await wrong.close()
+    }
   })
 
   it('validate가 실제 다중 aud 토큰을 수용하고 issuer/subject를 반환한다', async () => {
