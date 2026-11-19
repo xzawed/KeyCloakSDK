@@ -1,7 +1,6 @@
 <!-- doc-status: active -->
-<!-- doc-budget: max-bytes=128550 max-raw-bytes=139288 -->
-<!-- max-bytes 128884 → 128550 · max-raw-bytes 139329 → 139288: 묶음 마감 — 닫힘 셋(#1159 · #1160 · #1161) · 진행 하나(#1162) · 새 항목 셋.
-     긴 닫힌 줄 하나를 c4ef6dc2 포인터로 줄였다(교훈은 남김). 검사 8e 가 이 인하를 강제했다. -->
+<!-- doc-budget: max-bytes=128598 max-raw-bytes=139266 -->
+<!-- max-bytes 128884 → 128598 · max-raw-bytes 139329 → 139266: 묶음 마감 — 닫힘 셋(#1159–#1161) · 진행 하나(#1162) · 새 항목 넷. 긴 닫힌 줄 둘을 c4ef6dc2 포인터로(교훈은 남김). -->
 <!-- max-bytes 129245 → 128884 · max-raw-bytes 139827 → 139329: 묶음 마감 — 닫힘 둘(#1154) · 유예 하나(#1153 — semver) · 새 항목 셋. 긴 닫힌 줄 넷을 c3ceebba
      포인터로 줄였다. 원본 예산을 지키려고 옛 앵커 이력 셋(#1080 · #1087 · push-lane)은 git log 로 보냈다. 검사 8e 가 이 인하를 강제했다. -->
 <!-- max-raw-bytes 140387 → 139827: 묶음 마감 — 넷 닫음(#1139–#1142) · 새 항목 넷(A 하나 · C 셋). 닫힌 줄을 줄였고(#1131 줄 포함)
@@ -78,7 +77,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `337`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `338`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -237,7 +236,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `selftest-enforcer-cannot-guard-itself` **[H/M]** 자가테스트 종료코드 규약의 집행자가 자기 자신과 '실패 삼킴'을 못 본다 · `scripts/test/test-selftest-hygiene.sh:19`
 - [x] `guard-detection-surface-hand-narrowed` **[H/M · 계수 정정 2026-09-07 · 손 목록 셋 닫힘 2026-09-23 · 닫힘 2026-11-12 · #1031–#1034]** 가드의 탐지 표면이 손으로 좁혀져 있어 새 자리·새 문법이 조용히 통과했다 — 손 목록은 파생 · 분할로(#542 · #1015), 행위 카나리아는 레인 보고서 대조로(#996–#1018 · #1031 · 덤프 걷기 · bearer 표는 가드 밖 표 #1033), 1g 는 주석 밖(#1032), 기존 언어의 새 자리는 덤프 걷기 · 적대 경로 행렬이 파생으로 찾는다(재측정 #1034). 처방은 가드 머리 주석 · 서사는 `git show a4a8575d:docs/superpowers/plans/remaining-work.md` 의 이 항목
 
-- [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** JWKS 응답 크기 상한이 Go·Java·Kotlin 에만 있었다(rust 는 #440). php·ruby 에 51200 상한을 넣고, php 는 **상태 검사보다 먼저 본문을 슬러프하던 순서**도 함께 뒤집었다. 가드는 `test-security-defaults.sh` 의 「JWKS 크기상한」 축 — 변이 6/6 `CAUGHT`. ⚠️ **미측정으로 남겼던 셋을 그 다음에 쟀고, 둘이 실제 구멍이었다** — node 는 닫혔고(아래) python 은 열려 있다: `jwks-response-size-unbounded-python` 참조. **「측정되지 않았다」를 「아마 괜찮다」로 읽지 말 것 — 재 보니 2/2 가 구멍이었다.**
+- [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** php·ruby 에 JWKS 51200 상한(가드 `test-security-defaults.sh` 「JWKS 크기상한」) · ⚠️ **「측정되지 않았다」를 「아마 괜찮다」로 읽지 말 것** — 남긴 셋을 재 보니 2/2 가 구멍이었다 · 서사: `git show c4ef6dc2:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 6.2.12 에는 상한이 없다(`remote.js:10-26` — `response.json()` 뿐) → `createRemoteJWKSet` 의 `[customFetch]` 로 JWKS 만 묶는다 · 변이 4/4 `CAUGHT` · ⚠️ 시험 본문은 **유효한 JWKS + 패딩**이어야 한다(쓰레기 바이트면 상한 없이도 파싱이 실패해 거짓 초록).
 - [x] `jwks-response-size-unbounded-python` **[M/M · 닫힘 2026-09-12 · 부류 완결]** ⚠️ **9언어 JWKS 크기상한 부류의 마지막 이음매**였다(축 6 → **7**). 구현 `_internal/jwks_fetch.py`(sync·aio 공용) — 상류를 우회해 JWKS **요청 하나만** 스트리밍 GET 한다.
 - [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `BoundedDocumentRetriever`(직접 구현한 `IDocumentRetriever`)로 discovery·JWKS 만 51200B — `MaxResponseContentBufferSize` 는 공유 `HttpClient` 라 토큰 응답까지 묶어 쓰지 않는다 · 대체 전 유일 옵션 `RequireHttps` 는 시험으로 고정 · 변이 4/4 `CAUGHT`.
@@ -250,7 +249,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 172건 (열림 40)
+## C. 품질 부채 — 173건 (열림 41)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -386,7 +385,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `dotnet-rawserver-reads-once-flaky` **[L/S · 신규 2026-10-27 · 닫힘 2026-11-13 #1059]** 풀이 닫힌 연결을 본문 있는 POST 에 재사용했다(재시도 없음) — keep-alive 로 고침 · `Raw_server_answers_every_request_on_one_kept_alive_connection`
 - [x] `rust-integration-floor-toolchain-drift` **[H/S · 신규 · 닫힘 2026-11-13 #1056]** rustc 1.100.0 이 줄 귀속만 바꿨다(실행 판정 불변) — 하한 88.5 → 86.9 · 판정 방법은 `scripts/integration-coverage.mjs` 머리
 
-### 가드·CI — 23
+### 가드·CI — 24
 
 - [x] `selftest-exit-code-contract-two-leaks` **[H/M · 닫힘 2026-09-23 #540]** 자가테스트의 「실패하면 비영 종료」 계약이 한 곳에서 샜다 — 탐지기는 #405, 계수기는 #540(파일 눈금 오라클) · `scripts/test/test-selftest-hygiene.sh:20`
 - [x] `sweeps-without-vacuity-floor` **[H/M · 닫힘 2026-09-08 #443]** 스윕/스캔이 0건을 훑고 통과했다 — 이 저장소의 하한 관용이 적용되지 않았다 · `.github/workflows/repo-hygiene.yml:234`
@@ -417,6 +416,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `sonarcloud-human-pr-carries-unreviewed-bump` **[M/M · 신규·닫힘 2026-10-23 · 사람 판정 「잡 분리」]** 사람이 연 PR 이 bump 를 실으면 미검토 패키지가 `SONAR_TOKEN` 과 한 잡에서 돌았다 — `sonarcloud.yml` 을 `coverage`(시크릿 없음)·`scan`(산출물만)으로 나눴고 규칙 12 가 고정한다(#832).
 - [x] `facade-dump-reached-empty-secret-field` **[L/M · 닫힘 2026-11-18 #1142]** 빈 값으로만 닿는 비밀 이름 필드는 실패(아홉 언어)
 - [ ] `sonarcloud-maven-uncached` **[L/S · 신규 2026-11-19]** Sonar 의 Java 입력 단계에 Maven 캐시가 없다 — Central 의 429(`junit-bom`)로 #1160 · #1162 가 빨갰다 · `.github/workflows/sonarcloud.yml:35`
+- [ ] `dotnet-tests-exhaust-inotify` **[L/S · 신규 2026-11-19]** WireMock 서버마다 `WebApplication.CreateBuilder` 의 설정 감시기(inotify)가 생겨 리눅스 러너 한도 128 을 넘는다 — #1162 의 net10.0 잡에서 44/1268 이 `IOException`(재실행 통과) · `dotnet/tests/Xzawed.Keycloak.Sdk.Tests/AuthClientRedirectUriTests.cs:27`
 
 
 ### 문서·규칙 — 15
