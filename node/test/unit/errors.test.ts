@@ -8,6 +8,7 @@ import {
   KeycloakNotFoundError,
   KeycloakConflictError,
   KeycloakForbiddenError,
+  KeycloakTransportError,
 } from '../../src/errors.js'
 
 describe('mapHttpError', () => {
@@ -58,6 +59,32 @@ describe('KeycloakAdminError.status', () => {
     )
     expect(e.status).toBe(500)
     expect((e.cause as Error).message).toBe('invalid JSON (input withheld)')
+  })
+})
+
+// 등록부 node-auth-error-no-oauth-code — 여덟 언어의 auth 오류는 IdP 의 OAuth `error` 코드를 싣는다(java `getError()` ·
+// kotlin · php `oauthError` · go · .NET `OAuthError` · rust `oauth_error` · python `.error` · ruby `oauth_error`). 무엇을
+// 싣는지는 변환 자리(`auth.ts` 의 `failure` → `oauthErrorOf`)가 정하고, 생성자는 받은 것을 그대로 싣는다.
+describe('KeycloakAuthError.oauthError', () => {
+  it('생성자 옵션의 코드를 싣고, 없으면 undefined 다(소비자의 기존 생성자 호출 호환)', () => {
+    expect(new KeycloakAuthError('x', { oauthError: 'invalid_grant' }).oauthError).toBe(
+      'invalid_grant',
+    )
+    expect(new KeycloakAuthError('x').oauthError).toBeUndefined()
+    expect(new KeycloakAuthError('x', { cause: new Error('c') }).oauthError).toBeUndefined()
+  })
+  it('코드를 실어도 메시지와 cause 정화는 그대로다', () => {
+    const e = new KeycloakAuthError('grant failed', {
+      cause: new SyntaxError('Unexpected token R in JSON at position 0: RAW'),
+      oauthError: 'invalid_grant',
+    })
+    expect(e.message).toBe('grant failed')
+    expect(e.name).toBe('KeycloakAuthError')
+    expect((e.cause as Error).message).toBe('invalid JSON (input withheld)')
+    expect(inspect(e)).not.toContain('RAW')
+  })
+  it('KeycloakTransportError 에는 그 필드가 없다', () => {
+    expect('oauthError' in new KeycloakTransportError('x')).toBe(false)
   })
 })
 
