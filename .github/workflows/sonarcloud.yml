@@ -31,8 +31,9 @@ jobs:
       # dotnet(C#)만 전용 SonarScanner for .NET이 필요해 커버리지 미배선(properties에서 소스 제외).
 
       # Kotlin(Kover→JaCoCo XML) + Java(JaCoCo, 4 리액터 모듈)
-      # ⚠️ 이 잡의 java · node · python · go 캐시 키는 이 워크플로 파일을 해시에 넣는다(composer 는 이 잡만의 접두) — 이 잡은
-      # 일곱 생태계의 패키지 코드를 한 VM 에서 돌린 뒤 저장하므로, 이 잡이 저장한 캐시를 릴리스 워크플로가 복원하지 못하게 한다.
+      # ⚠️ 이 잡이 저장하는 캐시는 제 키를 갖는다 — setup-java · node · python · go 는 이 워크플로 파일을 해시에 넣고, composer 는
+      # `sonarcloud-` 접두, ruby 는 `cache-version` 을 쓴다(setup-gradle 은 아직 가르지 않았다). 이 잡은 일곱 생태계의 패키지
+      # 코드를 한 VM 에서 돌린 뒤 저장하므로, 그 캐시를 릴리스 워크플로가 태그 실행에서 복원하지 못하게 한다.
       # ~/.m2 캐시 — Maven Central 이 junit-bom 6.1.3 요청에 429(또는 「Could not find」)로 답해 이 잡이 죽었다
       # (main run 44371486898 · PR #1162 첫 시도). ci.yml java 잡과 키가 같으면 먼저 저장한 잡의 ~/.m2 로 굳어(키는 불변)
       # 이 잡의 골(dependency:build-classpath 등)에만 드는 것을 매번 다시 받는다.
@@ -143,6 +144,7 @@ jobs:
         with:
           ruby-version: '3.4'
           bundler-cache: true
+          cache-version: sonarcloud # 키를 ruby-release 와 가른다(맨 위 캐시 규칙)
           working-directory: ruby
       - name: Generate Ruby JSON coverage
         working-directory: ruby
