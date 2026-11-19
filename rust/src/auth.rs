@@ -437,6 +437,11 @@ impl AuthClient {
     /// ⚠️ **No status code gets special treatment.** A 404 is usually a misconfigured end-session path or realm, so
     /// swallowing it would keep the misconfiguration invisible forever, and letting a 400 ("refresh_token already
     /// invalidated") through would also let through genuine client errors of the same class.
+    ///
+    /// Only HTTP 204, Keycloak's answer, is success. Any other status is `KeycloakError::Auth`
+    /// (`logout failed (HTTP <status>)`) once its body has arrived — the body is read up to 1,048,576 bytes and dropped.
+    /// An answer that does not arrive in full (its body cut short, stalled past `read_timeout` or over that cap) is
+    /// `KeycloakError::Transport`, like a request that gets no answer.
     pub async fn logout(&self, refresh_token: &str) -> Result<()> {
         // ⚠️ 공개 클라이언트에는 `client_secret` 를 **싣지 않는다**(빈 값도 아니다) — go 의
         // `if a.cfg.ClientSecret != ""` · .NET 의 `if (_cfg.ClientSecret is { } secret)` 와 동형.
@@ -447,7 +452,7 @@ impl AuthClient {
         if let Some(secret) = self.config.client_secret.as_deref() {
             params.push(("client_secret", secret));
         }
-        let resp = self
+        let mut resp = self
             .http
             .post(self.endpoints.end_session())
             .form(&params)
@@ -458,6 +463,17 @@ impl AuthClient {
         // Keycloak 의 성공은 204 뿐이다 — is_success()(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
         // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
         if status != reqwest::StatusCode::NO_CONTENT {
+            // 판정은 상태가 하고 본문은 버리지만, 계급은 그 답이 끝까지 왔는가가 정한다 — 본문을 상한까지 읽는다. 끊김 · 기한
+            // 초과는 `token_http_error`, 상한 초과는 `Transport` 다(token_provider 의 `fetch` 와 같은 읽기 · 같은 문구 모양 —
+            // 등록부 logout-body-unread-class-divergent: 일곱 언어와 같다).
+            read_capped(&mut resp, TOKEN_RESPONSE_MAX_BYTES)
+                .await
+                .map_err(|e| token_http_error(&e, format!("logout response: {e}")))?
+                .ok_or_else(|| {
+                    KeycloakError::Transport(format!(
+                        "logout response exceeds {TOKEN_RESPONSE_MAX_BYTES} bytes"
+                    ))
+                })?;
             return Err(KeycloakError::Auth {
                 message: format!("logout failed (HTTP {})", status.as_u16()),
                 oauth_error: None,

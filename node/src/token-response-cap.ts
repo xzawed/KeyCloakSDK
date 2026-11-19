@@ -1,7 +1,7 @@
 /**
  * Byte cap on the response bodies of the token endpoint (three grants — the auth lane, and the admin lane's grant of
- * its own token), introspection and discovery. What is counted is bytes **after decompression** — it reads
- * `response.body` after undici has undone the `content-encoding`.
+ * its own token), introspection, discovery and logout's answer other than 204. What is counted is bytes **after
+ * decompression** — it reads `response.body` after undici has undone the `content-encoding`.
  *
  * ⚠️ **Upstream has no cap.** oauth4webapi reads a 200 token or introspection response whole with `response.json()`
  * (`getResponseJsonBody`), and a 4xx with `response.clone().json()` (`parseOAuthResponseErrorBody`).
@@ -9,10 +9,11 @@
  * of JSON whitespace appended after a usable token, and the process peak grew by +100–123 MB per call (the same
  * with a 33 KB gzip).
  *
- * **Where it is hooked.** One place: the `[customFetch]` of the `oidc.discovery` options (openid-client's symbol —
- * **not** the same as jose's). openid-client copies it into the Configuration, so discovery, the three grants and
- * introspection all pass through this fetch (`#runDiscovery` in `auth.ts`). Admin's token also goes through
- * `AuthClient`, so the same place covers it.
+ * **Where it is hooked.** The `[customFetch]` of the `oidc.discovery` options (openid-client's symbol — **not** the
+ * same as jose's). openid-client copies it into the Configuration, so discovery, the three grants and introspection
+ * all pass through this fetch (`#runDiscovery` in `auth.ts`). Admin's token also goes through `AuthClient`, so the
+ * same place covers it. Logout does not go through openid-client — its own `fetch` drains an answer other than 204
+ * with {@link drainCapped}.
  *
  * ⚠️ **It is not applied to admin REST responses** — user lists are legitimately large. The JWKS applies its own
  * cap (51,200, `JWKS_MAX_BYTES` in `jwt.ts`) separately.
@@ -157,7 +158,7 @@ function hex4(json: Uint8Array, at: number): number {
 /**
  * Whose body is judged — the token and introspection responses: a 2xx body must be UTF-8 without an unpaired surrogate
  * escape, and no body's content coding may fail to decode. Discovery and logout keep what they had: an error status is
- * judged by its status, and logout reads no body.
+ * judged by its status, and logout only drains its body ({@link drainCapped}).
  */
 function utf8Kind(url: string): string | undefined {
   const path = new URL(url).pathname.replace(/\/+$/, '')
@@ -293,6 +294,23 @@ function undecodableCoding(error: unknown): boolean {
  */
 const UNDECODABLE =
   /^(?:Z_DATA_ERROR|Z_NEED_DICT|ERR__ERROR_FORMAT_[A-Z0-9_]+|ERR__ERROR_DICTIONARY_NOT_SET)$/
+
+/**
+ * Reads the body of a response its caller judges by the status alone — logout's answer other than 204 — up to
+ * {@link TOKEN_RESPONSE_MAX_BYTES} and drops it, so the caller can tell an answer that arrived in full (this resolves)
+ * from one that did not (this throws what the read threw: a connection cut before the body's end, the request's own
+ * deadline, or {@link ResponseTooLargeError} past the cap — registry `logout-body-unread-class-divergent`). A content
+ * coding that does not decode resolves as well: those bytes arrived and stay so on a retry ({@link readDecoded},
+ * decision Q1), and the status still judges the answer. A response without a body resolves at once.
+ */
+export async function drainCapped(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (body === null) return
+  try {
+    await readCapped(body, TOKEN_RESPONSE_MAX_BYTES)
+  } catch (e) {
+    if (!undecodableCoding(e)) throw e
+  }
+}
 
 /**
  * A fetch that reads the response body only up to {@link TOKEN_RESPONSE_MAX_BYTES} and hands it back as a new
