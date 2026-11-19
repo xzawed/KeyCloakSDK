@@ -273,48 +273,13 @@
     },
     "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sentValues": {
       "lines": 0,
-      "branches": 3,
-      "why": "coverage-omit-hides-security-paths"
+      "branches": 1,
+      "why": "defensive: removeIf 람다의 v == null 이 참인 쪽 — 값은 Authorization 의 substring · new String(clientSecret)(null 검사 뒤) · Nimbus URLUtils.parseParameters 의 값뿐이고, 그 값은 URLDecoder.decode 의 결과이거나 빈 문자열이다(oauth2-oidc-sdk 11.39 의 바이트코드 — 못 푸는 쌍은 건너뛴다). 그 판이 null 을 내게 바뀌어도 echoForms 가 NPE 로 죽지 않게 둔 방어선이다"
     },
     "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sentSecrets": {
       "lines": 0,
-      "branches": 2,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unescapeAt": {
-      "lines": 0,
-      "branches": 6,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unitAt": {
-      "lines": 1,
-      "branches": 4,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.entityAt": {
-      "lines": 0,
-      "branches": 10,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.digit": {
-      "lines": 0,
       "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexByte": {
-      "lines": 0,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexDigit": {
-      "lines": 0,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.maskRun": {
-      "lines": 0,
-      "branches": 3,
-      "why": "coverage-omit-hides-security-paths"
+      "why": "unreachable: removeIf 람다의 s == null 이 참인 쪽 — 원소는 != null 검사를 거친 authorization 과 echoForms 의 List.of(…) 원소뿐이고, List.of 는 null 원소를 NPE 로 거부한다"
     },
     "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.main": {
       "lines": 14,
