@@ -31,11 +31,18 @@ jobs:
       # dotnet(C#)만 전용 SonarScanner for .NET이 필요해 커버리지 미배선(properties에서 소스 제외).
 
       # Kotlin(Kover→JaCoCo XML) + Java(JaCoCo, 4 리액터 모듈)
+      # ~/.m2 캐시 — Maven Central 이 junit-bom 6.1.3 요청에 429(또는 「Could not find」)로 답해 이 잡이 죽었다
+      # (main run 44371486898 · PR #1162 첫 시도). 키에 이 파일을 넣어 ci.yml 의 java 잡들과 가른다 — 키는 불변이라
+      # 같은 키면 먼저 저장한 잡의 ~/.m2 로 굳고, 이 잡의 골(dependency:build-classpath 등)에만 드는 것은 매번 다시 받는다.
       - name: Set up JDK 21
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            java/**/pom.xml
+            .github/workflows/sonarcloud.yml
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       - name: Generate Kotlin Kover XML coverage
@@ -53,10 +60,13 @@ jobs:
 
       # Node(vitest v8 → lcov). vitest lcov의 SF 경로는 node/ 기준 상대라 SonarCloud(루트 baseDir)가
       # 못 찾는다 → `node/` 접두를 붙여 루트 기준으로 정규화한다(모노레포 lcov 경로 정합).
+      # ~/.npm 캐시 — 레지스트리 429 로 이 잡이 죽지 않게(위 Maven 과 같은 이유). 키는 node-ci.yml 과 같다(lock 하나가 정한다).
       - name: Set up Node 22
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: node/package-lock.json
       - name: Generate Node lcov coverage
         working-directory: node
         run: |
@@ -65,10 +75,13 @@ jobs:
           sed -i 's|^SF:|SF:node/|' coverage/lcov.info
 
       # Python(pytest-cov → Cobertura XML)
+      # pip 캐시 — 레지스트리 429 로 이 잡이 죽지 않게. python 의 의존 선언은 pyproject.toml 하나라 키도 그것이다.
       - name: Set up Python 3.12
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
       - name: Generate Python coverage XML
         working-directory: python
         run: |
@@ -76,10 +89,13 @@ jobs:
           pytest -m "not integration" --cov=keycloak_sdk --cov-report=xml
 
       # Go(go test -coverprofile)
+      # 모듈 · 빌드 캐시 — 레지스트리 429 로 이 잡이 죽지 않게. 경로가 없으면 setup-go 가 루트에서 go.mod 를 찾다
+      # 「Restore cache failed」 경고만 남기고 캐시 없이 돌았다. 키는 go-ci.yml 과 같다(go.sum 이 정한다).
       - name: Set up Go 1.26
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
+          cache-dependency-path: go/go.sum
       - name: Generate Go coverage profile
         working-directory: go
         run: go test ./... -coverprofile=cover.out
@@ -90,6 +106,20 @@ jobs:
         with:
           php-version: '8.3'
           coverage: pcov
+      # composer 내려받기 캐시 — codeload.github.com 이 phpstan dist zip 에 HTTP 429 로 답해 이 잡이 죽었다(main run
+      # 44496064402 둘째 시도). setup-php 에는 캐시 입력이 없어 composer 가 말하는 files 캐시 자리를 actions/cache 로 되살린다.
+      - name: Locate Composer download cache
+        id: composer-cache
+        working-directory: php
+        run: |
+          dir="$(composer config cache-files-dir)"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: sonarcloud-composer-${{ runner.os }}-${{ hashFiles('php/composer.json', 'php/composer.lock') }}
+          restore-keys: sonarcloud-composer-${{ runner.os }}-
       - name: Generate PHP clover coverage
         working-directory: php
         run: |
