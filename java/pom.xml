@@ -60,7 +60,7 @@
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <keycloak.adminclient.version>26.0.12</keycloak.adminclient.version>
+    <keycloak.adminclient.version>26.0.13</keycloak.adminclient.version>
     <nimbus.oidc.version>11.39</nimbus.oidc.version>
     <nimbus.jose.version>10.10</nimbus.jose.version>
     <!-- auth 운송(BoundedTransport) — 아래 dependencyManagement 와 keycloak-sdk-auth 가 함께 쓴다(nimbus.*.version 과 같은
