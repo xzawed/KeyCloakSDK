@@ -32,6 +32,8 @@ export interface FakeIdp {
   introspect: BodyPlan
   /** `undefined` 면 기본 discovery 문서. */
   discovery: BodyPlan | undefined
+  /** `undefined` 면 본문 없는 204(Keycloak 의 성공). */
+  logout: BodyPlan | undefined
   admin: BodyPlan
   /** {@link REDIRECTED_PATH} 의 응답(메서드는 가리지 않는다). */
   redirected: BodyPlan
@@ -132,6 +134,7 @@ export async function startFakeIdp(): Promise<FakeIdp> {
     }
     if (path === `${oc}/logout`) {
       await readForm(req)
+      if (idp.logout !== undefined) return send(res, idp.logout)
       res.writeHead(204).end()
       return
     }
@@ -168,6 +171,7 @@ export async function startFakeIdp(): Promise<FakeIdp> {
       head: JSON.stringify({ active: true, sub: 'u1', client_id: 'c', username: 'u1' }),
     },
     discovery: undefined,
+    logout: undefined,
     admin: { head: '[]' },
     redirected: { head: '{}' },
     counts: { discovery: 0, token: 0, introspect: 0, admin: 0, certs: 0, redirected: 0 },

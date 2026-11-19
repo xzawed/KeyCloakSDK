@@ -2300,6 +2300,119 @@ mod tests {
         }
     }
 
+    // ── 204 아닌 답의 계급은 그 답이 끝까지 왔는가가 정한다 ──────────────────────────────────
+    //
+    // 판정(실패 · 문구)은 상태가 하지만, 끊긴 · 멈춘 본문은 다 오지 않은 응답이라 `Transport` 다(등록부
+    // logout-body-unread-class-divergent). 고치기 전(main 6d9c0c4f)에는 본문을 읽지 않아 둘 다 `Auth` 였다. 상한의 두 끝은
+    // `tests/token_response_cap.rs` 의 `logout_*` 가 잰다.
+
+    /// 400 머리와 본문 앞부분(Content-Length 100 중 8 바이트)을 보내는 날 TCP end_session — `hold` 동안 쥐었다가 닫는다.
+    /// 요청을 끝까지 읽은 뒤 답한다 — 안 읽은 바이트를 남기고 닫으면 RST 가 머리보다 먼저 닿을 수 있다.
+    fn partial_logout(hold: std::time::Duration) -> (String, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let fake = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().expect("accept");
+            let mut seen = Vec::new();
+            let mut buf = [0u8; 4096];
+            let body_at = loop {
+                let n = s.read(&mut buf).expect("read");
+                assert!(n > 0, "the client closed before its request ended");
+                seen.extend_from_slice(&buf[..n]);
+                if let Some(i) = seen.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break i + 4;
+                }
+            };
+            let head = String::from_utf8_lossy(&seen[..body_at]).to_ascii_lowercase();
+            let length: usize = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0);
+            while seen.len() - body_at < length {
+                let n = s.read(&mut buf).expect("read");
+                if n == 0 {
+                    break;
+                }
+                seen.extend_from_slice(&buf[..n]);
+            }
+            s.write_all(
+                b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"error\"",
+            )
+            .expect("write");
+            std::thread::sleep(hold);
+        });
+        (format!("http://{addr}"), fake)
+    }
+
+    /// 공개 진입점(`KeycloakClient` — 공유 클라이언트의 `read_timeout` 이 요청 전체의 기한이다)으로 logout 한다.
+    async fn logout_through_client(
+        server_url: &str,
+        read_timeout: std::time::Duration,
+    ) -> Result<()> {
+        let mut config = KeycloakConfig::new(server_url, "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        config.read_timeout = read_timeout;
+        crate::KeycloakClient::new(config)
+            .unwrap()
+            .auth()
+            .logout("rt")
+            .await
+    }
+
+    #[tokio::test]
+    async fn logout_non_204_body_cut_short_is_transport() {
+        let (url, fake) = partial_logout(std::time::Duration::ZERO);
+        let r = logout_through_client(&url, std::time::Duration::from_secs(30)).await;
+        fake.join().expect("fake");
+        match r {
+            // 「logout response:」 — 머리가 왔고 본문 읽기에서 실패했다(보내기 실패면 「logout:」).
+            Err(KeycloakError::Transport(m)) => assert!(m.starts_with("logout response: "), "{m}"),
+            other => panic!("Content-Length 전에 끊긴 본문은 Transport 여야 한다, 실제: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn logout_non_204_body_stalled_past_the_read_timeout_is_transport() {
+        let hold = std::time::Duration::from_secs(2);
+        let (url, fake) = partial_logout(hold);
+        let started = std::time::Instant::now();
+        let r = logout_through_client(&url, std::time::Duration::from_millis(300)).await;
+        let took = started.elapsed();
+        match r {
+            Err(KeycloakError::Transport(m)) => assert!(m.starts_with("logout response: "), "{m}"),
+            other => panic!("기한을 넘겨 멈춘 본문은 Transport 여야 한다, 실제: {other:?}"),
+        }
+        assert!(
+            took < hold,
+            "끝낸 것은 서버가 아니라 read_timeout 이어야 한다: {took:?}"
+        );
+        fake.join().expect("fake");
+    }
+
+    /// 대조군 — 끝까지 온 400(Keycloak 이 무효 refresh token 에 주는 JSON 오류 본문)은 그대로 상태의 `Auth` 다. 본문을 읽어도
+    /// 문구는 상태뿐이고 OAuth 코드는 싣지 않는다.
+    #[tokio::test]
+    async fn logout_non_204_body_that_arrives_in_full_stays_auth() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/logout"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": "invalid_grant", "error_description": "Invalid refresh token"
+            })))
+            .mount(&server)
+            .await;
+        match logout_through_client(&server.uri(), std::time::Duration::from_secs(30)).await {
+            Err(KeycloakError::Auth {
+                message,
+                oauth_error: None,
+            }) => assert_eq!(message, "logout failed (HTTP 400)"),
+            other => panic!("끝까지 온 400 은 Auth 여야 한다, 실제: {other:?}"),
+        }
+    }
+
     // ── 공개 클라이언트(시크릿 없음)는 클라이언트 인증을 **보내지 않는다** ──────────────
     //
     // ⚠️ 빈 시크릿은 「시크릿 없음」이 아니다. `oauth2` 5.0.0 은 `Some(ClientSecret(""))` 을
