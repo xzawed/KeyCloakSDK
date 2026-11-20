@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, encodable, write_call
+from ._translate import call, create_call, encodable, write_call
 
 
 class UsersResource:
@@ -17,8 +17,10 @@ class UsersResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
+        """Creates a user and returns its id — the one the answer's `Location` names, resolved
+        against the request URL (the last path segment, in the users collection)."""
         encodable(rep)
-        return write_call(lambda: self._admin.create_user(rep))
+        return create_call(lambda: self._admin.create_user(rep))
 
     def get(self, user_id: str) -> dict[str, Any] | None:
         """Looks up a user by `user_id`. If it does not exist, `KeycloakNotFoundError`

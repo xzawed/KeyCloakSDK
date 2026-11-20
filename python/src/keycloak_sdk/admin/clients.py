@@ -12,7 +12,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, encodable, write_call
+from ._translate import call, create_call, encodable, write_call
 
 
 class ClientsResource:
@@ -22,8 +22,10 @@ class ClientsResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
+        """Creates a client and returns its internal UUID — the one the answer's `Location` names,
+        resolved against the request URL (the last path segment, in the clients collection)."""
         encodable(rep)
-        return write_call(lambda: self._admin.create_client(rep))
+        return create_call(lambda: self._admin.create_client(rep))
 
     def get(self, id: str) -> dict[str, Any] | None:
         """Looks up a client by its internal UUID (`id`). If it does not exist,

@@ -7,7 +7,9 @@ import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.client.ClientResponseFilter;
+import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.ext.ReaderInterceptor;
+import java.net.URI;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -197,12 +199,12 @@ public final class AdminClient implements AutoCloseable {
 
   /** User CRUD facade (WBS 4.3). */
   public UsersResource users() {
-    return new UsersResource(raw().realm(config.getRealm()).users());
+    return new UsersResource(raw().realm(config.getRealm()).users(), collection("users"));
   }
 
   /** Client CRUD facade (WBS 4.4). */
   public ClientsResource clients() {
-    return new ClientsResource(raw().realm(config.getRealm()).clients());
+    return new ClientsResource(raw().realm(config.getRealm()).clients(), collection("clients"));
   }
 
   /** Realm lookup/create/delete facade (WBS 4.5). */
@@ -217,7 +219,16 @@ public final class AdminClient implements AutoCloseable {
 
   /** Group CRUD facade (WBS 4.7). */
   public GroupsResource groups() {
-    return new GroupsResource(raw().realm(config.getRealm()).groups());
+    return new GroupsResource(raw().realm(config.getRealm()).groups(), collection("groups"));
+  }
+
+  /**
+   * {@code {serverUrl}/admin/realms/{realm}/{name}} — the URL a create of that collection is sent to, built the way the
+   * admin-client's proxy builds it (its {@code RealmsResource} path, the realm as one encoded segment, the collection). A
+   * create resolves its answer's {@code Location} against it ({@link CreatedIds}).
+   */
+  private URI collection(String name) {
+    return UriBuilder.fromUri(config.getServerUrl()).path("/admin/realms/{realm}").path(name).build(config.getRealm());
   }
 
   @Override

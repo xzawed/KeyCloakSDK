@@ -10,14 +10,16 @@ import (
 // human-assigned identifier.
 type ClientsResource struct{ a *AdminClient }
 
-// Create creates a client and returns its internal id (UUID).
+// Create creates a client and returns its internal id (UUID) — the one the answer's Location names, resolved against the
+// request URL (the last path segment, in the clients collection); "" when it names none.
 func (r *ClientsResource) Create(ctx context.Context, client gocloak.Client) (string, error) {
 	tok, err := r.a.writeToken(ctx, client)
 	if err != nil {
 		return "", err
 	}
-	return call(ctx, func(ctx context.Context) (string, error) {
-		return r.a.gc.CreateClient(withoutBody(ctx), tok, r.a.realm, client)
+	return created(ctx, func(ctx context.Context) error {
+		_, err := r.a.gc.CreateClient(ctx, tok, r.a.realm, client)
+		return err
 	})
 }
 

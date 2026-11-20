@@ -109,6 +109,7 @@ func (t adminBodyTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil || resp.Body == nil {
 		return resp, err
 	}
+	keepCreated(req, resp) // a facade create reads its id from the 2xx's Location and this URL (admincreate.go)
 	switch {
 	case resp.StatusCode >= 300:
 		boundError(resp)

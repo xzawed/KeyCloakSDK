@@ -17,6 +17,9 @@ class RolesResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> None:
+        # 이름으로 주소를 잡는 create — 서버가 매기는 id 가 없어 `create_call` 의
+        # Location 규칙 밖이다(등록부 admin-create-relative-location). python-keycloak 이
+        # 읽는 그대로다.
         encodable(rep)
         write_call(lambda: self._admin.create_realm_role(rep))
 

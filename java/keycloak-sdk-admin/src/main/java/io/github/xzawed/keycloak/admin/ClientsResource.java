@@ -1,8 +1,8 @@
 package io.github.xzawed.keycloak.admin;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Optional;
-import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.representations.idm.ClientRepresentation;
 
 /**
@@ -16,17 +16,24 @@ import org.keycloak.representations.idm.ClientRepresentation;
 public final class ClientsResource {
 
   private final org.keycloak.admin.client.resource.ClientsResource delegate;
+  /** The URL a create is sent to — the clients collection ({@link AdminClient#clients()}). */
+  private final URI collection;
 
-  ClientsResource(org.keycloak.admin.client.resource.ClientsResource delegate) {
+  ClientsResource(org.keycloak.admin.client.resource.ClientsResource delegate, URI collection) {
     this.delegate = delegate;
+    this.collection = collection;
   }
 
-  /** Creates a client, then extracts the new client's id from the response {@code Location} header and returns it. */
+  /**
+   * Creates a client and returns the new client's id — the one the response's {@code Location} header names, resolved
+   * against the request URL (the last path segment, in the clients collection); null when it names none
+   * ({@link CreatedIds}).
+   */
   public String create(ClientRepresentation representation) {
     EncodableBody.require(representation);
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.create(representation)) {
-        return CreatedResponseUtil.getCreatedId(r);
+        return CreatedIds.of(r, collection);
       }
     });
   }

@@ -23,6 +23,7 @@ import jakarta.ws.rs.client.ClientResponseFilter
 import jakarta.ws.rs.client.Invocation
 import jakarta.ws.rs.client.ResponseProcessingException
 import jakarta.ws.rs.core.Response
+import jakarta.ws.rs.core.UriBuilder
 import jakarta.ws.rs.ext.ReaderInterceptor
 import kotlinx.coroutines.CancellationException
 import org.apache.http.HttpException
@@ -80,10 +81,10 @@ public class AdminClient internal constructor(
     public fun raw(): Keycloak = keycloak
 
     /** User CRUD facade (isomorphic with Java `UsersResource`). */
-    public fun users(): UsersResource = UsersResource(keycloak.realm(config.realm).users())
+    public fun users(): UsersResource = UsersResource(keycloak.realm(config.realm).users(), collection("users"))
 
     /** Client CRUD facade (isomorphic with Java `ClientsResource`). */
-    public fun clients(): ClientsResource = ClientsResource(keycloak.realm(config.realm).clients())
+    public fun clients(): ClientsResource = ClientsResource(keycloak.realm(config.realm).clients(), collection("clients"))
 
     /** Realm lookup/create/delete facade (isomorphic with Java `RealmsResource` — a top-level API with no realm scope). */
     public fun realms(): RealmsResource = RealmsResource(keycloak.realms())
@@ -92,7 +93,16 @@ public class AdminClient internal constructor(
     public fun roles(): RolesResource = RolesResource(keycloak.realm(config.realm).roles())
 
     /** Group CRUD facade (isomorphic with Java `GroupsResource`). */
-    public fun groups(): GroupsResource = GroupsResource(keycloak.realm(config.realm).groups())
+    public fun groups(): GroupsResource = GroupsResource(keycloak.realm(config.realm).groups(), collection("groups"))
+
+    // `{serverUrl}/admin/realms/{realm}/{name}` — 그 컬렉션의 create 가 가는 URL, admin-client 의 프록시가 짓는 그대로(그
+    // RealmsResource 경로 · 인코딩된 조각 하나인 realm · 컬렉션). create 는 답의 Location 을 이것에 대해 푼다(createdId.kt — Java 동형).
+    private fun collection(name: String): URI =
+        UriBuilder
+            .fromUri(config.serverUrl)
+            .path("/admin/realms/{realm}")
+            .path(name)
+            .build(config.realm)
 
     override fun close() {
         keycloak.close()

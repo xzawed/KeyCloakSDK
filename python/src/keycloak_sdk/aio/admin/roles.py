@@ -20,6 +20,7 @@ class AsyncRolesResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> None:
+        # 이름으로 주소를 잡는 create — sync `RolesResource.create` 와 같이 Location 규칙 밖이다.
         encodable(rep)
         await awrite_call(self._admin.a_create_realm_role(rep))
 

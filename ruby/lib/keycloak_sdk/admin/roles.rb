@@ -11,7 +11,8 @@ module KeycloakSdk
       end
 
       def create(representation)
-        id_from_location(request { @conn.post("admin/realms/#{esc(@realm)}/roles", representation, &SettleBody::MARK) })
+        path = "admin/realms/#{esc(@realm)}/roles"
+        name_from_location(request { @conn.post(path, representation, &SettleBody::MARK) })
       end
 
       def get(name)

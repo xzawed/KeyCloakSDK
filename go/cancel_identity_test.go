@@ -270,6 +270,7 @@ func TestAdminCancelledBeforeTheRequest_keepsItsIdentity(t *testing.T) {
 // TestAdminFacadeClosures_takeTheCallCtx — 위 시험들은 Users 다섯 호출만 잰다. 다른 리소스의 메서드가 call/run 에 넘기는
 // 클로저가 받은 ctx(칸이 실린 것) 대신 바깥 ctx 를 쓰면 정체를 조용히 잃는다. 그래서 call/run 의 클로저 전부가 매개변수를
 // `ctx context.Context` 로 받는지 소스에서 잰다 — 그 이름이 바깥 ctx 를 가리므로 본문의 ctx 는 언제나 칸이 실린 것이다.
+// id 를 돌려주는 create 셋은 created(admincreate.go — run 을 부른다)에 넘기고, 그 클로저도 같은 규칙이다.
 func TestAdminFacadeClosures_takeTheCallCtx(t *testing.T) {
 	files, err := filepath.Glob("admin*.go")
 	if err != nil {
@@ -291,7 +292,7 @@ func TestAdminFacadeClosures_takeTheCallCtx(t *testing.T) {
 				return true
 			}
 			id, ok := ce.Fun.(*ast.Ident)
-			if !ok || (id.Name != "call" && id.Name != "run") || len(ce.Args) != 2 {
+			if !ok || (id.Name != "call" && id.Name != "run" && id.Name != "created") || len(ce.Args) != 2 {
 				return true
 			}
 			seen++
@@ -307,8 +308,9 @@ func TestAdminFacadeClosures_takeTheCallCtx(t *testing.T) {
 			return true
 		})
 	}
-	// 공허 방지 — 다섯 리소스의 호출 자리(25)와 run 자신(1)보다 적게 세면 이 검사는 아무것도 안 본 것이다.
-	if seen < 26 {
+	// 공허 방지 — 다섯 리소스의 호출 자리(25 — create 셋은 created)와 run 자신(1) · created 의 run(1)보다 적게 세면 이 검사는
+	// 아무것도 안 본 것이다.
+	if seen < 27 {
 		t.Fatalf("call/run 호출을 %d 곳만 찾았다 — 파일 글롭이나 이름이 바뀌었나?", seen)
 	}
 }

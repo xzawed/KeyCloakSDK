@@ -114,11 +114,21 @@ public sealed class UnsupportedCharsetResponseTests : IDisposable
         var body = list
             ? $$"""[{"id":"1","name":"{{BodyCanary}}"}]"""
             : $$"""{"id":"1","name":"{{BodyCanary}}","error":"{{BodyCanary}}","errorMessage":"{{BodyCanary}}"}""";
-        _idp.Given(Request.Create().WithPath(new WildcardMatcher("/admin/*")).UsingAnyMethod()).RespondWith(
-            Response.Create().WithStatusCode(status)
-                .WithHeader("Content-Type", contentType)
-                .WithHeader("Location", _idp.Urls[0] + "/admin/realms/r/things/new-id")
-                .WithBody(Encoding.UTF8.GetBytes(body)));
+        AnswerEveryAdminRequest(() => Response.Create().WithStatusCode(status)
+            .WithHeader("Content-Type", contentType)
+            .WithBody(Encoding.UTF8.GetBytes(body)));
+    }
+
+    /// <summary>Answers every admin request with a fresh <paramref name="answer"/> — a create of users, groups or clients with a
+    /// <c>Location</c> in its own collection too (the facade reads the id only from one there).</summary>
+    private void AnswerEveryAdminRequest(Func<IResponseBuilder> answer)
+    {
+        foreach (var collection in new[] { "users", "groups", "clients" })
+        {
+            _idp.Given(Request.Create().WithPath($"/admin/realms/r/{collection}").UsingPost()).AtPriority(1)
+                .RespondWith(answer().WithHeader("Location", $"{_idp.Urls[0]}/admin/realms/r/{collection}/new-id"));
+        }
+        _idp.Given(Request.Create().WithPath(new WildcardMatcher("/admin/*")).UsingAnyMethod()).AtPriority(2).RespondWith(answer());
     }
 
     public static IEnumerable<object[]> JsonCharsetCases =>
@@ -249,11 +259,9 @@ public sealed class UnsupportedCharsetResponseTests : IDisposable
                 var body = list
                     ? """[{"id":"José","name":"José"}]"""
                     : """{"id":"José","name":"José","error":"José","errorMessage":"José"}""";
-                _idp.Given(Request.Create().WithPath(new WildcardMatcher("/admin/*")).UsingAnyMethod()).RespondWith(
-                    Response.Create().WithStatusCode(status)
-                        .WithHeader("Content-Type", $"application/json; charset={charset}")
-                        .WithHeader("Location", _idp.Urls[0] + "/admin/realms/r/things/new-id")
-                        .WithBody(encoding.GetBytes(body)));
+                AnswerEveryAdminRequest(() => Response.Create().WithStatusCode(status)
+                    .WithHeader("Content-Type", $"application/json; charset={charset}")
+                    .WithBody(encoding.GetBytes(body)));
                 var ex = await Record.ExceptionAsync(() => run(admin));
                 if (status == 200 && !reads)
                 {
