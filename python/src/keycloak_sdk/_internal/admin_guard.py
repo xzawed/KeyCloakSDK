@@ -485,10 +485,26 @@ def _plan(conn: Any) -> list[_Hook]:
     _plan_wrap(hooks, rest_session, "send", body, "connection._s.send", sent, _UNREAD)
     rest_async = getattr(conn, "async_s", None)
     _plan_wrap(hooks, rest_async, "send", body, "connection.async_s.send", asent, _UNREAD)
+    # 그랜트 래퍼는 그 그랜트의 주인(중첩 `KeycloakOpenID`)을 함께 받는다 — 성공 상태의 OAuth
+    # `error` 를 코드로 실을지 그 client secret 과 대조한다(`admin_grant._sent`).
     for name in _SYNC_GRANTS:
-        _plan_wrap(hooks, nested, name, _GRANT, f"connection.keycloak_openid.{name}", _checked)
+        _plan_wrap(
+            hooks,
+            nested,
+            name,
+            _GRANT,
+            f"connection.keycloak_openid.{name}",
+            lambda grant: _checked(grant, nested),
+        )
     for name in _ASYNC_GRANTS:
-        _plan_wrap(hooks, nested, name, _GRANT, f"connection.keycloak_openid.{name}", _achecked)
+        _plan_wrap(
+            hooks,
+            nested,
+            name,
+            _GRANT,
+            f"connection.keycloak_openid.{name}",
+            lambda grant: _achecked(grant, nested),
+        )
     bearer = "admin bearer"
     _plan_wrap(
         hooks,

@@ -8,9 +8,9 @@ declare(strict_types=1);
  *
  * State is `state.json` in the `EI_STATE` directory: `{"fixed": <any JSON value>}` answers that value as `error`, and
  * `{"echo": "<form field>", "form": "whole|prefix|suffix|middle|extended|prefixed|wrapped|lowercased"}` answers what
- * THIS request sent in that field (`"status"` sets the status, 400 by default) — the
- * client secret from Basic (each part form-url-encoded) or from the form. Every token POST answers 400
- * `application/json` `{"error": …}` and is logged to `requests.log` as `[path, sent form fields]`. fschmtt asks
+ * THIS request sent in that field — the client secret from Basic (each part form-url-encoded) or from the form. Every
+ * token POST answers `application/json` `{"error": …}` — at 400 unless `"status"` sets another, with `error_description`
+ * when `"description"` is a string — and is logged to `requests.log` as `[path, sent form fields]`. fschmtt asks
  * `/admin/serverinfo` before its first resource call — that is where its grant happens.
  */
 
@@ -62,6 +62,10 @@ if (array_key_exists('fixed', $state)) {
         default => $value,
     };
 }
+$answer = ['error' => $error];
+if (is_string($state['description'] ?? null)) {
+    $answer['error_description'] = $state['description'];
+}
 http_response_code(is_int($state['status'] ?? null) ? $state['status'] : 400);
 header('Content-Type: application/json');
-echo json_encode(['error' => $error], JSON_THROW_ON_ERROR);
+echo json_encode($answer, JSON_THROW_ON_ERROR);

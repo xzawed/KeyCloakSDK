@@ -163,10 +163,48 @@ def auth_failure(
         if status is None:
             # 응답을 못 받았다 — 실을 본문이 없으므로 상류 메시지(연결 실패 사유)를 그대로 둔다.
             return KeycloakTransportError(str(exc))
-        code = carried_code(oauth_error(exc), sent) if carry_code else None
-        shown = f" ({code})" if code is not None else ""
-        return KeycloakAuthError(f"Keycloak request failed: HTTP {status}{shown}", error=code)
+        return oauth_failure(status, oauth_error(exc) if carry_code else None, sent)
     return unusable_answer(exc, answered)
+
+
+def oauth_failure(
+    status: int | None, value: object, sent: Iterable[str | None]
+) -> KeycloakAuthError:
+    """IdP 가 OAuth `error` 를 실어 거부한 응답의 판정 — 한 모양이다: `Keycloak request failed:
+    HTTP <상태> (<코드>)`, 코드는 `carried_code` 가 허락한 것만(아니면 상태만). 오류 상태의 응답
+    (`auth_failure`)과 성공 상태인데 `error` 를 실은 응답(`error_in_success`)이 함께 쓴다.
+
+    `value` 가 `None` 이면 코드를 싣지 않는다(admin 자체 그랜트 — `grant_failure`). 상태가 없으면
+    (목처럼 세션을 지나지 않은 응답 — 상태는 세션이 적는다, `token_cap.Answered`) 상태를 지어내지
+    않고 뺀다."""
+    code = carried_code(value, sent)
+    shown = "" if code is None else f" ({code})"
+    http = "" if status is None else f": HTTP {status}"
+    return KeycloakAuthError(f"Keycloak request failed{http}{shown}", error=code)
+
+
+def error_in_success(
+    answer: object,
+    answered: Answered,
+    *,
+    sent: Iterable[str | None] = (),
+    carry_code: bool = True,
+) -> KeycloakAuthError | None:
+    """python-keycloak 이 성공으로 받은 응답(그 레인이 받는 2xx)이 OAuth `error` 를 실었으면 그
+    거부다 — 4xx 가 같은 `error` 를 실었을 때와 같은 판정(`oauth_failure`)이고, 아니면 `None`.
+
+    ⚠️ 그 응답의 나머지(`access_token` · `refresh_token` · `id_token` · `active`)는 쓰지 않는다 —
+    호출자는 이것을 응답의 **어떤** 검사보다 먼저 부른다. 예전에는 토큰이 있으면 받아들여
+    돌려주고(admin 은 그것으로 요청을 보냈다), introspection 은 활성으로 읽었고, 토큰이 없으면 코드
+    없는 「없음」 판정이었다(등록부 auth-2xx-error-code-divergent · 실측 2026-11-20 — .NET 은 이미
+    실패했다). `error` 가 비어 있지 않은 문자열이 아니면(숫자 · 객체 · `""` · null) 예전 그대로다.
+    `sent` 와 `carry_code` 는 그 레인의 오류 상태 판정이 쓰는 것 그대로다(`auth_failure`)."""
+    if not isinstance(answer, dict):
+        return None
+    value = answer.get("error")
+    if not isinstance(value, str) or not value:
+        return None
+    return oauth_failure(answered.status, value if carry_code else None, sent)
 
 
 def unusable_answer(exc: BaseException, answered: Answered | None) -> KeycloakAuthError:

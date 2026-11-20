@@ -73,6 +73,17 @@ pub(crate) fn oauth_error_code(raw: &str, sent: &[&str]) -> Option<String> {
     (code_shaped && !echoed).then(|| raw.to_string())
 }
 
+/// 토큰·introspection 본문의 OAuth `error` — 본문이 JSON 객체이고 그 멤버가 **비지 않은 JSON 문자열**일 때만 그 값이다(토큰·provider
+/// 두 경로 공용). 성공 상태로 온 본문이 이것을 가지면 그 레인은 400 의 `error` 와 같은 길로 실패하고(코드는 [`oauth_error_code`]
+/// 를 거친다), 같이 온 `access_token`·`active` 는 쓰지 않는다 — 아홉 언어 같은 규칙(등록부 `auth-2xx-error-code-divergent`).
+/// 고치기 전에는 그 토큰을 돌려주고 캐시해 admin 요청에 실었고, introspect 는 active=true 였다. 숫자·객체·배열·불리언·null·`""`
+/// 이나 객체가 아닌 본문은 `None` 이다 — 지금처럼 다룬다.
+pub(crate) fn oauth_error_member(body: &serde_json::Value) -> Option<&str> {
+    body.get("error")
+        .and_then(serde_json::Value::as_str)
+        .filter(|error| !error.is_empty())
+}
+
 /// 토큰·introspection 레인의 reqwest 오류 → 계급(auth 와 provider 두 경로 공용). 리다이렉트 실패(소비자가 준 클라이언트가
 /// 따라가다 한도·정책에 걸림)는 3xx 응답들의 머리(상태와 Location)가 왔고 클라이언트가 그만둔 것이라 `Auth` 다 — 공유 클라이언트가
 /// 3xx 를 그대로 받아 `Auth` 로 내는 것과 같다. reqwest 는 따라간 3xx 의 본문을 읽지 않으므로 그 본문이 끊겼어도 같다. 나머지(연결 ·

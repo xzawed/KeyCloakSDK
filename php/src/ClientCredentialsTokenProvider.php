@@ -96,7 +96,9 @@ final class ClientCredentialsTokenProvider implements TokenProvider
             throw new KeycloakTransportError(sprintf('token response exceeds %d bytes', TokenResponseCap::TOKEN_RESPONSE_MAX_BYTES));
         }
         $json = json_decode($raw, true);
-        if ($response->getStatusCode() !== 200 || !is_array($json) || !isset($json['access_token'])) {
+        // 200 이어도 `error` 를 실은 본문은 오류 응답이다(`OAuthErrorCode::isErrorResponse`) — 옆의 access_token 을 보기 전에 판정해
+        // 그 토큰은 돌려주지도 캐시하지도 않는다.
+        if ($response->getStatusCode() !== 200 || !is_array($json) || OAuthErrorCode::isErrorResponse($json) || !isset($json['access_token'])) {
             // ⚠️ `error` 도 응답 본문이다 — 코드 모양이고 보낸 시크릿과 겹치지 않을 때만 공개 프로퍼티로 싣는다(`OAuthErrorCode`).
             $oauth = OAuthErrorCode::carried(is_array($json) ? ($json['error'] ?? null) : null, $this->config->clientSecret);
 

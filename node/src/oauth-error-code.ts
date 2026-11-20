@@ -12,8 +12,9 @@
 
 /**
  * The `code` of oauth4webapi's `ResponseBodyError` — what openid-client throws when the token or introspection
- * endpoint answers 4xx with a JSON body whose `error` is a non-empty string (401 included). Of its errors it is the
- * only one that holds the body's `error`: a 401 with a `WWW-Authenticate` challenge ends before the body is read.
+ * endpoint answers 4xx with a JSON body whose `error` is a non-empty string (401 included), and what the SDK's fetch
+ * throws for such a body at 200 (`fetchTokenEndpointBounded`). Of its errors it is the only one that holds the body's
+ * `error`: a 401 with a `WWW-Authenticate` challenge ends before the body is read.
  */
 const RESPONSE_BODY_ERROR = 'OAUTH_RESPONSE_BODY_ERROR'
 

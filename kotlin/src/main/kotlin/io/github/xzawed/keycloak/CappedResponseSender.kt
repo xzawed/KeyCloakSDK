@@ -120,7 +120,9 @@ internal fun holdsUnpairedSurrogate(json: ByteArray): Boolean {
  * 교환을 끊은 뒤 거부한다. [read] 는 상한+1 바이트까지 읽는다(넘치면 null — 다 읽지 않은 응답이라 전송 실패). 끝까지 온 응답을 쓸 수
  * 없는 자리는 [io.github.xzawed.keycloak.admin.UnusableTokenResponse] 다: 해제기(resteasy.allowGzip)가 풀지 못한 content-coding(잘린
  * gzip 의 EOFException 은 끊긴 연결과 가를 수 없어 그대로 전송 실패 — 등록부 판정 Q1) · 엄격한 UTF-8 아님 · 짝 없는 서로게이트 이스케이프
- * · 0x00(UTF-8 JSON 에는 없다 — BOM 없는 UTF-16 을 Jackson 이 짐작해 받아들였다) · 쓸 수 있는 access_token 없음([usable]).
+ * · 0x00(UTF-8 JSON 에는 없다 — BOM 없는 UTF-16 을 Jackson 이 짐작해 받아들였다) · 쓸 수 있는 access_token 없음([usable]). 그 사이 —
+ * access_token 보다 먼저 — 비어 있지 않은 문자열 error 를 실은 본문은 성공 상태의 OAuth 오류 응답이다([OAuthErrorTokenResponse] — 함께 실린
+ * 토큰은 쓰지 않는다, 코드는 [sent] 와 겹치지 않을 때만 싣는다 — 등록부 auth-2xx-error-code-divergent).
  * ⚠️ 가드의 파일이 아니라 여기 있는 까닭: 그 파일은 통합 전용 경계 커버리지의 경계 파일이고 이 거부 갈래들은 실 Keycloak 이 닿지 않는다
  * (2026-11-11 — 가드에 두자 bodies 78.7% 로 하한 79.2 아래였다). Java 는 가드 파일이 경계 밖이라 그 자리에 있다.
  */
@@ -128,6 +130,7 @@ internal fun judgedTokenBody(
     status: Int,
     read: () -> ByteArray?,
     usable: (ByteArray) -> Boolean,
+    sent: List<String>,
     release: () -> Unit,
 ): ByteArrayInputStream {
     val body =
@@ -141,16 +144,25 @@ internal fun judgedTokenBody(
         release()
         throw ResponseTooLargeException("token response")
     }
-    val refused =
+    val unreadable =
         when {
             !isUtf8(body) -> TokenResponseGuard.NOT_UTF8
             holdsUnpairedSurrogate(body) -> TokenResponseGuard.UNPAIRED_SURROGATE
-            body.any { it.toInt() == 0 } || !usable(body) -> TokenResponseGuard.REJECTED
+            body.any { it.toInt() == 0 } -> TokenResponseGuard.REJECTED
             else -> null
         }
-    if (refused != null) {
+    if (unreadable != null) {
         release()
-        throw UnusableTokenResponse(status, refused, null)
+        throw UnusableTokenResponse(status, unreadable, null)
+    }
+    val error = oauthErrorValue(body)
+    if (error != null) {
+        release()
+        throw OAuthErrorTokenResponse(status, OAuthErrorCode.carried(error, sent))
+    }
+    if (!usable(body)) {
+        release()
+        throw UnusableTokenResponse(status, TokenResponseGuard.REJECTED, null)
     }
     return ByteArrayInputStream(body)
 }

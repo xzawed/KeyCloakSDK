@@ -150,7 +150,7 @@ public class AuthClient {
       // OIDC 인지 파서로 파싱해야 id_token이 보존된다(플레인 TokenResponse.parse는 Tokens만
       // 만들고 OIDCTokens/id_token을 인지하지 못한다).
       HTTPRequest req = applyTimeouts(buildExchangeCodeRequest(code, redirectUri, codeVerifier));
-      TokenResponse resp = OIDCTokenResponseParser.parse(CappedResponseSender.sendStrict(req, "token"));
+      TokenResponse resp = TokenResponses.oidcToken(CappedResponseSender.sendStrict(req, "token"));
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Authorization code exchange failed: "
@@ -217,7 +217,7 @@ public class AuthClient {
           .build();
       long issuedAt = Instant.now().getEpochSecond();
       HTTPRequest req = applyTimeouts(tr.toHTTPRequest());
-      TokenResponse resp = TokenResponse.parse(CappedResponseSender.sendStrict(req, "token"));
+      TokenResponse resp = TokenResponses.token(CappedResponseSender.sendStrict(req, "token"));
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Client credentials failed: "
@@ -238,7 +238,7 @@ public class AuthClient {
     try {
       long issuedAt = Instant.now().getEpochSecond();
       HTTPRequest req = applyTimeouts(buildRefreshRequest(refreshToken));
-      TokenResponse resp = TokenResponse.parse(CappedResponseSender.sendStrict(req, "token"));
+      TokenResponse resp = TokenResponses.token(CappedResponseSender.sendStrict(req, "token"));
       if (!resp.indicatesSuccess()) {
         var err = resp.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Token refresh failed: "
@@ -306,7 +306,7 @@ public class AuthClient {
     try {
       HTTPRequest req = applyTimeouts(buildIntrospectionRequest(token));
       TokenIntrospectionResponse tir =
-          TokenIntrospectionResponse.parse(CappedResponseSender.sendStrict(req, "introspection"));
+          TokenResponses.introspection(CappedResponseSender.sendStrict(req, "introspection"));
       if (!tir.indicatesSuccess()) {
         var err = tir.toErrorResponse().getErrorObject();
         throw new KeycloakAuthException("Introspection failed: "

@@ -1,6 +1,9 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
+using WireMock.Server;
 using Xunit;
 using Xzawed.Keycloak;
 
@@ -82,5 +85,49 @@ public class KeycloakClientTests
         await using var cold = KeycloakClient.Create(config);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cold.AdminAsync(cancelled));
         Assert.Equal(1, TokenRequests());
+    }
+
+    // ── A success status whose body carries an OAuth error (registry auth-2xx-error-code-divergent): the admin facade's own
+    // grant fails with that error, no admin request goes out — with B2's token or any — and nothing is cached: once the
+    // endpoint answers properly, the next build asks it again and the admin request carries the new token. ──
+
+    private const string TokenPath = "/realms/r/protocol/openid-connect/token";
+    private const string UserPath = "/admin/realms/r/users/u1";
+    private const string TokenB1 = """{"error":"invalid_grant","error_description":"d"}""";
+    private const string TokenB2 = """{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}""";
+    private const string NextAccessToken = "next-access-token";
+
+    [Theory]
+    [InlineData(TokenB1)]
+    [InlineData(TokenB2)]
+    public async Task AdminAsync_SuccessStatusOAuthError_fails_and_sends_no_admin_request(string body)
+    {
+        using var idp = WireMockServer.Start();
+        Answer(idp, body);
+        await using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "zebrasecretjk" });
+
+        var refused = await Assert.ThrowsAsync<KeycloakAuthException>(async () => await (await kc.AdminAsync()).Users.GetAsync("u1"));
+        Assert.Equal("invalid_grant", refused.OAuthError);
+        Assert.Equal("Client credentials grant failed: invalid_grant", refused.Message);
+        Assert.DoesNotContain(idp.LogEntries, e => e.RequestMessage?.Path?.StartsWith("/admin/", StringComparison.Ordinal) == true);
+
+        Answer(idp, $$"""{"access_token":"{{NextAccessToken}}","token_type":"Bearer","expires_in":300}""");
+        var user = await (await kc.AdminAsync()).Users.GetAsync("u1");
+        Assert.Equal("alice", user.Username);
+        var sent = Assert.Single(idp.LogEntries, e => e.RequestMessage?.Path?.StartsWith("/admin/", StringComparison.Ordinal) == true);
+        Assert.Equal($"Bearer {NextAccessToken}", Assert.Single(sent.RequestMessage!.Headers!["Authorization"]));
+        Assert.Equal(2, idp.LogEntries.Count(e => e.RequestMessage?.Path == TokenPath));
+    }
+
+    /// <summary>The token endpoint answers 200 with <paramref name="tokenBody"/>, the user read answers with a user; whatever
+    /// they answered before is gone.</summary>
+    private static void Answer(WireMockServer idp, string tokenBody)
+    {
+        idp.ResetMappings();
+        idp.Given(Request.Create().WithPath(TokenPath).UsingPost())
+           .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json").WithBody(tokenBody));
+        idp.Given(Request.Create().WithPath(UserPath).UsingGet())
+           .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+               .WithBody("""{"id":"u1","username":"alice"}"""));
     }
 }

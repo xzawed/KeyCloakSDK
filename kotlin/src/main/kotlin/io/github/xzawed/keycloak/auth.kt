@@ -10,7 +10,6 @@ import com.nimbusds.oauth2.sdk.RefreshTokenGrant
 import com.nimbusds.oauth2.sdk.ResponseType
 import com.nimbusds.oauth2.sdk.Scope
 import com.nimbusds.oauth2.sdk.TokenIntrospectionRequest
-import com.nimbusds.oauth2.sdk.TokenIntrospectionResponse
 import com.nimbusds.oauth2.sdk.TokenRequest
 import com.nimbusds.oauth2.sdk.TokenResponse
 import com.nimbusds.oauth2.sdk.auth.ClientAuthentication
@@ -27,7 +26,6 @@ import com.nimbusds.oauth2.sdk.token.TypelessAccessToken
 import com.nimbusds.oauth2.sdk.util.URLUtils
 import com.nimbusds.openid.connect.sdk.AuthenticationRequest
 import com.nimbusds.openid.connect.sdk.Nonce
-import com.nimbusds.openid.connect.sdk.OIDCTokenResponseParser
 import com.nimbusds.openid.connect.sdk.token.OIDCTokens
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
@@ -174,7 +172,7 @@ public class AuthClient internal constructor(
         val req = buildIntrospectionRequest(token)
         val resp =
             try {
-                onIo { TokenIntrospectionResponse.parse(applyTimeouts(req).send(introspectionSender)) }
+                onIo { introspectionResponse(applyTimeouts(req).send(introspectionSender)) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ResponseTooLargeException) {
@@ -291,7 +289,7 @@ public class AuthClient internal constructor(
         try {
             onIo {
                 val httpResponse = applyTimeouts(req).send(tokenSender)
-                if (oidc) OIDCTokenResponseParser.parse(httpResponse) else TokenResponse.parse(httpResponse)
+                tokenResponse(httpResponse, oidc) // 성공 상태의 OAuth error 는 오류 응답이다(tokenResponses.kt)
             }
         } catch (e: CancellationException) {
             throw e

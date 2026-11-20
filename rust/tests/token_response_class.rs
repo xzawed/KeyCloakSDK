@@ -274,6 +274,120 @@ async fn token_response_class_follows_the_nine_language_decision() {
     assert!(wrong.is_empty(), "계급표와 다른 칸:\n{}", wrong.join("\n"));
 }
 
+/// 두 엔드포인트가 200 으로 각자의 본문을 준다 — `GET /admin/realms` 는 `[]` 다(admin 요청이 나갔는지 세는 자리).
+async fn mount_success(server: &MockServer, realm: &str, token: String, introspect: String) {
+    let oidc = format!("/realms/{realm}/protocol/openid-connect");
+    for (p, body) in [
+        (format!("{oidc}/token"), token),
+        (format!("{oidc}/token/introspect"), introspect),
+    ] {
+        Mock::given(method("POST"))
+            .and(path(p))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+            .mount(server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/admin/realms"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw("[]", "application/json"))
+        .mount(server)
+        .await;
+}
+
+async fn admin_requests(server: &MockServer) -> usize {
+    server
+        .received_requests()
+        .await
+        .expect("recording")
+        .iter()
+        .filter(|r| r.url.path() == "/admin/realms")
+        .count()
+}
+
+/// 성공 상태(200)로 온 OAuth 오류(등록부 `auth-2xx-error-code-divergent` — 아홉 언어 같은 규칙): 본문이 JSON 객체이고 `error`
+/// 가 비지 않은 문자열이면 그 호출은 400 의 `error` 와 같은 길로 실패한다 — 계급 `Auth`, 코드는 `oauth_error_code` 를 거친 값이고,
+/// 같이 온 것(`access_token` · `active`)은 쓰지 않는다: 토큰을 돌려주지 않고, introspect 는 active 가 아니며, admin 요청은 없다.
+/// 고치기 전(실측 2026-11-20): B1 은 `AuthClient` 의 여섯 칸이 코드 없는 「Failed to parse server response」였고, B2 는 여덟 칸이
+/// 전부 성공했다(introspect 는 active=true, admin 은 그 토큰으로 요청을 보냈다).
+#[tokio::test]
+async fn success_status_oauth_error_fails_with_the_code_and_nothing_is_used() {
+    const B2_ACCESS_TOKEN: &str = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl";
+    let rows = [
+        (
+            "B1",
+            r#"{"error":"invalid_grant","error_description":"d"}"#.to_string(),
+            r#"{"error":"invalid_token"}"#.to_string(),
+        ),
+        (
+            "B2",
+            format!(
+                r#"{{"error":"invalid_grant","access_token":"{B2_ACCESS_TOKEN}","token_type":"Bearer","expires_in":300}}"#
+            ),
+            r#"{"error":"invalid_token","active":true}"#.to_string(),
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (row, token, introspect) in rows {
+        let server = MockServer::start().await;
+        mount_success(&server, "r", token, introspect).await;
+        let cfg = KeycloakConfig::new(server.uri(), "r", "it-client")
+            .expect("config")
+            .with_client_secret("s");
+        for (call, out) in CALLS.iter().zip(drive(cfg).await) {
+            let want = if *call == "introspect" {
+                "invalid_token"
+            } else {
+                "invalid_grant"
+            };
+            if kind(&out) != "Auth" || oauth_error(&out) != Some(want) {
+                wrong.push(format!(
+                    "{row} × {call}: {} · oauth_error {:?} (기대 Auth · {want:?})",
+                    kind(&out),
+                    oauth_error(&out)
+                ));
+            }
+        }
+        let n = admin_requests(&server).await;
+        if n != 0 {
+            wrong.push(format!("{row}: admin 요청 {n} 번 (기대 0)"));
+        }
+    }
+    assert!(wrong.is_empty(), "다른 칸:\n{}", wrong.join("\n"));
+}
+
+/// 대조군 — `error` 가 비지 않은 JSON 문자열이 아니면(숫자 · 객체 · 배열 · 불리언 · null · `""`) 지금처럼 다룬다: 같이 온 쓸 수
+/// 있는 응답이 여덟 칸 모두 성공이다.
+#[tokio::test]
+async fn success_status_oauth_error_that_is_not_a_non_empty_string_is_ignored() {
+    let server = MockServer::start().await;
+    let values = [
+        ("p2-number", serde_json::json!(5)),
+        ("p2-object", serde_json::json!({"code": "invalid_grant"})),
+        ("p2-array", serde_json::json!(["invalid_grant"])),
+        ("p2-bool", serde_json::json!(true)),
+        ("p2-null", serde_json::Value::Null),
+        ("p2-empty", serde_json::json!("")),
+    ];
+    let mut wrong = Vec::new();
+    for (realm, value) in values {
+        let token = serde_json::json!({
+            "error": value, "access_token": "at", "token_type": "Bearer", "expires_in": 300,
+            "refresh_token": "rt"
+        });
+        let introspect = serde_json::json!({ "error": value, "active": true });
+        mount_success(&server, realm, token.to_string(), introspect.to_string()).await;
+        let cfg = KeycloakConfig::new(server.uri(), realm, "it-client")
+            .expect("config")
+            .with_client_secret("s");
+        for (call, out) in CALLS.iter().zip(drive(cfg).await) {
+            if kind(&out) != "ok" {
+                wrong.push(format!("{realm} × {call}: {} (기대 ok)", kind(&out)));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "다른 칸:\n{}", wrong.join("\n"));
+}
+
 /// 저수준 `AuthClient::new` 에 리다이렉트를 따라가는 클라이언트를 주면 X1 이 openidconnect 경로에서도 reqwest 의 리다이렉트
 /// 실패가 된다 — `map_token_err` 의 `Reqwest` 갈래(공유 클라이언트는 3xx 를 그대로 받아 이 갈래에 안 닿는다).
 #[tokio::test]
