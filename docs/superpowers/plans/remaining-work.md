@@ -79,7 +79,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `343`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `346`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -101,7 +101,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 ⚠️ **`main` 이 아닌 브랜치에서 시작했다면 먼저 `main` 으로 간다** — 함정 (e)가 그것이다. ⚠️ **에이전트의 세션 메모리는 PC를 넘어가지 않는다.** 넘어가야 하는 것은 전부 이 문서와 `.claude/rules/*.md`·`docs/guides/development-setup.md` 에 있어야 하고, 새로 배운 것도 거기 적는다.
 
-### 다음 세션 진입점 (2026-11-20 · #1177–#1181 반영)
+### 다음 세션 진입점 (2026-11-21 · #1183–#1186 반영)
 
 **지금 상태** — 마지막 물결 8(2026-11-03): php 1.5.2 · kotlin 1.0.9 **LIVE**(기준선 #940·#942). `[Unreleased]` 는 아홉 언어 몫 — 릴리스는 먼저 권하지 않는다(사용자 2026-11-10 「잦다」), 태그는 물결마다 묻는다. `PHP_SPLIT_TOKEN` 은 만료 전에 교체한다. 열린 PR 은 없다. 래퍼 9.8 은 #682·#788.
 
@@ -109,7 +109,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 
 **다음 순서** — ①초록이 거짓 → ②게시본 소비자 → ③잠복 → ④완결성 축 그대로.
 
-1. 다음 묶음(PM 선택 · 항목마다 Grok 레그) — `coverage-omit-hides-security-paths`(① · 다음 단위 장부는 ruby — 경계 파일 12 로 최다) → `admin-create-relative-location`(② · 아홉을 먼저 잰다) → `auth-2xx-error-code-divergent`(② · 일곱 미측정) → `sonar-gradle-cache-reaches-release`(③). CHANGELOG 여유 227 B — 넘으면 그 PR 에서 `node scripts/changelog-rotate.mjs`. ⚠️ 공개 기본값을 바꾸는 계획은 semver 부터 본다(php `php-semver-checker` V097 = MAJOR · #1153).
+1. 다음 묶음(PM 선택 · 항목마다 Grok 레그) — `coverage-omit-hides-security-paths`(① · ruby 의 틈 6 함수 — 시험으로) → `node-body-code-member-transport`(② · 먼저 재현) → `oauth-error-code-surface-divergent`(② · 아홉 언어) → `token-success-status-range-divergent`(②). ⚠️ CHANGELOG 의 묶는 상한은 머리말+`[Unreleased]` ≤ 65,536 B(검사 8d)이고 여유 1,024 B 다 — 회전은 날짜 절만 옮겨 못 줄인다: 새 항목은 기존 `[Unreleased]` 항목을 줄여 자리를 낸다(릴리스는 권하지 않는다). ⚠️ 공개 기본값을 바꾸는 계획은 semver 부터 본다(php `php-semver-checker` V097 = MAJOR · #1153).
 2. ⚠️ **손대기 전에 전제를 잰다 — CI 의 하위 판은 로컬과 다르다**(urllib3 2.8 · CPython 의 트레일러 상한이 대조군을 뒤집었다, #893 — 대조군은 동작으로 가른다). 충돌한 PR 에는 실행이 안 생긴다(머리 sha 로 잰다). ⚠️ 측정이 도는 워크트리를 지우지 않는다 — `|| true` 가 git 실패를 삼켜 거짓 수를 냈다(2026-10-30).
 
 **판정 2026-10-29(사람 위임 「권장안」)** — 대기 판정이 모두 났다 — 항목 표제줄의 「판정 2026-10-29」와 그 주석이 소유한다(PM·Grok 대조는 #881 · 라운드 2 #892 본문). 항목 없는 셋 — php 하한 `guzzle ^7.15.2`·`psr7 ^2.12.3`(composer.json 반영) · rust·node `raw()` 오류 본문 상한은 두지 않는다 · Dependabot PR 스캔 안 함(`rejected.md`). 2026-10-23 판정 둘 — commons-codec 은 1.15 유지(이유·이동 조건은 `.github/dependabot.yml` 의 ignore 주석) · sonarcloud 는 잡 분리(규칙 12 — 닫힘).
@@ -210,12 +210,12 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 닫힘 2026-09-24]** 1.0.1 게시(Portal Publish 후 repo1 첫 404 → 약 10 분 뒤 200)로 닫았다 — 게시 바이트 **전부 major ≤ 61**(`node scripts/check-published-jvm-floor.mjs`; metadata 가 늦은 `-core` 는 jar 직접 16/16). API 기저선 1.0.0 → 1.0.1 은 같은 PR(DEPLOY §4 step 9)
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다(부르는 다섯 자리가 **전부 주석**) — 지우면 major 는 61 그대로라 바이트코드 가드도 초록인데 JDK 17 소비자만 런타임에 죽는다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝 · 그중 둘은 독립 레그가 낸 구멍)
 - [x] `write-token-persists-into-build` **[H/S · 신규·닫힘 2026-09-23]** 규칙 1b 가 `contents: write` 에만 걸려 `attestations: write` 잡의 자격증명 잔류를 못 봤고, ⚠️ **그 규칙은 자가테스트가 전혀 안 덮고 있었다** · `check-ci-permissions.mjs`(변이 4/4 · PR #550)
-- [x] `published-jar-bytes-never-read` **[H/M · 신규·닫힘 2026-09-23]** 게시된 jar 를 받아 바이트를 읽는 호출 지점이 **0 개**였다 — 사슬이 태그에서 끊겨, 릴리스가 다른 JDK 로 빌드했거나 업로드가 부분 실패해도 저장소는 전부 초록이었다 · `scripts/check-published-jvm-floor.mjs` + `published-floor.yml`(예약·required 밖 · 변이 15/15 CAUGHT + OFF 짝 · 그중 하나는 **실제 repo1 바이트**로 CAUGHT · 실측 274 클래스, 1.0.0 부분만 세면 91 로 손측정과 일치 · ⚠️ 독립 리뷰 **BLOCK** 뒤 다섯 구멍 수정)
+- [x] `published-jar-bytes-never-read` **[H/M · 닫힘 2026-09-23]** 게시된 jar 의 바이트를 읽는 호출 지점이 0 개였다 — `scripts/check-published-jvm-floor.mjs` + `published-floor.yml` · 수치: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `published-bytes-have-no-oracle` **[M/M · 신규 2026-09-06 · 닫힘 2026-11-15 #1096]** Central 에서 받은 jar 마다 레인의 릴리스 워크플로 · 태그 · 커밋 고정으로 증명 대조, 봉인 경계 1.0.2 · `scripts/check-published-jvm-floor.mjs --attest`
 - [x] `registry-contract-claims-use-tree-oracle` **[H/L · 신규 2026-09-06 · 닫힘 2026-09-06 #415]** `doc-guard: kind=runtime` 이 **작업 트리**를 오라클로 썼다 — 소비자가 받는 것은 태그·레지스트리라, 트리가 맞는 동안 소비자에게 거짓을 **집행**할 수 있다 · `scripts/check-docs.mjs:526-545`
 - [x] `consumer-floor-change-needs-release-or-registered-gap` **[M/S · 신규 2026-09-06 · 닫힘 2026-09-06 #415]** 소비자 가시 하한을 바꾸는 PR 이 릴리스 없이 머지되면 문서가 즉시 거짓이 된다 — 기각 체크리스트에 항목이 없었다 · `docs/governance/process.md`
 - [x] `doc-audit-batch1-remainder` **[H/L · 신규 2026-09-06 · 닫힘 2026-09-06 #416]** 소비자 문서 배치 1(10개) 감사의 **잔여 9건** — 인용 181건 전건 실재(계측기 5/5 자가검증), 반박 10건 중 2건 refuted · `docs/guides/` · `docs/reference/`
-- [x] `doc-audit-batch2-3-not-started` **[M/L · 신규 2026-09-06 · 닫힘 2026-09-07]** 문서 41개 중 20개가 미검증이었다 — 배치 2(언어별 README 9 + `language-support.md`) #421 · **배치 3 의 10문서도 감사·수정이 끝났다**. ⚠️ **재측정(2026-09-07)에서 이 항목이 낡은 채 열려 있는 것이 드러났다** — 하위 `doc-audit-batch3-fixes-outstanding` 은 이미 `[x]`(50/50, #433)인데 상위가 열려 있어 진입점이 **이미 끝난 일**로 다음 세션을 보내고 있었다. 남은 범위 **0**
+- [x] `doc-audit-batch2-3-not-started` **[M/L · 닫힘 2026-09-07]** 배치 2(#421) · 3(#433) 끝 — 하위가 닫혔는데 상위가 열려 진입점이 끝난 일로 보냈다(상위도 함께 닫는다) · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `doc-audit-batch3-fixes-outstanding` **[M/M · 신규 2026-09-06 · 닫힘 2026-09-06 #433]** 배치 3 발견 **50건 전부 처리**. rules 10(#423) · 계수 3(#425) · 플레이북 11(#426, 재스캔 1 포함) · 지도 7 + 하네스 9(#429) · 계약 2(#431) · `process.md` 3(#432) · `rejected.md` 8(#433). 방법·전제·기각 판정은 `git show b273f67:docs/superpowers/plans/2026-09-06-doc-fact-oracles.md`
 - [x] `masking-type-enumeration-has-no-oracle` **[M/M · 재판정 닫힘 2026-11-17]** 파생 열거는 아홉 언어 facade dump 시험이 한다 · 재판정: 비밀 필드를 쥔 새 타입을 심으면 그 언어의 facade dump 가 빨갛다 · 남은 갭 `facade-dump-reached-empty-secret-field` · 서사: `git show 8787f429:docs/superpowers/plans/remaining-work.md` 의 이 항목
 - [x] `rules-command-reference-existence-guard` **[M/M · 닫힘 2026-11-17 #1124]** 펜스 명령의 참조를 체크아웃과 대조(비-required 잡 `rules-commands`) · 재판정: `node scripts/check-rules-commands.mjs <트리>` · 서사: `git show 8787f429:docs/superpowers/plans/remaining-work.md` 의 이 항목
@@ -251,11 +251,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** rust 파사드 시험이 캐싱 공급자 배선을 단언(무캐시 주입 변이 CAUGHT) · 통합 미실행 소유 여덟(go NewAdminClient · rust raw 공급자 · rust/ruby AuthClient 공급자 · php close · .NET 동기 Dispose · java/kotlin 시임은 운영 경로 위로)을 통합이 돌고 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 178건 (열림 39)
+## C. 품질 부채 — 181건 (열림 39)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 108
+### 9언어 소스 — 111
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -282,10 +282,13 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `python-scrub-frames-skips-exception-groups` **[L/S · 닫힘 2026-11-19 #1161]** 닿았다(aio JWKS 의 anyio 그룹) · `frames.reachable` · 3.10 백포트도
 - [x] `dotnet-auth-400-no-error-member-message` **[L/S · 닫힘 2026-11-19 #1159]** 「error is missing」 · 빈 본문도
 - [x] `oauth-error-overlap-case-sensitive` **[L/S · 닫힘 2026-11-20 #1180 · 아홉 언어]** 비밀을 ASCII 로만 접어 대조(켈빈 기호 행이 아홉을 고정) · Rust 모양도 `[a-z_]{1,64}`
-- [ ] `auth-2xx-error-code-divergent` **[L/S · 신규 2026-11-19]** 2xx 의 OAuth `error` — .NET 은 코드를 싣고 실패, node 는 코드 없음(#1160), 일곱은 미측정 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs`
-- [ ] `oauth-error-code-surface-divergent` **[L/S · 신규 2026-11-20]** 코드를 싣는 자리가 갈린다 — .NET `OAuthError` 는 코드 없는 400 밖 상태에서 reason phrase(`Unauthorized` · 520 은 `HTTP 520`, 문서는 「표준 phrase」)이고 여덟은 없음 · admin 자기 그랜트의 코드는 java · kotlin · python 없음 · go `Msg` 만 · 다섯 필드 · node 메시지는 코드를 안 보인다(#1180) · `dotnet/src/Xzawed.Keycloak.Sdk/KeycloakException.cs:21`
+- [x] `auth-2xx-error-code-divergent` **[L/S · 닫힘 2026-11-21 #1184 · 아홉 언어]** 성공 상태 응답의 비어 있지 않은 문자열 `error` 는 400 처럼 실패하고 그 안의 것은 안 쓴다 — 토큰이 캐시 · 사용되고 introspection 이 활성이었다(여덟)
+- [ ] `oauth-error-code-surface-divergent` **[L/S · 신규 2026-11-20]** 코드를 싣는 자리가 갈린다 — .NET `OAuthError` 는 코드 없는 400 밖 상태에서 reason phrase(`Unauthorized` · 520 은 `HTTP 520`, 문서는 「표준 phrase」)이고 여덟은 없음 · admin 자기 그랜트의 코드는 java · kotlin · python 없음 · go `Msg` 만 · 다섯 필드 · node 메시지는 코드를 안 보인다(#1180) · 그 레인들과 go · php · ruby introspection 은 4xx 에 코드가 없는데 2xx+`error` 에는 있다(#1184) · `dotnet/src/Xzawed.Keycloak.Sdk/KeycloakException.cs:21`
+- [ ] `token-success-status-range-divergent` **[L/S · 신규 2026-11-21]** 성공으로 받는 상태가 갈린다 — 모든 2xx(.NET · Go) · 200 만(node · java · kotlin · rust AuthClient · php 공급자) · 200 · 201(python · ruby 그랜트, ruby 공급자 · introspection 은 모든 2xx) · java · kotlin admin 은 201/203 정상 본문을 받는다 · .NET 만 문자열 아닌 `error` 에도 실패 · go 는 중복 `error` 의 마지막 값(#1184 측정) · `go/auth.go:295`
+- [ ] `node-body-code-member-transport` **[L/S · 신규 2026-11-21]** node 는 응답 본문의 멤버 `"code":"ECONNRESET"` 를 전송 오류로 읽는다 — 본문이 오류 계급을 고를 수 있다(#1184 에이전트 보고 · 미재현 — 판정은 `e.code` · `cause.code`, `ResponseBodyError` 의 cause 는 본문) · `node/src/transport.ts:41`
+- [ ] `admin-create-no-id-shape-divergent` **[L/S · 신규 2026-11-21]** create 의 「id 없음」 모양이 갈린다 — .NET · Kotlin · Python 은 오류, Java · Go · Rust · Ruby 는 null · `""` · None · nil · 「못 읽는 Location」(맨 공백)도 파서마다 다르다(#1185) · `java/keycloak-sdk-admin/src/main/java/io/github/xzawed/keycloak/admin/CreatedIds.java`
 - [ ] `oauth-error-echo-projection` **[L/S · 신규 2026-11-20 · 판정 필요]** 소문자로 바꾸며 `[a-z_]` 밖 글자(JWT `.` · PKCE `-._~` · 숫자)를 지우는 되울림은 비연속이라 겹침이 못 본다 — 두 쪽을 `[a-z]` 로 깎아 대조하면 짧은 코드까지 잃는다(#1180 Grok) · `.claude/rules/security.md`
-- [ ] `admin-create-relative-location` **[L/M · 신규 2026-11-20 · 아홉 언어]** 201 의 상대 `Location` — .NET 은 id 없음으로 읽어 서버가 만든 뒤 500, node · rust · ruby 는 원 문자열의 마지막 조각, 넷은 미측정 · RFC 9110 은 요청 URI 로 푼다 · 시험이 지금 동작을 고정(#1179) · `dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:242`
+- [x] `admin-create-relative-location` **[L/M · 닫힘 2026-11-21 #1185 · 아홉 언어]** 요청 URL 에 대해 푼 Location 의 마지막 조각(앞 조각 = 컬렉션) · roles · realms 는 그대로 · kotlin 1.0.9 생성자는 실서버 IT 가 돈다
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** rust·python·ruby·php·dotnet 이 비었거나 문자열이 아닌 `access_token` 으로 TokenSet 을 만들었다 — 불변식(그런 응답은 TokenSet 이 아니다)을 `test-security-defaults.sh` 축 1c 가 집행한다, 변이 7/7 CAUGHT · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
   - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다. 셋째 자리(java 레그 2026-10-05): admin 토큰 400·응답 없는 전송 실패의 원인 사슬에 jakarta `ProcessingException` 이 남는다(토큰 인용 없음).
@@ -297,7 +300,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 <!-- 2026-10-03 #710 재스캔(.NET): JwtValidator.cs:122/127 이 ErrorCause.MessageOf(IdentityModel 예외)로 메시지를 만든다 — kid "k\nINJ-FORGED-LINE" → Message·ToString 에 INJ. kid 는 IdP 가 아니라 토큰을 내민 쪽이 고른다(로그 위조). alg·iss·aud 의 LF 는 메시지에 안 닿았다. admin 타입 경로 AdminClient.cs:66/74 (ErrorDescription 원문, LF 그대로)·raw 경로 :98-100 (본문 통째) 도 실측. 다른 여덟 언어의 kid 인용은 미측정. 2026-10-05 물결 4 레그: .NET admin 오류 본문이 KeycloakAdminException 메시지에 원문으로 실려, 받은 bearer 를 되울리는 admin 서버면 그것을 찍는다(SendRawAsync·IdFromLocationAsync 의 MapHttpError, raw·타입드 401·404 16/16 LEAK=bearer, 6f23931 도 같음 — 보낸 bearer 를 가릴지 php 처럼 본문을 버릴지 판정). go AdminError.Msg 도 apiErr.Message 를 그대로 싣는다(admin.go:178, 카나리아 1 히트 — cause.go 는 토큰·introspection 레인만 정화). · 2026-10-09 (secret-echo JVM 구현 레그): java getKeycloakError() 가 admin 리소스 오류 본문을 그대로 돌려준다 — 그 요청은 Bearer 를 실었다(되울리면 남는다). -->
 - [ ] `config-validation-gaps` **[L/M]** 설정 진입점이 값을 검증하지 않고 잘못된 기본값으로 대체한다 · `node/src/config.ts:74-87`
 - [x] `token-provider-cache-invariants` **[L/S · 닫힘 2026-11-20 #1165]** go 비행이 소스 앞에서 캐시를 다시 본다(넷은 잠금 · 게이트가 이미 막았다) · 설정 무시는 다섯 다 없다 · 비행 시험은 결정적
-- [ ] `coverage-omit-hides-security-paths` **[L/L · 진행 2026-11-20 — 단위 미도달 장부 kotlin · php #1151 · dotnet #1155 #1179 · java #1162 #1168]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · 남은 언어 go · python · node · rust · ruby(경계 파일 8 · 4 · 2 · 3 · 12) · 통합 장부 소유 54 가 이 id 다(단위 장부의 틈은 0) · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
+- [ ] `coverage-omit-hides-security-paths` **[L/L · 진행 2026-11-21 — 단위 미도달 장부 kotlin · php #1151 · dotnet #1155 #1179 · java #1162 #1168 · ruby #1186]** "네트워크 경계"라는 이름의 파일 단위 커버리지 제외가 보안·오류분류 로직까지 무측정으로 만든다 · 남은 언어 go · python · node · rust(경계 파일 8 · 4 · 2 · 3) · 통합 장부 소유 54 와 단위 장부의 틈(ruby 6 함수 · 가지 9 — `||` · `&&` 는 Ruby `Coverage` 밖)이 이 id 다 · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:110`
 - [ ] `cross-language-surface-divergence` **[L/L]** 같은 개념의 공개 표면이 언어마다 갈린다 — 필드·타입명·메서드명·정규화 위치 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/IntrospectionResult.java:5-9`
 - [ ] `php-oauth2-delegation-drift` **[L/S]** PHP가 league 프로바이더에 위임하면서 요청 모양이 다른 SDK와 갈린다 · `php/src/AuthClient.php:161-166`
 - [ ] `discovery-roundtrip-divergence` **[L/S]** 엔드포인트를 조립하지 않고 discovery로 왕복하는 자리가 남아 있고 문서에 없다 · `node/src/auth.ts:227-258`
@@ -422,7 +425,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `sonarcloud-maven-uncached` **[L/S · 신규 2026-11-19 · 닫힘 2026-11-20 #1167]** coverage 잡의 캐시 여섯이 제 키로(릴리스가 복원하지 못하게) — Central 의 실패는 429 와 「Could not find」 둘
 - [x] `dotnet-tests-exhaust-inotify` **[L/S · 닫힘 2026-11-20 #1177]** net10.0 의 WireMock 만 `WebApplication.CreateBuilder` — 모듈 초기화자가 `DOTNET_hostBuilder__reloadConfigOnChange=false` · 리눅스 inotify 계수 시험
 - [x] `ci-maven-cache-shared-key` **[L/S · 닫힘 2026-11-20 #1178]** java 네 잡이 제 키 — release-bundle 만 setup-java 기본 키(release.yml 태그가 복원) · Central 「Could not find」 셋: maven-clean-plugin 3.2.0(#1168 · #1175) · versions-maven-plugin 2.21.0(#1175)
-- [ ] `sonar-gradle-cache-reaches-release` **[L/S · 신규 2026-11-20]** sonar coverage 잡의 setup-gradle 은 키를 가르지 않았다(#1167) — 일곱 생태계가 돈 VM 의 내용 주소 항목이 kotlin-release(L117 · L141 · L166)로 흐르는지 미측정 · `.github/workflows/sonarcloud.yml:49`
+- [x] `sonar-gradle-cache-reaches-release` **[L/S · 닫힘 2026-11-21 #1183]** 흘렀다(같은 추출 항목을 복원) — coverage 잡의 setup-gradle 은 읽기만 · main 의 gradle-* 57 개를 지우고 kotlin-ci 가 다시 만들었다
 
 
 ### 문서·규칙 — 15
@@ -445,7 +448,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### harness 사각지대 — 14
 
-- [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12 · 범위 확대]** 공허가 셋이었다 — 요청↔응답 미대조 · 빈 `code_challenge` 통과 · `state` 를 존재만 보고 대조 안 함. 판정을 `harness/conformance/authz-url.mjs` 로 뽑아 Docker 없이 픽스처로 잰다 · 가드 `scripts/test/test-conformance-authz-url.sh`(픽스처 8종, `doc-facts`) · 변이 6/6 `CAUGHT` + OFF 짝 3/3(`v.ok` 를 버리는 구멍도 그 PR 이 닫음) · 파생: `authz-redirect-uri-not-per-call`.
+- [x] `H1-conformance-authz-vacuous` **[M/M · 닫힘 2026-09-12]** 공허 셋(요청↔응답 미대조 · 빈 `code_challenge` · `state` 미대조) — `harness/conformance/authz-url.mjs` · 가드 `scripts/test/test-conformance-authz-url.sh` · 파생 `authz-redirect-uri-not-per-call` · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `H3-harness-image-and-lock-pins` **[M/S · 닫힘 2026-09-12 · 범위 정정]** 한 파일의 두 결함 — 야간 감사가 보는 rust 하네스 락을 Dockerfile 이 COPY 하지 않았고(1.0 이전 그래프를 6주 감사한 거짓 초록) · `FROM rust:alpine` 무버전. ⚠️ 락 재생성은 MSRV 인지 해석이 필요하다 — `scripts/regen-harness-rust-lock.sh` 가 소유 · 재스캔 · 변이는 `git log -S'H3-harness-image-and-lock-pins' -- docs/superpowers/plans/remaining-work.md`
 - [x] `ruby-token-provider-inspect-leaks-token` **[M/S · 닫힘 2026-09-12 · 실행 재현]** 공급자 `inspect` 가 `cached="***"`(유무는 남긴다) · 나머지 여덟은 실행으로 노출 없음 · 서사: `git show e4e7c63f:docs/superpowers/plans/remaining-work.md`
 - [x] `php-var-dump-bypasses-all-masking` **[M/M · 닫힘 2026-09-12 · 범위 재정의]** 덤프 경로 마스킹은 아홉 언어 균일 계약으로 불가능했다 — 훅이 있는 셋(php `__debugInfo` · go `GoStringer` · ruby `pretty_print`)만 구현하고 나머지는 경계로 적었다(왕복 직렬화 훅은 일부러 안 넣었다). 계약은 `SECURITY.md` 가 소유한다 · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
@@ -554,8 +557,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `korean-api-docs-in-published-packages` **[M/H · 신규 2026-09-22 · 닫힘 2026-10-30 · #890–#898 · #908 · #911 · #912 · #913]** 그려지는 문서와 런타임 문구가 아홉 다 영문이다 — 레인마다 산출물 한글 0 가드(`check-rendered-docs-hangul.mjs` · python·php 는 단위 시험). java 는 첫 판정에서 빠져 따로 옮겼다
 - [x] `remaining-work-split-to-archive-tag` **[H/M · 신규 2026-09-22 · 닫힘 2026-10-28]** #526 이 실행했다(닫힌 70 건의 서사 → 태그 · 예산 앵커 · 되살릴 조건 이관은 명령 형태가 0 건이라 no-op). 설계의 「닫힘 = 0」만은 「소유 줄 == 닫힘 수」로 바뀌었고(`test-remaining-work-shape.sh` 머리 주석), 뒤이은 이관은 머리말의 포인터가 가리킨다.
 - [x] `changelog-unreleased-never-written` **[M/S · 신규 2026-09-22 · 닫힘 2026-10-27]** 착지 장치 `scripts/test/test-changelog-landing.sh` 가 섰고 `[Unreleased]` 가 착지마다 자란다 — 150 건은 역채우지 않았다
-- [x] `jwks-empty-keyset-node` **[M/M · 신규 2026-09-22 · 닫힘 2026-09-24]** 「구조 변경뿐」이라는 전제가 틀렸다 — 기각된 두 길(getKey 래핑·별도 프리플라이트) 밖에 셋째가 있었다: 이미 배선된 `[customFetch]` 래퍼는 jose 가 파싱할 **바로 그 응답**을 보고, jose reload 는 fetch 가 던지면 옛 캐시를 남긴다(`jose/dist/webapi/jwks/remote.js` `.then` 안에서만 대입). jose 원격 집합을 그대로 상속한다 · `jwt-jwks.test.ts` 수정 전 RED → GREEN · 변이 CAUGHT
-- [x] `jwks-empty-keyset-jvm-dotnet-undetermined` **[M/S · 신규 2026-09-22 · 닫힘 2026-09-24]** 셋 다 **오염됐다** — 판정 불가가 아니었다. ⚠️ dotnet 은 첫 판정이 「면역」이었는데 LKG 폴백이 가린 것이었다(현재 설정 키 0 · LKG 끄면 IDX10500) — 그래서 테스트가 LKG 를 끄고 단언한다(켜면 수정 없이도 초록, 대조군 실측). `RefreshInterval = 0` 은 IDX10107 로 거부된다(하한 1s) · JwksEmptyKeyset 테스트 셋(변이 3/3 CAUGHT + 대조군 SILENT)
+- [x] `jwks-empty-keyset-node` **[M/M · 닫힘 2026-09-24]** 이미 배선된 `[customFetch]` 래퍼가 jose 가 파싱할 응답을 본다 — 던지면 옛 캐시가 남는다 · `jwt-jwks.test.ts` · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
+- [x] `jwks-empty-keyset-jvm-dotnet-undetermined` **[M/S · 닫힘 2026-09-24]** 셋 다 오염됐다 — ⚠️ dotnet 의 「면역」은 LKG 폴백이 가린 것(시험은 LKG 를 끄고 단언) · JwksEmptyKeyset 시험 셋 · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 야간이 여드레 빨간 동안 아무 조치가 없었다 — 저장소 안에 **실패가 사람에게 가는 경로가 0건**이다 · `.github/workflows/harness.yml:8`
 - [x] `codeql-kotlin-extractor-lags-kgp` **[M/M · 닫힘 2026-11-04 · 전제 소멸]** CodeQL 이 KGP 2.4.20 을 받는다(#572 뒤 실행 전부 success) · 되살릴 조건: KGP 범프 PR 의 `Analyze (java-kotlin)` 이 `KotlinVersionTooRecentError` 로 빨갛다 — required 가 아니니 그 PR 은 병합하지 않는다 · 수치: `git show 06cb32e9:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `push-lane-failures-still-silent` **[M/S · 신규 2026-09-21 · 닫힘 2026-11-14 #1075]** 기준: PR 실행은 민 사람이 보고 main push 실행은 아무도 안 본다 — 잡이 둘을 받고 가드가 목록을 예약 ∪ main push 로 파생한다
@@ -601,7 +604,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `go-nonstring-verb-bypasses-stringer` **[L/S · 신규 2026-09-26 · 닫힘 2026-11-17 #1127]** 일곱 타입의 `fmt.Formatter` — facade dump 가 fmt 의 동사 전부로 잰다(`%p` 는 메서드가 못 막는다 · `json.Marshal` 은 설계 경계 그대로)
 - [x] `dotnet-cached-record-tostring` **[L/S · 신규·닫힘 2026-09-26 #594]** `ClientCredentialsTokenProvider.Cached` 레코드의 컴파일러 `ToString` 이 캐시된 액세스 토큰을 찍었다(실측) — 모양은 두고 `ToString` 만 덮었다. Grok 레그가 명세대로 구현(RED → 104), 변이 CAUGHT · `dotnet/src/Xzawed.Keycloak.Sdk/ITokenProvider.cs`
 - [x] `probe-new-file-mutation-dies-silent` **[M/S · 신규·닫힘 2026-09-26 #591]** 새 파일만 만드는 변이에서 `probe.sh` 가 판정 없이 1(SILENT 의 코드)로 죽었다 — diff 가 비면 자리 검사의 `grep` 파이프가 1 을 내 `set -e` 가 끝냈다(실측: 0 바이트 · exit 1). `|| true` 한 곳 + 판정 줄을 보는 자가테스트 둘(RED → 18/18) · `scripts/probe.sh`
-- [x] `probe-verdict-line-glued-or-name-split` **[L/S · 신규·닫힘 2026-09-26 #595]** Grok 레그의 퍼저(193 사례, 인자 이동 버그를 고쳐 돌림)가 러너 계약 위반 둘을 냈다 — 끝 개행 없는 새 파일이면 판정 줄이 미리보기 뒤에 붙어(`+plantedCAUGHT — …`) `^CAUGHT` 로 읽는 쪽이 판정을 못 보고, 이름에 공백이 든 새 파일은 `for … in $(…)` 가 쪼개 맞는 변이를 INVALID 로 거부했다. 나머지 INVALID 는 전부 fail-closed. 자가테스트 둘 RED → 20/20, 되돌림 변이 둘 CAUGHT · `scripts/probe.sh`
+- [x] `probe-verdict-line-glued-or-name-split` **[L/S · 닫힘 2026-09-26 #595]** 끝 개행 없는 새 파일의 판정 줄 붙음 · 공백 든 이름의 거짓 INVALID — 자가테스트 20/20 · `scripts/probe.sh` · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `node-error-cause-carries-response-tokens` **[M/S · 신규·닫힘 2026-09-26 #603]** 틀린 토큰 응답의 오류가 `cause` 사슬로 토큰을 찍었다(oauth4webapi 가 본문 · 원문 id_token 을 실었다) — `KeycloakError` 생성자가 cause 를 이름 · 메시지 · code · 스택 사본으로 바꾸고, 200 의 비 JSON 본문을 인용하는 `SyntaxError` 의 메시지 · 스택은 옮기지 않는다(Grok) · 변이 6/6 · `node/src/errors.ts`
 - [x] `error-cause-chain-carries-response-body-crosslang` **[M/M · 신규 2026-09-26 · 닫힘 2026-09-26 #617–#624]** 여덟 전부 샜다 — 하위 원인 사슬(`Caused by:` · 트레이스백 · `ToString()` · `getPrevious()` · `full_message` 등)이 응답 본문과 보낸 비밀을 실었다. 각 경계에서 원인을 타입 이름 · 프레임만 남긴 사본으로, 보낸 비밀은 `***` 로. 언어별 경로 · 변이 수는 그 PR 들이 소유한다
 - [ ] `error-description-foreign-token-residue` **[L/S · 신규 2026-09-26]** 위 수정이 **설계상 남긴** 자리 일곱 — `KNOWN_LEAKS` 가 고정한다(낡으면 실패): java 셋(보내지 않은 20 자 미만 값·소문자만의 긴 값이 `error_description` 에 — 산문 식별자와 가를 수 없다), kotlin 둘(남의 토큰을 되울린 `error_description`), .NET 둘(서버가 OAuth `error` **코드 자리**에 토큰을 넣음 — 코드 모양이면 그대로 둔다). 모두 IdP 가 이미 가진 값이나 적대적 IdP 가 심은 값이다 — 더 좁히려면 오류 설명을 통째로 버리는 결정이 필요하다 · `*/…MalformedTokenResponse*`
