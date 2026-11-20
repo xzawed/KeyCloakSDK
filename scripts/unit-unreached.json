@@ -253,11 +253,6 @@
       "branches": 3,
       "why": "coverage-omit-hides-security-paths"
     },
-    "ruby/lib/keycloak_sdk/admin/call.rb:Call#id_from_location": {
-      "lines": 0,
-      "branches": 2,
-      "why": "coverage-omit-hides-security-paths"
-    },
     "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#token_request": {
       "lines": 0,
       "branches": 1,
