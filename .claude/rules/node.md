@@ -5,7 +5,10 @@ paths:
   - "harness/install/consume/node*"
   - ".github/workflows/node-*.yml"
 ---
-<!-- doc-budget: max-bytes=7023 -->
+<!-- doc-budget: max-bytes=7119 -->
+<!-- 7023 → 7119 (2026-11-21, +96B). 규약 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 「바꾼 파일만 LF 로 바꿔
+     다시 잰다」를 따라 LF 사본을 `node/` 밖에 두면 prettier 가 그 파일을 무시해(`--file-info` → ignored) `--check` 가 아무것도
+     안 재고 통과했다(#1185 — CI 가 그 두 파일을 잡았다). 교환이다 — 그 오도하는 문장을 `node/` 안 stdin 명령으로 바꿨다. -->
 <!-- 6749 → 7023 (2026-10-27, +274B). 규약 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다.
      admin 파사드가 admin-client 메서드를 부르지 않고 같은 요청을 직접 보내게 됐다(`src/admin/http.ts`)
      — 그 경계와, 그것이 같은 요청인지 다시 재는 시험 명령을 한 줄로 남긴다. 교환이다 — 거짓 둘을
@@ -43,7 +46,7 @@ cd node && npm run lint
 cd node && npm run build       # tsc → dist/
 ```
 
-- ⚠️ **On Windows `prettier --check` names the whole clean tree** — that is CRLF, not formatting. Normalise only what you changed to LF and re-check those; committed blobs stay LF (`.gitattributes`), so CI never sees it.
+- ⚠️ **On Windows `prettier --check` names the whole clean tree** — that is CRLF, not formatting. Re-check only what you changed, as LF, from inside `node/`: `git show HEAD:node/<f> | npx prettier --check --stdin-filepath <f>` — a copy outside `node/` is ignored and passes unchecked. Committed blobs stay LF (`.gitattributes`), so CI never sees CRLF.
 - A single test: `npx vitest run test/unit/<name>.test.ts`
 - Coverage omits only `src/index.ts` and `src/auth.ts`; the SSOT is `node/vitest.config.ts` (a hand list, deliberately not a glob, so a new file lands on the *measured* side). ⚠️ **`src/transport.ts` and all of `src/admin/` are measured** — do not add them back; the config says why. Re-read the list rather than transcribing it: `sed -n '/exclude:/,/]/p' node/vitest.config.ts`.
 - Release check: `npm run build && npm pack --dry-run`. ⚠️ Even with `files:["dist"]`, npm **always** includes `package.json`, `README` and `LICENSE`, so without `node/README.md` and `node/LICENSE` the npmjs.com landing page ships empty. Write every README link as an absolute URL (relative links break on the registry page).
