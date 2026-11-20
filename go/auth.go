@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -195,13 +194,14 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	if a.cfg.ClientSecret != "" {
 		form.Set("client_secret", a.cfg.ClientSecret)
 	}
-	body, err := a.postForm(ctx, a.ep.introspection, form, statusIs2xx)
+	body, status, err := a.postForm(ctx, a.ep.introspection, form, statusIs2xx)
 	if err != nil {
 		return nil, err
 	}
 	// encoding/json turns a sequence that is not UTF-8, or an unpaired surrogate escape, into U+FFFD without an error — the
-	// claims would be ones the IdP never sent (tokencap.go introspectionRefusal).
-	if err := introspectionRefusal(body); err != nil {
+	// claims would be ones the IdP never sent — and a body that carries an OAuth `error` is that error, an `active` beside
+	// it included (tokencap.go introspectionRefusal).
+	if err := introspectionRefusal(body, a.ep.introspection, status, a.cfg.ClientSecret, token); err != nil {
 		return nil, err
 	}
 	var raw map[string]any
@@ -230,7 +230,7 @@ func (a *AuthClient) Logout(ctx context.Context, refreshToken string) error {
 	if a.cfg.ClientSecret != "" {
 		form.Set("client_secret", a.cfg.ClientSecret)
 	}
-	_, err := a.postForm(ctx, a.ep.endSession, form, statusIs204)
+	_, _, err := a.postForm(ctx, a.ep.endSession, form, statusIs204)
 	return err
 }
 
@@ -270,34 +270,35 @@ func (a *AuthClient) Close() error {
 	return nil
 }
 
-func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Values, ok func(int) bool) ([]byte, error) {
+// postForm returns the body of a response whose status ok takes as success, and that status.
+func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Values, ok func(int) bool) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, &TransportError{Msg: err.Error(), Cause: err}
+		return nil, 0, &TransportError{Msg: err.Error(), Cause: err}
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return nil, &TransportError{Msg: err.Error(), Cause: err}
+		return nil, 0, &TransportError{Msg: err.Error(), Cause: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// Bounded like the JWKS read (jwt.go): never more than cap+1 bytes, the extra one telling a longer body apart.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, tokenResponseMaxBytes+1))
 	if err != nil {
-		return nil, readFailed(endpoint, err)
+		return nil, 0, readFailed(endpoint, err)
 	}
 	// Over the cap the response was not read in full — the same class as a body cut short (#935; it used to be *AuthError).
 	if len(body) > tokenResponseMaxBytes {
-		return nil, &TransportError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes),
+		return nil, 0, &TransportError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes),
 			Cause: errTokenResponseTooLarge}
 	}
 	// Success is the caller's (`ok` — statusIs2xx · statusIs204 in tokencap.go). `>= 400` alone read a 3xx as success,
 	// and the SDK deliberately does not follow redirects (noFollowRedirect surfaces the 3xx here), so that path was
 	// reachable: Logout returned nil while the session was still alive, and Introspect parsed an empty body.
 	if !ok(resp.StatusCode) {
-		return nil, &AuthError{Msg: "request to " + endpoint + " failed (HTTP " + strconv.Itoa(resp.StatusCode) + ")"}
+		return nil, 0, statusRefused(endpoint, resp.StatusCode)
 	}
-	return body, nil
+	return body, resp.StatusCode, nil
 }
 
 // oauthError is the code AuthError.OAuthError carries: x/oauth2's, when oauthErrorCode (cause.go) lets it through against

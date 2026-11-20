@@ -121,6 +121,11 @@ private val DUMP_EXEMPT: Map<String, String> =
             "admin 자기 그랜트의 거부(끝까지 온 쓸 수 없는 2xx) — RESTEasy 가 ResponseProcessingException 으로 감싸고, 파사드가 내는 SDK " +
             "예외의 원인 사슬은 RedactedCause 사본이라 원본이 SDK 뿌리에서 닿지 않는다(raw() 가 내는 하위 예외의 사슬에만 산다 — §4(b) " +
             "탈출구). 상태는 HTTP 상태 · 상수 메시지 · 결합 예외 원인뿐이다(TokenResponseGuardTest 의 거부 사례)",
+        "OAuthErrorTokenResponse" to
+            "admin 자기 그랜트의 성공 상태 OAuth 오류 응답(등록부 auth-2xx-error-code-divergent) — admin.UnusableTokenResponse 와 같은 길로 " +
+            "RESTEasy 가 감싸고 파사드의 SDK 예외 원인 사슬은 RedactedCause 사본이라 SDK 뿌리에서 닿지 않는다. 상태는 HTTP 상태 · 상수 " +
+            "메시지 · OAuthErrorCode 가 허락한 코드(보낸 비밀과 겹치지 않는 [a-z_]{1,64} 이거나 null)뿐이다(TokenResponseClassTest 의 " +
+            "success status OAuth error 사례)",
     )
 
 /**

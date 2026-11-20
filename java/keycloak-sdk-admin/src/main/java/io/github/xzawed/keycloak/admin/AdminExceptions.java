@@ -41,7 +41,7 @@ final class AdminExceptions {
       throw translate(e);
     } catch (ProcessingException e) {
       String grant = grantFailure(e);
-      if (grant != null) throw new KeycloakAuthException(grant, null, e);
+      if (grant != null) throw new KeycloakAuthException(grant, grantCode(e), e);
       // 전송 실패(연결거부/DNS/TLS/타임아웃)는 HTTP 상태가 없는 ProcessingException으로 온다.
       // WebApplicationException(상태 있음)과 달리 SDK 전송 예외로 변환한다(§4 경계, Kotlin 동형).
       throw new KeycloakTransportException("admin transport failure", e);
@@ -76,17 +76,36 @@ final class AdminExceptions {
    * (연결 거부 · 타임아웃 · 상한 초과 {@link TokenResponseGuard#TOO_LARGE} · 깨진 틀)은 null — 전송 실패 그대로다. ⚠️ 메시지는 상태만
    * 싣는다 — 토큰 엔드포인트의 오류 본문은 그 요청의 클라이언트 시크릿을 되울릴 수 있다({@code AdminTokenEchoTest}). 분류는 타입으로만
    * 한다(메시지 문자열을 보지 않는다). 갱신 400 의 복구(TokenManager 가 {@code BadRequestException} 을 잡아 다시 부여한다)는 여기 오지
-   * 않는다 — 다시 부여도 실패해야 온다.
+   * 않는다 — 다시 부여도 실패해야 온다. (3) {@link TokenResponseGuard.OAuthErrorResponse} 는 성공 상태로 온 OAuth 오류 응답이다 — 4xx 와
+   * 같은 꼴이고, 그 코드는 {@link #grantCode} 가 싣는다(등록부 auth-2xx-error-code-divergent).
    */
   static String grantFailure(ProcessingException e) {
     Throwable t = e.getCause();
     for (int depth = 0; t != null && depth < MAX_DEPTH; depth++, t = t.getCause()) {
+      if (t instanceof TokenResponseGuard.OAuthErrorResponse error) return grantFailed(error.status());
       if (t instanceof TokenResponseGuard.Unusable unusable) {
-        return "admin token request failed: HTTP " + unusable.status() + " (unusable token response)";
+        return grantFailed(unusable.status()) + " (unusable token response)";
       }
       if (t instanceof WebApplicationException error) {
-        return "admin token request failed: HTTP " + (error.getResponse() == null ? 0 : error.getResponse().getStatus());
+        return grantFailed(error.getResponse() == null ? 0 : error.getResponse().getStatus());
       }
+    }
+    return null;
+  }
+
+  /** 그랜트가 끝까지 온 응답으로 실패했다는 메시지 — 상태만 싣는다(본문은 그 요청의 시크릿을 되울릴 수 있다). */
+  private static String grantFailed(int status) {
+    return "admin token request failed: HTTP " + status;
+  }
+
+  /**
+   * {@link #grantFailure} 의 실패가 성공 상태의 OAuth 오류 응답이면 그 코드({@link TokenResponseGuard.OAuthErrorResponse#code} — 보낸
+   * 비밀과 겹치지 않는 코드 모양의 값만), 아니면 null. 오류 상태는 지금처럼 코드를 싣지 않는다(응답 하나는 셋 중 하나만 낳는다).
+   */
+  static String grantCode(ProcessingException e) {
+    Throwable t = e.getCause();
+    for (int depth = 0; t != null && depth < MAX_DEPTH; depth++, t = t.getCause()) {
+      if (t instanceof TokenResponseGuard.OAuthErrorResponse error) return error.code();
     }
     return null;
   }

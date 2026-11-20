@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Internal;
 
+use GuzzleHttp\Exception\BadResponseException;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -37,6 +38,9 @@ final class BearerToken
 
     /** A 2xx grant body that is JSON but carries no string `access_token` (not an object, missing, not a string). */
     public const GRANT_NO_TOKEN = 'admin token request failed: the token response has no access_token';
+
+    /** A 2xx grant body that is an OAuth error response all the same (`OAuthErrorCode::isErrorResponse`) — what `raw()` sees. */
+    public const GRANT_OAUTH_ERROR = 'admin token request failed: the token response is an OAuth error response';
 
     /** A grant answered with a status that is neither a success nor an error (1xx · 3xx) — redirects are not followed. */
     public const GRANT_STATUS = 'admin token request failed: HTTP %d';
@@ -72,6 +76,12 @@ final class BearerToken
      * (the next call asks again) and no admin REST request goes out. `Admin\ErrorTranslation` turns the rejection into
      * `KeycloakAuthError`: the response arrived and is unusable (registry `token-response-class-divergent`). Why it is
      * Guzzle's: the same as `TokenResponseCap::middleware` — it reaches a `raw()` consumer as is.
+     *
+     * ⚠️ One rejection carries a response: a JSON body that is an OAuth error response at a 2xx (`GRANT_OAUTH_ERROR` — checked
+     * before `access_token`) goes out as a `BadResponseException`, so `ErrorTranslation::grantFailed` — the builder of the error
+     * status carrying the same body — makes its type, message and code (registry `auth-2xx-error-code-divergent`: B1 failed
+     * without its code, B2's token was stored and sent). That response carries only the `error` member — never the token
+     * beside it.
      *
      * ⚠️ The JSON is decoded strictly. Read leniently (`JSON_INVALID_UTF8_SUBSTITUTE`), a byte that is not UTF-8 outside the
      * token passed here and then failed in fschmtt's own `json_decode` as an unclassified error — and the auth lanes of five
@@ -113,6 +123,11 @@ final class BearerToken
                     $json = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);   // 엄격하다 — 잘못된 UTF-8 도 여기서 거부된다
                 } catch (\JsonException) {
                     throw new RequestException(self::GRANT_NOT_JSON, $request, null, null, [self::REJECTION => true]);
+                }
+                if (\is_array($json) && OAuthErrorCode::isErrorResponse($json)) {
+                    // 2xx 의 OAuth 오류 응답 — 오류 상태의 같은 본문처럼 실패한다(이 메서드의 docblock). 응답에는 `error` 만 싣는다.
+                    $error = json_encode(['error' => $json['error'] ?? null], JSON_THROW_ON_ERROR);
+                    throw new BadResponseException(self::GRANT_OAUTH_ERROR, $request, $response->withBody(Utils::streamFor($error)), null, [self::REJECTION => true]);
                 }
                 $token = \is_array($json) && !array_is_list($json) ? ($json['access_token'] ?? null) : null;
                 if (!\is_string($token)) {

@@ -387,16 +387,7 @@ func loginError(err error, capped *atomic.Bool, strict *bodyRefusal, below *belo
 	}
 	var apiErr *gocloak.APIError
 	if errors.As(err, &apiErr) && apiErr.Code != 0 && !capped.Load() {
-		msg := "client-credentials login failed: HTTP " + strconv.Itoa(apiErr.Code) + " " + http.StatusText(apiErr.Code)
-		if parts := strings.Split(apiErr.Message, ": "); len(parts) > 1 {
-			for _, p := range parts[1:] {
-				if oauthErrorCode(p, sent...) != "" {
-					msg += ": " + p
-					break
-				}
-			}
-		}
-		return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg + " (response body withheld)"}}
+		return loginStatusError(apiErr.Code, apiErr.Message, typ, sent...)
 	}
 	msg := err.Error()
 	refused := ": " + errBackChannelRedirect.Error()
@@ -423,4 +414,51 @@ func loginError(err error, capped *atomic.Bool, strict *bodyRefusal, below *belo
 		return &AuthError{Msg: amsg, Cause: &responseFreeError{typ: typ, msg: amsg}}
 	}
 	return &TransportError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg}}
+}
+
+// loginStatusError is the admin login's *AuthError for a token response that carries an error: the status, then the first
+// part of gocloak's message for it — "<status line>: <error>: <errorMessage>: <error_description>" — that oauthErrorCode
+// lets through against sent. typ names the lower value the cause stands in for.
+func loginStatusError(status int, message, typ string, sent ...string) *AuthError {
+	msg := "client-credentials login failed: HTTP " + strconv.Itoa(status) + " " + http.StatusText(status)
+	if parts := strings.Split(message, ": "); len(parts) > 1 {
+		for _, p := range parts[1:] {
+			if oauthErrorCode(p, sent...) != "" {
+				msg += ": " + p
+				break
+			}
+		}
+	}
+	return &AuthError{Msg: msg, Cause: &responseFreeError{typ: typ, msg: msg + " (response body withheld)"}}
+}
+
+// loginRefused is the admin login's verdict on what gocloak returned — jwt and err — and nil when jwt holds a token to use.
+//   - A 2xx whose body carries an OAuth `error` is that error, before anything else is looked at (kept, which the transport
+//     filled — readLoginBody in adminbody.go): gocloak binds a 2xx into its JWT, which has no field for `error`, so such a
+//     response came back as a success, and the admin request went out with its access token (registry
+//     auth-2xx-error-code-divergent). It takes the form of a status that carries an error (loginStatusError) and carries
+//     the code in OAuthError too — unlike loginError, it read the body whole, so which member is the code can be told.
+//   - Then gocloak's own failure (loginError).
+//   - Then a JWT without an access token: gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
+//     noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a nil error. Handing that upward
+//     would install an **empty bearer token** on every admin request. Measured: a 302 on the token endpoint returned
+//     ("", nil) before this check.
+func loginRefused(jwt *gocloak.JWT, err error, capped *atomic.Bool, strict *bodyRefusal, below *belowHTTPSlot,
+	kept *loginBody, sent ...string) error {
+	if found := kept.found.Load(); found != nil {
+		var lower any = jwt
+		if err != nil {
+			lower = err
+		}
+		refused := loginStatusError(found.status, found.message, fmt.Sprintf("%T", lower), sent...)
+		refused.OAuthError = oauthErrorCode(found.value, sent...)
+		return refused
+	}
+	if err != nil {
+		return loginError(err, capped, strict, below, sent...)
+	}
+	if jwt == nil || jwt.AccessToken == "" {
+		return &AuthError{Msg: "client-credentials login returned no access token"}
+	}
+	return nil
 }

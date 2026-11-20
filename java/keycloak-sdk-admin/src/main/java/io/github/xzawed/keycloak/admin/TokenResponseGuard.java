@@ -9,6 +9,8 @@ import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.client.ClientRequestContext;
 import jakarta.ws.rs.client.ClientResponseContext;
 import jakarta.ws.rs.client.ClientResponseFilter;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ReaderInterceptor;
 import jakarta.ws.rs.ext.ReaderInterceptorContext;
@@ -23,6 +25,10 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.zip.ZipException;
 
@@ -87,6 +93,11 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   static final String JUDGE_ENTITY = TokenResponseGuard.class.getName() + ".judgeEntity";
   /** {@link #JUDGE_ENTITY} 와 함께 다는 그 응답의 상태 — ReaderInterceptor 는 상태를 모른다({@link Unusable} 이 싣는다). */
   static final String STATUS = TokenResponseGuard.class.getName() + ".status";
+  /** {@link #JUDGE_ENTITY} 와 함께 다는 그 요청이 보낸 비밀({@code String[]} — {@link #sentValues}) — ReaderInterceptor 는 요청을 모른다. */
+  static final String SENT = TokenResponseGuard.class.getName() + ".sent";
+  /** 폼에 실려 나가는 비밀 매개변수 — auth 레인 {@code AuthClient.SECRET_PARAMS} 와 같은 집합이다. */
+  private static final Set<String> SECRET_PARAMS =
+      Set.of("code", "code_verifier", "refresh_token", "token", "client_secret", "client_assertion", "password");
   static final String REJECTED = "token endpoint response carries no usable access_token";
   /** 2xx 본문이 엄격한 UTF-8 이 아니다({@link #isUtf8}) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다. */
   static final String NOT_UTF8 = "token endpoint response is not valid UTF-8";
@@ -99,6 +110,7 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   /** 본문이 상한을 넘을 때의 거부(2xx · 오류 상태 모두) — 다 읽지 않은 응답이라 전송 실패다. 응답을 인용하지 않는다. */
   static final String TOO_LARGE = "token endpoint response exceeds " + ResponseLimits.MAX_TOKEN_RESPONSE_BYTES + " bytes";
   private static final String ACCESS_TOKEN = "access_token";
+  private static final String ERROR = "error";
   private static final JsonFactory JSON = new JsonFactory();
   /** RFC 6750 {@code b64token} — {@link #sendableAsIs}. {@code matches()} 는 문자열 전체를 본다. */
   private static final Pattern B64TOKEN = Pattern.compile("[A-Za-z0-9\\-._~+/]+=*");
@@ -124,14 +136,49 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     if (response.getMediaType() != null && status != 204 && status != 205) {
       request.setProperty(JUDGE_ENTITY, Boolean.TRUE); // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
       request.setProperty(STATUS, status);
+      request.setProperty(SENT, sentValues(request).toArray(String[]::new));
       return;
     }
     // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
     // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx → TokenManager 의 NPE)로 끝내 전송 실패로 나갔다(등록부
     // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
     // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다.
-    usableOrReject(response.getEntityStream(), exchange, response.getStatus());
+    usableOrReject(response.getEntityStream(), exchange, response.getStatus(), sentValues(request));
     throw new Unusable(response.getStatus(), UNBOUND, null);
+  }
+
+  /**
+   * 그 토큰 요청이 보낸 비밀 — Authorization 의 자격(TokenManager 의 BasicAuthFilter 가 client secret 을 싣는 자리 — 그 Basic 을
+   * 푼 시크릿도)과 폼의 비밀 매개변수({@link #SECRET_PARAMS} — 갱신의 refresh_token · password 그랜트의 password). auth 레인
+   * {@code AuthClient.sentValues} 의 쌍둥이다 — {@link OAuthErrorCode#carried} 가 이것과 겹치는 {@code error} 를 싣지 않는다.
+   * 비밀을 상태로 쥐지 않는다(요청에서 그때 읽는다).
+   */
+  static List<String> sentValues(ClientRequestContext request) {
+    List<String> values = new ArrayList<>();
+    String authorization = request.getHeaderString(HttpHeaders.AUTHORIZATION);
+    if (authorization != null) {
+      String credential = authorization.substring(authorization.indexOf(' ') + 1);
+      values.add(credential);
+      if (authorization.regionMatches(true, 0, "Basic ", 0, 6)) {
+        try {
+          String pair = new String(Base64.getDecoder().decode(credential), StandardCharsets.UTF_8);
+          values.add(pair.substring(pair.indexOf(':') + 1));
+        } catch (IllegalArgumentException notBase64) {
+          // 푼 꼴이 없다 — 자격 그대로만 비교한다(그 예외는 값을 인용하지 않지만 쓰지 않는다)
+        }
+      }
+    }
+    if (request.getEntity() instanceof MultivaluedMap<?, ?> form) {
+      form.forEach((name, vs) -> {
+        if (SECRET_PARAMS.contains(String.valueOf(name)) && vs != null) {
+          for (Object v : vs) {
+            if (v instanceof String s) values.add(s);
+          }
+        }
+      });
+    }
+    values.removeIf(String::isEmpty);
+    return values;
   }
 
   /**
@@ -144,7 +191,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       return context.proceed();
     }
     int status = context.getProperty(STATUS) instanceof Integer s ? s : 0;
-    context.setInputStream(usableOrReject(context.getInputStream(), context.getProperty(AdminEngine.EXCHANGE), status));
+    List<String> sent = context.getProperty(SENT) instanceof String[] held ? List.of(held) : List.of();
+    context.setInputStream(usableOrReject(context.getInputStream(), context.getProperty(AdminEngine.EXCHANGE), status, sent));
     try {
       return context.proceed();
     } catch (IOException | RuntimeException unbound) {
@@ -178,7 +226,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
    * 상한+1 바이트까지만 읽는다(넘침을 알아챌 한 바이트) — 넘치면 상한의 거부(전송 실패), UTF-8 이 아니거나 쓸 수 없으면
    * {@link Unusable}, 통과하면 읽은 바이트를 그대로 넘긴다.
    */
-  private static ByteArrayInputStream usableOrReject(InputStream in, Object exchange, int status) throws IOException {
+  private static ByteArrayInputStream usableOrReject(InputStream in, Object exchange, int status, List<String> sent)
+      throws IOException {
     byte[] body;
     try {
       body = in == null ? new byte[0] : capPlusOne(in);
@@ -200,11 +249,43 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       release(in, exchange);
       throw new Unusable(status, UNPAIRED_SURROGATE, null);
     }
-    if (holdsNul(body) || !carriesUsableAccessToken(body)) {
+    if (holdsNul(body)) {
+      release(in, exchange);
+      throw new Unusable(status, REJECTED, null);
+    }
+    String error = oauthError(body);
+    if (error != null) {
+      release(in, exchange);
+      throw new OAuthErrorResponse(status, OAuthErrorCode.carried(error, sent));
+    }
+    if (!carriesUsableAccessToken(body)) {
       release(in, exchange);
       throw new Unusable(status, REJECTED, null);
     }
     return new ByteArrayInputStream(body);
+  }
+
+  /**
+   * 최상위가 JSON 객체이고 그 {@code error} 하나라도 비어 있지 않은 JSON 문자열이다 — 성공 상태의 OAuth 오류 응답이다(등록부
+   * auth-2xx-error-code-divergent). 결합(AccessTokenResponse)은 {@code error} 칸을 읽어 두지만 TokenManager 는 그것을 보지 않고
+   * {@code access_token} 을 썼다 — 실려 있으면 그 토큰으로 admin 요청이 나갔다(실측). 판정은 access_token 보다 먼저다(쓸 수 있는 토큰이
+   * 함께 실려도 쓰지 않는다). 문자열이 아니거나(숫자 · 객체 · 배열 · 불리언 · null) 비었으면 지금처럼 판정한다. 중복 키는 하나라도 그러면
+   * 오류다(access_token 처럼 전부 본다 — 닫는 쪽으로 — 값은 그 첫 것이다). 그 값을 돌려주고, 아니면 null 이다 — 코드로 싣는 것은
+   * {@link OAuthErrorCode#carried} 가 허락한 것뿐이다. 형식이 틀리면 null — 그 본문은 아래 판정이 거부한다.
+   */
+  static String oauthError(byte[] body) {
+    try (JsonParser p = JSON.createParser(body)) {
+      if (p.nextToken() != JsonToken.START_OBJECT) return null;
+      while (p.nextToken() == JsonToken.FIELD_NAME) {
+        boolean error = ERROR.equals(p.currentName());
+        JsonToken value = p.nextToken();
+        if (error && value == JsonToken.VALUE_STRING && !p.getText().isEmpty()) return p.getText();
+        p.skipChildren();
+      }
+      return null;
+    } catch (IOException malformed) {
+      return null; // 파서 메시지는 본문을 인용할 수 있다 — 버린다(아래 판정이 같은 본문을 거부한다)
+    }
   }
 
   /**
@@ -401,6 +482,33 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
 
     int status() {
       return status;
+    }
+  }
+
+  /**
+   * 성공 상태의 본문이 OAuth 오류 응답이다({@link #oauthError}) — 그 상태와, 그 {@code error} 가운데 {@link OAuthErrorCode#carried} 가
+   * 허락한 코드(아니면 null)를 싣는다. {@link AdminExceptions} 가 같은 본문의 4xx 와 같은 꼴(「admin token request failed: HTTP
+   * &lt;상태&gt;」)로 바꾸고 코드는 {@code getError()} 에 싣는다 — 아홉 언어의 규칙(등록부 auth-2xx-error-code-divergent). ⚠️ 그 레인의
+   * 4xx 는 코드를 싣지 않는다 — 상태의 수용 범위 밖이라 이 변경은 그것을 건드리지 않는다. 메시지는 상수다(응답을 인용하지 않는다).
+   */
+  static final class OAuthErrorResponse extends IOException {
+    private static final long serialVersionUID = 1L;
+    private final int status;
+    private final String code;
+
+    OAuthErrorResponse(int status, String code) {
+      super("token endpoint answered a success status with an OAuth error");
+      this.status = status;
+      this.code = code;
+    }
+
+    int status() {
+      return status;
+    }
+
+    /** 보낸 비밀과 겹치지 않는 코드 모양의 {@code error}, 아니면 null. */
+    String code() {
+      return code;
     }
   }
 }

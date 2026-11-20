@@ -503,8 +503,8 @@ async def test_an_sdk_error_inside_the_grant_passes_through_unchanged(lane: str)
 
     with pytest.raises(KeycloakConfigError) as excinfo:
         if lane == "sync":
-            _checked(grant)()
+            _checked(grant, None)()
         else:
-            await _achecked(agrant)()
+            await _achecked(agrant, None)()
 
     assert excinfo.value is own
