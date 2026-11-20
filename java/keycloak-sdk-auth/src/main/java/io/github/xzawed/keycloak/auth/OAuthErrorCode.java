@@ -4,7 +4,8 @@ import java.util.List;
 
 /**
  * {@code KeycloakAuthException.getError()} 가 싣는 IdP 의 {@code error} — {@code [a-z_]{1,64}} 이고(등록된 OAuth · Keycloak 코드는
- * 전부 이 모양이다) 그 요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때)만.
+ * 전부 이 모양이다) 그 요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때 — ASCII 대소문자는
+ * 무시한다)만.
  *
  * <p>⚠️ {@code error} 도 응답 본문이다 — 보낸 것을 되울리는 IdP(나 그 앞의 프록시)는 client secret · refresh token · introspect 한
  * 토큰을 거기 싣는다. 예전에는 Nimbus 의 {@code ErrorObject.getCode()}(RFC 6749 문법 — Keycloak 모양 시크릿 · JWT 도 그 안이다)를 그대로
@@ -22,8 +23,22 @@ final class OAuthErrorCode {
       if ((c < 'a' || c > 'z') && c != '_') return null;
     }
     for (String secret : sent) {
-      if (secret != null && !secret.isEmpty() && (value.contains(secret) || secret.contains(value))) return null;
+      if (secret == null || secret.isEmpty()) continue;
+      String folded = asciiLower(secret);
+      if (value.contains(folded) || folded.contains(value)) return null;
     }
     return value;
+  }
+
+  /**
+   * A–Z → a–z, every other char as it is, so the nine languages agree — a Unicode lowercase maps U+212A KELVIN SIGN to
+   * {@code k}.
+   */
+  private static String asciiLower(String s) {
+    char[] out = s.toCharArray();
+    for (int i = 0; i < out.length; i++) {
+      if (out[i] >= 'A' && out[i] <= 'Z') out[i] = (char) (out[i] + ('a' - 'A'));
+    }
+    return new String(out);
   }
 }

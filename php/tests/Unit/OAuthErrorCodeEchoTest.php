@@ -243,6 +243,16 @@ final class OAuthErrorCodeEchoTest extends TestCase
         self::assertWithheld($e, self::shape(self::SECRET, $form));
     }
 
+    /** An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case. */
+    #[DataProvider('surfaces')]
+    public function testALowercasedEchoOfTheClientSecretIsNeverCarried(string $surface): void
+    {
+        self::state(['echo' => 'client_secret', 'form' => 'lowercased']);
+        $e = self::fail2($surface, 'EchoMixedCase');
+        self::assertSame('EchoMixedCase', self::sentForms()[0]['client_secret'] ?? null, 'the secret went out');
+        self::assertWithheld($e, 'echomixedcase');
+    }
+
     /** @return array<string, array{string, string, string}> */
     public static function grantEchoes(): array
     {

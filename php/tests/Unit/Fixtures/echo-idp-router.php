@@ -7,8 +7,8 @@ declare(strict_types=1);
  * handler to inject; `bearer-idp-router.php` has the same reason).
  *
  * State is `state.json` in the `EI_STATE` directory: `{"fixed": <any JSON value>}` answers that value as `error`, and
- * `{"echo": "<form field>", "form": "whole|prefix|suffix|middle|extended|prefixed|wrapped"}` answers what THIS request
- * sent in that field (`"status"` sets the status, 400 by default) — the
+ * `{"echo": "<form field>", "form": "whole|prefix|suffix|middle|extended|prefixed|wrapped|lowercased"}` answers what
+ * THIS request sent in that field (`"status"` sets the status, 400 by default) — the
  * client secret from Basic (each part form-url-encoded) or from the form. Every token POST answers 400
  * `application/json` `{"error": …}` and is logged to `requests.log` as `[path, sent form fields]`. fschmtt asks
  * `/admin/serverinfo` before its first resource call — that is where its grant happens.
@@ -58,6 +58,7 @@ if (array_key_exists('fixed', $state)) {
         'extended' => $value . '_x',
         'prefixed' => 'x_' . $value,
         'wrapped' => 'x_' . $value . '_x',
+        'lowercased' => strtolower($value),
         default => $value,
     };
 }

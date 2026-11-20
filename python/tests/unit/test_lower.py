@@ -145,6 +145,28 @@ def test_carried_code(value: object, sent: tuple[str | None, ...], expected: str
     assert carried_code(value, sent) == expected
 
 
+@pytest.mark.parametrize(
+    ("value", "sent", "expected"),
+    [
+        pytest.param("mysecret", ("MySecret",), None, id="V1 a lowercased echo"),
+        pytest.param("mysec", ("MySecret",), None, id="V2 a truncated lowercased echo"),
+        pytest.param(
+            "invalid_mysecret_x", ("MySecret",), None, id="V3 an extended lowercased echo"
+        ),
+        pytest.param("invalid_grant", ("MySecret",), "invalid_grant", id="V4 control"),
+        # U+212A KELVIN SIGN, then "ey" — built from the code point. The fold is ASCII so the nine
+        # agree; a secret's non-ASCII letter is compared as itself.
+        pytest.param("key", (chr(0x212A) + "ey",), "key", id="V5 the fold is ASCII only"),
+        pytest.param("invalid__grant", (), "invalid__grant", id="V6 the shape"),
+        pytest.param("_", (), "_", id="V6 the shape (_)"),
+    ],
+)
+def test_carried_code_shared_rows(value: str, sent: tuple[str, ...], expected: str | None) -> None:
+    """The rows all nine languages share: the overlap ignores ASCII case (an IdP or proxy that
+    echoes the secret lowercased), and the shape is exactly `[a-z_]{1,64}`."""
+    assert carried_code(value, sent) == expected
+
+
 # --- auth_failure ------------------------------------------------------------------------
 
 

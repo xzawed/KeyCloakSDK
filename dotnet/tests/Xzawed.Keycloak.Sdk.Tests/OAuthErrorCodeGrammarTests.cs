@@ -124,6 +124,29 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
         ("IntrospectAsync", "Token introspection failed", async kc => await kc.Auth.IntrospectAsync("tok-sent")),
     };
 
+    /// <summary>The rows all nine languages share, against <c>OAuthErrorCode.Carried</c> itself: the overlap ignores ASCII
+    /// case (an IdP or proxy that echoes the secret lowercased), and the shape is exactly <c>[a-z_]{1,64}</c>. V5's secret is
+    /// U+212A KELVIN SIGN then <c>ey</c>, built from the code point — the fold is ASCII so the nine agree; a secret's
+    /// non-ASCII letter is compared as itself.</summary>
+    public static IEnumerable<object?[]> SharedRows => new[]
+    {
+        new object?[] { "V1 a lowercased echo", new[] { "MySecret" }, "mysecret", null },
+        new object?[] { "V2 a truncated lowercased echo", new[] { "MySecret" }, "mysec", null },
+        new object?[] { "V3 an extended lowercased echo", new[] { "MySecret" }, "invalid_mysecret_x", null },
+        new object?[] { "V4 control", new[] { "MySecret" }, "invalid_grant", "invalid_grant" },
+        new object?[] { "V5 the fold is ASCII only", new[] { C(0x212A) + "ey" }, "key", "key" },
+        new object?[] { "V6 the shape", Array.Empty<string>(), "invalid__grant", "invalid__grant" },
+        new object?[] { "V6 the shape", Array.Empty<string>(), "_", "_" },
+    };
+
+    [Theory]
+    [MemberData(nameof(SharedRows))]
+    public void The_overlap_ignores_ASCII_case(string row, string[] sent, string value, string? expected)
+    {
+        var carried = OAuthErrorCode.Carried(value, sent);
+        Assert.True(carried == expected, $"{row}: {Visible(carried)}, want {Visible(expected)}");
+    }
+
     [Theory]
     [MemberData(nameof(Cases))]
     public Task Only_a_code_shaped_value_reaches_Message_or_OAuthError(string row, int status) => Check(row, status);

@@ -4,7 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** {@link OAuthErrorCode#carried} — 모양({@code [a-z_]{1,64}})과 보낸 비밀과의 겹침. 실제 레인은 {@code OAuthErrorCodeEchoTest}. */
 class OAuthErrorCodeTest {
@@ -35,5 +39,29 @@ class OAuthErrorCodeTest {
         "an absent or empty secret is not compared");
     assertEquals(null, OAuthErrorCode.carried("invalid_client", List.of("client")),
         "the price: a secret that is a piece of the code withholds it");
+  }
+
+  /**
+   * The rows all nine languages share: the overlap ignores ASCII case (an IdP or proxy that echoes the secret lowercased),
+   * and the shape is exactly {@code [a-z_]{1,64}}.
+   */
+  static Stream<Arguments> sharedRows() {
+    // V5: U+212A KELVIN SIGN, then "ey" — built from the code point. The fold is ASCII so the nine agree; a secret's
+    // non-ASCII letter is compared as itself.
+    String kelvinEy = new String(Character.toChars(0x212A)) + "ey";
+    return Stream.of(
+        Arguments.of("V1 a lowercased echo", List.of("MySecret"), "mysecret", null),
+        Arguments.of("V2 a truncated lowercased echo", List.of("MySecret"), "mysec", null),
+        Arguments.of("V3 an extended lowercased echo", List.of("MySecret"), "invalid_mysecret_x", null),
+        Arguments.of("V4 control", List.of("MySecret"), "invalid_grant", "invalid_grant"),
+        Arguments.of("V5 the fold is ASCII only", List.of(kelvinEy), "key", "key"),
+        Arguments.of("V6 the shape", List.of(), "invalid__grant", "invalid__grant"),
+        Arguments.of("V6 the shape", List.of(), "_", "_"));
+  }
+
+  @ParameterizedTest(name = "{0}: {2}")
+  @MethodSource("sharedRows")
+  void theOverlapIgnoresAsciiCase(String row, List<String> sent, String value, String expected) {
+    assertEquals(expected, OAuthErrorCode.carried(value, sent), row);
   }
 }

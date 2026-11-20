@@ -49,23 +49,27 @@ impl KeycloakError {
     }
 }
 
-/// 서버 오류 본문의 `error` 를 **코드 모양이고 그 요청이 보낸 비밀(`sent`)과 겹치지 않을 때만** `oauth_error` 로
-/// 옮긴다(토큰·provider 두 경로 공용). RFC 6749 §5.2 와 등록된 확장 코드는 전부 소문자를 `_` 로 이은 것이다
-/// (`invalid_grant`·`slow_down`).
+/// 서버 오류 본문의 `error` 를 **코드 모양(`[a-z_]{1,64}` — 나머지 여덟과 같다)이고 그 요청이 보낸 비밀(`sent`)과
+/// 겹치지 않을 때만** `oauth_error` 로 옮긴다(토큰·provider 두 경로 공용). RFC 6749 §5.2 와 등록된 확장 코드는 전부
+/// 그 모양이다(`invalid_grant`·`slow_down`).
 /// ⚠️ 그 모양이 아닌 값은 코드가 아니라 서버의 자유 서술이다 — 받은 토큰을 `error` 자리에 되울린 응답이
 /// `{:?}` 로 원문 그대로 찍혔다(실측 2026-09-26, `tests/hostile_token_response.rs` 의 `e3`). ⚠️ 소문자뿐인 시크릿은
 /// 그 모양이다 — 되울린 `echoedlowersecret` 이 `oauth_error` 와 `{:?}` 에 실렸다(실측 2026-11-11,
-/// `tests/oauth_error_code_echo.rs`). 겹침(어느 쪽도 다른 쪽을 품지 않음)은 잘린 · 덧붙은 되울림도 막고, 그 값은
-/// 비밀이 등록 코드의 조각일 때(`client`) 그 코드를 잃는 것이다. 빈 비밀(공개 클라이언트)은 비교하지 않는다 —
-/// 빈 문자열은 모든 코드의 조각이다.
+/// `tests/oauth_error_code_echo.rs`). 겹침(어느 쪽도 다른 쪽을 품지 않음 — ASCII 대소문자는 무시한다)은 잘린 · 덧붙은 ·
+/// 소문자로 바뀐 되울림도 막고, 그 값은 비밀이 등록 코드의 조각일 때(`client`) 그 코드를 잃는 것이다. 빈 비밀(공개
+/// 클라이언트)은 비교하지 않는다 — 빈 문자열은 모든 코드의 조각이다.
 pub(crate) fn oauth_error_code(raw: &str, sent: &[&str]) -> Option<String> {
-    let code_shaped = raw.len() <= 64
-        && raw
-            .split('_')
-            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase()));
+    let code_shaped = !raw.is_empty()
+        && raw.len() <= 64
+        && raw.bytes().all(|b| b.is_ascii_lowercase() || b == b'_');
+    // A–Z 만 a–z 로 접는다 — 아홉 언어가 같은 답을 낸다(유니코드 소문자는 U+212A KELVIN SIGN 을 `k` 로 바꾼다).
     let echoed = sent
         .iter()
-        .any(|secret| !secret.is_empty() && (raw.contains(secret) || secret.contains(raw)));
+        .filter(|secret| !secret.is_empty())
+        .any(|secret| {
+            let folded = secret.to_ascii_lowercase();
+            raw.contains(folded.as_str()) || folded.contains(raw)
+        });
     (code_shaped && !echoed).then(|| raw.to_string())
 }
 
@@ -101,6 +105,12 @@ mod tests {
             "slow_down",
             "invalid_dpop_proof",
             "consent_required",
+            // `[a-z_]{1,64}` is the whole rule, as in the other eight — `_` placement is not part of it.
+            "invalid__grant",
+            "_invalid",
+            "invalid_",
+            "_",
+            &"a".repeat(64),
         ] {
             assert_eq!(oauth_error_code(code, &[]).as_deref(), Some(code));
         }
@@ -108,15 +118,67 @@ mod tests {
             "",
             "E3-ERRCODE-CANARY-9K4D",
             "eyJhbGciOiJSUzI1NiJ9.e30.sig",
-            "invalid__grant",
-            "_invalid",
-            "invalid_",
             "invalid grant",
             "abc123",
+            "Invalid_grant",
+            "invalid_granté",
             &"a".repeat(65),
         ] {
             assert_eq!(oauth_error_code(not_code, &[]), None, "{not_code:?}");
         }
+    }
+
+    /// The rows all nine languages share: the overlap ignores ASCII case (an IdP or proxy that echoes the secret
+    /// lowercased), and the shape is exactly `[a-z_]{1,64}`. Every row is checked before the one assertion, so a
+    /// failure names each row that broke.
+    #[test]
+    fn oauth_error_code_shared_rows() {
+        // V5: U+212A KELVIN SIGN, then "ey" — built from the code point. The fold is ASCII so the nine agree; a
+        // secret's non-ASCII letter is compared as itself.
+        let kelvin_ey = format!("{}ey", char::from_u32(0x212A).expect("U+212A"));
+        let rows: [(&str, &str, Vec<&str>, Option<&str>); 7] = [
+            ("V1 a lowercased echo", "mysecret", vec!["MySecret"], None),
+            (
+                "V2 a truncated lowercased echo",
+                "mysec",
+                vec!["MySecret"],
+                None,
+            ),
+            (
+                "V3 an extended lowercased echo",
+                "invalid_mysecret_x",
+                vec!["MySecret"],
+                None,
+            ),
+            (
+                "V4 control",
+                "invalid_grant",
+                vec!["MySecret"],
+                Some("invalid_grant"),
+            ),
+            (
+                "V5 the fold is ASCII only",
+                "key",
+                vec![kelvin_ey.as_str()],
+                Some("key"),
+            ),
+            (
+                "V6 the shape",
+                "invalid__grant",
+                vec![],
+                Some("invalid__grant"),
+            ),
+            ("V6 the shape", "_", vec![], Some("_")),
+        ];
+        let wrong: Vec<String> = rows
+            .iter()
+            .filter_map(|(row, raw, sent, want)| {
+                let got = oauth_error_code(raw, sent);
+                (got.as_deref() != *want)
+                    .then(|| format!("{row}: {raw:?} → {got:?}, want {want:?}"))
+            })
+            .collect();
+        assert!(wrong.is_empty(), "{wrong:#?}");
     }
 
     #[test]

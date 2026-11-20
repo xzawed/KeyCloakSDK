@@ -1,5 +1,8 @@
 package io.github.xzawed.keycloak
 
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -46,5 +49,38 @@ class OAuthErrorCodeTest {
             "an absent or empty secret is not compared",
         )
         assertNull(OAuthErrorCode.carried("invalid_client", listOf("client")), "the price: a piece of the code withholds it")
+    }
+
+    @ParameterizedTest(name = "{0}: {2}")
+    @MethodSource("sharedRows")
+    fun theOverlapIgnoresAsciiCase(
+        row: String,
+        sent: List<String>,
+        value: String,
+        expected: String?,
+    ) {
+        assertEquals(expected, OAuthErrorCode.carried(value, sent), row)
+    }
+
+    companion object {
+        /**
+         * The rows all nine languages share: the overlap ignores ASCII case (an IdP or proxy that echoes the secret
+         * lowercased), and the shape is exactly `[a-z_]{1,64}`.
+         */
+        @JvmStatic
+        fun sharedRows(): List<Arguments> {
+            // V5: U+212A KELVIN SIGN, then "ey" — built from the code point. The fold is ASCII so the nine agree; a
+            // secret's non-ASCII letter is compared as itself.
+            val kelvinEy = String(Character.toChars(0x212A)) + "ey"
+            return listOf(
+                Arguments.of("V1 a lowercased echo", listOf("MySecret"), "mysecret", null),
+                Arguments.of("V2 a truncated lowercased echo", listOf("MySecret"), "mysec", null),
+                Arguments.of("V3 an extended lowercased echo", listOf("MySecret"), "invalid_mysecret_x", null),
+                Arguments.of("V4 control", listOf("MySecret"), "invalid_grant", "invalid_grant"),
+                Arguments.of("V5 the fold is ASCII only", listOf(kelvinEy), "key", "key"),
+                Arguments.of("V6 the shape", emptyList<String>(), "invalid__grant", "invalid__grant"),
+                Arguments.of("V6 the shape", emptyList<String>(), "_", "_"),
+            )
+        }
     }
 }

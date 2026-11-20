@@ -1,7 +1,7 @@
 /**
  * What a `KeycloakAuthError` carries of the IdP's OAuth `error` in `oauthError` — the rule all nine languages share
  * (java `OAuthErrorCode.carried`): a string of `[a-z_]{1,64}`, the shape of every registered OAuth and Keycloak code,
- * that overlaps no non-empty secret the request sent (neither contains the other).
+ * that overlaps no non-empty secret the request sent (neither contains the other, ASCII case ignored).
  *
  * ⚠️ `error` is response body too: an IdP (or a proxy in front of it) that echoes what it got puts the client secret,
  * the refresh token, the authorization code, the PKCE verifier or the introspected token there. The overlap withholds
@@ -40,10 +40,18 @@ export function carriedOAuthError(
   }
   for (const secret of sent) {
     if (secret === undefined || secret === null) continue
-    const text = String(secret)
+    const text = asciiLower(String(secret))
     if (text.length > 0 && (value.includes(text) || text.includes(value))) return undefined
   }
   return value
+}
+
+/**
+ * A–Z → a–z, every other character as it is, so the nine languages agree — a Unicode lowercase maps U+212A KELVIN
+ * SIGN to `k`.
+ */
+function asciiLower(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x20))
 }
 
 /**

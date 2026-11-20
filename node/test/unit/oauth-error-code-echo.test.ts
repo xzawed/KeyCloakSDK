@@ -267,6 +267,14 @@ describe('되울린 비밀은 싣지 않는다', () => {
     }
   })
 
+  // 비밀을 소문자로 되울리는 IdP 나 프록시 — 겹침은 ASCII 대소문자를 무시한다.
+  it.each(NAMES)('%s — 소문자로 되울린 client secret', async (name) => {
+    errorOf = (s) => (s['client_secret'] ?? '').toLowerCase()
+    const e = await authFailure(name, 'EchoMixedCase')
+    expect(sentValue('client_secret')).toBe('EchoMixedCase')
+    assertWithheld(`${name} · lowercased`, e, 'echomixedcase')
+  })
+
   it.each(NAMES.filter((n) => surface(n).params.length > 0))(
     '%s — 되울린 그랜트 값(통째 · 조각 · 덧붙음)',
     async (name) => {

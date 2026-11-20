@@ -190,6 +190,18 @@ class OAuthErrorCodeEchoTest {
         }
     }
 
+    /** An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case. */
+    @Test
+    fun aLowercasedEchoOfTheClientSecretIsNeverCarried() {
+        val mixed = "EchoMixedCase"
+        errorJson = { s -> quoted(s["client_secret"].orEmpty().lowercase()) }
+        for (surface in surfaces.keys) {
+            val e = failing(surface, secret = mixed)
+            assertEquals(mixed, firstSent()["client_secret"], surface)
+            assertWithheld("$surface · lowercased", e, "echomixedcase")
+        }
+    }
+
     @Test
     fun anEchoedGrantValueIsNeverCarried() {
         for ((surface, entry) in surfaces) {

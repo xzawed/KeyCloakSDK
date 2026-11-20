@@ -127,23 +127,38 @@ func oauthCodeShaped(s string) bool {
 
 // oauthErrorCode is what AuthError.OAuthError carries for the server's `error` value s: s itself when it is shaped like
 // an OAuth error code (oauthCodeShaped) and overlaps no non-empty secret the request sent — neither contains the other,
-// so a truncated or extended echo is withheld too — and "" (no code) otherwise. It never trims a value into a code
-// ("invalid_client\r\n" is no code). ⚠️ `error` is response body too: an endpoint that echoes what it got puts the
-// client secret, the refresh token or the code there. The field used to take the RFC 6749 §5.2 grammar (1*NQSCHAR, as
-// .NET #710), which a Keycloak-style secret, a JWT and a form-encoded secret all are, and a lowercase-only secret has
-// the code shape itself (measured 2026-11-11: oauth_error_code_echo_test.go). The price of the overlap: a secret that is
-// a piece of a registered code ("client") withholds that code. An absent secret ("") is not compared — it is a piece
-// of every code.
+// ASCII case ignored, so a truncated, extended or lowercased echo is withheld too — and "" (no code) otherwise. It
+// never trims a value into a code ("invalid_client\r\n" is no code). ⚠️ `error` is response body too: an endpoint that
+// echoes what it got puts the client secret, the refresh token or the code there. The field used to take the RFC 6749
+// §5.2 grammar (1*NQSCHAR, as .NET #710), which a Keycloak-style secret, a JWT and a form-encoded secret all are, and a
+// lowercase-only secret has the code shape itself (measured 2026-11-11: oauth_error_code_echo_test.go). The price of the
+// overlap: a secret that is a piece of a registered code ("client") withholds that code. An absent secret ("") is not
+// compared — it is a piece of every code.
 func oauthErrorCode(s string, sent ...string) string {
 	if !oauthCodeShaped(s) {
 		return ""
 	}
 	for _, secret := range sent {
-		if secret != "" && (strings.Contains(s, secret) || strings.Contains(secret, s)) {
+		if secret == "" {
+			continue
+		}
+		if folded := asciiLower(secret); strings.Contains(s, folded) || strings.Contains(folded, s) {
 			return ""
 		}
 	}
 	return s
+}
+
+// asciiLower maps A–Z to a–z byte by byte and keeps every other byte, so the nine languages agree — a Unicode lowercase
+// maps U+212A KELVIN SIGN to "k", and a rune-wise mapping turns bytes that are not UTF-8 into U+FFFD.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // belowHTTP reports whether err failed beneath HTTP — socket, DNS, TLS, timeout, cancellation, EOF.

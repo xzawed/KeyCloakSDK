@@ -218,6 +218,46 @@ func TestOAuthErrorCodeOverlap(t *testing.T) {
 	}
 }
 
+// The rows all nine languages share: the overlap ignores ASCII case (an IdP or proxy that echoes the secret lowercased),
+// and the shape is exactly [a-z_]{1,64}.
+func TestOAuthErrorCodeSharedRows(t *testing.T) {
+	// V5: U+212A KELVIN SIGN, then "ey" — built from the code point. The fold is ASCII so the nine agree; a secret's
+	// non-ASCII letter is compared as itself.
+	kelvinEy := string(rune(0x212A)) + "ey"
+	for _, c := range []struct {
+		row, s string
+		sent   []string
+		want   string
+	}{
+		{"V1 a lowercased echo", "mysecret", []string{"MySecret"}, ""},
+		{"V2 a truncated lowercased echo", "mysec", []string{"MySecret"}, ""},
+		{"V3 an extended lowercased echo", "invalid_mysecret_x", []string{"MySecret"}, ""},
+		{"V4 control", "invalid_grant", []string{"MySecret"}, "invalid_grant"},
+		{"V5 the fold is ASCII only", "key", []string{kelvinEy}, "key"},
+		{"V6 the shape", "invalid__grant", nil, "invalid__grant"},
+		{"V6 the shape", "_", nil, "_"},
+	} {
+		t.Run(c.row+" "+c.s, func(t *testing.T) {
+			if got := oauthErrorCode(c.s, c.sent...); got != c.want {
+				t.Errorf("oauthErrorCode(%q, %q) = %q, want %q", c.s, c.sent, got, c.want)
+			}
+		})
+	}
+}
+
+// An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case.
+func TestALowercasedEchoOfTheClientSecretIsNeverCarried(t *testing.T) {
+	p := newEchoIdP(t)
+	for _, s := range echoSurfaces {
+		p.answer(nil, func(sent map[string]string) any { return strings.ToLower(sent["client_secret"]) })
+		err := s.run(context.Background(), echoClient(t, p, "EchoMixedCase"))
+		if got := p.firstSent(t)["client_secret"]; got != "EchoMixedCase" {
+			t.Fatalf("%s: the request sent client_secret %q", s.name, got)
+		}
+		checkWithheld(t, s.name+" · lowercased", err, "echomixedcase")
+	}
+}
+
 func TestAnEchoedClientSecretIsNeverCarried(t *testing.T) {
 	p := newEchoIdP(t)
 	for _, s := range echoSurfaces {

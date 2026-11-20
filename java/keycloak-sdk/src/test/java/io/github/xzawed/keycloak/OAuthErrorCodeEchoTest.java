@@ -28,6 +28,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -210,6 +211,17 @@ class OAuthErrorCodeEchoTest {
         assertEquals(SECRET, firstSent().get("client_secret"), surface);
         assertWithheld(surface + " · " + form.getKey(), e, form.getValue().apply(SECRET));
       }
+    }
+  }
+
+  /** An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case. */
+  @Test void aLowercasedEchoOfTheClientSecretIsNeverCarried() {
+    String mixed = "EchoMixedCase";
+    errorJson = s -> quoted(s.getOrDefault("client_secret", "").toLowerCase(Locale.ROOT));
+    for (String surface : SURFACES.keySet()) {
+      KeycloakAuthException e = failing(surface, mixed);
+      assertEquals(mixed, firstSent().get("client_secret"), surface);
+      assertWithheld(surface + " · lowercased", e, "echomixedcase");
     }
   }
 
