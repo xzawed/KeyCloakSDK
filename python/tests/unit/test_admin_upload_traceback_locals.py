@@ -170,7 +170,8 @@ async def test_an_sdk_upload_that_fails_in_transport_renders_without_the_bearer(
 @pytest.mark.parametrize("lane", LANES)
 async def test_an_sdk_upload_the_server_rejects_renders_without_the_bearer(lane: str) -> None:
     """서버가 `raw` 의 업로드를 404 로 거절한다 — 오류는 python-keycloak 이 응답에서 만든
-    그것이다."""
+    그것이다. 대조: 그 요청의 헤더는 이미 돌아온 보내기 프레임(`_post`)의 것이라 로컬을 비우지
+    않아도 bearer 를 쥔 프레임이 없다 — 업로드 프레임이 헤더를 쥐게 되면 이 시험이 잡는다."""
     missing = "/admin/realms/r/clients/missing/certificates/jwt.credential/upload-certificate"
     with _fake_idp(_TOKEN) as idp:
         async with _client(lane, idp.url) as kc:
