@@ -4,14 +4,16 @@
 python-keycloak 7.1.1(`keycloak_admin.py` L7550 · L14374)은 연결의 헤더를 multipart
 `Content-Type` 의 사본으로 갈아 끼운 채(`self.connection.headers = new_headers`) 보내고, 보내기가
 **돌아온 뒤에만** 원래 값을 되돌린다 — `try`/`finally` 가 없다. 보내기가 던지면 그 admin 의 이후
-요청이 전부 `Content-Type: multipart/form-data; boundary=…` 로 나갔다(수정 전 실측). aio 는 오늘
-**언제나** 던진다 — 헤더 사전을 쿼리로 넘겨 bearer 가 URL 에 실리므로 이 SDK 가 보내기 전에
+요청이 전부 `Content-Type: multipart/form-data; boundary=…` 로 나갔다(수정 전 실측). aio 는
+**언제나** 던졌다 — 헤더 사전을 쿼리로 넘겨 bearer 가 URL 에 실리므로 이 SDK 가 보내기 전에
 거부한다(`IN_URL`, `test_admin_bearer_in_url.py`). sync 는 전송 실패에서 던진다. 취소
 (`CancelledError`)·`KeyboardInterrupt` 는 `Exception` 이 아니어도 같은 자리를 건너뛴다.
 
-감시 클래스(`_internal/admin_guard.py`)가 둘을 덮는다 — 부르기 전에 읽은 연결과 그 헤더 값을
-기억하고, 감싼 클래스의 메서드를 같은 인자로 부른 뒤, 그것이 무엇을 던지든 그 연결에 그 값을
-되돌리고 같은 예외를 다시 던진다. 성공하면 아무것도 하지 않는다(python-keycloak 이 되돌렸다).
+감시 클래스(`_internal/admin_guard.py`)가 둘을 덮는다. MRO 가 python-keycloak 자신의 업로드에
+닿으면 SDK 의 업로드가 연결의 헤더를 쓰지 않고 보낸다(`test_admin_upload_certificate_in_flight.py`)
+— 실패 뒤에도 연결의 헤더는 같은 객체 그대로다. 소비자의 하위 클래스 · 클래스 패치면 부르기 전에
+읽은 연결과 그 헤더 값을 기억하고, 그 메서드를 같은 인자로 부른 뒤, 그것이 무엇을 던지든 그 연결에
+그 값을 되돌리고 같은 예외를 다시 던진다. 성공하면 아무것도 하지 않는다.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 import requests
 from keycloak import KeycloakAdmin
@@ -33,7 +36,7 @@ from keycloak_sdk.admin import AdminClient
 from keycloak_sdk.aio.admin import AsyncAdminClient
 from keycloak_sdk.config import KeycloakConfig
 
-from .test_admin_bearer_in_url import _UPLOAD, _USER, TOKENS, _client, _fake_idp, _raw_refused
+from .test_admin_bearer_in_url import _UPLOAD, _USER, TOKENS, _client, _fake_idp
 from .test_admin_grant import LANES, _attempt
 from .test_admin_guard_live import _close, _close_connection, _connection
 
@@ -101,14 +104,19 @@ async def _upload(lane: str, raw: Any, *args: Any, **kwargs: Any) -> Any:
     return await result if lane == "aio" else result
 
 
-# --- python-keycloak 의 업로드 그대로 ---------------------------------------------------------
+# --- `raw` 의 업로드(SDK 의 것) ------------------------------------------------------------------
 
 
-async def test_a_refused_a_upload_certificate_leaves_the_next_request_json() -> None:
-    """aio 업로드는 보내기 전에 거부된다(IN_URL) — 그 뒤의 admin 요청은 `application/json` 이다."""
+async def test_an_aio_upload_that_fails_in_transport_leaves_the_next_request_json() -> None:
+    """aio 업로드 요청이 응답 없이 끊긴다 — 그 전송 오류를 python-keycloak 의 `a_raw_post` 처럼
+    `KeycloakConnectionError` 가 감싸고, 그 뒤의 admin 요청은 `application/json` 이다(예전에는 이
+    자리를 `IN_URL` 거부가 밟았다 — 이제 aio 업로드는 나간다)."""
+    dropped = threading.Event()
+    dropped.set()  # 이미 풀린 붙잡기 — 가짜 IdP 가 그 요청을 응답 없이 곧바로 끊는다
     with _fake_idp(TOKENS["plain"]) as idp:
         async with _client("aio", idp.url) as kc:
             await kc.admin.users.get("u1")  # 토큰을 받아 둔다 — 업로드 안에서는 그랜트가 없다
+            idp.hold, idp.held_path = dropped, _UPLOAD
             raw = kc.admin.raw
             before = raw.connection.headers
             _, err = await _attempt(
@@ -117,16 +125,22 @@ async def test_a_refused_a_upload_certificate_leaves_the_next_request_json() -> 
             after = raw.connection.headers
             await kc.admin.users.get("u1")
 
-    assert _kinds(idp) == [(f"/{_USER}", _JSON)] * 2, "거부된 업로드 뒤 요청이 multipart 로 나갔다"
-    assert _raw_refused(err) == [], "python-keycloak 이 낸 오류가 그대로 닿지 않았다"
+    assert _kinds(idp) == [
+        (f"/{_USER}", _JSON),
+        (_UPLOAD, _MULTIPART),
+        (f"/{_USER}", _JSON),
+    ], "끊긴 업로드 뒤 요청이 multipart 로 나갔다"
+    assert type(err) is KeycloakConnectionError, repr(err)
+    assert str(err) == "Can't connect to server"
+    assert isinstance(err.__cause__, httpx.TransportError), repr(err.__cause__)
     assert after is before
 
 
 async def test_a_sync_upload_that_fails_in_transport_leaves_the_next_request_json() -> None:
-    """업로드 요청이 응답 없이 끊긴다 — python-keycloak 의 그 전송 오류가 그대로 닿고, 그 뒤의
-    admin 요청은 `application/json` 이다. 업로드가 나가 있는 **동안** 다른 스레드의 요청은 여전히
-    multipart 다 — 연결 하나를 함께 쓰는 python-keycloak 의 구조라 고치는 범위 밖이다(머리 주석 6 의
-    ⚠️ — 이 줄이 바뀌면 그것도 바꾼다)."""
+    """업로드 요청이 응답 없이 끊긴다 — 그 전송 오류를 python-keycloak 의 `raw_post` 처럼
+    `KeycloakConnectionError` 가 감싸고, 그 뒤의 admin 요청은 `application/json` 이다. 업로드가
+    나가 있는 **동안** 다른 스레드의 요청도 `application/json` 이다(수정 전에는 multipart —
+    `test_admin_upload_certificate_in_flight.py`)."""
     release = threading.Event()
     with _fake_idp(TOKENS["plain"]) as idp:
         idp.hold, idp.held_path = release, _UPLOAD
@@ -147,9 +161,9 @@ async def test_a_sync_upload_that_fails_in_transport_leaves_the_next_request_jso
     assert _kinds(idp) == [
         (f"/{_USER}", _JSON),
         (_UPLOAD, _MULTIPART),
-        (f"/{_USER}", _MULTIPART),  # 나가 있는 동안 — 범위 밖
+        (f"/{_USER}", _JSON),  # 업로드가 나가 있는 동안
         (f"/{_USER}", _JSON),
-    ], "끊긴 업로드 뒤 요청이 multipart 로 나갔다"
+    ], "업로드 동안 · 끊긴 업로드 뒤 요청이 multipart 로 나갔다"
     assert type(err) is KeycloakConnectionError, repr(err)
     assert str(err) == "Can't connect to server"
     assert isinstance(err.__cause__, requests.ConnectionError), repr(err.__cause__)
@@ -157,8 +171,8 @@ async def test_a_sync_upload_that_fails_in_transport_leaves_the_next_request_jso
 
 
 async def test_a_successful_sync_upload_is_unchanged() -> None:
-    """대조 — 성공한 업로드는 python-keycloak 그대로다: multipart 로 나가고, 헤더는 python-keycloak
-    이 되돌린 값이다."""
+    """대조 — 성공한 업로드는 multipart 로 나가 python-keycloak 이 돌려주던 값을 돌려주고, 그 뒤의
+    요청은 `application/json` 이다. 연결의 헤더는 그대로다."""
     with _fake_idp(TOKENS["plain"]) as idp:
         async with _client("sync", idp.url) as kc:
             kc.admin.users.get("u1")
@@ -173,11 +187,52 @@ async def test_a_successful_sync_upload_is_unchanged() -> None:
     assert after == before
 
 
+async def test_a_cancelled_sdk_upload_leaves_the_connection_as_it_was() -> None:
+    """`raw` 의 aio 업로드가 업로드 안의 첫 그랜트를 기다리는 동안 취소된다 — `CancelledError` 는
+    `Exception` 이 아니다. 같은 예외 객체가 감시 래퍼를 지나 닿고, 기다리는 동안 · 그 뒤의 admin
+    요청은 `application/json` 이며, 연결의 헤더는 같은 객체 그대로다."""
+    release = threading.Event()
+    left: list[BaseException] = []
+    with _fake_idp(TOKENS["plain"]) as idp:
+        idp.hold = release  # 첫 그랜트 — 업로드 안의 것
+        async with _client("aio", idp.url) as kc:
+            raw = kc.admin.raw
+            before = raw.connection.headers
+
+            async def upload_certificate() -> Any:
+                try:
+                    return await raw.a_upload_certificate("c1", "PEM")
+                except BaseException as exc:  # 감시 래퍼가 내보낸 그대로 — Task 가 받기 전
+                    left.append(exc)
+                    raise
+
+            try:
+                upload = asyncio.ensure_future(upload_certificate())
+                arrived = await asyncio.to_thread(idp.holding.wait, 10)
+                assert arrived, "업로드 안의 그랜트가 오지 않았다"
+                await kc.admin.users.get("u1")  # 기다리는 동안 — 다른 태스크
+                upload.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await upload
+                after = raw.connection.headers
+                await kc.admin.users.get("u1")
+            finally:
+                release.set()
+
+    assert _kinds(idp) == [(f"/{_USER}", _JSON)] * 2, "취소된 업로드 동안 · 뒤 요청이 multipart 다"
+    assert [type(e) for e in left] == [asyncio.CancelledError]
+    assert after is before
+
+
+# --- 소비자 하위 클래스가 부르는 python-keycloak 의 업로드 --------------------------------
+
+
 async def test_a_cancelled_a_upload_certificate_leaves_the_next_request_json() -> None:
-    """업로드 안의 첫 그랜트를 기다리는 동안 취소된다 — `CancelledError` 는 `Exception` 이 아니다.
-    같은 예외 객체가 닿고(소비자 하위 클래스가 python-keycloak 에서 나온 것을 적는다), 그 뒤의
-    admin 요청은 `application/json` 이다. 기다리는 **동안** 다른 태스크의 요청은 여전히 multipart
-    다(위 sync 와 같다 — 범위 밖)."""
+    """소비자 하위 클래스의 업로드가 python-keycloak 의 것을 `super()` 로 부르고, 그 안의 첫
+    그랜트를 기다리는 동안 취소된다. 같은 예외 객체가 닿고(소비자 하위 클래스가 python-keycloak
+    에서 나온 것을 적는다), 그 뒤의 admin 요청은 `application/json` 이다. 기다리는 **동안** 다른
+    태스크의 요청은 여전히 multipart 다 — python-keycloak 의 업로드가 연결의 헤더를 바꾸고, 감시
+    클래스는 소비자 코드를 바꾸지 않는다(머리 주석 6 의 ⚠️)."""
     release = threading.Event()
     left: list[BaseException] = []
     with _fake_idp(TOKENS["plain"]) as idp:
@@ -208,7 +263,7 @@ async def test_a_cancelled_a_upload_certificate_leaves_the_next_request_json() -
             await client.aclose()
 
     assert _kinds(idp) == [
-        (f"/{_USER}", _MULTIPART),  # 기다리는 동안 — 범위 밖
+        (f"/{_USER}", _MULTIPART),  # 기다리는 동안 — python-keycloak 의 업로드가 바꾼 헤더
         (f"/{_USER}", _JSON),
     ], "취소된 업로드 뒤 요청이 multipart 로 나갔다"
     assert [type(e) for e in left] == [asyncio.CancelledError]

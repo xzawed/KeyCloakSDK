@@ -41,11 +41,12 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    요청도 보내지 않는다(`KeycloakTransportError(IN_URL)` — 등록부
    `python-raw-upload-certificate-bearer-in-url`): python-keycloak 의 `raw_*` 는 남은 키워드 인자를
    전부 쿼리로 보내고, `a_upload_certificate` 는 그 자리에 bearer 를 실은 헤더 사전을 넘겨 httpx 가
-   그 글을 URL 에 실었다(7.1.1 실측 — 서버·프록시의 접근 로그에 토큰이 남는다). 세션 안의
-   거부는 python-keycloak 의 `raw_*` 가 `KeycloakConnectionError` 로 감싸므로 파사드 경계가 같은
-   타입·메시지로 새로 만든다(`admin/_translate.refused_send`) — 탈출구 `raw` 는 감싼 채 받는다
-   (§4(b)). 갱신 자리 뒤의 검사(2)는 남긴다 — 연결의 헤더에서 거부되는 것은 `raw` 로도 오늘의
-   `KeycloakAuthError` 그대로이고, 다듬은 값이 연결에 남는다.
+   그 글을 URL 에 실었다(7.1.1 실측 — 서버·프록시의 접근 로그에 토큰이 남는다). `raw` 의 업로드는
+   이제 쿼리 없이 보낸다(6) — python-keycloak 의 것을 부르는 소비자 코드는 여전히 여기서 거부된다.
+   세션 안의 거부는 python-keycloak 의 `raw_*`(와 6 의 업로드)가 `KeycloakConnectionError` 로
+   감싸므로 파사드 경계가 같은 타입·메시지로 새로 만든다(`admin/_translate.refused_send`) — 탈출구
+   `raw` 는 감싼 채 받는다(§4(b)). 갱신 자리 뒤의 검사(2)는 남긴다 — 연결의 헤더에서 거부되는 것은
+   `raw` 로도 오늘의 `KeycloakAuthError` 그대로이고, 다듬은 값이 연결에 남는다.
 4. **그랜트 객체의 공개 세터.** 그랜트 객체(중첩 `KeycloakOpenID`)는 처음 무장할 때 클래스를
    바꿔(`openid_watch.py`) `connection` 세터가 새 연결을 끼우기 **전에** 그랜트 세션의 훅을 다
    건다(`arm_grant_connection` — 전부이거나 아무것도, 못 걸면 끼우지 않는다). 쥔 그랜트 객체로
@@ -56,24 +57,31 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
    도중의 재진입은 거부한다(`_install`·`_apply`).
 6. **업로드가 갈아 끼운 헤더.** python-keycloak 의 `upload_certificate`·`a_upload_certificate` 는
    연결의 헤더를 multipart `Content-Type` 사본으로 갈아 끼운 채 보내고, 보내기가 **돌아온 뒤에만**
-   되돌린다(`try`/`finally` 없음, 7.1.1 실측). 던지면 — aio 는 위 3 의 `IN_URL` 로 언제나, sync 는
-   전송 실패에서, 취소도 — 그 admin 의 이후 요청이 전부 multipart 로 나갔다(등록부
+   되돌린다(`try`/`finally` 없음, 7.1.1 실측). 그 연결은 admin 의 요청이 전부 함께 쓴다 — 보내는
+   동안 · 업로드 안의 그랜트를 기다리는 동안 다른 스레드·태스크의 요청이 multipart 로 나갔고, 그
+   사이 토큰 세터가 사본에 실은 bearer 는 되돌릴 때 사라졌다(등록부
+   `python-upload-certificate-in-flight-multipart`,
+   `tests/unit/test_admin_upload_certificate_in_flight.py`). 던지면 — aio 는 위 3 의 `IN_URL` 로
+   언제나, sync 는 전송 실패에서, 취소도 — 이후 요청이 전부 multipart 였다(등록부
    `python-upload-certificate-headers-not-restored`,
    `tests/unit/test_admin_upload_certificate_headers.py`).
-   감시 클래스가 둘을 덮는다: `connection` 을 읽어(무장) 그 연결과 헤더 값을 기억하고, 감싼
-   클래스의 것을 부를 때 MRO 대로 찾아(소비자의 하위 클래스·클래스 패치도) 같은 인자로 부른 뒤,
-   무엇을 던지든(`BaseException`) 그 연결에 그 값을 되돌리고 같은 예외를 다시 던진다. 성공이면
-   아무것도 하지 않는다. 되돌리는 값은 python-keycloak 이 성공 뒤 되돌리는 값처럼 부르기 **전**의
-   것이다. ⚠️ 보내는 **동안**의 multipart 는 그대로다 — 연결 하나를 함께 쓰므로 그 사이 다른
-   스레드의 요청, 업로드 안의 그랜트를 기다리는 동안 다른 태스크의 요청은 multipart 로 나간다.
+   감시 클래스가 둘을 덮고, 감싼 클래스의 것을 부를 때 MRO 대로 찾는다(`_unwatched`). 그것이
+   python-keycloak 자신의 함수면(import 때 쥔 객체 그대로) SDK 의 업로드(`admin_upload.py`)를 돈다
+   — `connection` 을 읽어(무장) 같은 경로 · 필드를 그 요청 하나의 헤더로 보내고, 연결의 헤더는
+   쓰지 않는다. 소비자의 하위 클래스 · 클래스 패치면 그것을 같은 인자로 부르고, 무엇을 던지든
+   (`BaseException`) 부르기 **전**에 읽은 연결에 그때의 헤더 값을 되돌린 뒤 같은 예외를 다시
+   던진다(성공이면 아무것도 하지 않는다). ⚠️ 그 소비자 코드가 python-keycloak 의 업로드를
+   부르면(`super()`) 보내는 **동안**의 multipart 는 그대로다 — 감시 클래스는 소비자 코드를 바꾸지
+   않는다.
 7. **업로드가 던진 오류의 프레임 로컬.** 그 둘이 던지면 python-keycloak 의 업로드
    (`orig_headers`·`new_headers`)와 `raw_post`·`a_raw_post`(`kwargs`), httpx `request`(`params`·
    `headers`·`request` — 토큰이 URL 문자열 안이다)·requests·urllib3(`headers`), 위 3 의
    `sent`(`request`) 프레임이 bearer 를 쥔 채 오류 수집기(Sentry Python 기본값 ·
    `TracebackException(capture_locals=True)`)에 찍혔다(등록부
    `python-raw-upload-traceback-locals-bearer`, `tests/unit/test_admin_upload_traceback_locals.py`).
-   감시 클래스가 6 의 되돌림 뒤에 그 예외에서 닿는 traceback 마다 끝난 프레임의 로컬을 비우고
-   (`_clear_locals`) 같은 객체를 다시 던진다. 타입·메시지·사슬·프레임(줄 번호)은 그대로다 —
+   6 의 SDK 업로드도 그 요청 하나의 헤더를 프레임에 쥔다. 감시 클래스가 (소비자의 업로드면 6 의
+   되돌림 뒤에) 그 예외에서 닿는 traceback 마다 끝난 프레임의 로컬을 비우고(`_clear_locals`) 같은
+   객체를 다시 던진다. 타입·메시지·사슬·프레임(줄 번호)은 그대로다 —
    `_internal/frames.py` 처럼 traceback 을 떼지 않는다: 탈출구의 traceback 은 python-keycloak 의
    것이다(§4(b)).
 
@@ -82,8 +90,8 @@ raw `AttributeError` 와 반쯤 감긴 객체가 남았다(등록부 `python-adm
 (401 재시도, 그랜트 객체·그 연결·세션의 지연 생성 — 7.1.1 은 처음 읽을 때 한 번 만들고 다시 만들지
 않는다). ⚠️ **범위 밖** — 밑줄 속성의 쓰기·교체(`_connection`·`_keycloak_openid`·`_s` …)와 HTTP
 클라이언트 객체 자체의 교체·설정(`async_s` · 그 auth·이벤트 훅·리다이렉트 설정), 내부의
-`copy.copy`, 프록시(`wrapt.ObjectProxy`)로 감싸기, 클래스 몽키패치: 이 중 막히는 것이 있어도
-계약이 아니다.
+`copy.copy`, 프록시(`wrapt.ObjectProxy`)로 감싸기, 클래스 몽키패치, 소비자 코드가 부른
+python-keycloak 업로드의 보내는 동안의 헤더(6): 이 중 막히는 것이 있어도 계약이 아니다.
 
 **왜 저장된 토큰이 아니라 헤더인가.** 보내는 것이 헤더다. 둘은 갈린다 — 자격증명 없이 토큰만
 받은 admin 이 만료되면 python-keycloak 은 토큰을 `None` 으로 비우고 헤더(`Bearer `)는 남긴다.
@@ -120,6 +128,7 @@ from ..exceptions import KeycloakAuthError, KeycloakConfigError, KeycloakTranspo
 from ..tokens import _usable_access_token
 from .admin_body import abounded_send, bounded_send
 from .admin_grant import _ASYNC_GRANTS, _SYNC_GRANTS, _achecked, _checked
+from .admin_upload import aupload, upload
 from .bearer import _TRIM, SENDING, sendable
 from .frames import reachable
 from .openid_watch import HARDENERS, watched_type
@@ -153,6 +162,10 @@ _BASE = "__kcsdk_connection__"
 #: 클래스로 쓰고 되돌린다.
 _CLASS = "__class__"
 _WATCHED: dict[type[KeycloakAdmin], type[KeycloakAdmin]] = {}
+#: python-keycloak 자신의 업로드 둘 — 감시 클래스가 MRO 로 찾은 것이 이것이면 SDK 의 업로드를
+#: 돈다(머리 주석 6). import 때 쥔다: 클래스 패치는 부를 때 찾은 것이 이것이 아니어야 그대로 돈다.
+_OWN_UPLOAD = KeycloakAdmin.upload_certificate
+_OWN_AUPLOAD = KeycloakAdmin.a_upload_certificate
 _ABSENT = object()
 _GRANT = "admin token grant"
 #: 그랜트 연결의 자리(메시지용) — 중첩 `KeycloakOpenID` 의 `connection`.
@@ -635,8 +648,9 @@ def _clear_locals(exc: BaseException) -> None:
     프레임(업로드 래퍼 자신)은 `traceback.clear_frames` 가 건너뛴다. 프레임·줄 번호·사슬은
     그대로다. ⚠️ 3.12 이하의 `clear_frames` 는 traceback 에 든 **멈춘** 제너레이터·코루틴을
     끝낸다(3.13 은 건너뛴다 — 실측 3.10.21 · 3.12.14 · 3.13.11). 업로드 실패의 사슬에는 끝나지 않은
-    제너레이터·코루틴의 프레임이 없다(실측: 전송 실패 · 404 · `IN_URL`) — 다른 자리에서 부르려면
-    그것부터 잰다."""
+    제너레이터·코루틴의 프레임이 없다(실측: 전송 실패 · 404 · `IN_URL`; SDK 업로드는 그 셋과 보내는
+    자리 · 갱신 뒤의 bearer 거부, aio 취소까지 — 도는 감시 래퍼뿐, gc 참조 3.10.21 · 3.13.11) —
+    다른 자리에서 부르려면 그것부터 잰다."""
     for node in reachable(exc):
         traceback.clear_frames(node.__traceback__)
 
@@ -646,9 +660,15 @@ def _unwatched(watched: type[KeycloakAdmin], admin: KeycloakAdmin) -> KeycloakAd
     return cast("KeycloakAdmin", super(watched, admin))
 
 
+def _is_own(method: object, function: object) -> bool:
+    """MRO 로 찾아 묶인 `method` 가 python-keycloak 의 `function` 그 자체인가(머리 주석 6)."""
+    return getattr(method, "__func__", None) is function
+
+
 def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
-    """`cls` 의 하위 클래스 — `connection` 을 읽을 때마다 살아 있는 연결을 무장하고, multipart
-    업로드 둘이 던지면 그 연결의 헤더를 되돌리고 그 오류의 프레임 로컬을 비운다."""
+    """`cls` 의 하위 클래스 — `connection` 을 읽을 때마다 살아 있는 연결을 무장한다. multipart
+    업로드 둘은 python-keycloak 자신의 것이면 SDK 의 것으로 보내고(연결의 헤더를 쓰지 않는다),
+    소비자의 것이 던지면 그 연결의 헤더를 되돌린다 — 어느 쪽이든 그 오류의 프레임 로컬을 비운다."""
     if _BASE in vars(cls):
         return cls
     cached = _WATCHED.get(cls)
@@ -667,20 +687,37 @@ def _watched_type(cls: type[KeycloakAdmin]) -> type[KeycloakAdmin]:
         return conn
 
     # 머리 주석 6 · 7 — 읽기가 무장이다(던지면 아무것도 바뀌지 않았다). 감싼 클래스의 것을 부를
-    # 때 찾는다(`_unwatched`): 소비자의 하위 클래스가 덮은 업로드도, 클래스에 건 패치도 그대로 돈다.
+    # 때 찾는다(`_unwatched`): python-keycloak 자신의 것이면 SDK 의 업로드가 연결의 헤더를 쓰지
+    # 않고 보내고, 소비자의 하위 클래스가 덮은 업로드 · 클래스에 건 패치는 그대로 돈다.
     def upload_certificate(self: KeycloakAdmin, *args: Any, **kwargs: Any) -> Any:
+        delegate = _unwatched(watched, self).upload_certificate
+        if _is_own(delegate, _OWN_UPLOAD):
+            conn = self.connection
+            try:
+                return upload(conn, *args, **kwargs)
+            except BaseException as exc:
+                _clear_locals(exc)
+                raise
         restore = _headers_restorer(self.connection)
         try:
-            return _unwatched(watched, self).upload_certificate(*args, **kwargs)
+            return delegate(*args, **kwargs)
         except BaseException as exc:
             restore()
             _clear_locals(exc)
             raise
 
     async def a_upload_certificate(self: KeycloakAdmin, *args: Any, **kwargs: Any) -> Any:
+        delegate = _unwatched(watched, self).a_upload_certificate
+        if _is_own(delegate, _OWN_AUPLOAD):
+            conn = self.connection
+            try:
+                return await aupload(conn, *args, **kwargs)
+            except BaseException as exc:  # 취소(`CancelledError`)도
+                _clear_locals(exc)
+                raise
         restore = _headers_restorer(self.connection)
         try:
-            return await _unwatched(watched, self).a_upload_certificate(*args, **kwargs)
+            return await delegate(*args, **kwargs)
         except BaseException as exc:  # 취소(`CancelledError`)도
             restore()
             _clear_locals(exc)
