@@ -222,6 +222,9 @@ public sealed class MalformedTokenResponseTests
         typeof(KeycloakTransportException), typeof(KeycloakTransportException))]
     [InlineData("g4 reason phrase echo", "HTTP/1.1 401 Unauthorized LK-G4-REASON-canary\r\nContent-Length: 0\r\n\r\n", "LK-G4-REASON-canary",
         typeof(KeycloakAuthException), typeof(KeycloakAuthException))]
+    // 표준 reason phrase 가 없는 상태(520)에서도 서버의 것으로 메우지 않는다 — 번호로 부른다(문구 단언은 OAuthErrorCodeGrammarTests).
+    [InlineData("g6 reason phrase echo without a standard phrase", "HTTP/1.1 520 LK-G6-REASON-canary\r\nContent-Length: 0\r\n\r\n",
+        "LK-G6-REASON-canary", typeof(KeycloakAuthException), typeof(KeycloakAuthException))]
     // Grok 레그의 주장 — 알 수 없는 charset 은 본문을 문자열로 읽을 때 Encoding.GetEncoding 이 그 이름을 인용한다. 이제 SDK 가
     // charset 을 무시하고 UTF-8 로 읽어(RFC 8259 §11 — 판정 D2, 2026-11-10) 그 조회가 없다: `{}` 는 끝까지 온 쓸 수 없는 본문이라
     // 토큰 호출(access_token 없음)도 introspect(active 없음 — D3)도 KeycloakAuthException 이다. 예전에는 읽기 실패로 전송 오류였다.
