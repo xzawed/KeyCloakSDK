@@ -23,5 +23,11 @@
       "java/kc-examples/src/main/java/kc/examples/QuickStart.java"
     ],
     "owners": {}
+  },
+  "ruby": {
+    "pinned": [
+      "ruby/lib/kc/auth_client.rb"
+    ],
+    "owners": {}
   }
 }

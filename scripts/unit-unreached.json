@@ -246,5 +246,6 @@
       "branches": 4,
       "why": "integration: main 이 부르는 환경 변수 읽기 — 위 main 과 같은 까닭(설치 하네스만 돌린다)"
     }
-  }
+  },
+  "ruby": {}
 }

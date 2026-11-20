@@ -25,5 +25,11 @@
       "branches": 0,
       "why": "unreachable: check reads no data — only the shape, the boundary and the why"
     }
+  },
+  "ruby": {
+    "ruby/lib/kc/auth_client.rb:AuthClient#introspect": {
+      "lines": 2,
+      "why": "open-masking"
+    }
   }
 }

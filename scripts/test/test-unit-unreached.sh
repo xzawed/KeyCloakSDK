@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java, 등록부
+# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby, 등록부
 # coverage-exclusion-hides-untested-branches · coverage-omit-hides-security-paths) 자가테스트 — **종료코드**를 단언한다(0 측정 = 장부 ·
 # 1 DRIFT · 2 FAIL — 뜻은 그 도구 머리가 소유한다). 문구는 무엇을 잡았는지 가리는 데만 쓴다.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET 이 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
-# 실제 도구가 낸 것이다(kotlin · php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19):
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby 가 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
+# 실제 도구가 낸 것이다(kotlin · php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby 2026-11-20):
 #   fixtures/unit-unreached/data/kotlin.unit.xml · kotlin.unit.javap.txt   도구의 `unit kotlin`(JDK 21.0.8 · kotlin 2.4.21 · Kover 0.9.11 ·
 #       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼 + java/pom.xml(JaCoCo 판을 거기서 읽는다). 세션 id 를
 #       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다
@@ -16,13 +16,18 @@
 #   fixtures/unit-unreached/data/java.unit.xml · java.unit.javap.txt   도구의 `unit java`(JDK 21.0.8 · Maven 3.9.9 · JaCoCo 0.8.16) — 임시
 #       루트에 tree 사본. 세션 id 를 HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `java/` 부터로만 바꿨다
 #       (치환마다 되돌린 바이트가 원본과 같다)
-# 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test)은 빈 code · null · 빈
-# user · 빈 문자열 · 빈 값을 안 보내고 unused · logoutUrl · LogoutUrl · Describe() · token(String, int) 를 안 부른다. dotnet 의 Guarded 는
-# 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은 단위 실행의 필터(Category!=Integration)가 거른다.
-# java 의 DriveIT 는 failsafe 의 것이라 단위 실행(test 단계)이 안 돌고, QuickStart 는 jacoco.skip 모듈(단위 시험이 없다)의 것이다. 숫자를
-# 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
+#   fixtures/unit-unreached/data/ruby.unit.json   도구의 `unit ruby`(ruby 3.4.10 · SimpleCov 1.2.0) — 임시 루트에 tree 사본, 번들은 실제
+#       레인의 것(`BUNDLE_GEMFILE=ruby/Gemfile`). 덤프의 root 와 파일 키는 절대 경로다 — 생성 루트만 `@ROOT@` 로 바꿨다(되돌린 바이트가
+#       원본과 같다)
+# 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test · tree/ruby/spec/unit)은
+# 빈 code · null · 빈 user · 빈 문자열 · 빈 값 · nil 을 안 보내고 unused · logoutUrl · LogoutUrl · logout_url · Describe() · describe ·
+# token(String, int) 를 안 부른다. dotnet 의 Guarded 는 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은
+# 단위 실행의 필터(Category!=Integration)가 거른다. java 의 DriveIT 는 failsafe 의 것이라 단위 실행(test 단계)이 안 돌고, QuickStart 는
+# jacoco.skip 모듈(단위 시험이 없다)의 것이다. ruby 의 apply 는 빈 배열로만 불려 블록 몸통이 안 돌고, 통합 스펙(spec/integration ·
+# `:integration`)은 단위 실행의 spec_helper 필터가 거른다. 숫자를 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지
+# 않는다(아래 음성 대조군만 고친다).
 # `check` 의 장부 판정(데이터 없이 — 꼴 · 경계 · why)은 통합 커버리지 픽스처 트리(`ic-fixture.sh` 의 fresh)에서 잰다 — check 는 아홉
-# 언어를 다 보므로 kotlin · php · dotnet · java 뿐인 이 트리로는 못 잰다.
+# 언어를 다 보므로 kotlin · php · dotnet · java · ruby 뿐인 이 트리로는 못 잰다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -39,6 +44,7 @@ P=php/src/AuthClient.php
 N=dotnet/src/Kc/AuthClient.cs
 J=java/kc-auth/src/main/java/kc/auth/AuthClient.java
 Q=java/kc-examples/src/main/java/kc/examples/QuickStart.java
+R=ruby/lib/kc/auth_client.rb
 L="$T/scripts/unit-unreached.json"
 
 # 단위 픽스처 트리 + 그 트리의 파생 도구 + 데이터와 그 기록(run 이 쓰는 꼴).
@@ -56,10 +62,13 @@ ufresh() {
   sed "s#@ROOT@#$_r#g; s#@root@#$_r#g" "$UFIX/data/dotnet.unit.trx" > "$D/dotnet.unit.trx"
   # JaCoCo XML · javap 출력에는 절대 경로가 없다(javap 의 `Classfile` 은 생성 때 `java/` 부터로 바꿨다 — 리더는 그 줄의 경로를 안 읽는다).
   cp "$UFIX/data/java.unit.xml" "$UFIX/data/java.unit.javap.txt" "$D/"
+  # ruby 덤프의 root 와 파일 키도 절대 경로다(통합 픽스처의 ruby_data 와 같은 치환).
+  sed "s#@ROOT@#$_r#g" "$UFIX/data/ruby.unit.json" > "$D/ruby.unit.json"
   kmark 0
   pmark 0
   dmark 0
   jmark 0
+  rmark 0
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -85,6 +94,10 @@ jmark() { # exit [completed] [failures] [integration]
   printf '{"run":"java","suite":"unit","exit":%s,"jacoco":"0.8.16","data_sha1":"%s","javap_sha1":"%s","exec_sha1":"0","tests":{"completed":%s,"failures":%s,"errors":0,"skipped":0},"integration":%s,"files":{"%s":"%s","%s":"%s"}}\n' \
     "$1" "$(sha1sum "$D/java.unit.xml" | cut -d' ' -f1)" "$(sha1sum "$D/java.unit.javap.txt" | cut -d' ' -f1)" \
     "${2:-1}" "${3:-0}" "${4:-0}" "$J" "$(sha1sum "$T/$J" | cut -d' ' -f1)" "$Q" "$(sha1sum "$T/$Q" | cut -d' ' -f1)" > "$D/java.unit.run.json"
+}
+# `unit ruby` 의 기록 — 종료코드 · 지금 덤프의 sha1(경계 파일의 sha1 은 덤프 안에 있다 — 통합 픽스처의 ruby_mark 와 같은 꼴에 suite).
+rmark() { # exit
+  printf '{"run":"ruby","suite":"unit","exit":%s,"dump_sha1":"%s"}\n' "$1" "$(sha1sum "$D/ruby.unit.json" | cut -d' ' -f1)" > "$D/ruby.unit.run.json"
 }
 
 # ── (1) 양성 — 측정 = 장부 → 0 ───────────────────────────────────────────────────────────────────
@@ -150,6 +163,22 @@ assert_not_contains "$OUT" "AuthClient.realm" "[java] 다 닿는 메서드는 �
 assert_not_contains "$OUT" "Config" "[java] 경계 밖 파일은 목록에 없다"
 assert_line "$OUT" "unit-unreached [java]: OK — 9 functions with code the unit suite never reaches (8 lines · 7 branches), each recorded in scripts/unit-unreached.json" "[java] 요약"
 
+run unit-report ruby "$T" --out "$D"
+assert_eq 0 "$RC" "[ruby] 측정이 장부와 같으면 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "/ruby.unit.json (ruby 3.4.10 · Coverage lines · methods · 1 unit example)" "[ruby] 덤프 · ruby 판 · 단위 예제 수를 찍는다"
+assert_line "$OUT" "  UNREACHED $R:19 AuthClient#exchange · 1 line · defensive: the drive never sends an empty code" "[ruby] 제 줄의 실패 갈래"
+assert_line "$OUT" "  UNREACHED $R:33 AuthClient#apply · 1 line · open-gap" "[ruby] 블록의 안 돈 줄은 감싼 메서드의 것 · why 가 열린 항목 id"
+assert_line "$OUT" "  UNREACHED $R:40 AuthClient#describe · 1 line · integration: a one-line method the drive never calls — its line ran at require, its call count is 0" "[ruby] 한 줄 메서드 — 적재 때 돈 줄이 아니라 호출 횟수로 센다"
+assert_line "$OUT" "  UNREACHED $R:43 AuthClient#logout_url · 1 line · integration: the drive never calls it — the integration spec does, outside the unit run" "[ruby] 통합 스펙만 부르는 메서드 — 단위 실행의 spec_helper 필터가 그 스펙을 거른다"
+assert_line "$OUT" "  UNREACHED $R:48 AuthClient.parse · 1 line · defensive: the drive never sends nil — a singleton method keys with a dot" "[ruby] 특이 메서드는 「.」"
+# ⚠️ 알려진 틈을 고정한다 — 행복 경로가 도는 줄의 `|| raise` 는 줄 수를 안 바꿔 장부가 못 본다(도구 머리 주석 — php 와 같은 틈). 이 단언이
+# 깨지면 장부가 가지를 보게 된 것이다 — 머리 주석과 장부를 함께 고칠 때다.
+assert_not_contains "$OUT" "AuthClient#pick" "[ruby] 같은 줄의 실패 갈래(|| raise)는 줄 수로 안 보인다 — 알려진 틈"
+assert_not_contains "$OUT" "AuthClient#realm" "[ruby] 불린 한 줄 메서드는 목록에 없다"
+assert_not_contains "$OUT" "AuthClient#token" "[ruby] 다 닿는 메서드는 목록에 없다"
+assert_not_contains "$OUT" "Config" "[ruby] 경계 밖 파일은 목록에 없다"
+assert_line "$OUT" "unit-unreached [ruby]: OK — 5 functions with code the unit suite never reaches (5 lines), each recorded in scripts/unit-unreached.json" "[ruby] 요약"
+
 # ── (2) 음성 — 장부와 다르면 DRIFT(1) ────────────────────────────────────────────────────────────
 # 새로 생긴 미도달 — 데이터에서 다 닿던 realm 을 안 닿게 바꾼다(장부에 없다).
 ufresh
@@ -193,6 +222,22 @@ assert_contains "$(cat "$D/java.unit.xml")" '<counter type="BRANCH" missed="2" c
 run unit-report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 줄 수가 같아도 놓친 가지가 늘면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [java] $J:AuthClient.sorted: the unit run leaves 1 line · 2 branches unreached, scripts/unit-unreached.json records 1 line · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[java] 익명 클래스의 가지가 감싼 메서드의 수를 바꾼다"
+# 불린 메서드의 몸통 줄 하나가 새로 안 돈다 — token 의 L15 를 0 회로(호출 횟수는 그대로라 덤프는 스스로 맞다).
+ufresh
+sed -i 's#"lines":\[null,null,1,null,1,1,1,null,null,null,1,null,null,1,1,#"lines":[null,null,1,null,1,1,1,null,null,null,1,null,null,1,0,#' "$D/ruby.unit.json"
+rmark 0
+assert_contains "$(cat "$D/ruby.unit.json")" '"lines":[null,null,1,null,1,1,1,null,null,null,1,null,null,1,0,' "(변이가 착지했는지 먼저 본다)"
+run unit-report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 장부에 없는 미도달 메서드는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [ruby] unrecorded unreached code $R:AuthClient#token — the unit suite never reaches 1 line of it: test that code, or record why in scripts/unit-unreached.json" "[ruby] 새 미도달"
+# 한 줄 메서드는 호출 횟수로 센다 — realm 의 횟수를 0 으로(그 줄은 적재 때 돌아 1 회 그대로다).
+ufresh
+sed -i 's#"name":"realm","start":\[11,4\],"end":\[11,29\],"count":1#"name":"realm","start":[11,4],"end":[11,29],"count":0#' "$D/ruby.unit.json"
+rmark 0
+assert_contains "$(cat "$D/ruby.unit.json")" '"name":"realm","start":[11,4],"end":[11,29],"count":0' "(변이가 착지했는지 먼저 본다)"
+run unit-report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 안 불린 한 줄 메서드는 그 줄이 돌았어도 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [ruby] unrecorded unreached code $R:AuthClient#realm — the unit suite never reaches 1 line of it" "[ruby] 한 줄 메서드 — 호출 횟수"
 
 # 람다 안의 놓친 가지 — 장부에서 pick 을 지우면 소스 함수 이름으로 DRIFT 다(합성 메서드로 새지 않는다 — 브리프 보정 1).
 ufresh
@@ -220,6 +265,11 @@ sed -i '/AuthClient\.java:AuthClient\.sorted"/,/},/d' "$L"
 run unit-report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 익명 클래스 안의 놓친 줄 · 가지가 장부에 없으면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [java] unrecorded unreached code $J:AuthClient.sorted — the unit suite never reaches 1 line · 1 branch of it" "[java] 익명 클래스 — 감싼 메서드 키"
+ufresh
+sed -i '/AuthClient#apply"/,/},/d' "$L"
+run unit-report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 블록 안의 안 돈 줄이 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [ruby] unrecorded unreached code $R:AuthClient#apply — the unit suite never reaches 1 line of it" "[ruby] 블록의 줄 — 감싼 메서드 키"
 
 # 수가 바뀌었다 — 장부의 수와 측정이 다르다(가지 하나가 새로 생긴 꼴).
 ufresh
@@ -247,6 +297,11 @@ sed -i '/AuthClient\.java:AuthClient\.exchange"/,/}/ s#"branches": 1,#"branches"
 run unit-report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 수가 다르면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [java] $J:AuthClient.exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 1 line · 2 branches — the unit suite reaches more of it now: lower the counts" "[java] 바뀐 수 — 장부보다 덜 놓쳤다"
+ufresh
+sed -i '/AuthClient#exchange"/,/}/ s#"lines": 1,#"lines": 2,#' "$L"
+run unit-report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 수가 다르면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [ruby] $R:AuthClient#exchange: the unit run leaves 1 line unreached, scripts/unit-unreached.json records 2 lines — the unit suite reaches more of it now: lower the counts" "[ruby] 바뀐 수"
 
 # 낡은 항목 — 다 닿는 함수 · 데이터에 없는 함수 · 경계 밖 파일을 가리킨다.
 ufresh
@@ -282,6 +337,14 @@ assert_eq 1 "$RC" "[java] 낡은 항목은 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [java] stale entry $J:AuthClient.realm — the unit run reaches all of it now; drop the entry" "[java] 다 닿는 메서드의 항목"
 assert_contains "$OUT" "DRIFT [java] stale entry $J:AuthClient.gone — the data of $J has no such function (renamed or removed?)" "[java] 없는 메서드의 항목"
 assert_contains "$OUT" "DRIFT [java] scripts/unit-unreached.json: entry java/kc-auth/src/main/java/kc/auth/Config.java:Config.valid names a file outside the boundary derived from java/pom.xml:53" "[java] 경계 밖 파일의 항목"
+ufresh
+sed -i "s#\"ruby\": {#\"ruby\": {\n    \"$R:AuthClient\#token\": { \"lines\": 1, \"why\": \"integration: stale\" },\n    \"$R:AuthClient\#gone\": { \"lines\": 1, \"why\": \"integration: renamed\" },\n    \"ruby/lib/kc/config.rb:Config\#valid?\": { \"lines\": 1, \"why\": \"integration: outside\" },#" "$L"
+assert_contains "$(cat "$L")" "\"$R:AuthClient#gone\": { \"lines\": 1," "(변이가 착지했는지 먼저 본다)"
+run unit-report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 낡은 항목은 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [ruby] stale entry $R:AuthClient#token — the unit run reaches all of it now; drop the entry" "[ruby] 다 닿는 메서드의 항목"
+assert_contains "$OUT" "DRIFT [ruby] stale entry $R:AuthClient#gone — the data of $R has no such function (renamed or removed?)" "[ruby] 없는 메서드의 항목"
+assert_contains "$OUT" "DRIFT [ruby] scripts/unit-unreached.json: entry ruby/lib/kc/config.rb:Config#valid? names a file outside the boundary derived from ruby/spec/spec_helper.rb:9" "[ruby] 경계 밖 파일의 항목"
 
 # why — 닫힌 항목 · 들여쓴 하위 불릿(항목이 아니다) · 모르는 id · 까닭 머리만 있고 말이 없다.
 ufresh
@@ -298,6 +361,9 @@ assert_contains "$OUT" "DRIFT [dotnet] $N:AuthClient.Pick: why \"closed-gap\"" "
 run unit-report java "$T" --out "$D"
 assert_eq 1 "$RC" "[java] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
 assert_contains "$OUT" "DRIFT [java] $J:AuthClient.pick: why \"closed-gap\"" "[java] 닫힌 id"
+run unit-report ruby "$T" --out "$D"
+assert_eq 1 "$RC" "[ruby] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
+assert_contains "$OUT" "DRIFT [ruby] $R:AuthClient#apply: why \"closed-gap\"" "[ruby] 닫힌 id"
 ufresh
 sed -i 's#"why": "open-gap"#"why": "nested-open"#' "$L"
 run unit-report kotlin "$T" --out "$D"
@@ -555,10 +621,69 @@ sed -i '/AuthClient\.java:AuthClient\.exchange"/,/}/ { /"branches": 1,/d }' "$L"
 run unit-report java "$T" --out "$D"
 assert_eq 2 "$RC" "[ledger] java 항목에 branches 가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [java] scripts/unit-unreached.json: java[\"$J:AuthClient.exchange\"] must be { branches, lines, why }" "[ledger] java 꼴"
+# ruby — 같은 무결성 판정(데이터 · 다른 바이트 · 단위 기록 · 기록 뒤 바뀐 덤프 · 단위 스위트 · 실패한 실행 · 실패한 예제 · 데이터에 없는
+# 경계 파일)과 장부의 꼴.
+ufresh
+rm "$D/ruby.unit.json"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "run the unit suite first (node scripts/integration-coverage.mjs unit ruby)" "[ruby] 다시 돌릴 명령"
+ufresh
+printf '# changed after the run\n' >> "$T/$R"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 다른 바이트의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] $R: the data was taken from other bytes" "[ruby] 다른 바이트"
+ufresh
+sed -i 's#"suite":"unit",##' "$D/ruby.unit.run.json"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 통합 실행의 기록(suite 없음)은 exit 2"
+assert_contains "$OUT" "FAIL [ruby] no record that \`unit ruby\` wrote this data" "[ruby] 단위 기록 아님"
+ufresh
+printf ' ' >> "$D/ruby.unit.json"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 기록 뒤 바뀐 덤프는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/ruby.unit.json is not the data \`unit ruby\` recorded" "[ruby] 덤프의 sha1"
+# 단위 실행에 통합 스위트의 예제가 섞였다 · 태그와 자리가 갈리는 예제(어느 스위트인지 모른다 — 섞인 것으로 본다).
+ufresh
+sed -i 's#"integration":false#"integration":true#' "$D/ruby.unit.json"
+rmark 0
+assert_contains "$(cat "$D/ruby.unit.json")" '"integration":true' "(변이가 착지했는지 먼저 본다)"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 통합 태그가 실린 단위 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the run included examples of the integration suite or examples it cannot place (./spec/unit/drive_spec.rb[1:1]) — the data would not be unit-only" "[ruby] 통합 섞임"
+ufresh
+sed -i 's#"file":"./spec/unit/drive_spec.rb"#"file":"./spec/integration/drive_spec.rb"#' "$D/ruby.unit.json"
+rmark 0
+assert_contains "$(cat "$D/ruby.unit.json")" '"file":"./spec/integration/drive_spec.rb"' "(변이가 착지했는지 먼저 본다)"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 태그 없이 spec/integration 에 있는 예제는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] the run included examples of the integration suite or examples it cannot place (./spec/unit/drive_spec.rb[1:1])" "[ruby] 못 가르는 예제"
+ufresh
+rmark 1
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 실패한 실행의 데이터는 exit 2"
+assert_contains "$OUT" "FAIL [ruby] the run that wrote this data exited 1" "[ruby] 실패한 실행"
+ufresh
+sed -i 's#"status":"passed"#"status":"failed"#' "$D/ruby.unit.json"
+rmark 0
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 실패한 단위 예제가 있으면 exit 2"
+assert_contains "$OUT" "FAIL [ruby] 1 of 1 examples in the run did not pass — the data of a failed run is partial: ./spec/unit/drive_spec.rb[1:1] (failed)" "[ruby] 실패한 예제"
+ufresh
+sed -i 's#/ruby/lib/kc/auth_client\.rb"#/ruby/spec/spec_helper.rb"#' "$D/ruby.unit.json"
+rmark 0
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ruby] 경계 파일이 데이터에 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [ruby] $R is not in the coverage data" "[ruby] 데이터에 없는 경계 파일"
+ufresh
+sed -i '/AuthClient#exchange"/,/}/ s#"lines": 1,#"lines": 1, "branches": 0,#' "$L"
+run unit-report ruby "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] ruby 항목에 branches 가 있으면 exit 2(ruby 는 줄만 센다)"
+assert_contains "$OUT" "FAIL [ruby] scripts/unit-unreached.json: ruby[\"$R:AuthClient#exchange\"] must be { lines, why }" "[ledger] ruby 꼴"
 ufresh
 run unit-report go "$T" --out "$D"
 assert_eq 2 "$RC" "[cli] 재지 않는 언어는 usage(exit 2)"
-assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java — got go" "[cli] usage 문구"
+assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby — got go" "[cli] usage 문구"
 
 # ── (4) check — 데이터 없이 꼴 · 경계 · why(통합 픽스처 트리 — 아홉 언어) ──────────────────────────────
 fresh
@@ -568,6 +693,7 @@ assert_line "$OUT" "[kotlin] unit-unreached: 1 entry (integration 1)" "[check] k
 assert_line "$OUT" "[php] unit-unreached: 1 entry (open-admin 1)" "[check] php 장부"
 assert_line "$OUT" "[dotnet] unit-unreached: 1 entry (defensive 1)" "[check] dotnet 장부"
 assert_line "$OUT" "[java] unit-unreached: 1 entry (unreachable 1)" "[check] java 장부"
+assert_line "$OUT" "[ruby] unit-unreached: 1 entry (open-masking 1)" "[check] ruby 장부"
 fresh
 sed -i 's#"why": "open-admin"#"why": "closed-item"#' "$T/scripts/unit-unreached.json"
 run check "$T"

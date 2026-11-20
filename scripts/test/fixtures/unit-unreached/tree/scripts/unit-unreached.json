@@ -128,5 +128,27 @@
       "branches": 2,
       "why": "integration: main's helper — the same as main"
     }
+  },
+  "ruby": {
+    "ruby/lib/kc/auth_client.rb:AuthClient#exchange": {
+      "lines": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "ruby/lib/kc/auth_client.rb:AuthClient#apply": {
+      "lines": 1,
+      "why": "open-gap"
+    },
+    "ruby/lib/kc/auth_client.rb:AuthClient#describe": {
+      "lines": 1,
+      "why": "integration: a one-line method the drive never calls — its line ran at require, its call count is 0"
+    },
+    "ruby/lib/kc/auth_client.rb:AuthClient#logout_url": {
+      "lines": 1,
+      "why": "integration: the drive never calls it — the integration spec does, outside the unit run"
+    },
+    "ruby/lib/kc/auth_client.rb:AuthClient.parse": {
+      "lines": 1,
+      "why": "defensive: the drive never sends nil — a singleton method keys with a dot"
+    }
   }
 }
