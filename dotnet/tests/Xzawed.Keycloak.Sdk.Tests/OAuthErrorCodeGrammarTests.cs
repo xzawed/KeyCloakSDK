@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using WireMock.RequestBuilders;
@@ -158,6 +159,57 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
     [Theory]
     [MemberData(nameof(SuccessStatusCases))]
     public Task A_2xx_carrying_an_error_code_fails_with_that_code_as_a_400_does(string row, int status) => Check(row, status);
+
+    /// <summary>Any other HTTP error whose body is JSON but no object — an array, a string, a number, a literal — has no
+    /// <c>error</c> member, so nothing in it is a code, a code-shaped string at its root included: Message and OAuthError are
+    /// the canonical reason, as for an empty body, on every call.</summary>
+    /// <remarks>A 400 and a 2xx refuse such a body before reading it ("response body is not a JSON object"); on every other
+    /// status the body is only asked for an <c>error</c> member — and on a root that is no object, <c>TryGetProperty</c> throws.</remarks>
+    [Theory]
+    [InlineData("[\"invalid_client\"]")]
+    [InlineData("\"invalid_client\"")]
+    [InlineData("42")]
+    [InlineData("true")]
+    [InlineData("null")]
+    public Task Any_other_HTTP_error_reads_no_code_from_a_JSON_body_that_is_no_object(string body) =>
+        CheckEvery(401, body, "Unauthorized", "Unauthorized");
+
+    /// <summary>A status with no standard reason phrase — 520, what a CDN in front of the IdP answers for an origin it could not
+    /// read — is named by its number: <c>HTTP 520</c> in the Message, and in OAuthError unless the body carries a code.</summary>
+    /// <remarks>The server's own phrase is never the fallback — <c>MalformedTokenResponseTests</c> (g6) sends one and looks for it.</remarks>
+    [Theory]
+    [InlineData("", null)]
+    [InlineData("{\"error\":\"invalid_client\"}", "invalid_client")]
+    public Task An_HTTP_error_with_no_standard_reason_phrase_is_named_by_its_number(string body, string? code)
+    {
+        // The premise: .NET has no phrase for 520 — else this would test that phrase, not the number.
+        using (var probe = new HttpResponseMessage((HttpStatusCode)520))
+            Assert.Null(probe.ReasonPhrase);
+        return CheckEvery(520, body, "HTTP 520", code ?? "HTTP 520");
+    }
+
+    /// <summary>Every call in <see cref="Calls"/> against both endpoints answering <paramref name="status"/> with
+    /// <paramref name="body"/>: a <see cref="KeycloakAuthException"/> whose Message is the call's prefix and
+    /// <paramref name="tail"/>, with <paramref name="oauthError"/>.</summary>
+    private async Task CheckEvery(int status, string body, string tail, string? oauthError)
+    {
+        foreach (var path in new[] { $"{Oidc}/token", $"{Oidc}/token/introspect" })
+        {
+            _idp.Given(Request.Create().WithPath(path).UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(status).WithHeader("Content-Type", "application/json").WithBody(body));
+        }
+        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = _idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = Secret });
+
+        var wrong = new List<string>();
+        foreach (var (name, prefix, run) in Calls)
+        {
+            var ex = await Record.ExceptionAsync(() => run(kc));
+            var message = $"{prefix}: {tail}";
+            if (ex is not KeycloakAuthException k || k.Message != message || k.OAuthError != oauthError)
+                wrong.Add($"{name}: {Describe(ex)} — want {Visible(message)} / {Visible(oauthError)}");
+        }
+        Assert.True(wrong.Count == 0, $"[HTTP {status} · body {body}]\n" + string.Join("\n", wrong));
+    }
 
     private async Task Check(string row, int status)
     {
