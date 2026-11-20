@@ -73,7 +73,8 @@
 // `ruby.unit-boot/`)에 쓴다:
 // start.rb 는 bundler/setup **보다 먼저** Coverage 를 켜고(SimpleCov 1.2.0 은 `Coverage.running?` 이면 제 start 를 건너뛴다 —
 // `simplecov.rb:120`), dump.rb 는 `rspec --require` 로 실려 스위트가 끝난 뒤(SimpleCov 의 at_exit 가 `Coverage.result` 로
-// 측정을 멈추기 전) 이 트리 lib 의 파일마다 sha1 · 줄 · 메서드와 예제 결과를 쓴다. ⚠️ `bundle exec` 를 거치지 않는다 — 윈도에서
+// 측정을 멈추기 전) 이 트리 lib 의 파일마다 sha1 · 줄 · 메서드 · 가지(형식 /2 — 가지는 단위 미도달 장부만 센다)와 예제 결과를
+// 쓴다. ⚠️ `bundle exec` 를 거치지 않는다 — 윈도에서
 // 새 프로세스를 띄우며 RUBYOPT 맨 앞에 `-rbundler/setup` 을 붙여, gemspec 이 싣는 version.rb 가 측정 전에 실렸다(실측: 그
 // 프로세스의 RUBYOPT 순서 · pid). 순서를 명시한다: `ruby -r<start> -rbundler/setup -e 'load Gem.bin_path("rspec-core", "rspec")'`.
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
@@ -84,14 +85,15 @@
 // 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
 // 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
 // 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin · java 는 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친
-// 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지, ruby 는 VM `Coverage` 의 메서드 범위 안 0 회인 줄(한 줄 메서드는
-// 호출 횟수). 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport · dotnetReport · rubyReport)가 낸다: kotlin 의 람다 · 로컬
-// 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역 클래스는 javaFold 가, dotnet 의 상태 기계 · 람다 ·
-// 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다 — java 의 이름
-// 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). ruby 의 블록 · 람다는 접을 것이 없다 — 감싼 메서드의 줄 범위 안이라 그
-// 메서드의 줄이다(메서드 밖 블록의 안 돈 줄은 위 리더가 FAIL 로 낸다). 정적 초기화는 kotlin · java `<타입>.<clinit>` · dotnet
-// `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin · dotnet · java), why }) —
-// why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위 소유자와 같은 판정).
+// 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지, ruby 는 VM `Coverage` 의 메서드마다 0 회인 줄(한 줄 메서드는
+// 호출 횟수) · 0 회인 가지 갈래. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport · dotnetReport · rubyReport)가 낸다: kotlin 의
+// 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역 클래스는 javaFold 가, dotnet 의 상태
+// 기계 · 람다 · 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다 —
+// java 의 이름 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). ruby 의 블록 · 람다는 이름을 접을 것이 없다 — 감싼 메서드의
+// 줄 범위 안이라 그 메서드의 줄 · 가지다(메서드 밖 블록의 안 돈 줄 · 안 탄 갈래는 리더가 FAIL 로 낸다). 정적 초기화는 kotlin · java
+// `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin ·
+// dotnet · java · ruby), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위
+// 소유자와 같은 판정).
 // run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크, dotnet 은 같은
 // 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`, java 는 같은 리액터 · 같은 exec 자리로 레인의 단위 골 `test
 // -DskipITs=true` — failsafe 는 그 뒤 단계라 안 돈다, ruby 는 같은 부트 파일 · 같은 순서로 레인의 단위 명령 `bundle exec rspec` — 태그
@@ -104,11 +106,12 @@
 // 바꿔 이 장부가 못 본다. `--path-coverage`(Xdebug)로도 `--coverage-xml` 에는 가지 · 경로 수가 없다(실측 2026-11-18 — PHPUnit 12.5.33 ·
 // php-code-coverage 12.5.7 · Xdebug 3.5.3: `<method>` 는 줄 수뿐이고 Report/Xml/Method.php 가 그것만 쓴다 · clover 는 클래스 단위
 // conditionals · cobertura 는 메서드의 branch-rate 비율뿐이다). kotlin 은 한 줄의 실패 갈래도 가지로 센다.
-// ⚠️ ruby 도 줄만 센다 — 덤프는 통합 리포트와 같은 lines · methods 다(VM 은 가지도 낸다 — start.rb 가 `branches: true` 로 켜고 SimpleCov 의
-// 가지 게이트가 그것을 읽는다 — 덤프가 싣지 않을 뿐이다). 그래서 php 와 같은 틈이 있다: 행복 경로가 이미 도는 줄에 붙은 실패 갈래
-// (`x || raise …` · 후치 `if` · `unless` · 한 줄 삼항 · `&.`)는 줄 수를 안 바꿔 이 장부가 못 본다(등록부 php-unit-unreached-same-line-branch
-// 가 php 의 것을 적는다). 한 줄 메서드(`def x = …` · `def x; …; end`)의 줄은 적재 때 돌므로 호출 횟수로 센다 — 안 불렸으면 1 줄이다. 몸통에
-// 줄이 없는 메서드(`def x` 다음 줄이 `end`)는 안 불려도 0 줄이라 장부에 안 든다(통합 리포트는 호출 횟수로 그것을 empty body 로 낸다).
+// ⚠️ ruby 는 줄과 가지를 센다 — 덤프(형식 /2)가 VM `Coverage` 의 branches 를 싣는다(start.rb 가 `branches: true` 로 켠 것 — SimpleCov 의
+// 가지 게이트도 같은 데이터를 읽는다). 가지는 if · unless · case · while · until · 삼항 · `&.` 의 갈래마다 하나다(한 줄의 후치 `if` ·
+// `unless` · 삼항 · `&.` 의 안 탄 쪽도 센다). 갈래는 자리의 첫 줄로 메서드에 붙인다 — def 줄까지가 메서드의 것이다(기본 인자). 못 보는 것:
+// `||` · `&&` · `or` · `and` 는 VM 이 가지로 싣지 않는다 — `x || raise …` 의 실패 갈래는 행복 경로가 도는 줄에 있으면 안 보인다(실측
+// 2026-11-21 — 픽스처의 fallback). 한 줄 메서드(`def x = …` · `def x; …; end`)의 줄은 적재 때 돌므로 호출 횟수로 센다 — 안 불렸으면 1 줄이다.
+// 몸통에 줄이 없는 메서드(`def x` 다음 줄이 `end`)는 안 불려도 0 줄이다(통합 리포트는 호출 횟수로 그것을 empty body 로 낸다).
 // ⚠️ dotnet 도 가지를 센다 — coverlet(10.1.0)은 컴파일러가 만든 갈래 대부분을 싣지 않는다: 상태 기계의 분기 · finally 의 가드 · using 의
 // null 검사 · 람다 · 메서드 그룹 캐시, 그리고 Task · ValueTask(ConfigureAwait 여부와 무관)를 await 할 때의 IsCompleted 검사(실측 2026-11-19,
 // 실제 트리 · net8.0 Release: 경계의 상태 기계 31 개에 await 40 개 — 그중 18 개는 실린 가지가 0 개다 · AdminAsync 의 IL 조건 점프 10 개 중
@@ -200,8 +203,8 @@ const JVM_LANGS = new Set(['java', 'kotlin'])
 const UNIT = 'scripts/unit-unreached.json'
 const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java', 'ruby']
 const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
-// 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없고, ruby 의 덤프는 줄 · 메서드만 싣는다(머리 주석).
-const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java'])
+// 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없다(머리 주석).
+const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java', 'ruby'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -1791,7 +1794,9 @@ function phpReport(d) {
 }
 
 // ── ruby: run 이 쓰는 덤프(Ruby `Coverage` 의 lines · methods + 예제 결과 — 머리 주석) ───────────────
-const RUBY_FORMAT = 'kcsdk-ruby-coverage/1'
+// 형식 /2 = /1(lines · methods)에 파일마다 branches 를 더한 것이다 — 두 리더 다 이 판만 받는다(/1 덤프에는 가지가 없어 단위 장부가
+// 가지를 0 으로 셀 뻔했다).
+const RUBY_FORMAT = 'kcsdk-ruby-coverage/2'
 // 단위(`unit ruby`)는 `.unit` 이 붙은 이름이다(SUITE).
 const RUBY_DATA = () => join(out, `ruby${TAG}.json`)
 const RUBY_RUN = () => join(out, `ruby${TAG}.run.json`)
@@ -1824,7 +1829,16 @@ RSpec.configure do |config|
       methods = (cov[:methods] || {}).map do |(owner, name, sl, sc, el, ec), count|
         { "owner" => owner.inspect, "name" => name.to_s, "start" => [sl, sc], "end" => [el, ec], "count" => count }
       end
-      files[abs] = { "sha1" => Digest::SHA1.file(abs).hexdigest, "lines" => cov[:lines], "methods" => methods }
+      # Branch sites (if, unless, case, while, until, ternary, &.) with each arm's count. Coverage without branches gives nil,
+      # written as null so the reader fails instead of counting no branches.
+      branches = cov[:branches]&.map do |(type, _id, sl, sc, el, ec), arms|
+        { "type" => type.to_s, "start" => [sl, sc], "end" => [el, ec],
+          "arms" => arms.map do |(arm, _aid, asl, asc, ael, aec), count|
+            { "type" => arm.to_s, "start" => [asl, asc], "end" => [ael, aec], "count" => count }
+          end }
+      end
+      files[abs] = { "sha1" => Digest::SHA1.file(abs).hexdigest, "lines" => cov[:lines], "methods" => methods,
+                     "branches" => branches }
     end
     examples = RSpec.configuration.reporter.examples.map do |e|
       { "id" => e.id, "file" => e.metadata[:file_path], "integration" => e.metadata[:integration] ? true : false,
@@ -1935,6 +1949,20 @@ function rubyReport(d) {
       fail('ruby', `${f}: cannot read the line counts in ${shown}`)
       continue
     }
+    // 가지 — 형식 /2 의 VM branches: 자리(if · unless · case · while · until · 삼항 · &.)마다 갈래와 그 횟수다. 단위 미도달 장부만
+    // 세지만(통합 리포트는 쓰지 않는다) 꼴은 두 스위트가 다 본다 — 못 읽는 가지를 0 개로 세지 않는다.
+    const span = (p) => Array.isArray(p) && p.length === 2 && p.every(isCount)
+    const site = (b) => b !== null && typeof b === 'object' && typeof b.type === 'string' && span(b.start) && span(b.end) && Array.isArray(b.arms) &&
+      b.arms.length > 0 && b.arms.every((a) => a !== null && typeof a === 'object' && typeof a.type === 'string' && span(a.start) && span(a.end) && isCount(a.count))
+    if (!Array.isArray(e.branches) || !e.branches.every(site)) {
+      fail('ruby', `${f}: cannot read the branch counts in ${shown}`)
+      continue
+    }
+    const far = e.branches.find((b) => b.start[0] < 1 || b.end[0] < b.start[0] || b.end[0] > e.lines.length)
+    if (far) {
+      fail('ruby', `${f}: the ${far.type} branch at lines ${far.start[0]}–${far.end[0]} lies outside the ${e.lines.length} lines the data counts — the data contradicts itself`)
+      continue
+    }
     const ms = []
     let broken = false
     for (const m of e.methods) {
@@ -2016,11 +2044,27 @@ function rubyReport(d) {
       fail('ruby', `${f}: ${contra.name} was called 0 times but a line of its body ran — the data contradicts itself`)
       continue
     }
+    // 안 탄 갈래는 자리의 첫 줄로 메서드에 붙인다 — 가지는 def 줄까지가 메서드의 것이다(기본 인자의 결정은 호출 때 돈다). 블록 · 람다의
+    // 자리는 감싼 메서드의 범위 안이라 그 메서드의 수다. 범위는 서로 겹치지 않는다(위 판정) — 한 줄은 많아야 한 메서드의 것이다.
+    const missed = ms.map(() => 0)
+    let stray = null
+    for (const b of e.branches) {
+      const k = ms.findIndex((m) => m.sl <= b.start[0] && b.start[0] <= m.el)
+      const n = b.arms.filter((a) => a.count === 0).length
+      if (k >= 0) missed[k] += n
+      else if (n && !stray) stray = b
+    }
+    // 메서드 밖 자리의 안 탄 갈래(클래스 수준 삼항 · 클래스 수준 람다 안의 결정)는 어느 메서드에도 못 붙인다 — 단위 장부는 FAIL 이다(위
+    // 메서드 밖 0 회 줄과 같은 판정). 통합 리포트는 가지를 안 세므로 묻지 않는다.
+    if (stray && SUITE === 'unit') {
+      fail('ruby', `${f}:${stray.start[0]}: the ${stray.type} branch there sits outside every method and has an arm the run never took — no method can be credited with it`)
+      continue
+    }
     files.push({ file: f, stmts: lines.stmts, covered: lines.covered, bodies })
     ms.forEach((m, k) => {
       if (m.count === 0) never.push({ file: f, line: m.sl, name: m.name, stmts: per[k].stmts, label: per[k].stmts ? undefined : 'empty body' })
       // 한 줄 메서드의 줄은 위 hit 처럼 호출 횟수로 센다 — 몸통에 줄이 없는 메서드는 0 줄이다(머리 주석).
-      units.push({ file: f, line: m.sl, name: m.name, lines: per[k].stmts - per[k].covered })
+      units.push({ file: f, line: m.sl, name: m.name, lines: per[k].stmts - per[k].covered, branches: missed[k] })
     })
   }
   // run 기록 — php 와 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 데이터). 다른 판정 뒤에 둔다 — 데이터가
@@ -2046,7 +2090,7 @@ function rubyReport(d) {
     fail('ruby', `${shown} is not the data \`${RUN_CMD} ruby\` recorded (sha1 ${String(rec.dump_sha1).slice(0, 12)}… recorded, ${dumpSha.slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
-  const runs = SUITE === 'unit' ? ` · ${ex.length} unit example${ex.length === 1 ? '' : 's'}` : ''
+  const runs = SUITE === 'unit' ? ` · branches · ${ex.length} unit example${ex.length === 1 ? '' : 's'}` : ''
   return { path, note: `ruby ${typeof j.ruby === 'string' ? j.ruby : '?'} · Coverage lines · methods${runs}`, files, never, units }
 }
 
@@ -3429,8 +3473,7 @@ function unitLedgerFor(l) {
     fail(l, `${UNIT} has no ${l} object — an empty ledger is {}, not a missing one`)
     return null
   }
-  // kotlin · dotnet · java 는 놓친 줄 · 놓친 가지, php · ruby 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없고 ruby 의 덤프는
-  // 가지를 싣지 않는다).
+  // kotlin · dotnet · java · ruby 는 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
   const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : ['lines', 'why']
   for (const [k, v] of Object.entries(e)) {
     const ok = v !== null && typeof v === 'object' && !Array.isArray(v) && sortU(Object.keys(v)).join() === want.join() && want.every((x) => (x === 'why' ? typeof v.why === 'string' && v.why !== '' : isCount(v[x])))
@@ -3516,7 +3559,7 @@ function printUnit(l, d, data, rows) {
         : l === 'dotnet'
           ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
           : l === 'ruby'
-            ? '  (counts = lines inside each method that the unit run never executed — Ruby Coverage lines, a block\'s lines are its method\'s, a one-line method counts by its calls; lines only: a failure branch on a line the happy path already runs is not seen)'
+            ? '  (counts = Ruby Coverage per method — lines inside it and branch arms (if, unless, case, while, until, ternary, &.) the unit run never executed; a block\'s lines and arms are its method\'s, a one-line method\'s line counts by its calls; || and && are not branches to Ruby, so a failure arm behind them on a line that ran is not seen)'
             : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
   )
   const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))

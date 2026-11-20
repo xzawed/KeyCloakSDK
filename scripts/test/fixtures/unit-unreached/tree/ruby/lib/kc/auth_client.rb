@@ -10,12 +10,12 @@ module Kc
     # Fully reached by the drive — not in the ledger. A one-line method's line runs at require; its call count says it ran.
     def realm = @config.realm
 
-    # Fully reached by the drive — not in the ledger.
+    # Fully reached by the drive, both arms of the ternary — not in the ledger.
     def token(kind)
-      "#{@config.realm}:#{kind}"
+      kind.nil? ? "#{@config.realm}:default" : "#{@config.realm}:#{kind}"
     end
 
-    # A failure branch on its own line: the drive never sends an empty code.
+    # A failure branch on its own line: the drive never sends an empty code — its line and its arm are unreached.
     def exchange(code)
       if code.empty?
         raise ArgumentError, "empty code"
@@ -24,17 +24,27 @@ module Kc
       "token:#{code}"
     end
 
-    # A failure branch on a line the happy path already runs — line counts cannot see it (the ledger's known gap).
+    # A failure arm on a line the happy path already runs: no line is left unreached, the unless arm is.
     def pick(map, key)
-      map[key] || raise(KeyError, "no #{key}")
+      raise KeyError, "no #{key}" unless map.key?(key)
+
+      map[key]
     end
 
-    # A block's lines are the method's: the drive passes no items, so the block body never runs.
+    # || is not a branch to Ruby's Coverage: a failure arm behind it, on a line that ran, is not seen (the ledger's known gap).
+    def fallback(value)
+      value || raise(ArgumentError, "none")
+    end
+
+    # A block's lines and arms are its method's: the drive passes no items, so the block body never runs.
     def apply(items)
       items.map do |item|
-        item.upcase
+        item.empty? ? "-" : item.upcase
       end
     end
+
+    # The &. nil arm: the drive always passes claims.
+    def realm_of(claims) = claims&.fetch(:realm)
 
     # A one-line method the drive never calls — its line ran at require, so the call count says it never ran.
     def describe = "AuthClient(#{@config.realm})"

@@ -32,8 +32,9 @@
 #                          루트에 tree/php 사본 + 구동 테스트, 설정은 도구의 run 이 만드는 꼴(`<source><include>` = 경계 두 파일).
 #                          **index.xml 의 `<project source>` 생성 루트만 `@ROOT@` 로 바꿨다**(파일 XML 은 상대 경로뿐이다)
 #   data/php-zero/         같은 명령, 구동기가 경계를 하나도 안 부른다 — 전부 0
-#   data/ruby.json         **도구의 `run ruby` 그대로**(ruby 3.4.10 · 2026-11-06) — 임시 루트에 tree 사본, 번들은 실제 레인의 것
-#                          (`BUNDLE_GEMFILE=ruby/Gemfile`). **덤프의 생성 루트만 `@ROOT@` 로 바꿨다**(root 와 파일 키는 절대 경로다)
+#   data/ruby.json         **도구의 `run ruby` 그대로**(ruby 3.4.10 · 2026-11-06, 형식 /2 로 2026-11-21 재생성) — 임시 루트에 tree
+#                          사본, 번들은 실제 레인의 것(`BUNDLE_GEMFILE=ruby/Gemfile`). **덤프의 생성 루트만 `@ROOT@` 로 바꿨다**(root 와
+#                          파일 키는 절대 경로다). 재생성한 둘은 branches 와 형식 글자 말고는 /1 의 것과 같았다(파일 sha1 · 줄 · 메서드 · 예제)
 #   data/ruby-zero.json    같은 명령, 구동 스펙이 경계 밖 `Config` 만 만든다 — 메서드 몸통 전부 0
 #   data/dotnet.json       **도구의 `run dotnet` 그대로**(.NET SDK 10.0.102 → net8.0 · coverlet.collector 10.1.0 · 2026-11-06) — 임시
 #                          루트에 tree 사본. 문서 키는 절대 경로다 — **생성 루트만 `@ROOT@` 로 바꿨다**(JSON 의 `\\` 그대로)
@@ -948,11 +949,12 @@ run report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ruby] JSON 이 아니면 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "/ruby.json is not JSON" "[ruby] JSON 아님"
 fresh
-sed -i 's|kcsdk-ruby-coverage/1|kcsdk-ruby-coverage/2|' "$D/ruby.json"
+sed -i 's|kcsdk-ruby-coverage/2|kcsdk-ruby-coverage/1|' "$D/ruby.json"
 ruby_mark 0
+assert_contains "$(cat "$D/ruby.json")" '"format":"kcsdk-ruby-coverage/1"' "(변이가 착지했는지 먼저 본다)"
 run report ruby "$T" --out "$D"
-assert_eq 2 "$RC" "[ruby] 다른 형식이면 exit 2 — 출력: $OUT"
-assert_contains "$OUT" "is not the dump \`run ruby\` writes (format kcsdk-ruby-coverage/1)" "[ruby] 형식"
+assert_eq 2 "$RC" "[ruby] 다른 형식이면 exit 2 — 가지 없는 옛 판(/1)도 — 출력: $OUT"
+assert_contains "$OUT" "is not the dump \`run ruby\` writes (format kcsdk-ruby-coverage/2)" "[ruby] 형식"
 fresh
 sed -i 's|"root":"[^"]*"|"root":"/elsewhere/ruby"|' "$D/ruby.json"
 ruby_mark 0

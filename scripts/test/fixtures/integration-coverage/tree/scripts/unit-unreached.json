@@ -28,7 +28,8 @@
   },
   "ruby": {
     "ruby/lib/kc/auth_client.rb:AuthClient#introspect": {
-      "lines": 2,
+      "lines": 1,
+      "branches": 1,
       "why": "open-masking"
     }
   }
