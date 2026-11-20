@@ -56,11 +56,13 @@ JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
 @dataclass
 class _Idp:
     """Answers every POST with 400 `{"error": …}` — `error` is `fixed`, or built by `echo` from
-    the form and the client secret this request sent (Basic or form field)."""
+    the form and the client secret this request sent (Basic or form field). `description`, when
+    set, rides along as `error_description`."""
 
     echo: Callable[[dict[str, str]], Any] | None = None
     fixed: Any = None
     status: int = 400
+    description: str | None = None
     url: str = ""
     seen: list[dict[str, str]] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -91,7 +93,10 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length).decode() if length else ""
-            payload = json.dumps({"error": idp.error_for(_sent(self.headers, body))}).encode()
+            answer = {"error": idp.error_for(_sent(self.headers, body))}
+            if idp.description is not None:
+                answer["error_description"] = idp.description
+            payload = json.dumps(answer).encode()
             self.send_response(idp.status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
@@ -103,9 +108,13 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
 
 @contextlib.contextmanager
 def _echo_idp(
-    *, echo: Callable[[dict[str, str]], Any] | None = None, fixed: Any = None, status: int = 400
+    *,
+    echo: Callable[[dict[str, str]], Any] | None = None,
+    fixed: Any = None,
+    status: int = 400,
+    description: str | None = None,
 ) -> Iterator[_Idp]:
-    idp = _Idp(echo=echo, fixed=fixed, status=status)
+    idp = _Idp(echo=echo, fixed=fixed, status=status, description=description)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(idp))
     idp.url = f"http://127.0.0.1:{server.server_address[1]}"
     threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
@@ -203,6 +212,23 @@ async def test_a_lowercased_echo_of_the_client_secret_is_never_carried(
         err = await _fail(lane, idp.url, act, secret="EchoMixedCase")
     assert idp.seen and idp.seen[0]["client_secret"] == "EchoMixedCase"
     _withheld(err, "echomixedcase")
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_success_status_oauth_error_withholds_a_lowercased_echo_of_the_client_secret(
+    lane: str,
+) -> None:
+    """A 200 that names an OAuth error fails like the 400 that does (registry
+    auth-2xx-error-code-divergent) — and its code takes the same rule: the secret echoed back
+    lowercased is no code. Before the fix this 200 failed as "no usable access_token"."""
+    with _echo_idp(
+        echo=lambda sent: sent["client_secret"].lower(), status=200, description="d"
+    ) as idp:
+        err = await _fail(lane, idp.url, SURFACES["client_credentials"][0], secret="EchoedSecret")
+    assert idp.seen and idp.seen[0]["client_secret"] == "EchoedSecret"
+    _withheld(err, "echoedsecret", status=200)
+    for text in _renderings(err):
+        assert "EchoedSecret" not in text
 
 
 @pytest.mark.parametrize("form", list(ECHO_FORMS))

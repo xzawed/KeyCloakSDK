@@ -61,6 +61,8 @@ class AdminTokenResponseTest {
   private final List<String> grants = new ArrayList<>();
   /** admin 엔드포인트에 닿은 요청(메서드 경로 · Authorization). */
   private final List<String> adminHits = new ArrayList<>();
+  /** {@link #callExpectingRejection} 가 마지막으로 받은 것(성공이면 null) — 코드 칸을 따로 재는 행이 쓴다. */
+  private Throwable lastRejection;
 
   /**
    * 토큰 엔드포인트의 응답 — {@code contentEncoding} 이 있으면 그 헤더를 달고(본문은 이미 그 코딩으로 된 바이트),
@@ -201,6 +203,81 @@ class AdminTokenResponseTest {
   }
 
   /**
+   * 성공 상태의 OAuth error — 200 본문이 비어 있지 않은 문자열 {@code error} 를 실으면 그 그랜트는 OAuth 오류 응답이다: 같은 본문의 400 과
+   * 같은 「admin token request failed: HTTP &lt;상태&gt;」 · admin 요청 0 건 · 토큰 요청 1 건, 그리고 {@code getError()} 는 코드다(아홉
+   * 언어의 규칙 — 400 행은 이 레인 그대로 코드가 없다, 상태의 수용 범위 밖이라 바꾸지 않는다). 토큰이 함께 실려도(B2) 쓰지 않는다.
+   * 수정 전에는 B1 이 코드 없는 「(unusable token response)」 였고 B2 는 그 토큰으로 admin 요청을 보냈다(등록부
+   * auth-2xx-error-code-divergent).
+   */
+  @Test void successStatusOAuthError_sendsNoAdminRequest_andFailsAsTheErrorStatus() {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    Map<String, String> bodies = new LinkedHashMap<>();
+    bodies.put("B1", "{\"error\":\"invalid_grant\",\"error_description\":\"d\"}");
+    bodies.put("B2", "{\"error\":\"invalid_grant\",\"access_token\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl\","
+        + "\"token_type\":\"Bearer\",\"expires_in\":300}");
+    for (int status : new int[] {200, 400}) {
+      for (Map.Entry<String, String> body : bodies.entrySet()) {
+        reset(new Reply(status, body.getValue()));
+        table.add(callExpectingRejection(status + " " + body.getKey(), wrong,
+            new Expected(KeycloakAuthException.class, "admin token request failed: HTTP " + status)));
+        String want = status == 200 ? "invalid_grant" : null;
+        String code = lastRejection instanceof KeycloakAuthException auth ? auth.getError() : "(no KeycloakAuthException)";
+        if (!Objects.equals(want, code)) wrong.add(status + " " + body.getKey() + ": getError() " + code + " (기대 " + want + ")");
+      }
+    }
+    System.out.println("[AdminTokenResponseTest successStatusOAuthError]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * 겹침 — 시크릿 {@code EchoedSecret}(Basic 자격으로 나간다)을 소문자로 되울린 200 의 {@code error} 는 코드로 싣지 않는다: 같은 실패 ·
+   * {@code getError()} null · 메시지와 스택 어디에도 그 값(어느 대소문자로도)이 없다 · admin 요청 0 건. 대조 행 — 같은 본문의
+   * {@code invalid_grant} 는 실린다(겹침이 아니라 모양이 막는 게 아님을 가른다).
+   */
+  @Test void successStatusOAuthError_withholdsALowercasedEchoOfTheClientSecret() {
+    Supplier<AdminClient> echoed = () -> new AdminClient(KeycloakConfig.builder()
+        .serverUrl("http://127.0.0.1:" + server.getAddress().getPort()).realm(REALM).clientId("app")
+        .clientSecret("EchoedSecret".toCharArray()).connectTimeout(Duration.ofSeconds(5)).readTimeout(Duration.ofSeconds(5))
+        .build());
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    for (String error : List.of("echoedsecret", "invalid_grant")) {
+      reset(new Reply(200, "{\"error\":\"" + error + "\",\"error_description\":\"d\"}"));
+      table.add(callExpectingRejection("200 error " + error, wrong, echoed,
+          new Expected(KeycloakAuthException.class, "admin token request failed: HTTP 200")));
+      String want = error.equals("echoedsecret") ? null : error;
+      String code = lastRejection instanceof KeycloakAuthException auth ? auth.getError() : "(no KeycloakAuthException)";
+      if (!Objects.equals(want, code)) wrong.add(error + ": getError() " + code + " (기대 " + want + ")");
+      StringWriter trace = new StringWriter();
+      if (lastRejection != null) lastRejection.printStackTrace(new PrintWriter(trace, true));
+      String rendered = trace.toString().toLowerCase(Locale.ROOT);
+      if (rendered.contains("echoedsecret")) wrong.add(error + ": 오류가 되울린 시크릿을 찍었다");
+    }
+    System.out.println("[AdminTokenResponseTest successStatusOAuthError echo]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
+   * 대조 — {@code error} 가 비어 있지 않은 JSON 문자열이 아니면 판정은 지금 그대로다: 결합(AccessTokenResponse 의 문자열 error 칸 —
+   * TokenManager 는 읽지 않는다)이 받는 스칼라(숫자 · 불리언 · null · "")는 토큰을 쓰고, 객체 · 배열은 결합이 실패한다.
+   */
+  @Test void successStatusOAuthError_onlyANonEmptyStringCounts() {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    for (String value : List.of("12345", "true", "null", "\"\"")) {
+      reset(new Reply(200, tokenBody("\"good\"", ",\"error\":" + value)));
+      expectGood("error " + value, wrong, table);
+    }
+    for (String value : List.of("{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]")) {
+      reset(new Reply(200, tokenBody("\"good\"", ",\"error\":" + value)));
+      table.add(callExpectingRejection("error " + value, wrong, Expected.unusable(200)));
+    }
+    System.out.println("[AdminTokenResponseTest successStatusOAuthError controls]\n  " + String.join("\n  ", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));
+  }
+
+  /**
    * 거부가 내는 것 — 끝까지 온 쓸 수 없는 응답은 인증 오류(그 상태를 싣는다), 상한을 넘어 다 읽지 않은 응답은 전송 오류다(등록부
    * token-response-class-divergent).
    */
@@ -230,6 +307,7 @@ class AdminTokenResponseTest {
     } catch (Throwable t) {
       thrown = t;
     }
+    lastRejection = thrown;
     List<String> hits = adminHits();
     String row = String.format("%-24s → %s · grants %s · admin %s", label,
         thrown == null ? "성공" : thrown.getClass().getSimpleName() + "(" + thrown.getMessage() + ")", grants(), hits);

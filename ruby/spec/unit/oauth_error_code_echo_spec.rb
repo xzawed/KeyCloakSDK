@@ -29,6 +29,7 @@ module OAuthErrorCodeEchoSpec
     "wrapped" => ->(v) { "x_#{v}_x" }
   }.freeze
   TOKEN_URL = "https://kc.example.com/realms/demo/protocol/openid-connect/token"
+  INTROSPECT_URL = "#{TOKEN_URL}/introspect".freeze
 end
 
 RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
@@ -166,6 +167,46 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
       it "withholds the lowercased echo on #{surface}" do
         answer_with { |s| s.fetch("client_secret").downcase }
         expect_withheld(failure(surface), "echomixedcase")
+      end
+    end
+  end
+
+  # 성공 상태의 OAuth `error`(등록부 auth-2xx-error-code-divergent) — 그 실패도 같은 규칙으로 코드를 싣는다: 소문자로 되울린
+  # 시크릿은 코드에도 메시지에도 없다. 시크릿이 글자뿐이라 접은 것이 코드 모양이다(모양만으로는 못 뺀다). 수정 전에는 그
+  # 실패가 코드 없는 「쓸 수 없는 응답」이었다 — 정확한 메시지가 둘을 가른다.
+  context "with a letters-only secret echoed lowercased at a success status (success-status OAuth error)" do
+    let(:secret) { "EchoedSecret" }
+
+    {
+      "client_credentials" => "client-credentials failed: non-standard error code (HTTP 200)",
+      "refresh" => "refresh failed: non-standard error code (HTTP 200)",
+      "exchange_code" => "authorization_code exchange failed: non-standard error code (HTTP 200)",
+      "provider" => "client-credentials token request failed: HTTP 200",
+      "admin" => "client-credentials token request failed: HTTP 200"
+    }.each do |surface, message|
+      it "fails #{surface} on HTTP 200 and withholds the echo (success_status_oauth_error)" do
+        stub_request(:post, OAuthErrorCodeEchoSpec::TOKEN_URL)
+          .to_return(status: 200, body: '{"error":"echoedsecret","error_description":"d"}',
+                     headers: { "Content-Type" => "application/json" })
+        err = failure(surface)
+        expect(err.message).to eq(message)
+        expect_withheld(err, "echoedsecret")
+        renderings(err).each { |text| expect(text).not_to include("EchoedSecret") }
+      end
+    end
+
+    # introspection 이 보낸 비밀은 클라이언트 시크릿과 그 토큰이다 — 어느 쪽의 되울림이든 뺀다.
+    {
+      "the client secret" => %w[eyJhbGciOiJIUzI1NiJ9.x.y echoedsecret],
+      "the introspected token" => %w[walrustokenpx walrustokenpx]
+    }.each do |what, (token, echo)|
+      it "fails introspect on HTTP 200 and withholds an echo of #{what} (success_status_oauth_error)" do
+        stub_request(:post, OAuthErrorCodeEchoSpec::INTROSPECT_URL)
+          .to_return(status: 200, body: { error: echo }.to_json, headers: { "Content-Type" => "application/json" })
+        expect { client.auth.introspect(token) }.to raise_error(KeycloakSdk::AuthError) do |err|
+          expect(err.message).to eq("introspection failed: HTTP 200")
+          expect_withheld(err, echo)
+        end
       end
     end
   end

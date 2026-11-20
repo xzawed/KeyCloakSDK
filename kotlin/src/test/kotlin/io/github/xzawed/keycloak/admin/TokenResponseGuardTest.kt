@@ -230,6 +230,9 @@ internal class TokenResponseGuardTest {
         every { req.uri } returns URI.create(uri)
         every { req.setProperty(any(), any()) } just runs
         every { req.getProperty(any()) } returns null // 엔진의 끊기 손잡이가 없다 — 실제 연결의 끊기는 AdminRejectedResponseCutTest 가 잰다
+        // 보낸 비밀(Authorization · 폼 엔티티)은 없다 — 그 대조(adminSentValues)는 TokenResponseClassTest 가 잰다.
+        every { req.getHeaderString(any()) } returns null
+        every { req.entity } returns null
         return req
     }
 

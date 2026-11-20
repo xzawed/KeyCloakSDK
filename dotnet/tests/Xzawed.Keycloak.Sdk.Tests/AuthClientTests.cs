@@ -269,6 +269,97 @@ public class AuthClientTests : IDisposable
         }
     }
 
+    // ── A success status whose body carries an OAuth error (registry auth-2xx-error-code-divergent — one rule in all nine):
+    // the call fails exactly as a 400 with that body does — type, Message and OAuthError — and nothing else in the body is
+    // used: no token set, no introspection result comes back. ──
+
+    private const string TokenPath = "/realms/r/protocol/openid-connect/token";
+    private const string IntrospectionPath = "/realms/r/protocol/openid-connect/token/introspect";
+    private const string UsableAccessToken = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl";
+
+    /// <summary>B1 — the error and nothing usable; B2 — the same error beside a usable token (introspection: beside
+    /// <c>active: true</c>); and an error that is whitespace only — a tab, outside the RFC 6749 grammar and not flagged by
+    /// Duende on a 2xx — beside the same, which is a non-empty JSON string and so an error too (no code is carried of it).</summary>
+    public static TheoryData<string, string, string?> SuccessStatusOAuthErrorCases()
+    {
+        const string tokenB1 = """{"error":"invalid_grant","error_description":"d"}""";
+        const string tokenB2 = $$"""{"error":"invalid_grant","access_token":"{{UsableAccessToken}}","token_type":"Bearer","expires_in":300}""";
+        const string tokenTab = $$"""{"error":"\t","access_token":"{{UsableAccessToken}}","token_type":"Bearer","expires_in":300}""";
+        var data = new TheoryData<string, string, string?>();
+        foreach (var lane in new[] { "ClientCredentialsTokenAsync", "RefreshAsync", "ExchangeCodeAsync" })
+        {
+            data.Add(lane, tokenB1, "invalid_grant");
+            data.Add(lane, tokenB2, "invalid_grant");
+            data.Add(lane, tokenTab, null);
+        }
+        data.Add("IntrospectAsync", """{"error":"invalid_token"}""", "invalid_token");
+        data.Add("IntrospectAsync", """{"error":"invalid_token","active":true}""", "invalid_token");
+        data.Add("IntrospectAsync", """{"error":"\t","active":true}""", null);
+        return data;
+    }
+
+    /// <summary>A 200 whose body is a JSON object with a non-empty string <c>error</c> fails as a 400 with the same body does —
+    /// the same type, Message and OAuthError (the code when <c>OAuthErrorCode</c> lets it through) — and returns nothing: no
+    /// token set from B2's <c>access_token</c>, no result from its <c>active: true</c>.</summary>
+    [Theory]
+    [MemberData(nameof(SuccessStatusOAuthErrorCases))]
+    public async Task SuccessStatusOAuthError_fails_as_a_400_with_the_same_body_does(string lane, string body, string? code)
+    {
+        var auth = Build(out _);
+
+        AnswerBoth(200, body);
+        var refused = Assert.IsType<KeycloakAuthException>(await Record.ExceptionAsync(() => Lanes[lane](auth, CancellationToken.None)));
+        AnswerBoth(400, body);
+        var control = Assert.IsType<KeycloakAuthException>(await Record.ExceptionAsync(() => Lanes[lane](auth, CancellationToken.None)));
+
+        Assert.Equal(code, refused.OAuthError);
+        Assert.Equal(control.OAuthError, refused.OAuthError);
+        Assert.Equal(control.Message, refused.Message);
+    }
+
+    /// <summary>The overlap vector: a 200 whose <c>error</c> is the client secret echoed lowercased fails all the same and
+    /// carries no code — the secret is letters only, so its lowercased echo is code-shaped and only the overlap (ASCII case
+    /// ignored) withholds it, from OAuthError and from every rendering.</summary>
+    [Fact]
+    public async Task SuccessStatusOAuthError_withholds_a_lowercased_echo_of_the_client_secret()
+    {
+        AnswerBoth(200, """{"error":"echoedsecret","error_description":"d"}""");
+        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = _mock.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "EchoedSecret" });
+
+        var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => kc.Auth.ClientCredentialsTokenAsync());
+
+        Assert.Null(refused.OAuthError);
+        Assert.Equal("Client credentials grant failed: error value withheld", refused.Message);
+        Assert.DoesNotContain("echoedsecret", refused.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Control: an <c>error</c> that is no non-empty JSON string — the empty string, JSON null — is no error on a 2xx,
+    /// as before: the usable token beside it comes back.</summary>
+    [Theory]
+    [InlineData("\"\"")]
+    [InlineData("null")]
+    public async Task SuccessStatusOAuthError_control_an_error_that_is_no_non_empty_string_is_none(string errorJson)
+    {
+        var auth = Build(out _);
+        AnswerBoth(200, $$"""{"error":{{errorJson}},"access_token":"{{UsableAccessToken}}","token_type":"Bearer","expires_in":300}""");
+
+        var tokens = await auth.ClientCredentialsTokenAsync();
+
+        Assert.Equal(UsableAccessToken, tokens.AccessToken);
+    }
+
+    /// <summary>The token and the introspection endpoint both answer <paramref name="status"/> with <paramref name="body"/>;
+    /// whatever they answered before is gone.</summary>
+    private void AnswerBoth(int status, string body)
+    {
+        _mock.ResetMappings();
+        foreach (var path in new[] { TokenPath, IntrospectionPath })
+        {
+            _mock.Given(Request.Create().WithPath(path).UsingPost())
+                 .RespondWith(Response.Create().WithStatusCode(status).WithHeader("Content-Type", "application/json").WithBody(body));
+        }
+    }
+
     /// <summary>Keycloak 의 성공은 204 뿐이다 — IsSuccessStatusCode(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다(등록부
     /// logout-2xx-html-false-success, 2026-11-12 판정: 204 밖은 전부 KeycloakAuthException, 상태를 메시지에).</summary>
     [Theory]

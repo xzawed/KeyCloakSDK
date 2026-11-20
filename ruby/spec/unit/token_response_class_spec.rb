@@ -44,6 +44,12 @@ module TokenResponseClassSpec
     HTML = "<html><body><h1>503 Service Unavailable</h1></body></html>"
     OK_TOKEN = '{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300}'
     OK_INTROSPECTION = '{"active":true,"username":"svc"}'
+    # 성공 상태가 OAuth `error` 를 싣는다(등록부 auth-2xx-error-code-divergent · 아홉의 실측 본문 B1 · B2). B2 의 토큰은 bearer
+    # 문법에 맞는다 — 썼다면 admin 요청에 실렸을 것이다.
+    B2_ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
+    B1_ERROR_TOKEN = '{"error":"invalid_grant","error_description":"d"}'
+    B2_ERROR_TOKEN =
+      %({"error":"invalid_grant","access_token":"#{B2_ACCESS_TOKEN}","token_type":"Bearer","expires_in":300}).freeze
 
     # BOM 을 단 UTF-16LE — RFC 8259 §8.1 밖이다(BINARY).
     def self.utf16(json) = "\xFF\xFE".b + json.encode("UTF-16LE").b
@@ -73,6 +79,8 @@ module TokenResponseClassSpec
       "403 access_denied" => [403, JSON_TYPE, '{"error":"access_denied"}'],
       "404 realm missing" => [404, JSON_TYPE, '{"error":"Realm does not exist"}'],
       "409 conflict" => [409, JSON_TYPE, '{"error":"conflict"}'],
+      "B1 200 success-status OAuth error" => [200, JSON_TYPE, B1_ERROR_TOKEN],
+      "B2 200 success-status OAuth error with a token" => [200, JSON_TYPE, B2_ERROR_TOKEN],
       "cap one byte past 1 MiB" => [200, JSON_TYPE, OK_TOKEN, CAP + 1 - OK_TOKEN.bytesize],
       "truncated mid-body" => [200, JSON_TYPE, OK_TOKEN, 0, OK_TOKEN.bytesize / 2],
       # 서버가 `Content-Length` 의 절반에서 연결을 닫는다 — net-http 0.10 의 기본 `ignore_eof: true` 는 그 절반을 성공처럼
@@ -140,6 +148,10 @@ module TokenResponseClassSpec
       "403 access_denied" => [AUTH, "#{CC}: access_denied (HTTP 403)", "access_denied"],
       "404 realm missing" => [AUTH, "#{CC}: non-standard error code (HTTP 404)", nil],
       "409 conflict" => [AUTH, "#{CC}: conflict (HTTP 409)", "conflict"],
+      # 성공 상태의 OAuth `error` 는 오류 상태의 그것과 같은 실패다(같은 메시지 꼴 · 같은 코드) — 수정 전: B1 은 코드 없는
+      # 「unusable token response (RuntimeError)」, B2 는 실린 토큰을 돌려줬다.
+      "B1 200 success-status OAuth error" => [AUTH, "#{CC}: invalid_grant (HTTP 200)", "invalid_grant"],
+      "B2 200 success-status OAuth error with a token" => [AUTH, "#{CC}: invalid_grant (HTTP 200)", "invalid_grant"],
       "cap one byte past 1 MiB" => [TRANSPORT, "token response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, TIMED_OUT, nil],
       "closed mid-body" => [TRANSPORT, CUT, nil],
@@ -165,6 +177,10 @@ module TokenResponseClassSpec
       "403 access_denied" => [AUTH, "#{GRANT}: HTTP 403", "access_denied"],
       "404 realm missing" => [AUTH, "#{GRANT}: HTTP 404", nil],
       "409 conflict" => [AUTH, "#{GRANT}: HTTP 409", "conflict"],
+      # 수정 전: B1 은 코드 없는 「token response has no usable access_token」, B2 는 실린 토큰을 돌려줬다(S5 는 그것으로 admin
+      # 요청을 보냈다).
+      "B1 200 success-status OAuth error" => [AUTH, "#{GRANT}: HTTP 200", "invalid_grant"],
+      "B2 200 success-status OAuth error with a token" => [AUTH, "#{GRANT}: HTTP 200", "invalid_grant"],
       "cap one byte past 1 MiB" => [TRANSPORT, "token response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, TIMED_OUT, nil],
       "closed mid-body" => [TRANSPORT, CUT, nil],
@@ -345,6 +361,22 @@ RSpec.describe KeycloakSdk::KeycloakClient do
         "#{cell}: #{admin} admin request(s)" unless admin == (out.error ? 0 : 1)
       end
       expect(wrong).to eq([])
+    end
+
+    # 성공 상태의 OAuth `error`(등록부 auth-2xx-error-code-divergent) — 실린 토큰은 어디에도 쓰이지 않는다: 세 토큰 레인이 모두
+    # 실패하고, admin 요청은 하나도 나가지 않으며, 그 토큰은 오류의 어느 표현에도 없다. 수정 전: B2 는 세 레인 모두 성공했고
+    # S5 는 그 토큰을 Bearer 로 admin 요청을 보냈다.
+    it "uses nothing from a success-status OAuth error response (success_status_oauth_error)" do
+      cells = ["B1 200 success-status OAuth error", "B2 200 success-status OAuth error with a token"]
+      used = %w[S1 S2 S5].product(cells).filter_map do |lane, cell|
+        out = spec.outcome(lane, cell)
+        next "#{lane} #{cell}: no error" unless out.error
+
+        admin = out.paths.count(spec::USER)
+        shown = spec.renderings(out.error).any? { |s| s.include?(spec::Cells::B2_ACCESS_TOKEN.b) }
+        "#{lane} #{cell}: #{admin} admin request(s) · token shown #{shown}" unless admin.zero? && !shown
+      end
+      expect(used).to eq([])
     end
 
     # 토큰 엔드포인트의 404 는 리소스가 없다는 말이 아니다 — NotFoundError 를 「이미 지워졌다」로 처리하는 소비자에게 그것은

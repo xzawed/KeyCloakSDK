@@ -44,6 +44,10 @@ let headers: Record<string, string> = {}
 let errorOf: (s: Sent) => unknown = () => 'invalid_request'
 /** Bytes of JSON whitespace after the error body — past the 1,048,576-byte cap the response never fully arrives. */
 let padding = 0
+/** The path of every request but discovery, in order — the token and admin hits are counted from it. */
+const paths: string[] = []
+/** When set, each endpoint's whole body instead of `{"error": …}` — the success-status cases send more than that. */
+let bodies: { token: string; introspect: string; admin: string } | undefined
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -68,7 +72,15 @@ beforeAll(async () => {
         )
       }
       sent.push(form)
+      paths.push(path)
       res.writeHead(status, { 'content-type': 'application/json', ...headers })
+      if (bodies !== undefined) {
+        const admin = path.startsWith('/admin/')
+        res.end(
+          admin ? bodies.admin : path.endsWith('/introspect') ? bodies.introspect : bodies.token,
+        )
+        return
+      }
       res.end(JSON.stringify({ error: errorOf(form) }) + ' '.repeat(padding))
     })
   })
@@ -85,6 +97,7 @@ beforeEach(() => {
   headers = {}
   errorOf = () => 'invalid_request'
   padding = 0
+  bodies = undefined
 })
 
 interface Surface {
@@ -136,6 +149,7 @@ function surface(name: string): Surface {
 /** The surface's failure — any other outcome fails the test. `secret: null` is a public client (no secret). */
 async function failing(name: string, secret: string | null = SECRET): Promise<Error> {
   sent.length = 0
+  paths.length = 0
   const kc = KeycloakClient.create({
     serverUrl: origin,
     realm: 'r',
@@ -354,4 +368,180 @@ describe('KeycloakTransportError 는 코드를 싣지 않는다', () => {
     expect(e).toBeInstanceOf(KeycloakTransportError)
     expect('oauthError' in e).toBe(false)
   })
+})
+
+// A token or introspection response at the status the lane takes as success (200) whose body is a JSON object with a
+// non-empty string `error` is the IdP's error answer: it fails as a 400 carrying that `error` does — same error, same
+// message, the code through the same rule — and nothing else in it is used (registry `auth-2xx-error-code-divergent`).
+// Before the fix (main 350836b9): openid-client read B1 as "invalid response encountered" (no code) and B2 as a success —
+// the token was returned, cached and sent to admin, and introspection reported active.
+const AT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl'
+const USER = '{"id":"u1","username":"alice"}'
+/** The error alone. */
+const B1 = {
+  token: '{"error":"invalid_grant","error_description":"d"}',
+  introspect: '{"error":"invalid_token"}',
+  admin: USER,
+}
+/** The error beside everything a success carries. */
+const B2 = {
+  token: `{"error":"invalid_grant","access_token":"${AT}","token_type":"Bearer","expires_in":300}`,
+  introspect: '{"error":"invalid_token","active":true}',
+  admin: USER,
+}
+/** A plain success — for the follow-up call and the controls. */
+const GOOD = {
+  token: '{"access_token":"freshtoken","token_type":"Bearer","expires_in":300}',
+  introspect: '{"active":true}',
+  admin: USER,
+}
+const codeOf = (name: string): string => (name === 'introspect' ? 'invalid_token' : 'invalid_grant')
+const adminHits = (): string[] => paths.filter((p) => p.startsWith('/admin/'))
+
+function newClient(secret = SECRET): KeycloakClient {
+  return KeycloakClient.create({
+    serverUrl: origin,
+    realm: 'r',
+    clientId: 'app',
+    clientSecret: secret,
+  })
+}
+
+describe('success-status OAuth error — a 200 carrying `error` fails as a 400 does, nothing from it is used', () => {
+  it.each(NAMES)('%s — success-status OAuth error, the error alone (B1)', async (name) => {
+    status = 200
+    bodies = B1
+    const e = await authFailure(name)
+    expect(e.message).toBe(`${surface(name).prefix}: ${BODY_ERROR}`)
+    expect(e.oauthError).toBe(codeOf(name))
+  })
+
+  it.each(NAMES)(
+    '%s — success-status OAuth error beside a token or active (B2): fails, nothing used',
+    async (name) => {
+      status = 200
+      bodies = B2
+      const e = await authFailure(name)
+      expect(e.message).toBe(`${surface(name).prefix}: ${BODY_ERROR}`)
+      expect(e.oauthError).toBe(codeOf(name))
+      expect(adminHits()).toEqual([])
+      for (const text of renderings(e)) expect(text.includes(AT), text).toBe(false)
+    },
+  )
+
+  it('admin — success-status OAuth error (B2): the facade sends no admin request with that token', async () => {
+    status = 200
+    bodies = B2
+    paths.length = 0
+    const kc = newClient()
+    try {
+      const got = await kc
+        .admin()
+        .then((admin) => admin.users.get('u1'))
+        .then(
+          () => undefined,
+          (e: unknown) => e,
+        )
+      expect(got).toBeInstanceOf(KeycloakAuthError)
+      expect((got as KeycloakAuthError).oauthError).toBe('invalid_grant')
+      expect(adminHits()).toEqual([])
+    } finally {
+      await kc.close()
+    }
+  })
+
+  it('provider — success-status OAuth error (B2): nothing is cached, the next call asks the IdP again', async () => {
+    status = 200
+    bodies = B2
+    paths.length = 0
+    const kc = newClient()
+    try {
+      const provider = new ClientCredentialsTokenProvider(kc.auth)
+      const first = await provider.getAccessToken().then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(first).toBeInstanceOf(KeycloakAuthError)
+      expect((first as KeycloakAuthError).oauthError).toBe('invalid_grant')
+      bodies = GOOD
+      expect(await provider.getAccessToken()).toBe('freshtoken')
+      expect(paths.filter((p) => p.endsWith('/token'))).toHaveLength(2)
+    } finally {
+      await kc.close()
+    }
+  })
+
+  it('clientCredentialsToken — success-status OAuth error: the secret echoed lowercased is not carried', async () => {
+    status = 200
+    bodies = { ...B1, token: '{"error":"echoedsecret","error_description":"d"}' }
+    const e = await authFailure('clientCredentialsToken', 'EchoedSecret')
+    expect(sentValue('client_secret')).toBe('EchoedSecret')
+    expect(e.message).toBe(`${surface('clientCredentialsToken').prefix}: ${BODY_ERROR}`)
+    assertWithheld('200 · lowercased secret', e, 'echoedsecret')
+    for (const text of renderings(e)) expect(text.includes('EchoedSecret'), text).toBe(false)
+  })
+
+  // Controls — they pass before and after: the rule reaches neither another `error` nor another status.
+  const IGNORED: Array<[string, (value: string) => string]> = [
+    [
+      'clientCredentialsToken',
+      (v) => `{"error":${v},"access_token":"freshtoken","token_type":"Bearer"}`,
+    ],
+    ['introspect', (v) => `{"error":${v},"active":true}`],
+  ]
+  it.each(IGNORED)(
+    '%s — success-status OAuth error control: an `error` that is not a non-empty string is ignored',
+    async (name, body) => {
+      status = 200
+      for (const value of [
+        '400',
+        '{"code":"invalid_grant"}',
+        'null',
+        '""',
+        '["invalid_grant"]',
+        'true',
+      ]) {
+        bodies = { ...GOOD, token: body(value), introspect: body(value) }
+        const kc = newClient()
+        try {
+          const got = await surface(name).run(kc)
+          expect(got, `${name} · ${value}`).toMatchObject(
+            name === 'introspect' ? { active: true } : { accessToken: 'freshtoken' },
+          )
+        } finally {
+          await kc.close()
+        }
+      }
+    },
+  )
+
+  it.each(['clientCredentialsToken', 'introspect'])(
+    '%s — success-status OAuth error control: a body that is not a JSON object is judged as before',
+    async (name) => {
+      status = 200
+      for (const body of [
+        'null',
+        '["invalid_grant"]',
+        '"invalid_grant"',
+        '5',
+        '{"error":"invalid_grant"',
+      ]) {
+        bodies = { ...GOOD, token: body, introspect: body }
+        const e = await authFailure(name)
+        expect(e.oauthError, `${name} · ${body}`).toBeUndefined()
+        expect(e.message, `${name} · ${body}`).not.toBe(`${surface(name).prefix}: ${BODY_ERROR}`)
+      }
+    },
+  )
+
+  it.each(NAMES)(
+    '%s — success-status OAuth error control: a status the lane rejects (201) stays rejected as before',
+    async (name) => {
+      status = 201
+      bodies = B2
+      const e = await authFailure(name)
+      expect(e.message).toBe(`${surface(name).prefix}: unexpected HTTP response status code`)
+      expect(e.oauthError).toBeUndefined()
+    },
+  )
 })

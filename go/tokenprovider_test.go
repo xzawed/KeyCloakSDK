@@ -130,6 +130,32 @@ func TestProviderMissAsRefreshEndsReusesCachedToken(t *testing.T) {
 	}
 }
 
+// TestSuccessStatusOAuthErrorProviderCachesNothing — a provider over the client-credentials grant: B1 and B2 at 200
+// (auth_test.go successStatusBodies) fail with the code, and nothing is cached — the next call asks the token endpoint
+// again and hands out that answer's token, not B2's.
+func TestSuccessStatusOAuthErrorProviderCachesNothing(t *testing.T) {
+	for _, b := range successStatusBodies {
+		t.Run(b.name, func(t *testing.T) {
+			p := newSuccessStatusIdP(t)
+			tp := NewClientCredentialsTokenProvider(p.client(t, "sekret").Auth.ClientCredentialsToken, 30)
+			p.token.Store(b.token)
+			tok, err := tp.Token(context.Background())
+			if tok != "" {
+				t.Errorf("handed out %q", tok)
+			}
+			successStatusRefused(t, b.name, err, "invalid_grant")
+			p.token.Store(successStatusUsable)
+			tok, err = tp.Token(context.Background())
+			if err != nil || tok != successStatusFresh {
+				t.Fatalf("the next call: Token() = %q, %v — want the usable answer's token", tok, err)
+			}
+			if n := p.tokenHits.Load(); n != 2 {
+				t.Errorf("the token endpoint got %d requests, want 2 — the refused answer was cached", n)
+			}
+		})
+	}
+}
+
 func TestProviderRefreshesOnExpiry(t *testing.T) {
 	var calls int32
 	p := NewClientCredentialsTokenProvider(func(context.Context) (*TokenSet, error) {

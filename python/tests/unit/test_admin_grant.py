@@ -191,8 +191,8 @@ def _fake_idp() -> Iterator[_Idp]:
 
 
 @contextlib.asynccontextmanager
-async def _client(lane: str, idp: _Idp) -> AsyncIterator[Any]:
-    cfg = KeycloakConfig(server_url=idp.url, realm="r", client_id="c", client_secret=SECRET)
+async def _client(lane: str, idp: _Idp, secret: str = SECRET) -> AsyncIterator[Any]:
+    cfg = KeycloakConfig(server_url=idp.url, realm="r", client_id="c", client_secret=secret)
     if lane == "sync":
         with KeycloakClient.create(cfg) as kc:
             yield kc
@@ -353,6 +353,107 @@ async def test_unusable_access_token_in_a_later_grant_is_refused_the_same_way(
     # 요청은 첫 그랜트의 토큰으로 나간 것뿐이다 — 401 재시도는 다시 보내지 않는다.
     sent = [s.authorization for s in idp.admin_requests()]
     assert sent == [f"Bearer {ACCESS_OLD}"] * (ok_calls + len(statuses))
+
+
+# --- 성공 상태에 OAuth `error` 를 실은 그랜트 응답 — 등록부 auth-2xx-error-code-divergent ------
+
+#: 200 에 실린 OAuth `error`(아홉 언어가 같은 본문을 쓴다). B1 은 토큰이 없고, B2 는 쓸 수 있어
+#: 보이는 토큰까지 싣는다 — IdP 가 스스로 부인한 토큰이다. 수정 전에는 B1 이 「token response has
+#: no usable access_token」, B2 는 그 토큰을 세터에 넘겨 admin 요청이 그것을 싣고 나갔다
+#: (실측 2026-11-20).
+_DISOWNED = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
+_SUCCESS_STATUS_OAUTH_ERROR: dict[str, dict[str, object]] = {
+    "B1": {"error": "invalid_grant", "error_description": "d"},
+    "B2": {
+        "error": "invalid_grant",
+        "access_token": _DISOWNED,
+        "token_type": "Bearer",
+        "expires_in": 300,
+    },
+}
+#: auth 레인과 같은 판정(`lower.oauth_failure`) — 상태와, 그랜트가 보낸 비밀(client secret · 그랜트
+#: 인자)과 겹치지 않는 코드(아홉 언어의 규칙). 4xx 의 그랜트 실패는 지금처럼 코드를 싣지 않는다
+#: (`lower.grant_failure` · test_admin_grant_echo — 상태의 수용 범위 밖이라 바꾸지 않았다).
+_NAMED_ERROR = (KeycloakAuthError, "Keycloak request failed: HTTP 200 (invalid_grant)")
+
+
+@pytest.mark.parametrize("body", list(_SUCCESS_STATUS_OAUTH_ERROR))
+@pytest.mark.parametrize("lane", LANES)
+async def test_success_status_oauth_error_in_the_first_grant_sends_and_keeps_nothing(
+    lane: str, body: str
+) -> None:
+    good = _grant_body(ACCESS_OLD, expires_in=300, refresh_token=REFRESH_OLD)
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [(200, _SUCCESS_STATUS_OAUTH_ERROR[body]), (200, good)]
+        async with _client(lane, idp) as client:
+            result, err = await _attempt(lane, client, _admin_get)
+            # 다음 호출은 다시 그랜트한다 — 부인된 토큰은 연결에 남지 않았다.
+            again = await _attempt(lane, client, _admin_get)
+
+    assert result is None
+    assert _refused_like_the_auth_lane(err, _NAMED_ERROR) == []
+    assert isinstance(err, KeycloakAuthError) and err.error == "invalid_grant"
+    assert again == ({"id": "u1"}, None)
+    assert idp.grant_types() == ["client_credentials", "client_credentials"]
+    assert [s.authorization for s in idp.admin_requests()] == [f"Bearer {ACCESS_OLD}"]
+
+
+@pytest.mark.parametrize("body", list(_SUCCESS_STATUS_OAUTH_ERROR))
+@pytest.mark.parametrize("path", list(_LATER))
+@pytest.mark.parametrize("lane", LANES)
+async def test_success_status_oauth_error_in_a_later_grant_sends_and_keeps_nothing(
+    lane: str, path: str, body: str
+) -> None:
+    expires_in, statuses, ok_calls, grants = _LATER[path]
+    good = _grant_body(ACCESS_OLD, expires_in=expires_in, refresh_token=REFRESH_OLD)
+    named = _SUCCESS_STATUS_OAUTH_ERROR[body]
+    with _fake_idp() as idp:
+        if path == "Refresh token expired 폴백":
+            expired = {
+                "error": "invalid_grant",
+                "error_description": f"Refresh token expired {REFRESH_ERR}",
+            }
+            idp.grants["client_credentials"] = [(200, good), (200, named)]
+            idp.grants["refresh_token"] = [(400, expired)]
+        else:
+            idp.grants["client_credentials"] = [(200, good)]
+            idp.grants["refresh_token"] = [(200, named)]
+        idp.admin = list(statuses)
+        async with _client(lane, idp) as client:
+            for _ in range(ok_calls):
+                result, err = await _attempt(lane, client, _admin_get)
+                assert (result, err) == ({"id": "u1"}, None), "앞 호출이 성공하지 않았다"
+            result, err = await _attempt(lane, client, _admin_get)
+
+    assert result is None
+    assert _refused_like_the_auth_lane(err, _NAMED_ERROR) == []
+    assert isinstance(err, KeycloakAuthError) and err.error == "invalid_grant"
+    assert idp.grant_types() == grants, f"{path} 경로에 닿지 않았다 — 공허하다"
+    # 요청은 첫 그랜트의 토큰으로 나간 것뿐이다 — 부인된 토큰을 실은 요청은 없다.
+    sent = [s.authorization for s in idp.admin_requests()]
+    assert sent == [f"Bearer {ACCESS_OLD}"] * (ok_calls + len(statuses))
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_success_status_oauth_error_withholds_a_lowercased_echo_of_the_client_secret(
+    lane: str,
+) -> None:
+    """겹침 — 그랜트의 client secret(`EchoedSecret`, 문자뿐이라 소문자로 되울리면 코드 모양이다)을
+    되울린 200 의 `error` 는 코드로 싣지 않는다: 같은 실패 · `error` 없음 · 메시지와 `vars` 어디에도
+    그 값이 없다 · admin 요청 0 번. 대조 — 같은 자리의 `invalid_grant` 는 실린다(모양이 아니라
+    겹침이 막는다는 것을 가른다)."""
+    for error, code in (("echoedsecret", None), ("invalid_grant", "invalid_grant")):
+        with _fake_idp() as idp:
+            idp.grants["client_credentials"] = [(200, {"error": error, "error_description": "d"})]
+            async with _client(lane, idp, secret="EchoedSecret") as client:
+                result, err = await _attempt(lane, client, _admin_get)
+
+        assert result is None
+        assert isinstance(err, KeycloakAuthError) and err.error == code, error
+        shown = "" if code is None else f" ({code})"
+        assert str(err) == f"Keycloak request failed: HTTP 200{shown}", error
+        assert "echoedsecret" not in (str(err) + repr(vars(err))).lower(), error
+        assert idp.admin_requests() == [], error
 
 
 # --- 설치 — 주입된 admin 도 같고, 이음매가 없으면 만들지 않는다 ----------------------------------
