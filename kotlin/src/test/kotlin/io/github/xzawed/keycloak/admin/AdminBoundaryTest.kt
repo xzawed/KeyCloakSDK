@@ -11,6 +11,8 @@ import jakarta.ws.rs.client.ResponseProcessingException
 import jakarta.ws.rs.core.Response
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import org.keycloak.representations.idm.ClientRepresentation
+import org.keycloak.representations.idm.GroupRepresentation
 import org.keycloak.representations.idm.UserRepresentation
 import java.net.URI
 import kotlin.test.Test
@@ -209,4 +211,90 @@ internal class AdminBoundaryTest {
 
             assertEquals("abc-123", id)
         }
+
+    /**
+     * 아홉 SDK 가 같이 쓰는 `Location` 벡터(등록부 admin-create-relative-location) — id 는 201 의 `Location` 을 요청 URL 에 대해 푼
+     * (RFC 9110 §10.2.2) 경로의 마지막 조각이고, 그 앞 조각은 보낸 컬렉션이어야 한다. 상대 `Location` 도 읽고, 쿼리 · 조각은 id 가
+     * 아니며, 퍼센트 인코딩은 풀지 않는다. 없거나 빈 값, 다른 컬렉션 · id 없는 경로는 id 없음 오류다. users 는 열셋 전부, clients ·
+     * groups 는 L1 · L2 · L4 · L7 · L9. Response 는 실객체다(MockK 금지 — 위 머리 주석).
+     */
+    @Test
+    fun `create reads the id from the Location resolved against the request URL`(): Unit =
+        runTest {
+            val wrong = mutableListOf<String>()
+            var cells = 0
+            for (coll in listOf("users", "clients", "groups")) {
+                val path = "/admin/realms/r/$coll"
+                for ((vector, template, want) in LOCATION_VECTORS) {
+                    if (coll != "users" && vector.substringBefore(' ') !in listOf("L1", "L2", "L4", "L7", "L9")) continue
+                    cells++
+                    val location =
+                        template
+                            ?.replace("{base}", "https://kc.example.com")
+                            ?.replace("{path}", path)
+                            ?.replace("{coll}", coll)
+                            ?.replace("{other}", if (coll == "groups") "users" else "groups")
+                    val built = Response.status(201)
+                    val response = (if (location == null) built else built.header("Location", location)).build()
+                    val got =
+                        try {
+                            "ok " + createdId(coll, response)
+                        } catch (e: KeycloakAdminException) {
+                            "${e::class.simpleName}(${e.status}): ${e.keycloakError}"
+                        } catch (e: RuntimeException) {
+                            "${e::class.qualifiedName}: ${e.message}"
+                        }
+                    val expected = if (want == null) NO_ID else "ok $want"
+                    if (got != expected) wrong += "$coll $vector: $got — want $expected"
+                }
+            }
+            assertEquals(23, cells)
+            assertTrue(wrong.isEmpty(), "${wrong.size} cell(s) wrong:\n${wrong.joinToString("\n")}")
+        }
+
+    /** [coll] 의 create 가 [response] 를 받고 돌려준 id. 위임 리소스는 인터페이스라 MockK 프록시가 가볍다. */
+    private suspend fun createdId(
+        coll: String,
+        response: Response,
+    ): String =
+        when (coll) {
+            "users" -> {
+                val delegate = mockk<org.keycloak.admin.client.resource.UsersResource>()
+                every { delegate.create(any()) } returns response
+                UsersResource(delegate).create(UserRepresentation())
+            }
+            "clients" -> {
+                val delegate = mockk<org.keycloak.admin.client.resource.ClientsResource>()
+                every { delegate.create(any()) } returns response
+                ClientsResource(delegate).create(ClientRepresentation())
+            }
+            else -> {
+                val delegate = mockk<org.keycloak.admin.client.resource.GroupsResource>()
+                every { delegate.add(any()) } returns response
+                GroupsResource(delegate).create(GroupRepresentation())
+            }
+        }
+
+    private companion object {
+        /** id 없음 — 응답은 201 이지만 쓸 수 있는 id 가 없다. */
+        const val NO_ID = "Other(500): resource created but no id returned in Location header"
+
+        /** (벡터, `Location`(`null` 이면 머리 없음), 돌려줄 id(`null` 이면 [NO_ID])). */
+        val LOCATION_VECTORS: List<Triple<String, String?, String?>> =
+            listOf(
+                Triple("L1 absolute", "{base}{path}/abc-123", "abc-123"),
+                Triple("L2 path-absolute", "{path}/abc-123", "abc-123"),
+                Triple("L3 relative path", "{coll}/abc-123", "abc-123"),
+                Triple("L4 relative", "abc-123", null),
+                Triple("L5 another host", "https://internal.example:8443{path}/abc-123", "abc-123"),
+                Triple("L6 gateway prefix", "https://gw.example/kc{path}/abc-123", "abc-123"),
+                Triple("L7 query and fragment", "{base}{path}/abc-123?x=1#f", "abc-123"),
+                Triple("L8 trailing slash", "{base}{path}/abc-123/", "abc-123"),
+                Triple("L9 another collection", "../{other}/abc-123", null),
+                Triple("L10 root", "/", null),
+                Triple("L11 empty value", "", null),
+                Triple("L12 absent", null, null),
+                Triple("L13 percent-encoded", "{base}{path}/abc%20123", "abc%20123"),
+            )
+    }
 }

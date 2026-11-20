@@ -441,6 +441,114 @@ describe('GroupsResource', () => {
   })
 })
 
+/**
+ * 아홉 SDK 가 같이 쓰는 `Location` 벡터(등록부 admin-create-relative-location) — `{base}` 는 서버, `{path}` 는 보낸 컬렉션
+ * 경로(끝 `/` 없이), `{coll}` 은 그 마지막 조각, `{other}` 는 다른 컬렉션. 셋째는 돌려줄 id, `null` 이면 id 없음 오류다.
+ */
+const LOCATION_VECTORS: ReadonlyArray<readonly [string, string | null, string | null]> = [
+  ['L1 absolute', '{base}{path}/abc-123', 'abc-123'],
+  ['L2 path-absolute', '{path}/abc-123', 'abc-123'],
+  ['L3 relative path', '{coll}/abc-123', 'abc-123'],
+  ['L4 relative', 'abc-123', null],
+  ['L5 another host', 'https://internal.example:8443{path}/abc-123', 'abc-123'],
+  ['L6 gateway prefix', 'https://gw.example/kc{path}/abc-123', 'abc-123'],
+  ['L7 query and fragment', '{base}{path}/abc-123?x=1#f', 'abc-123'],
+  ['L8 trailing slash', '{base}{path}/abc-123/', 'abc-123'],
+  ['L9 another collection', '../{other}/abc-123', null],
+  ['L10 root', '/', null],
+  ['L11 empty value', '', null],
+  ['L12 absent', null, null],
+  ['L13 percent-encoded', '{base}{path}/abc%20123', 'abc%20123'],
+]
+
+describe('create — Location 은 보낸 요청의 URL 에 대해 풀어 읽는다(RFC 9110 §10.2.2)', () => {
+  /**
+   * 풀린 경로의 마지막 조각이 id 이고, 그 앞 조각은 보낸 컬렉션이어야 한다 — 쿼리 · 조각은 id 가 아니고 퍼센트 인코딩은 풀지
+   * 않는다. 없거나 빈 값, 다른 컬렉션 · id 없는 경로는 id 없음 오류다(그 응답의 상태를 실은 `KeycloakAdminError` — 문구는
+   * 예전 그대로). users 는 열세 벡터 전부, 나머지 넷(id 를 돌려주지 않는 roles · realms 도 `Location` 을 요구한다)은 L1 · L2 ·
+   * L4 · L7 · L9. ⚠️ node 는 users · clients · groups · realms 를 admin-client 처럼 끝 `/` 로 보낸다(`POST /users/`) — 그
+   * URL 에 대해 `abc-123` 은 컬렉션 안이다(L4 가 id 다). roles 는 끝 `/` 없이 보낸다.
+   */
+  it('열세 벡터 — users 전부, clients · groups · roles · realms 는 L1 · L2 · L4 · L7 · L9', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    const creates = [
+      {
+        name: 'users',
+        path: '/admin/realms/demo/users',
+        slash: true,
+        id: true,
+        run: () => admin.users.create({ username: 'bob' }),
+      },
+      {
+        name: 'clients',
+        path: '/admin/realms/demo/clients',
+        slash: true,
+        id: true,
+        run: () => admin.clients.create({ clientId: 'app' }),
+      },
+      {
+        name: 'groups',
+        path: '/admin/realms/demo/groups',
+        slash: true,
+        id: true,
+        run: () => admin.groups.create({ name: 'team' }),
+      },
+      {
+        name: 'roles',
+        path: '/admin/realms/demo/roles',
+        slash: false,
+        id: false,
+        run: () => admin.roles.create({ name: 'admin' }),
+      },
+      {
+        name: 'realms',
+        path: '/admin/realms',
+        slash: true,
+        id: false,
+        run: () => admin.realms.create({ realm: 'abc-123' }),
+      },
+    ]
+    const wrong: string[] = []
+    let cells = 0
+    for (const create of creates) {
+      const coll = create.path.split('/').at(-1) ?? ''
+      for (const [vector, template, want] of LOCATION_VECTORS) {
+        const label = vector.split(' ')[0] ?? ''
+        if (create.name !== 'users' && !['L1', 'L2', 'L4', 'L7', 'L9'].includes(label)) continue
+        cells++
+        const location =
+          template === null
+            ? null
+            : template
+                .replaceAll('{base}', 'https://kc.example.com')
+                .replaceAll('{path}', create.path)
+                .replaceAll('{coll}', coll)
+                .replaceAll('{other}', coll === 'groups' ? 'users' : 'groups')
+        const id = label === 'L4' && create.slash ? 'abc-123' : want
+        reply(201, undefined, location === null ? undefined : { location })
+        let got: string
+        try {
+          got = `ok ${String(await create.run())}`
+        } catch (e) {
+          got =
+            e instanceof KeycloakAdminError
+              ? `${e.constructor.name}(${String(e.status)}): ${e.message}`
+              : String(e)
+        }
+        const expected =
+          id !== null
+            ? `ok ${create.id ? id : 'undefined'}`
+            : template === null
+              ? 'KeycloakAdminError(201): location header is not found in request: '
+              : 'KeycloakAdminError(201): resourceId is not found in Location header from request: '
+        if (got !== expected) wrong.push(`${create.name} ${vector}: ${got} — want ${expected}`)
+      }
+    }
+    expect(cells).toBe(33)
+    expect(wrong).toEqual([])
+  })
+})
+
 describe('close', () => {
   it('resolves (자원 정리 대칭 훅)', async () => {
     const admin = await AdminClient.create(cfg, provider)

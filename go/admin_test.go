@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -70,6 +72,89 @@ func TestCallRunWrapErrors(t *testing.T) {
 type staticToken string
 
 func (s staticToken) Token(context.Context) (string, error) { return string(s), nil }
+
+// locationVectors 는 아홉 SDK 가 같이 쓰는 `Location` 벡터다(등록부 admin-create-relative-location) — {base} 는 서버,
+// {path} 는 보낸 컬렉션 경로, {coll} 은 그 마지막 조각, {other} 는 다른 컬렉션. id 가 "" 이면 id 없음이다 — Create 는
+// `Location` 이 없을 때처럼 ("", nil) 을 돌려준다.
+var locationVectors = []struct {
+	name, location string
+	absent         bool
+	id             string
+}{
+	{"L1 absolute", "{base}{path}/abc-123", false, "abc-123"},
+	{"L2 path-absolute", "{path}/abc-123", false, "abc-123"},
+	{"L3 relative path", "{coll}/abc-123", false, "abc-123"},
+	{"L4 relative", "abc-123", false, ""},
+	{"L5 another host", "https://internal.example:8443{path}/abc-123", false, "abc-123"},
+	{"L6 gateway prefix", "https://gw.example/kc{path}/abc-123", false, "abc-123"},
+	{"L7 query and fragment", "{base}{path}/abc-123?x=1#f", false, "abc-123"},
+	{"L8 trailing slash", "{base}{path}/abc-123/", false, "abc-123"},
+	{"L9 another collection", "../{other}/abc-123", false, ""},
+	{"L10 root", "/", false, ""},
+	{"L11 empty value", "", false, ""},
+	{"L12 absent", "", true, ""},
+	{"L13 percent-encoded", "{base}{path}/abc%20123", false, "abc%20123"},
+}
+
+// 생성의 id 는 201 의 `Location` 을 요청 URL 에 대해 푼(RFC 9110 §10.2.2) 경로의 마지막 조각이고, 그 앞 조각은 보낸 컬렉션이어야
+// 한다 — 상대 `Location` 도 읽고, 쿼리 · 조각은 id 가 아니며, 퍼센트 인코딩은 풀지 않는다(EscapedPath). 없거나 빈 값, 다른
+// 컬렉션 · id 없는 경로는 id 없음이다. Users 는 열셋 전부, Clients · Groups 는 L1 · L2 · L4 · L7 · L9.
+func TestCreateReadsTheIDFromTheLocationResolvedAgainstTheRequestURL(t *testing.T) {
+	var answer atomic.Pointer[string] // nil 이면 `Location` 없이 답한다
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if loc := answer.Load(); loc != nil {
+			w.Header()["Location"] = []string{*loc}
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	a, err := NewAdminClient(ctx, Config{ServerURL: srv.URL, Realm: "r", ClientID: "c"}.withDefaults(), staticToken("t"))
+	if err != nil {
+		t.Fatalf("NewAdminClient: %v", err)
+	}
+	defer a.Close()
+	creates := []struct {
+		coll string
+		run  func() (string, error)
+	}{
+		{"users", func() (string, error) { return a.Users.Create(ctx, gocloak.User{Username: gocloak.StringP("alice")}) }},
+		{"clients", func() (string, error) { return a.Clients.Create(ctx, gocloak.Client{ClientID: gocloak.StringP("app")}) }},
+		{"groups", func() (string, error) { return a.Groups.Create(ctx, gocloak.Group{Name: gocloak.StringP("team")}) }},
+	}
+	var wrong []string
+	cells := 0
+	for _, c := range creates {
+		path := "/admin/realms/r/" + c.coll
+		other := "groups"
+		if c.coll == "groups" {
+			other = "users"
+		}
+		for _, v := range locationVectors {
+			label, _, _ := strings.Cut(v.name, " ")
+			if c.coll != "users" && !slices.Contains([]string{"L1", "L2", "L4", "L7", "L9"}, label) {
+				continue
+			}
+			cells++
+			if v.absent {
+				answer.Store(nil)
+			} else {
+				loc := strings.NewReplacer("{base}", srv.URL, "{path}", path, "{coll}", c.coll, "{other}", other).Replace(v.location)
+				answer.Store(&loc)
+			}
+			if id, err := c.run(); id != v.id || err != nil {
+				wrong = append(wrong, fmt.Sprintf("%s %s: (%q, %v) — want (%q, <nil>)", c.coll, v.name, id, err, v.id))
+			}
+		}
+	}
+	if cells != 23 {
+		t.Fatalf("cells = %d, want 23", cells)
+	}
+	if len(wrong) > 0 {
+		t.Fatalf("%d cell(s) wrong:\n%s", len(wrong), strings.Join(wrong, "\n"))
+	}
+}
 
 // ⚠️ **이 테스트가 없으면 `.claude/rules/go.md`가 가장 길게 경고하는 게차를 아무도 못 잡는다.**
 // gocloak의 UpdateRealmRole은 경로를 `name` 인자에서 만들고 body를 그대로 보낸다. 그래서

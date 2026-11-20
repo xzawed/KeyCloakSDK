@@ -156,28 +156,50 @@ public class AdminClientTests : IDisposable
         Assert.Equal($"empty response body for {named}", missing.Message);
     }
 
-    /// <summary>The <c>Location</c> a create's 201 carries — <c>{base}</c> is this IdP, <c>{path}</c> the collection the create
-    /// posted to — and the id the create returns, or null where it must fail.</summary>
-    public static TheoryData<string, string?, string?> CreatedAnswers()
+    /// <summary>The <c>Location</c> vectors every SDK shares (registry <c>admin-create-relative-location</c>) — <c>{base}</c> is
+    /// this IdP, <c>{path}</c> the collection the create posted to, <c>{resource}</c> its last segment, <c>{other}</c> another
+    /// collection — and the id the create returns, or null where it fails. The value is resolved against the request URL (RFC
+    /// 9110 §10.2.2), and the id is the last segment of the resolved path whose segment before it is the posted collection.</summary>
+    private static readonly (string Name, string? Location, string? Id)[] LocationVectors =
+    [
+        ("L1 absolute", "{base}{path}/abc-123", "abc-123"),
+        ("L2 path-absolute", "{path}/abc-123", "abc-123"),
+        ("L3 relative path", "{resource}/abc-123", "abc-123"),
+        ("L4 relative, outside the collection", "abc-123", null),
+        ("L5 another host", "https://internal.example:8443{path}/abc-123", "abc-123"),
+        ("L6 gateway prefix", "https://gw.example/kc{path}/abc-123", "abc-123"),
+        ("L7 query and fragment", "{base}{path}/abc-123?x=1#f", "abc-123"),
+        ("L8 trailing slash", "{base}{path}/abc-123/", "abc-123"),
+        ("L9 another collection", "../{other}/abc-123", null),
+        ("L10 root", "/", null),
+        ("L11 empty value", "", null),
+        ("L12 absent", null, null),
+        ("L13 percent-encoded", "{base}{path}/abc%20123", "abc%20123"),
+    ];
+
+    /// <summary>Every vector on users; L1 · L2 · L4 · L7 · L9 on clients (raw) and groups (typed).</summary>
+    public static TheoryData<string, string, string?, string?> CreatedAnswers()
     {
-        var data = new TheoryData<string, string?, string?>();
-        foreach (var resource in new[] { "clients", "users", "groups" })
+        var data = new TheoryData<string, string, string?, string?>();
+        foreach (var resource in new[] { "users", "clients", "groups" })
         {
-            data.Add(resource, null, null);                         // no Location
-            data.Add(resource, "{path}/abc-123", null);             // relative — the facade reads only an absolute one
-            data.Add(resource, "{base}/", null);                    // absolute, but its path names nothing
-            data.Add(resource, "{base}{path}/abc-123/", "abc-123"); // control: the last segment, its trailing slash dropped
+            foreach (var (name, location, id) in LocationVectors)
+            {
+                if (resource == "users" || name.Split(' ')[0] is "L1" or "L2" or "L4" or "L7" or "L9")
+                    data.Add(resource, name, location, id);
+            }
         }
         return data;
     }
 
-    /// <summary>A create answered 201 with no id this facade reads from <c>Location</c> — none, a relative one (it is not
-    /// resolved: <see cref="Uri.Segments"/> refuses a relative URI), or one whose path names nothing — fails as a 500 on every
-    /// create that returns an id (raw: clients · typed: users, groups). Never an empty id, nor a raw exception from the URI.
-    /// Control: an absolute <c>Location</c> gives its last segment.</summary>
+    /// <summary>A create returns the id the <c>Location</c> of its 201 names once resolved against the request URL — an
+    /// absolute, a path-absolute and a relative one alike, from another host or behind a gateway's path prefix too, never
+    /// with the query or the fragment, and without decoding it. A <c>Location</c> that is absent or empty, or that resolves
+    /// outside the posted collection or to no id, fails as a 500 on every create that returns an id (raw: clients · typed:
+    /// users, groups) — never an empty id, another resource's id, nor a raw exception from the URI.</summary>
     [Theory]
     [MemberData(nameof(CreatedAnswers))]
-    public async Task A_create_answered_without_a_readable_id_fails_as_a_500(string resource, string? location, string? id)
+    public async Task A_create_reads_the_id_from_the_Location_resolved_against_the_request_URL(string resource, string vector, string? location, string? id)
     {
         await using var admin = await BuildAsync();
         var path = $"/admin/realms/r/{resource}";
@@ -186,7 +208,9 @@ public class AdminClientTests : IDisposable
         {
             created = created.WithHeader("Location", location
                 .Replace("{base}", _mock.Urls[0], StringComparison.Ordinal)
-                .Replace("{path}", path, StringComparison.Ordinal));
+                .Replace("{path}", path, StringComparison.Ordinal)
+                .Replace("{resource}", resource, StringComparison.Ordinal)
+                .Replace("{other}", resource == "groups" ? "users" : "groups", StringComparison.Ordinal));
         }
         _mock.Given(Request.Create().WithPath(path).UsingPost()).RespondWith(created);
         Func<Task<string>> create = resource switch
@@ -197,13 +221,16 @@ public class AdminClientTests : IDisposable
             _ => throw new ArgumentOutOfRangeException(nameof(resource)),
         };
 
+        string? returned = null;
+        var error = await Record.ExceptionAsync(async () => returned = await create());
+        var got = error is null ? $"\"{returned}\"" : $"{error.GetType().Name}({(error as KeycloakAdminException)?.StatusCode}): {error.Message}";
         if (id is not null)
         {
-            Assert.Equal(id, await create());
+            Assert.True(error is null && returned == id, $"{resource} {vector}: want \"{id}\", got {got}");
             return;
         }
-        var refused = await Assert.ThrowsAsync<KeycloakAdminException>(create);
-        Assert.Equal(500, refused.StatusCode);
-        Assert.Equal("resource created but no id returned in Location header", refused.Message);
+        Assert.True(error is KeycloakAdminException { StatusCode: 500, Message: "resource created but no id returned in Location header" }
+                    && error.GetType() == typeof(KeycloakAdminException),
+            $"{resource} {vector}: want the no-id 500, got {got}");
     }
 }

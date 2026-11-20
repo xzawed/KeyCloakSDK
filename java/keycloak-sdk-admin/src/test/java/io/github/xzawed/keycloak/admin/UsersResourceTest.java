@@ -9,7 +9,11 @@ import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.UserRepresentation;
 
@@ -25,6 +29,22 @@ class UsersResourceTest {
 
     UsersResource users = new UsersResource(kc);
     assertEquals("abc-123", users.create(rep));
+  }
+
+  static Stream<Arguments> locations() {
+    return LocationVectors.of("users", true);
+  }
+
+  /** 열세 벡터 전부({@link LocationVectors}) — 상대 Location 도 풀어 읽고, 쿼리 · 조각은 id 가 아니며, 퍼센트 인코딩은 풀지 않는다. */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("locations")
+  void create_readsTheIdFromTheLocationResolvedAgainstTheRequestUrl(String vector, String location, String id) {
+    org.keycloak.admin.client.resource.UsersResource kc =
+        mock(org.keycloak.admin.client.resource.UsersResource.class);
+    UserRepresentation rep = new UserRepresentation();
+    when(kc.create(rep)).thenReturn(LocationVectors.created(location));
+
+    assertEquals(id, new UsersResource(kc).create(rep), vector);
   }
 
   @Test void get_existingUser_returnsRepresentation() {

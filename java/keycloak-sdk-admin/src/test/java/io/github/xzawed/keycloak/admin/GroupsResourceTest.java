@@ -9,7 +9,11 @@ import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.keycloak.admin.client.resource.GroupResource;
 import org.keycloak.representations.idm.GroupRepresentation;
 
@@ -25,6 +29,22 @@ class GroupsResourceTest {
 
     GroupsResource groups = new GroupsResource(kc);
     assertEquals("ghi-789", groups.create(rep));
+  }
+
+  static Stream<Arguments> locations() {
+    return LocationVectors.of("groups", false);
+  }
+
+  /** L1 · L2 · L4 · L7 · L9({@link LocationVectors}). */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("locations")
+  void create_readsTheIdFromTheLocationResolvedAgainstTheRequestUrl(String vector, String location, String id) {
+    org.keycloak.admin.client.resource.GroupsResource kc =
+        mock(org.keycloak.admin.client.resource.GroupsResource.class);
+    GroupRepresentation rep = new GroupRepresentation();
+    when(kc.add(rep)).thenReturn(LocationVectors.created(location));
+
+    assertEquals(id, new GroupsResource(kc).create(rep), vector);
   }
 
   @Test void get_existingGroup_returnsRepresentation() {

@@ -727,6 +727,100 @@ mod tests {
             .expect("경로는 id, body는 부분 representation이어야 한다");
     }
 
+    // ── create_*: 생성된 id 는 요청 URL 에 대해 푼 `Location` 의 것이다 ──
+
+    /// 아홉 SDK 가 같이 쓰는 `Location` 벡터(등록부 admin-create-relative-location) — `{base}` 는 서버, `{path}` 는 보낸
+    /// 컬렉션 경로, `{coll}` 은 그 마지막 조각, `{other}` 는 다른 컬렉션. 셋째는 돌려줄 id 이고 `None` 이면 id 없음이다.
+    const LOCATION_VECTORS: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("L1 absolute", Some("{base}{path}/abc-123"), Some("abc-123")),
+        ("L2 path-absolute", Some("{path}/abc-123"), Some("abc-123")),
+        ("L3 relative path", Some("{coll}/abc-123"), Some("abc-123")),
+        ("L4 relative", Some("abc-123"), None),
+        (
+            "L5 another host",
+            Some("https://internal.example:8443{path}/abc-123"),
+            Some("abc-123"),
+        ),
+        (
+            "L6 gateway prefix",
+            Some("https://gw.example/kc{path}/abc-123"),
+            Some("abc-123"),
+        ),
+        (
+            "L7 query and fragment",
+            Some("{base}{path}/abc-123?x=1#f"),
+            Some("abc-123"),
+        ),
+        (
+            "L8 trailing slash",
+            Some("{base}{path}/abc-123/"),
+            Some("abc-123"),
+        ),
+        ("L9 another collection", Some("../{other}/abc-123"), None),
+        ("L10 root", Some("/"), None),
+        ("L11 empty value", Some(""), None),
+        ("L12 absent", None, None),
+        (
+            "L13 percent-encoded",
+            Some("{base}{path}/abc%20123"),
+            Some("abc%20123"),
+        ),
+    ];
+
+    /// 생성의 id 는 201 의 `Location` 을 요청 URL 에 대해 푼(RFC 9110 §10.2.2) 경로의 마지막 조각이고, 그 앞 조각은 보낸
+    /// 컬렉션이어야 한다 — 상대 `Location` 도 읽고, 쿼리 · 조각은 id 가 아니며, 퍼센트 인코딩은 풀지 않는다. 없거나 빈 값,
+    /// 다른 컬렉션이나 id 없는 경로는 `None`(id 없음 — 없을 때의 그 답)이다. users 는 열셋 전부, clients · groups 는 L1 · L2 ·
+    /// L4 · L7 · L9.
+    #[tokio::test]
+    async fn create_reads_the_id_from_the_location_resolved_against_the_request_url() {
+        let server = MockServer::start().await;
+        let admin = admin_against(&server);
+        let mut wrong = Vec::new();
+        let mut cells = 0;
+        for coll in ["users", "clients", "groups"] {
+            let posted = format!("/admin/realms/it-realm/{coll}");
+            for (vector, template, want) in LOCATION_VECTORS {
+                let label = vector.split(' ').next().unwrap_or_default();
+                if coll != "users" && !["L1", "L2", "L4", "L7", "L9"].contains(&label) {
+                    continue;
+                }
+                cells += 1;
+                server.reset().await;
+                let mut reply = ResponseTemplate::new(201);
+                if let Some(template) = template {
+                    let other = if coll == "groups" { "users" } else { "groups" };
+                    let location = template
+                        .replace("{base}", &server.uri())
+                        .replace("{path}", &posted)
+                        .replace("{coll}", coll)
+                        .replace("{other}", other);
+                    reply = reply.insert_header("Location", location.as_str());
+                }
+                Mock::given(method("POST"))
+                    .and(path(posted.as_str()))
+                    .respond_with(reply)
+                    .mount(&server)
+                    .await;
+                let got = match coll {
+                    "users" => admin.create_user(UserRepresentation::default()).await,
+                    "clients" => admin.create_client(ClientRepresentation::default()).await,
+                    _ => admin.create_group(GroupRepresentation::default()).await,
+                };
+                let want = want.map(str::to_string);
+                if !matches!(&got, Ok(id) if *id == want) {
+                    wrong.push(format!("{coll} {vector}: {got:?} — want Ok({want:?})"));
+                }
+            }
+        }
+        assert_eq!(cells, 23);
+        assert!(
+            wrong.is_empty(),
+            "{} cell(s) wrong:\n{}",
+            wrong.len(),
+            wrong.join("\n")
+        );
+    }
+
     // ── list_*: 호출자의 페이지 경계가 와이어에 실리는지 ──
     // search_users와 같은 이유로 `max`는 Option이 아니다 — 상한은 항상 호출부에 보여야 한다.
 
