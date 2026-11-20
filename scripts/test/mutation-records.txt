@@ -1838,3 +1838,54 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:  if (!rec || rec.run !== 'dotnet' || (rec.suite ?? 'integration') !== SUITE) {
 NEW:  if (!rec || rec.run !== 'dotnet') { // PROBE-REC dotnet-record
 SITE:// PROBE-REC dotnet-record
+
+# ── 같은 장부의 ruby 판정(coverage-omit-hides-security-paths, 2026-11-20)
+
+### unit-ledger-ruby-lines
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      units.push({ file: f, line: m.sl, name: m.name, lines: per[k].stmts - per[k].covered, branches: missed[k] })
+NEW:      units.push({ file: f, line: m.sl, name: m.name, lines: m.count === 0 ? per[k].stmts : 0, branches: missed[k] }) // PROBE-REC ruby-lines
+SITE:// PROBE-REC ruby-lines
+
+### unit-ledger-ruby-branches
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      units.push({ file: f, line: m.sl, name: m.name, lines: per[k].stmts - per[k].covered, branches: missed[k] })
+NEW:      units.push({ file: f, line: m.sl, name: m.name, lines: per[k].stmts - per[k].covered, branches: 0 }) // PROBE-REC ruby-branches
+SITE:// PROBE-REC ruby-branches
+
+### unit-ledger-ruby-def-line
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      const k = ms.findIndex((m) => m.sl <= b.start[0] && b.start[0] <= m.el)
+NEW:      const k = ms.findIndex((m) => m.sl < b.start[0] && b.start[0] <= m.el) // PROBE-REC ruby-def-line
+SITE:// PROBE-REC ruby-def-line
+
+### unit-ledger-ruby-stray
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    if (stray && SUITE === 'unit') {
+NEW:    if (false) { // PROBE-REC ruby-stray
+SITE:// PROBE-REC ruby-stray
+
+### unit-ledger-ruby-branch-shape
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    if (!Array.isArray(e.branches) || !e.branches.every(site)) {
+NEW:    if (!Array.isArray(e.branches)) { // PROBE-REC ruby-branch-shape
+SITE:// PROBE-REC ruby-branch-shape
+
+### unit-ledger-ruby-suite
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    const mixed = ex.filter((e) => e.integration !== false || underIt(e))
+NEW:    const mixed = [] // PROBE-REC ruby-suite
+SITE:// PROBE-REC ruby-suite
+
+### unit-ledger-ruby-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (!rec || rec.run !== 'ruby' || (rec.suite ?? 'integration') !== SUITE) {
+NEW:  if (!rec || rec.run !== 'ruby') { // PROBE-REC ruby-record
+SITE:// PROBE-REC ruby-record

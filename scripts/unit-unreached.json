@@ -236,5 +236,47 @@
       "branches": 4,
       "why": "integration: main 이 부르는 환경 변수 읽기 — 위 main 과 같은 까닭(설치 하네스만 돌린다)"
     }
+  },
+  "ruby": {
+    "ruby/lib/keycloak_sdk/admin/admin_client.rb:AdminClient#close": {
+      "lines": 0,
+      "branches": 1,
+      "why": "defensive: `@conn.close if @conn.respond_to?(:close)` 의 거짓 쪽 — @conn 은 build_conn 이 Http.build(Faraday.new)로 지은 Faraday::Connection 뿐이고 그것을 바꿔 넣을 공개 API 가 없다. 이 번들의 faraday 2.15.1 Connection 은 close 를 갖는다(connection.rb) — close 가 없는 연결에 대비한 방어선이다(목 없이는 못 닿는다)"
+    },
+    "ruby/lib/keycloak_sdk/admin/bearer_auth.rb:BearerAuth#field_limit": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": {
+      "lines": 0,
+      "branches": 3,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#token_request": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#oauth_token": {
+      "lines": 0,
+      "branches": 2,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#missing?": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "ruby/lib/keycloak_sdk/auth_client.rb:AuthClient#to_token_set": {
+      "lines": 0,
+      "branches": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "ruby/lib/keycloak_sdk/client.rb:KeycloakClient#close": {
+      "lines": 0,
+      "branches": 1,
+      "why": "defensive: 블록 안 `h.close if h.respond_to?(:close)` 의 거짓 쪽 — @form_http · @jwks_http 는 initialize 가 Http.build(Faraday.new)로 지은 Faraday::Connection 뿐이고 바꿔 넣을 공개 API 가 없다. 이 번들의 faraday 2.15.1 Connection 은 close 를 갖는다(connection.rb) — close 가 없는 연결에 대비한 방어선이다(목 없이는 못 닿는다)"
+    }
   }
 }

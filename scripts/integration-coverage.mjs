@@ -69,38 +69,49 @@
 // (`--coverage-filter` 는 include 를 **더할** 뿐 exclude 를 못 이긴다 — PHPUnit 12 `Merger.php`).
 // ⚠️ ruby 는 이름 · 범위 · 실행 가능 줄 · **호출 횟수**를 VM 에서 받는다 — `Coverage.start(lines:, methods:)` 의 메서드 키
 // `[소유자, 이름, 시작 줄 · 열, 끝 줄 · 열]` 과 그 횟수다(미실행 = 횟수 0 — 줄로 추정하지 않는다). SimpleCov 의 JSON 은 쓸 수
-// 없다 — 경계를 `skip` 해 경계 파일이 없고 메서드도 안 싣는다. 그래서 run 이 부트 파일 둘을 `<out>/ruby-boot/` 에 쓴다:
+// 없다 — 경계를 `skip` 해 경계 파일이 없고 메서드도 안 싣는다. 그래서 run 이 부트 파일 둘을 `<out>/ruby-boot/`(단위 장부는
+// `ruby.unit-boot/`)에 쓴다:
 // start.rb 는 bundler/setup **보다 먼저** Coverage 를 켜고(SimpleCov 1.2.0 은 `Coverage.running?` 이면 제 start 를 건너뛴다 —
 // `simplecov.rb:120`), dump.rb 는 `rspec --require` 로 실려 스위트가 끝난 뒤(SimpleCov 의 at_exit 가 `Coverage.result` 로
-// 측정을 멈추기 전) 이 트리 lib 의 파일마다 sha1 · 줄 · 메서드와 예제 결과를 쓴다. ⚠️ `bundle exec` 를 거치지 않는다 — 윈도에서
+// 측정을 멈추기 전) 이 트리 lib 의 파일마다 sha1 · 줄 · 메서드 · 가지(형식 /2 — 가지는 단위 미도달 장부만 센다)와 예제 결과를
+// 쓴다. ⚠️ `bundle exec` 를 거치지 않는다 — 윈도에서
 // 새 프로세스를 띄우며 RUBYOPT 맨 앞에 `-rbundler/setup` 을 붙여, gemspec 이 싣는 version.rb 가 측정 전에 실렸다(실측: 그
 // 프로세스의 RUBYOPT 순서 · pid). 순서를 명시한다: `ruby -r<start> -rbundler/setup -e 'load Gem.bin_path("rspec-core", "rspec")'`.
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
 // 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
-// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java, 등록부 coverage-exclusion-hides-untested-branches ·
+// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java · ruby, 등록부 coverage-exclusion-hides-untested-branches ·
 // coverage-omit-hides-security-paths) ──
 // 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
 // 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
 // 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin · java 는 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친
-// 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport ·
-// dotnetReport)가 낸다: kotlin 의 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역
-// 클래스는 javaFold 가, dotnet 의 상태 기계 · 람다 · 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의
-// 수다(키가 합성 이름이 되지 않는다 — java 의 이름 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). 정적 초기화는 kotlin ·
-// java `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines,
-// branches(kotlin · dotnet · java), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부
-// id 다(위 소유자와 같은 판정).
+// 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지, ruby 는 VM `Coverage` 의 메서드마다 0 회인 줄(한 줄 메서드는
+// 호출 횟수) · 0 회인 가지 갈래. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport · dotnetReport · rubyReport)가 낸다: kotlin 의
+// 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역 클래스는 javaFold 가, dotnet 의 상태
+// 기계 · 람다 · 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다 —
+// java 의 이름 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). ruby 의 블록 · 람다는 이름을 접을 것이 없다 — 감싼 메서드의
+// 줄 범위 안이라 그 메서드의 줄 · 가지다(메서드 밖 블록의 안 돈 줄 · 안 탄 갈래는 리더가 FAIL 로 낸다). 정적 초기화는 kotlin · java
+// `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin ·
+// dotnet · java · ruby), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위
+// 소유자와 같은 판정).
 // run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크, dotnet 은 같은
 // 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`, java 는 같은 리액터 · 같은 exec 자리로 레인의 단위 골 `test
-// -DskipITs=true` — failsafe 는 그 뒤 단계라 안 돈다) — kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL
-// (`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게
-// 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
+// -DskipITs=true` — failsafe 는 그 뒤 단계라 안 돈다, ruby 는 같은 부트 파일 · 같은 순서로 레인의 단위 명령 `bundle exec rspec` — 태그
+// 없이 그 기본 경로 `spec` 을, `RUN_INTEGRATION` 을 지운 환경이라 spec_helper 가 `:integration` 을 거르고 SimpleCov 게이트를 건다) —
+// kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL(`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그
+// 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
 // ⚠️ java 의 jacoco.skip 모듈(예제 — 파생이 forced 로 넣는다)에는 에이전트가 안 붙고 단위 시험도 없다: 그 파일은 데이터에 줄 · 가지 전부를
 // 놓친 것으로 든다(설치 하네스만 돌린다 — why 는 `integration:`).
 // ⚠️ php 는 줄만 센다 — 행복 경로가 이미 도는 줄에 붙은 실패 갈래(`$x = $y ?? throw …` · 한 줄 `?:` · 삼항 · `match`)는 줄 수를 안
 // 바꿔 이 장부가 못 본다. `--path-coverage`(Xdebug)로도 `--coverage-xml` 에는 가지 · 경로 수가 없다(실측 2026-11-18 — PHPUnit 12.5.33 ·
 // php-code-coverage 12.5.7 · Xdebug 3.5.3: `<method>` 는 줄 수뿐이고 Report/Xml/Method.php 가 그것만 쓴다 · clover 는 클래스 단위
 // conditionals · cobertura 는 메서드의 branch-rate 비율뿐이다). kotlin 은 한 줄의 실패 갈래도 가지로 센다.
+// ⚠️ ruby 는 줄과 가지를 센다 — 덤프(형식 /2)가 VM `Coverage` 의 branches 를 싣는다(start.rb 가 `branches: true` 로 켠 것 — SimpleCov 의
+// 가지 게이트도 같은 데이터를 읽는다). 가지는 if · unless · case · while · until · 삼항 · `&.` 의 갈래마다 하나다(한 줄의 후치 `if` ·
+// `unless` · 삼항 · `&.` 의 안 탄 쪽도 센다). 갈래는 자리의 첫 줄로 메서드에 붙인다 — def 줄까지가 메서드의 것이다(기본 인자). 못 보는 것:
+// `||` · `&&` · `or` · `and` 는 VM 이 가지로 싣지 않는다 — `x || raise …` 의 실패 갈래는 행복 경로가 도는 줄에 있으면 안 보인다(실측
+// 2026-11-21 — 픽스처의 fallback). 한 줄 메서드(`def x = …` · `def x; …; end`)의 줄은 적재 때 돌므로 호출 횟수로 센다 — 안 불렸으면 1 줄이다.
+// 몸통에 줄이 없는 메서드(`def x` 다음 줄이 `end`)는 안 불려도 0 줄이다(통합 리포트는 호출 횟수로 그것을 empty body 로 낸다).
 // ⚠️ dotnet 도 가지를 센다 — coverlet(10.1.0)은 컴파일러가 만든 갈래 대부분을 싣지 않는다: 상태 기계의 분기 · finally 의 가드 · using 의
 // null 검사 · 람다 · 메서드 그룹 캐시, 그리고 Task · ValueTask(ConfigureAwait 여부와 무관)를 await 할 때의 IsCompleted 검사(실측 2026-11-19,
 // 실제 트리 · net8.0 Release: 경계의 상태 기계 31 개에 await 40 개 — 그중 18 개는 실린 가지가 0 개다 · AdminAsync 의 IL 조건 점프 10 개 중
@@ -148,10 +159,10 @@
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자 · 단위 장부(데이터·Docker 불필요)
-//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께 돌리고
-//                                                                                                   단위 미도달 장부와 대조한다(Docker
-//                                                                                                   불필요 — 레인 게이트)
-//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
+//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java|ruby> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께
+//                                                                                                        돌리고 단위 미도달 장부와 대조한다
+//                                                                                                        (Docker 불필요 — 레인 게이트)
+//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java|ruby> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
@@ -190,10 +201,10 @@ const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
 const JVM_LANGS = new Set(['java', 'kotlin'])
 // 단위 미도달 장부(머리 주석) — 재는 언어와 why 의 까닭 머리. 등록부 id 가 아닌 why 는 이 셋 중 하나로 시작해야 한다.
 const UNIT = 'scripts/unit-unreached.json'
-const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java']
+const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java', 'ruby']
 const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
 // 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없다(머리 주석).
-const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java'])
+const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java', 'ruby'])
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -1783,13 +1794,16 @@ function phpReport(d) {
 }
 
 // ── ruby: run 이 쓰는 덤프(Ruby `Coverage` 의 lines · methods + 예제 결과 — 머리 주석) ───────────────
-const RUBY_FORMAT = 'kcsdk-ruby-coverage/1'
-const RUBY_DATA = () => join(out, 'ruby.json')
-const RUBY_RUN = () => join(out, 'ruby.run.json')
-// 부트 파일 — run 이 `<out>/ruby-boot/` 에 쓴다(저장소에 두지 않는다 · 픽스처도 이 run 으로 만든다).
+// 형식 /2 = /1(lines · methods)에 파일마다 branches 를 더한 것이다 — 두 리더 다 이 판만 받는다(/1 덤프에는 가지가 없어 단위 장부가
+// 가지를 0 으로 셀 뻔했다).
+const RUBY_FORMAT = 'kcsdk-ruby-coverage/2'
+// 단위(`unit ruby`)는 `.unit` 이 붙은 이름이다(SUITE).
+const RUBY_DATA = () => join(out, `ruby${TAG}.json`)
+const RUBY_RUN = () => join(out, `ruby${TAG}.run.json`)
+// 부트 파일 — run 이 `<out>/ruby-boot/`(단위는 `ruby.unit-boot/`)에 쓴다(저장소에 두지 않는다 · 픽스처도 이 run 으로 만든다).
 const RUBY_START = `# frozen_string_literal: true
 
-# Written by scripts/integration-coverage.mjs \`run ruby\`. Loaded BEFORE bundler/setup, so Coverage sees every lib file
+# Written by scripts/integration-coverage.mjs \`${RUN_CMD} ruby\`. Loaded BEFORE bundler/setup, so Coverage sees every lib file
 # (the gemspec require_relative's version.rb during bundler setup). No gem may load here: one activated outside the
 # bundle would clash with it.
 require "coverage"
@@ -1797,7 +1811,7 @@ Coverage.start(lines: true, branches: true, methods: true)
 `
 const RUBY_DUMP = `# frozen_string_literal: true
 
-# Written by scripts/integration-coverage.mjs \`run ruby\`. Loaded by \`rspec --require\`: after the suite, before
+# Written by scripts/integration-coverage.mjs \`${RUN_CMD} ruby\`. Loaded by \`rspec --require\`: after the suite, before
 # SimpleCov's at_exit stops Coverage, it dumps this tree's lib files and the example results.
 require "json"
 require "digest"
@@ -1815,7 +1829,16 @@ RSpec.configure do |config|
       methods = (cov[:methods] || {}).map do |(owner, name, sl, sc, el, ec), count|
         { "owner" => owner.inspect, "name" => name.to_s, "start" => [sl, sc], "end" => [el, ec], "count" => count }
       end
-      files[abs] = { "sha1" => Digest::SHA1.file(abs).hexdigest, "lines" => cov[:lines], "methods" => methods }
+      # Branch sites (if, unless, case, while, until, ternary, &.) with each arm's count. Coverage without branches gives nil,
+      # written as null so the reader fails instead of counting no branches.
+      branches = cov[:branches]&.map do |(type, _id, sl, sc, el, ec), arms|
+        { "type" => type.to_s, "start" => [sl, sc], "end" => [el, ec],
+          "arms" => arms.map do |(arm, _aid, asl, asc, ael, aec), count|
+            { "type" => arm.to_s, "start" => [asl, asc], "end" => [ael, aec], "count" => count }
+          end }
+      end
+      files[abs] = { "sha1" => Digest::SHA1.file(abs).hexdigest, "lines" => cov[:lines], "methods" => methods,
+                     "branches" => branches }
     end
     examples = RSpec.configuration.reporter.examples.map do |e|
       { "id" => e.id, "file" => e.metadata[:file_path], "integration" => e.metadata[:integration] ? true : false,
@@ -1841,7 +1864,7 @@ function rubyReport(d) {
   const path = RUBY_DATA()
   const shown = path.replace(/\\/g, '/')
   if (!existsSync(path)) {
-    fail('ruby', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run ruby)`)
+    fail('ruby', `no coverage data at ${shown} — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} ruby)`)
     return null
   }
   const bytes = readFileSync(path)
@@ -1854,14 +1877,15 @@ function rubyReport(d) {
   }
   if (j === null || typeof j !== 'object' || j.format !== RUBY_FORMAT || typeof j.root !== 'string' || !Array.isArray(j.examples) ||
     typeof j.files !== 'object' || j.files === null || Array.isArray(j.files)) {
-    fail('ruby', `${shown} is not the dump \`run ruby\` writes (format ${RUBY_FORMAT})`)
+    fail('ruby', `${shown} is not the dump \`${RUN_CMD} ruby\` writes (format ${RUBY_FORMAT})`)
     return null
   }
   if (toRepoPath(j.root, d.dir) !== d.dir) {
     fail('ruby', `the dump's root ${j.root.replace(/\\/g, '/')} is not ${d.dir}/ of this tree — the data belongs to another checkout`)
     return null
   }
-  // 예제 — 통합 스위트(`spec/integration` 의 `:integration`)만, 전부 통과. 덤프는 스위트가 끝난 뒤 쓰이므로 실패한 예제도 실린다.
+  // 예제 — 그 스위트(SUITE)의 것만, 전부 통과. 통합 스위트는 `spec/integration` 의 `:integration` 이다. 덤프는 스위트가 끝난 뒤
+  // 쓰이므로 실패한 예제도 실린다.
   const ex = j.examples
   if (!ex.every((e) => e && typeof e.id === 'string' && typeof e.file === 'string' && typeof e.status === 'string')) {
     fail('ruby', `${shown} has an example without id · file · status — not the dump this reader knows`)
@@ -1873,10 +1897,22 @@ function rubyReport(d) {
     const eg = bad.slice(0, 3).map((e) => `${e.id} (${e.status})`).join(' · ')
     fail('ruby', `${bad.length} of ${ex.length} examples in the run did not pass — the data of a failed run is partial: ${eg}`)
   }
-  const foreign = ex.filter((e) => e.integration !== true || !posix.normalize(e.file.replace(/\\/g, '/')).startsWith('spec/integration/'))
-  if (foreign.length) {
-    const eg = sortU(foreign.map((e) => e.id)).slice(0, 3).join(' · ')
-    fail('ruby', `the run included examples outside the integration suite (${eg}) — the report would not be integration-only`)
+  const underIt = (e) => posix.normalize(e.file.replace(/\\/g, '/')).startsWith('spec/integration/')
+  if (SUITE === 'unit') {
+    // 단위 스위트는 통합 스위트 밖의 예제다 — 레인의 단위 명령(경로 · 태그 없는 `bundle exec rspec`)은 spec/integration 의 파일도 싣고
+    // spec_helper 가 `:integration` 예제를 거른다. 태그와 자리가 갈리는 예제(태그 없이 spec/integration 에 있다 · 태그를 달고 그 밖에
+    // 있다)는 어느 쪽인지 모르므로 섞인 것으로 본다(dotnet 의 단위 판정과 같은 쪽 — 모르면 수치를 내지 않는다).
+    const mixed = ex.filter((e) => e.integration !== false || underIt(e))
+    if (mixed.length) {
+      const eg = sortU(mixed.map((e) => e.id)).slice(0, 3).join(' · ')
+      fail('ruby', `the run included examples of the integration suite or examples it cannot place (${eg}) — the data would not be unit-only (unit ruby runs the lane's bundle exec rspec without RUN_INTEGRATION, so spec_helper leaves out :integration; the integration suite = :integration examples under spec/integration)`)
+    }
+  } else {
+    const foreign = ex.filter((e) => e.integration !== true || !underIt(e))
+    if (foreign.length) {
+      const eg = sortU(foreign.map((e) => e.id)).slice(0, 3).join(' · ')
+      fail('ruby', `the run included examples outside the integration suite (${eg}) — the report would not be integration-only`)
+    }
   }
   const entries = new Map()
   for (const [abs, v] of Object.entries(j.files)) {
@@ -1891,6 +1927,8 @@ function rubyReport(d) {
   for (const rel of entries.keys()) if (!existsSync(join(root, rel))) fail('ruby', `${rel} is in the data but not in the tree — the data belongs to another checkout`)
   const files = []
   const never = []
+  // 메서드마다 안 돈 몸통 줄 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다).
+  const units = []
   for (const f of d.files) {
     const e = entries.get(f)
     if (!e) {
@@ -1909,6 +1947,20 @@ function rubyReport(d) {
     }
     if (!e.lines.every((c) => c === null || isCount(c))) {
       fail('ruby', `${f}: cannot read the line counts in ${shown}`)
+      continue
+    }
+    // 가지 — 형식 /2 의 VM branches: 자리(if · unless · case · while · until · 삼항 · &.)마다 갈래와 그 횟수다. 단위 미도달 장부만
+    // 세지만(통합 리포트는 쓰지 않는다) 꼴은 두 스위트가 다 본다 — 못 읽는 가지를 0 개로 세지 않는다.
+    const span = (p) => Array.isArray(p) && p.length === 2 && p.every(isCount)
+    const site = (b) => b !== null && typeof b === 'object' && typeof b.type === 'string' && span(b.start) && span(b.end) && Array.isArray(b.arms) &&
+      b.arms.length > 0 && b.arms.every((a) => a !== null && typeof a === 'object' && typeof a.type === 'string' && span(a.start) && span(a.end) && isCount(a.count))
+    if (!Array.isArray(e.branches) || !e.branches.every(site)) {
+      fail('ruby', `${f}: cannot read the branch counts in ${shown}`)
+      continue
+    }
+    const far = e.branches.find((b) => b.start[0] < 1 || b.end[0] < b.start[0] || b.end[0] > e.lines.length)
+    if (far) {
+      fail('ruby', `${f}: the ${far.type} branch at lines ${far.start[0]}–${far.end[0]} lies outside the ${e.lines.length} lines the data counts — the data contradicts itself`)
       continue
     }
     const ms = []
@@ -1992,9 +2044,27 @@ function rubyReport(d) {
       fail('ruby', `${f}: ${contra.name} was called 0 times but a line of its body ran — the data contradicts itself`)
       continue
     }
+    // 안 탄 갈래는 자리의 첫 줄로 메서드에 붙인다 — 가지는 def 줄까지가 메서드의 것이다(기본 인자의 결정은 호출 때 돈다). 블록 · 람다의
+    // 자리는 감싼 메서드의 범위 안이라 그 메서드의 수다. 범위는 서로 겹치지 않는다(위 판정) — 한 줄은 많아야 한 메서드의 것이다.
+    const missed = ms.map(() => 0)
+    let stray = null
+    for (const b of e.branches) {
+      const k = ms.findIndex((m) => m.sl <= b.start[0] && b.start[0] <= m.el)
+      const n = b.arms.filter((a) => a.count === 0).length
+      if (k >= 0) missed[k] += n
+      else if (n && !stray) stray = b
+    }
+    // 메서드 밖 자리의 안 탄 갈래(클래스 수준 삼항 · 클래스 수준 람다 안의 결정)는 어느 메서드에도 못 붙인다 — 단위 장부는 FAIL 이다(위
+    // 메서드 밖 0 회 줄과 같은 판정). 통합 리포트는 가지를 안 세므로 묻지 않는다.
+    if (stray && SUITE === 'unit') {
+      fail('ruby', `${f}:${stray.start[0]}: the ${stray.type} branch there sits outside every method and has an arm the run never took — no method can be credited with it`)
+      continue
+    }
     files.push({ file: f, stmts: lines.stmts, covered: lines.covered, bodies })
     ms.forEach((m, k) => {
       if (m.count === 0) never.push({ file: f, line: m.sl, name: m.name, stmts: per[k].stmts, label: per[k].stmts ? undefined : 'empty body' })
+      // 한 줄 메서드의 줄은 위 hit 처럼 호출 횟수로 센다 — 몸통에 줄이 없는 메서드는 0 줄이다(머리 주석).
+      units.push({ file: f, line: m.sl, name: m.name, lines: per[k].stmts - per[k].covered, branches: missed[k] })
     })
   }
   // run 기록 — php 와 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 데이터). 다른 판정 뒤에 둔다 — 데이터가
@@ -2006,8 +2076,9 @@ function rubyReport(d) {
   } catch {
     rec = null
   }
-  if (!rec || rec.run !== 'ruby') {
-    fail('ruby', `no record that \`run ruby\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs run ruby) so the report can tell a complete, successful run`)
+  // 기록의 `suite` 는 단위 실행만 쓴다(`unit` — 없으면 통합이다). 다른 스위트의 기록이면 기록이 없는 것과 같다.
+  if (!rec || rec.run !== 'ruby' || (rec.suite ?? 'integration') !== SUITE) {
+    fail('ruby', `no record that \`${RUN_CMD} ruby\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} ruby) so the report can tell a complete, successful run`)
     return null
   }
   if (rec.exit !== 0) {
@@ -2016,10 +2087,11 @@ function rubyReport(d) {
   }
   const dumpSha = createHash('sha1').update(bytes).digest('hex')
   if (rec.dump_sha1 !== dumpSha) {
-    fail('ruby', `${shown} is not the data \`run ruby\` recorded (sha1 ${String(rec.dump_sha1).slice(0, 12)}… recorded, ${dumpSha.slice(0, 12)}… now) — another run wrote over it`)
+    fail('ruby', `${shown} is not the data \`${RUN_CMD} ruby\` recorded (sha1 ${String(rec.dump_sha1).slice(0, 12)}… recorded, ${dumpSha.slice(0, 12)}… now) — another run wrote over it`)
     return null
   }
-  return { path, note: `ruby ${typeof j.ruby === 'string' ? j.ruby : '?'} · Coverage lines · methods`, files, never }
+  const runs = SUITE === 'unit' ? ` · branches · ${ex.length} unit example${ex.length === 1 ? '' : 's'}` : ''
+  return { path, note: `ruby ${typeof j.ruby === 'string' ? j.ruby : '?'} · Coverage lines · methods${runs}`, files, never, units }
 }
 
 // ── dotnet — coverlet 컬렉터의 고유 JSON ──────────────────────────────────────────────────
@@ -3401,7 +3473,7 @@ function unitLedgerFor(l) {
     fail(l, `${UNIT} has no ${l} object — an empty ledger is {}, not a missing one`)
     return null
   }
-  // kotlin · dotnet · java 는 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
+  // kotlin · dotnet · java · ruby 는 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
   const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : ['lines', 'why']
   for (const [k, v] of Object.entries(e)) {
     const ok = v !== null && typeof v === 'object' && !Array.isArray(v) && sortU(Object.keys(v)).join() === want.join() && want.every((x) => (x === 'why' ? typeof v.why === 'string' && v.why !== '' : isCount(v[x])))
@@ -3429,7 +3501,7 @@ function unitReport(l) {
   const led = unitLedgerFor(l)
   // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x) }[l]
+  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x), ruby: rubyReport }[l]
   const data = fails(l) ? null : reader(d)
   const rows = []
   if (data && !fails(l)) {
@@ -3486,7 +3558,9 @@ function printUnit(l, d, data, rows) {
         ? '  (counts = JaCoCo method counters — missed lines · missed branches — summed over the methods folded into each source method: lambdas, anonymous and local classes; a named nested class is its own type, overloads are told apart by their parameters)'
         : l === 'dotnet'
           ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
-          : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
+          : l === 'ruby'
+            ? '  (counts = Ruby Coverage per method — lines inside it and branch arms (if, unless, case, while, until, ternary, &.) the unit run never executed; a block\'s lines and arms are its method\'s, a one-line method\'s line counts by its calls; || and && are not branches to Ruby, so a failure arm behind them on a line that ran is not seen)'
+            : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
   )
   const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
   for (const r of sorted) console.log(`  UNREACHED ${r.file}:${r.line} ${r.name} · ${unitCounts(l, r)} · ${r.why}`)
@@ -3686,9 +3760,10 @@ function run(l) {
     return rc
   }
   if (l === 'ruby') {
-    // 옛 데이터 · 기록 · 부트 파일을 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게).
+    // 옛 데이터 · 기록 · 부트 파일을 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게). 단위 미도달
+    // 장부(`unit ruby`)는 같은 길로 단위 스위트를 돈다 — 이름은 `.unit` 이 붙는다(SUITE).
     const data = RUBY_DATA()
-    const boot = join(out, 'ruby-boot')
+    const boot = join(out, `ruby${TAG}-boot`)
     rmSync(data, { force: true })
     rmSync(RUBY_RUN(), { force: true })
     rmSync(boot, { recursive: true, force: true })
@@ -3702,17 +3777,28 @@ function run(l) {
     const dump = join(boot, 'dump.rb')
     writeFileSync(start, RUBY_START)
     writeFileSync(dump, RUBY_DUMP)
-    // 레인의 명령(`RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration`)과 같은 스펙 · 태그 · 환경이다 —
-    // `bundle exec` 대신 순서를 명시한다(머리 주석: start → bundler/setup → 번들의 rspec).
+    // 레인의 명령과 같은 스펙 · 태그 · 환경이다 — 통합은 `RUN_INTEGRATION=1 bundle exec rspec spec/integration --tag integration`,
+    // 단위는 `bundle exec rspec`(경로 · 태그 없이 — RUN_INTEGRATION 이 없으면 spec_helper 가 `:integration` 을 거르고 SimpleCov 게이트를
+    // 건다). 단위는 RUN_INTEGRATION 을 **지운** 환경에서 돈다 — 셸에 남은 값이 통합 예제를 싣고 게이트를 끄지 않게(윈도의 환경 이름은
+    // 대소문자를 안 가린다). `bundle exec` 대신 순서를 명시한다(머리 주석: start → bundler/setup → 번들의 rspec).
+    // ⚠️ 단위의 경로 `spec` 은 레인의 인자 없는 `rspec` 이 도는 기본 경로다 — rspec-core 는 `$0` 이 `rspec` 일 때만 default_path 를 더한다
+    // (configuration.rb `files_or_directories_to_run=`). `-e` 로 실린 여기서는 더하지 않아 예제 0 개로 끝났다(실측 2026-11-20 — 리더가
+    // 공허한 실행으로 FAIL 했다).
+    const env = SUITE === 'unit'
+      ? Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== 'RUN_INTEGRATION'))
+      : { ...process.env, RUN_INTEGRATION: '1' }
+    const select = SUITE === 'unit' ? ['spec'] : ['spec/integration', '--tag', 'integration']
     const rc = spawnStep(
       'ruby',
-      [`-r${start}`, '-rbundler/setup', '-e', 'load Gem.bin_path("rspec-core", "rspec")', '--', '--require', dump, 'spec/integration', '--tag', 'integration'],
+      [`-r${start}`, '-rbundler/setup', '-e', 'load Gem.bin_path("rspec-core", "rspec")', '--', '--require', dump, ...select],
       cwd,
-      { ...process.env, RUN_INTEGRATION: '1', KCSDK_ITCOV_OUT: data, KCSDK_ITCOV_ROOT: cwd },
+      { ...env, KCSDK_ITCOV_OUT: data, KCSDK_ITCOV_ROOT: cwd },
     )
+    // 이 실행의 기록 — 단위 실행의 기록만 `suite` 를 갖는다(php 와 같다).
     if (existsSync(data)) {
       const sha = createHash('sha1').update(readFileSync(data)).digest('hex')
-      writeFileSync(RUBY_RUN(), `${JSON.stringify({ run: 'ruby', exit: rc, dump_sha1: sha })}\n`)
+      const rec = SUITE === 'unit' ? { run: 'ruby', suite: 'unit', exit: rc, dump_sha1: sha } : { run: 'ruby', exit: rc, dump_sha1: sha }
+      writeFileSync(RUBY_RUN(), `${JSON.stringify(rec)}\n`)
     }
     return rc
   }
