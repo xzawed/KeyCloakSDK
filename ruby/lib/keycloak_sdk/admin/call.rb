@@ -80,6 +80,14 @@ module KeycloakSdk
         segments = path.to_s.delete_suffix("/").split("/", -1)
         [segments[-2], segments.last.to_s]
       end
+
+      # 이름으로 주소를 잡는 create(roles) 의 답 — 서버가 매기는 id 가 없어 위 규칙 밖이고 예전 그대로다(등록부
+      # admin-create-relative-location): `Location` 원문의 마지막 `/` 조각. `Location` 은 이름으로 끝나서, `/` 를 품은
+      # 이름 `a/b` 의 `…/roles/a/b` 에 컬렉션 검사를 걸면 서버가 만든 뒤 nil 이 된다.
+      def name_from_location(resp)
+        loc = resp.headers["location"]
+        loc&.split("/")&.last
+      end
     end
   end
 end

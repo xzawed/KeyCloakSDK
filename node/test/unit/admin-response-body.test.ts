@@ -428,7 +428,8 @@ describe('admin 파사드의 응답 본문 — 등록부 admin-response-body-unb
    * 기한(4 s)을 기다리지 않는다.
    */
   it('쓰기의 2xx 본문은 읽지 않고 그 연결을 끊는다', async () => {
-    // `Location` 은 보낸 컬렉션 안이다 — id 는 그 안의 것만 읽는다(등록부 admin-create-relative-location).
+    // id 를 읽는 create 의 `Location` 은 보낸 컬렉션 안이다 — id 는 그 안의 것만 읽는다. realms 는 이름으로 주소를 잡아 그
+    // 규칙 밖이다(마지막 조각이 비지 않기만 본다 — 등록부 admin-create-relative-location).
     const loc = 'Location: http://kc/admin/realms/r/users/abc-1'
     const rows: ReadonlyArray<
       readonly [string, Reply, (a: AdminClient) => Promise<unknown>, unknown, number | undefined]
@@ -454,7 +455,7 @@ describe('admin 파사드의 응답 본문 — 등록부 admin-response-body-unb
       ],
       [
         'realms.create 201 + Location + 64 MiB',
-        { status: 201, headers: ['Location: http://kc/admin/realms/n'], body: HUGE },
+        { status: 201, headers: [loc], body: HUGE },
         (a) => a.realms.create({ realm: 'n' }),
         undefined,
         undefined,

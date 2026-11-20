@@ -461,90 +461,94 @@ const LOCATION_VECTORS: ReadonlyArray<readonly [string, string | null, string | 
   ['L13 percent-encoded', '{base}{path}/abc%20123', 'abc%20123'],
 ]
 
+/** 그 create 가 낸 결과 — `ok <값>` 이거나 `<오류 클래스>(<상태>): <문구>`. */
+async function outcome(run: () => Promise<unknown>): Promise<string> {
+  try {
+    return `ok ${String(await run())}`
+  } catch (e) {
+    return e instanceof KeycloakAdminError
+      ? `${e.constructor.name}(${String(e.status)}): ${e.message}`
+      : String(e)
+  }
+}
+
 describe('create — Location 은 보낸 요청의 URL 에 대해 풀어 읽는다(RFC 9110 §10.2.2)', () => {
   /**
-   * 풀린 경로의 마지막 조각이 id 이고, 그 앞 조각은 보낸 컬렉션이어야 한다 — 쿼리 · 조각은 id 가 아니고 퍼센트 인코딩은 풀지
-   * 않는다. 없거나 빈 값, 다른 컬렉션 · id 없는 경로는 id 없음 오류다(그 응답의 상태를 실은 `KeycloakAdminError` — 문구는
-   * 예전 그대로). users 는 열세 벡터 전부, 나머지 넷(id 를 돌려주지 않는 roles · realms 도 `Location` 을 요구한다)은 L1 · L2 ·
-   * L4 · L7 · L9. ⚠️ node 는 users · clients · groups · realms 를 admin-client 처럼 끝 `/` 로 보낸다(`POST /users/`) — 그
-   * URL 에 대해 `abc-123` 은 컬렉션 안이다(L4 가 id 다). roles 는 끝 `/` 없이 보낸다.
+   * 서버가 id 를 매기는 users · clients · groups — 풀린 경로의 마지막 조각이 id 이고, 그 앞 조각은 보낸 컬렉션이어야 한다.
+   * 쿼리 · 조각은 id 가 아니고 퍼센트 인코딩은 풀지 않는다. 없거나 빈 값, 다른 컬렉션 · id 없는 경로는 id 없음 오류다(그 응답의
+   * 상태를 실은 `KeycloakAdminError` — 문구는 예전 그대로). users 는 열세 벡터 전부, clients · groups 는 L1 · L2 · L4 · L7 · L9.
+   * ⚠️ node 는 셋을 admin-client 처럼 끝 `/` 로 보낸다(`POST /users/`) — 그 URL 에 대해 `abc-123` 은 컬렉션 안이다(L4 가 id 다).
    */
-  it('열세 벡터 — users 전부, clients · groups · roles · realms 는 L1 · L2 · L4 · L7 · L9', async () => {
+  it('열세 벡터 — users 전부, clients · groups 는 L1 · L2 · L4 · L7 · L9', async () => {
     const admin = await AdminClient.create(cfg, provider)
     const creates = [
-      {
-        name: 'users',
-        path: '/admin/realms/demo/users',
-        slash: true,
-        id: true,
-        run: () => admin.users.create({ username: 'bob' }),
-      },
-      {
-        name: 'clients',
-        path: '/admin/realms/demo/clients',
-        slash: true,
-        id: true,
-        run: () => admin.clients.create({ clientId: 'app' }),
-      },
-      {
-        name: 'groups',
-        path: '/admin/realms/demo/groups',
-        slash: true,
-        id: true,
-        run: () => admin.groups.create({ name: 'team' }),
-      },
-      {
-        name: 'roles',
-        path: '/admin/realms/demo/roles',
-        slash: false,
-        id: false,
-        run: () => admin.roles.create({ name: 'admin' }),
-      },
-      {
-        name: 'realms',
-        path: '/admin/realms',
-        slash: true,
-        id: false,
-        run: () => admin.realms.create({ realm: 'abc-123' }),
-      },
+      { coll: 'users', run: () => admin.users.create({ username: 'bob' }) },
+      { coll: 'clients', run: () => admin.clients.create({ clientId: 'app' }) },
+      { coll: 'groups', run: () => admin.groups.create({ name: 'team' }) },
     ]
     const wrong: string[] = []
     let cells = 0
-    for (const create of creates) {
-      const coll = create.path.split('/').at(-1) ?? ''
+    for (const { coll, run } of creates) {
       for (const [vector, template, want] of LOCATION_VECTORS) {
         const label = vector.split(' ')[0] ?? ''
-        if (create.name !== 'users' && !['L1', 'L2', 'L4', 'L7', 'L9'].includes(label)) continue
+        if (coll !== 'users' && !['L1', 'L2', 'L4', 'L7', 'L9'].includes(label)) continue
         cells++
         const location =
           template === null
             ? null
             : template
                 .replaceAll('{base}', 'https://kc.example.com')
-                .replaceAll('{path}', create.path)
+                .replaceAll('{path}', `/admin/realms/demo/${coll}`)
                 .replaceAll('{coll}', coll)
                 .replaceAll('{other}', coll === 'groups' ? 'users' : 'groups')
-        const id = label === 'L4' && create.slash ? 'abc-123' : want
+        const id = label === 'L4' ? 'abc-123' : want
         reply(201, undefined, location === null ? undefined : { location })
-        let got: string
-        try {
-          got = `ok ${String(await create.run())}`
-        } catch (e) {
-          got =
-            e instanceof KeycloakAdminError
-              ? `${e.constructor.name}(${String(e.status)}): ${e.message}`
-              : String(e)
-        }
+        const got = await outcome(run)
         const expected =
           id !== null
-            ? `ok ${create.id ? id : 'undefined'}`
+            ? `ok ${id}`
             : template === null
               ? 'KeycloakAdminError(201): location header is not found in request: '
               : 'KeycloakAdminError(201): resourceId is not found in Location header from request: '
-        if (got !== expected) wrong.push(`${create.name} ${vector}: ${got} — want ${expected}`)
+        if (got !== expected) wrong.push(`${coll} ${vector}: ${got} — want ${expected}`)
       }
     }
-    expect(cells).toBe(33)
+    expect(cells).toBe(23)
+    expect(wrong).toEqual([])
+  })
+
+  /**
+   * 대조 — 이름으로 주소를 잡는 roles · realms 의 create 는 이 규칙 밖이고 예전 그대로다(admin-client 처럼 `Location` 을 요구하고
+   * 마지막 `/` 조각이 비지 않기만 본다). 서버가 매기는 id 가 없고 `Location` 은 이름으로 끝난다 — `/` 를 품은 이름 `a/b` 의
+   * `…/roles/a/b` 가 서버가 만든 뒤 실패하면 안 된다. 그 밖의 벡터도 예전 결과 그대로다.
+   */
+  it('roles · realms 는 예전 그대로 — 이름의 `/` · 상대 값 · 다른 컬렉션 · 쿼리도 성공, 없거나 끝이 `/` 면 오류', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    const named: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
+      ['roles', () => admin.roles.create({ name: 'a/b' })],
+      ['realms', () => admin.realms.create({ realm: 'n' })],
+    ]
+    const cases: ReadonlyArray<readonly [string | null, string]> = [
+      [`${BASE}/demo/roles/a/b`, 'ok undefined'],
+      [`${BASE}/demo/roles/abc-123`, 'ok undefined'],
+      ['/admin/realms/demo/roles/abc-123', 'ok undefined'],
+      ['abc-123', 'ok undefined'],
+      ['../groups/abc-123', 'ok undefined'],
+      [`${BASE}/demo/roles/abc-123?x=1#f`, 'ok undefined'],
+      [
+        `${BASE}/demo/roles/abc-123/`,
+        'KeycloakAdminError(201): resourceId is not found in Location header from request: ',
+      ],
+      [null, 'KeycloakAdminError(201): location header is not found in request: '],
+    ]
+    const wrong: string[] = []
+    for (const [name, run] of named) {
+      for (const [location, expected] of cases) {
+        reply(201, undefined, location === null ? undefined : { location })
+        const got = await outcome(run)
+        if (got !== expected) wrong.push(`${name} ${String(location)}: ${got} — want ${expected}`)
+      }
+    }
     expect(wrong).toEqual([])
   })
 

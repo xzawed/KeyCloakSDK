@@ -250,11 +250,35 @@ export async function write(
 }
 
 /**
- * Create — the 2xx body is not read; the id is the one `Location` names ({@link createdId}). A missing `Location`, or
- * one that names no id in the posted collection, is a {@link KeycloakAdminError} carrying that response's status, with
- * admin-client's message — whose own bare `Error` left the SDK's error hierarchy (§4).
+ * Create of users · clients · groups, whose id the server assigns — the 2xx body is not read; the id is the one
+ * `Location` names ({@link createdId}). A missing `Location`, or one that names no id in the posted collection, is a
+ * {@link KeycloakAdminError} carrying that response's status, with admin-client's message — whose own bare `Error` left
+ * the SDK's error hierarchy (§4).
  */
 export async function create(http: AdminHttp, path: string, body: unknown): Promise<string> {
+  const { res, location } = await posted(http, path, body)
+  const id = createdId(location, target(http, path))
+  if (id === undefined) throw noId(res)
+  return id
+}
+
+/**
+ * Create of a role or a realm — addressed by its name, so there is no server-assigned id to read: like admin-client, it
+ * requires a `Location` whose last `/` piece is not empty and returns nothing. Not {@link createdId}: the `Location` ends
+ * in the name, and a name that holds a `/` would fail the collection check after the server created it (registry
+ * admin-create-relative-location — these creates keep their behaviour).
+ */
+export async function createNamed(http: AdminHttp, path: string, body: unknown): Promise<void> {
+  const { res, location } = await posted(http, path, body)
+  if (!location.split('/').pop()) throw noId(res)
+}
+
+/** A create's POST — a 2xx whose body is not read and that carries a `Location`; else a {@link KeycloakAdminError}. */
+async function posted(
+  http: AdminHttp,
+  path: string,
+  body: unknown,
+): Promise<{ res: Response; location: string }> {
   const res = await send(http, 'POST', path, [], body)
   if (!res.ok) return reject(res)
   await discard(res)
@@ -264,14 +288,15 @@ export async function create(http: AdminHttp, path: string, body: unknown): Prom
       status: res.status,
     })
   }
-  const id = createdId(location, target(http, path))
-  if (id === undefined) {
-    throw new KeycloakAdminError(
-      `resourceId is not found in Location header from request: ${res.url}`,
-      { status: res.status },
-    )
-  }
-  return id
+  return { res, location }
+}
+
+/** A `Location` that names no id — admin-client's message, with that response's status. */
+function noId(res: Response): KeycloakAdminError {
+  return new KeycloakAdminError(
+    `resourceId is not found in Location header from request: ${res.url}`,
+    { status: res.status },
+  )
 }
 
 /**
@@ -280,8 +305,8 @@ export async function create(http: AdminHttp, path: string, body: unknown): Prom
  * of the resolved path as it came (not decoded; one trailing `/` ignored), whose segment before it must be the collection
  * the create posted to. Never the query or the fragment. `undefined` — no id — when the value is empty after trimming SP
  * and HTAB or does not parse, or the resolved path names no id in that collection (another collection's id included).
- * ⚠️ The create URL of users · clients · groups · realms ends in `/` (admin-client's `POST /users/`), so a bare `abc`
- * resolves into the collection.
+ * ⚠️ The create URL of users · clients · groups ends in `/` (admin-client's `POST /users/`), so a bare `abc` resolves
+ * into the collection.
  */
 function createdId(location: string, sentTo: URL): string | undefined {
   // 앞의 SP · HTAB 는 fetch 가 이미 뗐다(Headers 정규화 · llhttp) — 뒤의 것은 undici 가 남긴다(실측: `abc \t ` 그대로).

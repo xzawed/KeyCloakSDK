@@ -1,6 +1,6 @@
 import type RealmRepresentation from '@keycloak/keycloak-admin-client/lib/defs/realmRepresentation.js'
 import { call, requireFound } from './call.js'
-import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
+import { type AdminHttp, adminPath, createNamed, omit, orEmpty, read, readOne, write } from './http.js'
 
 /**
  * Realm create/get/delete facade. `RealmsResource` is not realm-scoped; it takes the realm name as an argument
@@ -19,7 +19,9 @@ export class RealmsResource {
    * response's `Location` but does not return it.
    */
   async create(representation: RealmRepresentation): Promise<void> {
-    await call(() => create(this.http, adminPath(''), omit(orEmpty(representation) as object, [])))
+    await call(() =>
+      createNamed(this.http, adminPath(''), omit(orEmpty(representation) as object, [])),
+    )
   }
 
   /** Looks up a realm by name. `KeycloakNotFoundError` if absent. */

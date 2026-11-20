@@ -24,8 +24,8 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
   # 아홉 SDK 가 같이 쓰는 `Location` 벡터(등록부 admin-create-relative-location) — `{base}` 는 서버, `{path}` 는 보낸
   # 컬렉션 경로, `{coll}` 은 그 마지막 조각, `{other}` 는 다른 컬렉션. 값은 돌려줄 id 이고 nil 이면 id 없음(없을 때의 그 답)이다.
   # id 는 201 의 `Location` 을 요청 URL 에 대해 푼(RFC 9110 §10.2.2) 경로의 마지막 조각이고, 그 앞 조각은 보낸 컬렉션이어야
-  # 한다 — 상대 `Location` 도 읽고, 쿼리 · 조각은 id 가 아니며, 퍼센트 인코딩은 풀지 않는다. users 는 열셋 전부, clients ·
-  # groups · roles(이름 조각을 id 로 돌려준다)는 L1 · L2 · L4 · L7 · L9.
+  # 한다 — 상대 `Location` 도 읽고, 쿼리 · 조각은 id 가 아니며, 퍼센트 인코딩은 풀지 않는다. 서버가 id 를 매기는 users 는
+  # 열셋 전부, clients · groups 는 L1 · L2 · L4 · L7 · L9. 이름으로 주소를 잡는 roles 는 이 규칙 밖이다(맨 아래 대조).
   describe "the id a create reads from its Location, resolved against the request URL" do
     {
       "L1 absolute" => ["{base}{path}/abc-123", "abc-123"],
@@ -42,7 +42,7 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
       "L12 absent" => [nil, nil],
       "L13 percent-encoded" => ["{base}{path}/abc%20123", "abc%20123"]
     }.each do |vector, (template, want)|
-      %w[users clients groups roles].each do |coll|
+      %w[users clients groups].each do |coll|
         next unless coll == "users" || %w[L1 L2 L4 L7 L9].include?(vector.split.first)
 
         it "#{coll} #{vector} → #{want.inspect}" do
@@ -71,6 +71,29 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     it "users: a Location that does not parse (a raw space) → nil, not a stdlib URI error" do
       stub_request(:post, users_url).to_return(status: 201, headers: { "Location" => "#{users_url}/abc 123" })
       expect(admin.users.create({ username: "alice" })).to be_nil
+    end
+
+    # 대조 — roles 의 create 는 이름으로 주소를 잡아(서버가 매기는 id 가 없고 `Location` 은 이름으로 끝난다) 위 규칙 밖이고
+    # 예전 그대로 `Location` 원문의 마지막 `/` 조각을 돌려준다. `/` 를 품은 이름 `a/b` 의 `…/roles/a/b` 가 서버가 만든 뒤
+    # nil 이 되면 안 된다 — 상대 값 · 다른 컬렉션 · 쿼리도 예전 결과 그대로다.
+    it "roles: as before — the last `/` piece of the raw Location, no resolution or collection check" do
+      roles_url = "https://kc.example.com/admin/realms/demo/roles"
+      unchanged = {
+        "#{roles_url}/a/b" => "b",
+        "#{roles_url}/abc-123" => "abc-123",
+        "abc-123" => "abc-123",
+        "../groups/abc-123" => "abc-123",
+        "#{roles_url}/abc-123?x=1#f" => "abc-123?x=1#f",
+        "#{roles_url}/abc-123/" => "abc-123",
+        "/" => nil,
+        "" => nil,
+        nil => nil
+      }
+      stub_request(:post, roles_url).to_return(
+        *unchanged.keys.map { |loc| { status: 201, headers: loc.nil? ? {} : { "Location" => loc } } }
+      )
+      got = unchanged.keys.to_h { |loc| [loc, admin.roles.create({ name: "a/b" })] }
+      expect(got).to eq(unchanged)
     end
   end
 

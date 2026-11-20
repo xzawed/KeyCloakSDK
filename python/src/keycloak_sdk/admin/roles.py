@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, create_call, encodable, write_call
+from ._translate import call, encodable, write_call
 
 
 class RolesResource:
@@ -17,10 +17,11 @@ class RolesResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> None:
-        """Creates a realm role. python-keycloak reads the answer's `Location`, so a create whose
-        answer names no role in the roles collection fails as the id-returning creates do."""
+        # 이름으로 주소를 잡는 create — 서버가 매기는 id 가 없어 `create_call` 의
+        # Location 규칙 밖이다(등록부 admin-create-relative-location). python-keycloak 이
+        # 읽는 그대로다.
         encodable(rep)
-        create_call(lambda: self._admin.create_realm_role(rep))
+        write_call(lambda: self._admin.create_realm_role(rep))
 
     def get(self, name: str) -> dict[str, Any] | None:
         """Looks up a role by name. If it does not exist, `KeycloakNotFoundError` propagates
