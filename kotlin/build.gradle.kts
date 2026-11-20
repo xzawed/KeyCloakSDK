@@ -88,7 +88,7 @@ dependencies {
     // ⚠️ 이 버전은 위 KOTLIN_2_2와 함께 움직여야 한다 — 하나만 올리면 소비자 하한이 조용히 갈라진다.
     api("org.jetbrains.kotlin:kotlin-stdlib:2.2.21")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0") // 공개 suspend → api
-    api("org.keycloak:keycloak-admin-client:26.0.12") // representation 노출 → api
+    api("org.keycloak:keycloak-admin-client:26.0.13") // representation 노출 → api
     implementation("com.nimbusds:oauth2-oidc-sdk:11.39")
     implementation("com.nimbusds:nimbus-jose-jwt:10.10")
     // auth·JWKS 운송(BoundedTransport) — admin 의 RESTEasy 6.2.15.Final 이 이미 가져오는 판 그대로(httpclient 4.5.14 → httpcore 4.4.16 ·
