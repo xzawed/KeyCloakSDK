@@ -58,6 +58,20 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
         end
       end
     end
+
+    it "users: SP and HTAB around the Location are not part of it — a value of only those is empty → nil" do
+      stub_request(:post, users_url).to_return(
+        { status: 201, headers: { "Location" => " \t#{users_url}/abc-123\t " } },
+        { status: 201, headers: { "Location" => " \t " } }
+      )
+      ids = [admin.users.create({ username: "alice" }), admin.users.create({ username: "bob" })]
+      expect(ids).to eq(["abc-123", nil])
+    end
+
+    it "users: a Location that does not parse (a raw space) → nil, not a stdlib URI error" do
+      stub_request(:post, users_url).to_return(status: 201, headers: { "Location" => "#{users_url}/abc 123" })
+      expect(admin.users.create({ username: "alice" })).to be_nil
+    end
   end
 
   it "maps 404 to NotFoundError" do

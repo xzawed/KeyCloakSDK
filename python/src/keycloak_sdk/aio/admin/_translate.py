@@ -12,7 +12,13 @@ from typing import TypeVar
 
 from ..._internal.admin_body import Answer, facade, no_body
 from ..._internal.lower import is_lower_failure, summarize
-from ...admin._translate import admin_failure, refused_grant, refused_guard, refused_send
+from ...admin._translate import (
+    admin_failure,
+    created_from,
+    refused_grant,
+    refused_guard,
+    refused_send,
+)
 from ...exceptions import (
     KeycloakAdminError,
     KeycloakAuthError,
@@ -23,15 +29,30 @@ from ...exceptions import (
 T = TypeVar("T")
 
 
-async def awrite_call(awaitable: Awaitable[T]) -> T:
+async def awrite_call(awaitable: Awaitable[T], answer: Answer | None = None) -> T:
     """`acall` 과 같되 성공 응답의 본문을 읽지 않는다(sync `write_call` 과 같다 —
     `_internal/admin_body.py`). 코루틴은 이 태스크 안에서 돌므로 표시(contextvar)가 그
     요청에 닿는다."""
     with no_body():
-        return await acall(awaitable)
+        return await acall(awaitable, answer)
 
 
-async def acall(awaitable: Awaitable[T]) -> T:
+async def acreate_call(awaitable: Awaitable[object]) -> str:
+    """sync `create_call` 과 같다 — id 는 python-keycloak 이 읽은 값이 아니라 그 호출이 받은 2xx 의
+    `Location` 이 이름하는 것이고(`created_from`), 없으면 `KeycloakTransportError` 다."""
+    answer = Answer()
+    returned: object = None
+    unreadable = False
+    try:
+        returned = await awrite_call(awaitable, answer)
+    except KeycloakTransportError:
+        if answer.created is None:
+            raise
+        unreadable = True  # 그 2xx 를 python-keycloak 이 읽지 못했다 — 오류는 `except` 밖에서
+    return created_from(answer, returned, unreadable)
+
+
+async def acall(awaitable: Awaitable[T], answer: Answer | None = None) -> T:
     """`awaitable`을 await하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
     python-keycloak 의 실패가 아닌 예외는 그대로 전파한다(변환 대상이 아님). admin 하드닝의 거부는
@@ -42,7 +63,7 @@ async def acall(awaitable: Awaitable[T]) -> T:
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
-    answer = Answer()
+    answer = Answer() if answer is None else answer
     try:
         with facade(answer):
             return await awaitable

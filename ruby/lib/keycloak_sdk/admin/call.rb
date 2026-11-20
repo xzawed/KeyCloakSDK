@@ -58,9 +58,27 @@ module KeycloakSdk
         status if status.is_a?(Integer) && !(200..299).cover?(status)
       end
 
+      # 생성된 리소스의 id — 등록부 admin-create-relative-location 의 규칙(아홉 SDK 가 같다). `Location` 값(앞뒤 SP · HTAB 를
+      # 뗀)을 요청 URL 에 대해 풀고(RFC 9110 §10.2.2 — 상대 값도), 풀린 경로(디코딩하지 않고 · 끝 `/` 하나는 무시)의 마지막 조각이
+      # id 다 — 그 앞 조각은 보낸 컬렉션이어야 한다. 쿼리 · 조각은 id 가 아니다. 없거나 비었거나 풀리지 않는 값, 그 컬렉션의 id 를
+      # 이름하지 않는 경로(다른 컬렉션의 id 도)는 nil(id 없음).
       def id_from_location(resp)
-        loc = resp.headers["location"]
-        loc&.split("/")&.last
+        value = resp.headers["location"].to_s
+        # 앞뒤 SP · HTAB 를 뗀다 — 앞에서 · 뒤에서 처음 만나는 다른 글자로(선형). `[ \t]+\z` 정규식은 긴 안쪽 공백 줄에서 되짚는다.
+        first = value.index(/[^ \t]/)
+        return unless first
+
+        sent_to = resp.env.url
+        collection, id = last_segments(sent_to.merge(value[first..value.rindex(/[^ \t]/)]).path)
+        id if !id.empty? && collection == last_segments(sent_to.path).last
+      rescue URI::Error
+        nil
+      end
+
+      # URL 경로의 마지막 두 조각(끝 `/` 하나는 무시) — 조각이 하나뿐이면 앞의 것은 nil.
+      def last_segments(path)
+        segments = path.to_s.delete_suffix("/").split("/", -1)
+        [segments[-2], segments.last.to_s]
       end
     end
   end

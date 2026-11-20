@@ -1,6 +1,7 @@
 package io.github.xzawed.keycloak.admin;
 
 import jakarta.ws.rs.core.Response;
+import java.net.URI;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.provider.Arguments;
@@ -16,6 +17,11 @@ final class LocationVectors {
 
   /** 요청이 가는 서버 — 컬렉션은 {@code {BASE}/admin/realms/r/{coll}}. */
   static final String BASE = "https://kc.example.com";
+
+  /** {@code collection} 의 create 가 가는 URL — 파사드가 {@code Location} 을 이것에 대해 푼다. */
+  static URI sentTo(String collection) {
+    return URI.create(BASE + "/admin/realms/r/" + collection);
+  }
 
   private static final List<String[]> VECTORS = List.of(
       new String[] {"L1 absolute", "{base}{path}/abc-123", "abc-123"},

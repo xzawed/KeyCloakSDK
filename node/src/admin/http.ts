@@ -92,6 +92,21 @@ function search(query: ReadonlyArray<readonly [string, unknown]>): string {
 }
 
 /**
+ * 요청이 가는 URL — admin-client 의 `joinPath(url.pathname, path)` 처럼 서버 주소의 경로에 이 경로를 잇는다(`path` 는 늘
+ * `/` 로 시작하므로 앞 조각의 끝 `/` 만 뗀다). {@link send} 가 보내고, {@link create} 가 `Location` 을 이것에 대해 푼다.
+ */
+function target(
+  http: AdminHttp,
+  path: string,
+  query: ReadonlyArray<readonly [string, unknown]> = [],
+): URL {
+  const url = new URL(http.serverUrl)
+  url.pathname = `${url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname}${path}`
+  url.search = search(query)
+  return url
+}
+
+/**
  * admin-client 가 보내는 것과 같은 요청을 보낸다(`lib/resources/agent.js` 의 `#requestWithParams`) — 머리는 같은
  * 순서로(`authorization` · `accept`, 본문이 있으면 `content-type`), 주소는 같은 조립으로(서버 주소의 경로에 이 경로를
  * `joinPath` 처럼 이어 `pathname` 에 넣는다 — 점 조각도 URL 이 같게 정규화한다), 리다이렉트는 따르지 않고 기한은
@@ -122,11 +137,7 @@ async function send(
     ['accept', 'application/json, text/plain, */*'],
   ])
   if (json !== undefined) headers.set('content-type', 'application/json')
-  const url = new URL(http.serverUrl)
-  // admin-client 의 `joinPath(url.pathname, path)` — `path` 는 늘 `/` 로 시작하므로 앞 조각의 끝 `/` 만 뗀다.
-  url.pathname = `${url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname}${path}`
-  url.search = search(query)
-  return fetch(url, {
+  return fetch(target(http, path, query), {
     redirect: 'manual',
     ...(json === undefined ? {} : { body: json }),
     headers,
@@ -239,9 +250,9 @@ export async function write(
 }
 
 /**
- * Create — the 2xx body is not read; the last segment of `Location` is returned. A missing `Location` or an empty
- * last segment is a {@link KeycloakAdminError} carrying that response's status, with admin-client's message — whose
- * own bare `Error` left the SDK's error hierarchy (§4).
+ * Create — the 2xx body is not read; the id is the one `Location` names ({@link createdId}). A missing `Location`, or
+ * one that names no id in the posted collection, is a {@link KeycloakAdminError} carrying that response's status, with
+ * admin-client's message — whose own bare `Error` left the SDK's error hierarchy (§4).
  */
 export async function create(http: AdminHttp, path: string, body: unknown): Promise<string> {
   const res = await send(http, 'POST', path, [], body)
@@ -253,12 +264,44 @@ export async function create(http: AdminHttp, path: string, body: unknown): Prom
       status: res.status,
     })
   }
-  const id = location.split('/').pop()
-  if (!id) {
+  const id = createdId(location, target(http, path))
+  if (id === undefined) {
     throw new KeycloakAdminError(
       `resourceId is not found in Location header from request: ${res.url}`,
       { status: res.status },
     )
   }
   return id
+}
+
+/**
+ * The id a create's `Location` names (registry admin-create-relative-location — the same rule in all nine SDKs): the
+ * value resolved against the URL the create was sent to (RFC 9110 §10.2.2 — a relative one too), then the last segment
+ * of the resolved path as it came (not decoded; one trailing `/` ignored), whose segment before it must be the collection
+ * the create posted to. Never the query or the fragment. `undefined` — no id — when the value is empty after trimming SP
+ * and HTAB or does not parse, or the resolved path names no id in that collection (another collection's id included).
+ * ⚠️ The create URL of users · clients · groups · realms ends in `/` (admin-client's `POST /users/`), so a bare `abc`
+ * resolves into the collection.
+ */
+function createdId(location: string, sentTo: URL): string | undefined {
+  // 앞의 SP · HTAB 는 fetch 가 이미 뗐다(Headers 정규화 · llhttp) — 뒤의 것은 undici 가 남긴다(실측: `abc \t ` 그대로).
+  // 정규식(`[ \t]+$`)으로 떼지 않는다 — 긴 안쪽 공백 줄에서 시작점마다 되짚어 제곱으로 돈다.
+  let end = location.length
+  while (end > 0 && (location[end - 1] === ' ' || location[end - 1] === '\t')) end--
+  if (end === 0) return undefined
+  let resolved: URL
+  try {
+    resolved = new URL(location.slice(0, end), sentTo)
+  } catch {
+    return undefined
+  }
+  const [collection, id] = lastSegments(resolved.pathname)
+  return id !== '' && collection === lastSegments(sentTo.pathname)[1] ? id : undefined
+}
+
+/** The last two segments of a URL path, one trailing `/` ignored — the first `undefined` when it has one only. */
+function lastSegments(path: string): readonly [string | undefined, string] {
+  const segments = (path.endsWith('/') ? path.slice(0, -1) : path).split('/')
+  const last = segments.pop() as string // `split` never returns an empty array
+  return [segments.pop(), last]
 }

@@ -543,6 +543,21 @@ describe('admin 파사드의 응답 본문 — 등록부 admin-response-body-unb
     })
   })
 
+  /**
+   * 와이어의 `Location` 뒤에 붙은 SP · HTAB 는 id 가 아니다 — undici 는 앞의 것만 떼고 뒤의 것을 값에 남긴다(합성 `Response`
+   * 의 `Headers` 는 둘 다 뗀다). 등록부 admin-create-relative-location.
+   */
+  it('Location 뒤의 SP · HTAB 는 떼고 읽는다 — 와이어에서만 남는다', async () => {
+    const srv = await serve({
+      status: 201,
+      headers: ['Location: \t http://kc/admin/realms/r/users/abc-1 \t '],
+    })
+    const a = await adminAt(srv.url)
+    const id = await a.users.create({ username: 'x' })
+    await srv.close()
+    expect(id).toBe('abc-1')
+  })
+
   /** 본문 없는 2xx(Keycloak 26.6 의 쓰기 응답 — `Content-Length: 0` 인 201 · 204)는 끊지 않아 연결을 다시 쓴다. */
   it('본문 없는 2xx 쓰기는 연결을 다시 쓴다', async () => {
     const srv = await serve((_req, n) =>

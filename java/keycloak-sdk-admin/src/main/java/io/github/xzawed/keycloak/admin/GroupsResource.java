@@ -1,8 +1,8 @@
 package io.github.xzawed.keycloak.admin;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Optional;
-import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.representations.idm.GroupRepresentation;
 
 /**
@@ -19,17 +19,24 @@ import org.keycloak.representations.idm.GroupRepresentation;
 public final class GroupsResource {
 
   private final org.keycloak.admin.client.resource.GroupsResource delegate;
+  /** The URL a create is sent to — the groups collection ({@link AdminClient#groups()}). */
+  private final URI collection;
 
-  GroupsResource(org.keycloak.admin.client.resource.GroupsResource delegate) {
+  GroupsResource(org.keycloak.admin.client.resource.GroupsResource delegate, URI collection) {
     this.delegate = delegate;
+    this.collection = collection;
   }
 
-  /** Creates a group, then extracts the new group's id from the response {@code Location} header and returns it. */
+  /**
+   * Creates a group and returns the new group's id — the one the response's {@code Location} header names, resolved
+   * against the request URL (the last path segment, in the groups collection); null when it names none
+   * ({@link CreatedIds}).
+   */
   public String create(GroupRepresentation representation) {
     EncodableBody.require(representation);
     return AdminExceptions.call(() -> {
       try (jakarta.ws.rs.core.Response r = delegate.add(representation)) {
-        return CreatedResponseUtil.getCreatedId(r);
+        return CreatedIds.of(r, collection);
       }
     });
   }

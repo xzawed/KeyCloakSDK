@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -153,6 +154,20 @@ func TestCreateReadsTheIDFromTheLocationResolvedAgainstTheRequestURL(t *testing.
 	}
 	if len(wrong) > 0 {
 		t.Fatalf("%d cell(s) wrong:\n%s", len(wrong), strings.Join(wrong, "\n"))
+	}
+}
+
+// 풀 수 없는 값(대괄호가 닫히지 않은 IPv6 호스트 — url.Parse 가 거부한다)도 id 없음이다. 대조: 대괄호가 닫힌 같은 값은 id 다.
+func TestCreatedIDReadsNoIDFromAValueThatDoesNotParse(t *testing.T) {
+	sentTo, err := url.Parse("http://kc/admin/realms/r/users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := createdID("http://[::1/admin/realms/r/users/abc-123", sentTo); got != "" {
+		t.Errorf("unparsable: %q, want \"\"", got)
+	}
+	if got := createdID("http://[::1]/admin/realms/r/users/abc-123", sentTo); got != "abc-123" {
+		t.Errorf("control: %q, want \"abc-123\"", got)
 	}
 }
 

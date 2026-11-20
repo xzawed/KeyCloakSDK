@@ -1,9 +1,10 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.createdId
 import io.github.xzawed.keycloak.requireEncodableBody
 import jakarta.ws.rs.WebApplicationException
-import org.keycloak.admin.client.CreatedResponseUtil
 import org.keycloak.representations.idm.UserRepresentation
+import java.net.URI
 
 // Users.kt — UsersResource: 공식 admin-client의 org.keycloak.admin.client.resource.UsersResource를
 // 감싸며 모든 호출을 adminCall(AdminClient.kt)로 경계 변환한다(Java UsersResource 동형). 모델 타입은
@@ -13,14 +14,20 @@ import org.keycloak.representations.idm.UserRepresentation
 // Optional.of(...) 래핑은 항상 non-empty라 사실상 무의미한 관용이었다 — Kotlin은 값을 직접 반환한다).
 public class UsersResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.UsersResource,
+    // create 를 보내는 URL — users 컬렉션(AdminClient.users())
+    private val collection: URI,
 ) {
-    /** Creates a user, then extracts the new user's id from the response's Location header and returns it. */
+    /**
+     * Creates a user and returns the new user's id — the one the response's Location header names, resolved against the
+     * request URL (the last path segment, in the users collection). Throws [io.github.xzawed.keycloak.KeycloakAdminException]
+     * (500) when it names none.
+     */
     public suspend fun create(representation: UserRepresentation): String {
         requireEncodableBody(representation)
         return adminCall {
             val response = delegate.create(representation)
             try {
-                CreatedResponseUtil.getCreatedId(response)
+                createdId(response, collection)
             } finally {
                 response.close()
             }

@@ -7,7 +7,7 @@ from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, encodable, write_call
+from ._translate import call, create_call, encodable, write_call
 
 
 class RolesResource:
@@ -17,8 +17,10 @@ class RolesResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> None:
+        """Creates a realm role. python-keycloak reads the answer's `Location`, so a create whose
+        answer names no role in the roles collection fails as the id-returning creates do."""
         encodable(rep)
-        write_call(lambda: self._admin.create_realm_role(rep))
+        create_call(lambda: self._admin.create_realm_role(rep))
 
     def get(self, name: str) -> dict[str, Any] | None:
         """Looks up a role by name. If it does not exist, `KeycloakNotFoundError` propagates

@@ -547,6 +547,19 @@ describe('create — Location 은 보낸 요청의 URL 에 대해 풀어 읽는�
     expect(cells).toBe(33)
     expect(wrong).toEqual([])
   })
+
+  it('풀리지 않는 값(범위 밖 포트)도 id 없음 오류다', async () => {
+    const admin = await AdminClient.create(cfg, provider)
+    reply(201, undefined, {
+      location: 'https://kc.example.com:99999/admin/realms/demo/users/abc-123',
+    })
+    const failure = await admin.users.create({ username: 'bob' }).catch((e: unknown) => e)
+    expect(failure).toBeInstanceOf(KeycloakAdminError)
+    expect(failure).toMatchObject({
+      status: 201,
+      message: 'resourceId is not found in Location header from request: ',
+    })
+  })
 })
 
 describe('close', () => {

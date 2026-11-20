@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.KeycloakAdminException
 import io.github.xzawed.keycloak.KeycloakAuthException
+import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
 import io.mockk.every
 import io.mockk.mockk
@@ -205,7 +206,7 @@ internal class AdminBoundaryTest {
             val delegate = mockk<org.keycloak.admin.client.resource.UsersResource>()
             val response = Response.created(URI("http://localhost:8080/admin/realms/test/users/abc-123")).build()
             every { delegate.create(any()) } returns response
-            val users = UsersResource(delegate)
+            val users = UsersResource(delegate, URI("http://localhost:8080/admin/realms/test/users"))
 
             val id = users.create(UserRepresentation())
 
@@ -238,7 +239,7 @@ internal class AdminBoundaryTest {
                     val response = (if (location == null) built else built.header("Location", location)).build()
                     val got =
                         try {
-                            "ok " + createdId(coll, response)
+                            "ok " + createWith(coll, response)
                         } catch (e: KeycloakAdminException) {
                             "${e::class.simpleName}(${e.status}): ${e.keycloakError}"
                         } catch (e: RuntimeException) {
@@ -252,28 +253,65 @@ internal class AdminBoundaryTest {
             assertTrue(wrong.isEmpty(), "${wrong.size} cell(s) wrong:\n${wrong.joinToString("\n")}")
         }
 
-    /** [coll] 의 create 가 [response] 를 받고 돌려준 id. 위임 리소스는 인터페이스라 MockK 프록시가 가볍다. */
-    private suspend fun createdId(
+    /**
+     * 파사드는 create 의 `Location` 을 그 컬렉션의 URL(`{serverUrl}/admin/realms/{realm}/{컬렉션}` — admin-client 의 프록시가 짓는
+     * 그대로)에 대해 푼다: 컬렉션 이름으로 시작하는 상대 값은 id 이고, 맨 `u-1` 은 realm 아래라 id 없음 오류다(Java 동형).
+     */
+    @Test
+    fun `facades resolve the create Location against their collection`(): Unit =
+        runTest {
+            val realm = mockk<org.keycloak.admin.client.resource.RealmResource>()
+            val users = mockk<org.keycloak.admin.client.resource.UsersResource>()
+            val keycloak = mockk<org.keycloak.admin.client.Keycloak>()
+            every { keycloak.realm("r") } returns realm
+            every { realm.users() } returns users
+            every { users.create(any()) } returnsMany
+                listOf(
+                    Response.status(201).header("Location", "users/u-1").build(),
+                    Response.status(201).header("Location", "u-1").build(),
+                )
+            val admin = AdminClient(KeycloakConfig("https://kc.example.com/auth", "r", "app"), keycloak)
+
+            assertEquals("u-1", admin.users().create(UserRepresentation()))
+            assertFailsWith<KeycloakAdminException.Other> { admin.users().create(UserRepresentation()) }
+        }
+
+    /** 풀 수 없는 값(날 공백 — [URI] 가 거부한다)과 경로가 없는 불투명 URI(`mailto:`)도 id 없음 오류다. */
+    @Test
+    fun `create reads no id from a Location that does not parse or has no path`(): Unit =
+        runTest {
+            for (location in listOf("https://kc.example.com/admin/realms/r/users/abc 123", "mailto:abc-123")) {
+                val response = Response.status(201).header("Location", location).build()
+                val e = assertFailsWith<KeycloakAdminException.Other>(location) { createWith("users", response) }
+                assertEquals(500, e.status)
+                assertEquals(NO_ID.substringAfter(": "), e.keycloakError)
+            }
+        }
+
+    /** [coll] 의 create 가 [response] 를 받고 돌려준 id — 보낸 URL 은 `https://kc.example.com/admin/realms/r/[coll]`. */
+    private suspend fun createWith(
         coll: String,
         response: Response,
-    ): String =
-        when (coll) {
+    ): String {
+        val sentTo = URI("https://kc.example.com/admin/realms/r/$coll")
+        return when (coll) {
             "users" -> {
                 val delegate = mockk<org.keycloak.admin.client.resource.UsersResource>()
                 every { delegate.create(any()) } returns response
-                UsersResource(delegate).create(UserRepresentation())
+                UsersResource(delegate, sentTo).create(UserRepresentation())
             }
             "clients" -> {
                 val delegate = mockk<org.keycloak.admin.client.resource.ClientsResource>()
                 every { delegate.create(any()) } returns response
-                ClientsResource(delegate).create(ClientRepresentation())
+                ClientsResource(delegate, sentTo).create(ClientRepresentation())
             }
             else -> {
                 val delegate = mockk<org.keycloak.admin.client.resource.GroupsResource>()
                 every { delegate.add(any()) } returns response
-                GroupsResource(delegate).create(GroupRepresentation())
+                GroupsResource(delegate, sentTo).create(GroupRepresentation())
             }
         }
+    }
 
     private companion object {
         /** id 없음 — 응답은 201 이지만 쓸 수 있는 id 가 없다. */

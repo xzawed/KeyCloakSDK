@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.keycloak.representations.idm.GroupRepresentation
 import org.keycloak.representations.idm.RealmRepresentation
 import org.keycloak.representations.idm.RoleRepresentation
+import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -66,7 +67,7 @@ internal class AdminResourceDelegationTest {
             every { delegate.group("g-1") } returns group
             val rep = GroupRepresentation().apply { name = "team-renamed" }
 
-            GroupsResource(delegate).update("g-1", rep)
+            GroupsResource(delegate, URI("https://kc.example.com/admin/realms/r/groups")).update("g-1", rep)
 
             verify { delegate.group("g-1") }
             verify { group.update(rep) }

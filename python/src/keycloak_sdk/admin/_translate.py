@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TypeVar, cast
+from urllib.parse import urljoin, urlsplit
 
 from keycloak.exceptions import KeycloakError
 
@@ -184,15 +185,81 @@ def refused_guard(exc: KeycloakConfigError) -> KeycloakConfigError:
     return KeycloakConfigError(str(exc))
 
 
-def write_call(fn: Callable[[], T]) -> T:
+def write_call(fn: Callable[[], T], answer: Answer | None = None) -> T:
     """`call` 과 같되 성공 응답의 본문을 읽지 않는다(`_internal/admin_body.py`) — 파사드의
     쓰기 호출(create 는 `Location` 을, update·delete 는 상태만 쓴다). 오류 응답의 본문은
     상한까지 그대로 실린다."""
     with no_body():
-        return call(fn)
+        return call(fn, answer)
 
 
-def call(fn: Callable[[], T]) -> T:
+#: id 없음 — `Location` 없는 201 에 users · clients 가 내던 그 오류의 문구(python-keycloak 의
+#: `KeyError` 를 경계가 옮긴 것). id 를 읽지 못한 create 는 모두 이것이다.
+NO_CREATED_ID = "Keycloak admin API returned an unusable response (KeyError)"
+
+
+def create_call(fn: Callable[[], object]) -> str:
+    """파사드 create — `fn`(python-keycloak 의 create)을 `write_call` 로 부르되, id 는
+    python-keycloak 이 읽은 값이 아니라 그 호출이 받은 2xx 의 `Location` 이 이름하는 것이다
+    (`created_id` · 등록부 admin-create-relative-location). python-keycloak 은 `Location`
+    원문의 마지막 `/` 뒤를 읽어 상대 값을 풀지 않았고, 쿼리 · 조각을 id 에 남겼고, 다른 컬렉션의
+    id 도 받았으며, 없거나 `/` 가 없으면 `KeyError` · `ValueError` 로 깨졌다(`create_group` 은
+    없으면 None).
+
+    id 가 없으면 `KeycloakTransportError(NO_CREATED_ID)` 다. python-keycloak 이 그 2xx 의
+    `Location` 을 읽지 못해 깨진 실패도 같은 판정을 받는다 — 그 둘(없음 · `/` 없음)은 이
+    규칙에서도 id 가 없다. 2xx 를 받지 않은 호출(목 · 요청을 보내지 않는 소비자 재정의)은 `fn` 이
+    돌려준 값 그대로다."""
+    answer = Answer()
+    returned: object = None
+    unreadable = False
+    try:
+        returned = write_call(fn, answer)
+    except KeycloakTransportError:
+        if answer.created is None:
+            raise
+        unreadable = True  # 그 2xx 를 python-keycloak 이 읽지 못했다 — 오류는 `except` 밖에서
+    return created_from(answer, returned, unreadable)
+
+
+def created_from(answer: Answer, returned: object, unreadable: bool) -> str:
+    """`create_call` · aio `acreate_call` 의 판정 — 그 호출이 받은 2xx 가 있으면 그 `Location` 의 id
+    (`unreadable` — python-keycloak 이 그것을 읽지 못했다 — 면 없음), 없으면 `returned` 그대로."""
+    if answer.created is None:
+        return cast(str, returned)
+    location, sent_to = answer.created
+    created = None if unreadable else created_id(location, sent_to)
+    if created is None:
+        raise KeycloakTransportError(NO_CREATED_ID)
+    return created
+
+
+def created_id(location: str | None, sent_to: str) -> str | None:
+    """create 의 2xx 가 이름하는 id — 아홉 SDK 가 같은 규칙이다. `Location` 값(앞뒤 SP · HTAB
+    를 뗀)을 create 를 보낸 URL 에 대해 풀고(RFC 9110 §10.2.2 — 상대 값도 · `urljoin`), 풀린
+    경로(디코딩하지 않고 · 끝 `/` 하나는 무시)의 마지막 조각이 id 다 — 그 앞 조각은 보낸
+    컬렉션이어야 한다. 쿼리 · 조각은 id 가 아니다. 없거나 비었거나 풀리지 않는 값, 그 컬렉션의 id
+    를 이름하지 않는 경로(다른 컬렉션의 id 도)는 None."""
+    value = (location or "").strip(" \t")
+    if not value:
+        return None
+    try:
+        path = urlsplit(urljoin(sent_to, value)).path
+    except ValueError:  # 닫히지 않은 IPv6 대괄호 같은 것 — 풀리지 않는다
+        return None
+    collection, id_ = _last_segments(path)
+    if not id_ or collection != _last_segments(urlsplit(sent_to).path)[1]:
+        return None
+    return id_
+
+
+def _last_segments(path: str) -> tuple[str | None, str]:
+    """URL 경로의 마지막 두 조각(끝 `/` 하나는 무시) — 조각이 하나뿐이면 앞의 것은 None."""
+    segments = path.removesuffix("/").split("/")
+    return (segments[-2] if len(segments) > 1 else None), segments[-1]
+
+
+def call(fn: Callable[[], T], answer: Answer | None = None) -> T:
     """`fn`을 실행하고 python-keycloak 의 실패를 SDK 예외로 변환해 재발생시킨다.
 
     python-keycloak 의 실패가 아닌 예외(우리 코드의 버그)는 그대로 전파한다(변환 대상이 아님).
@@ -200,11 +267,12 @@ def call(fn: Callable[[], T]) -> T:
     (`refused_send`) — , 연결 무장 실패)는 같은 타입으로 새로 만든다(`refused_grant`·
     `refused_guard`). 원본은 `except` **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
     파사드 호출임을 표시해(`facade`) 그 요청의 3xx 를 결과로 넘기지 않고, 받은 마지막 응답을
-    `answer` 에 둔다(`admin_failure` 가 읽는다).
+    `answer` 에 둔다(`admin_failure` 가 읽는다 — 넘겨받았으면 그것에 둔다: `create_call` 이 그
+    2xx 를 읽는다).
     """
     error: KeycloakAuthError | KeycloakConfigError | KeycloakAdminError | KeycloakTransportError
     cause: BaseException | None
-    answer = Answer()
+    answer = Answer() if answer is None else answer
     try:
         with facade(answer):
             return fn()

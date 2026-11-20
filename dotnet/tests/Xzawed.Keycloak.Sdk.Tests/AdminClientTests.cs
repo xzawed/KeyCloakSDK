@@ -233,4 +233,20 @@ public class AdminClientTests : IDisposable
                     && error.GetType() == typeof(KeycloakAdminException),
             $"{resource} {vector}: want the no-id 500, got {got}");
     }
+
+    /// <summary>The rule's other refusals, which no vector above reaches through a response: a value of blanks only, one that
+    /// does not resolve against the request URL (a port out of range — <see cref="Uri.TryCreate(Uri, Uri, out Uri)"/> refuses
+    /// it), and a response without the request it answered. Control: the same value with a request URL gives its id.</summary>
+    [Theory]
+    [InlineData(" \t ", true, null)]
+    [InlineData("//h:99999/admin/realms/r/users/abc-123", true, null)]
+    [InlineData("/admin/realms/r/users/abc-123", false, null)]
+    [InlineData("/admin/realms/r/users/abc-123", true, "abc-123")]
+    public void CreatedId_reads_no_id_from_a_value_it_cannot_resolve(string location, bool answered, string? id)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://kc/admin/realms/r/users");
+        using var resp = new HttpResponseMessage(System.Net.HttpStatusCode.Created) { RequestMessage = answered ? request : null };
+        resp.Headers.Location = new Uri(location, UriKind.RelativeOrAbsolute);
+        Assert.Equal(id, AdminClient.CreatedId(resp));
+    }
 }

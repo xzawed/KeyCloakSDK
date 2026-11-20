@@ -9,7 +9,7 @@ from typing import Any
 from keycloak import KeycloakAdmin
 
 from ...admin._translate import encodable
-from ._translate import acall, awrite_call
+from ._translate import acall, acreate_call, awrite_call
 
 
 class AsyncRolesResource:
@@ -20,8 +20,10 @@ class AsyncRolesResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> None:
+        """Creates a realm role. python-keycloak reads the answer's `Location`, so a create whose
+        answer names no role in the roles collection fails as the id-returning creates do."""
         encodable(rep)
-        await awrite_call(self._admin.a_create_realm_role(rep))
+        await acreate_call(self._admin.a_create_realm_role(rep))
 
     async def get(self, name: str) -> dict[str, Any] | None:
         """Looks up a role by name. If it does not exist, `KeycloakNotFoundError` propagates

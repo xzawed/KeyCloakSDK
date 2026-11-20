@@ -98,13 +98,33 @@ fn transport(e: reqwest::Error) -> KeycloakError {
     KeycloakError::Transport(format!("admin request: {e}"))
 }
 
-/// 생성된 리소스의 id — `Location` 머리의 마지막 `/` 조각(crate 의 `DefaultResponse::to_id` 와 같다). 없으면 `None`.
+/// 생성된 리소스의 id — 등록부 admin-create-relative-location 의 규칙(아홉 SDK 가 같다). `Location` 값(앞뒤 SP · HTAB 를 뗀)을
+/// 요청 URL 에 대해 풀고(RFC 9110 §10.2.2 — 상대 값도), 풀린 경로(디코딩하지 않고 · 끝 `/` 하나는 무시)의 마지막 조각이 id 다 —
+/// 그 앞 조각은 보낸 컬렉션이어야 한다. 쿼리 · 조각은 id 가 아니다. 없거나 비었거나 풀리지 않는 값, 그 컬렉션의 id 를 이름하지
+/// 않는 경로(다른 컬렉션의 id 도)는 `None`(id 없음). crate 의 `DefaultResponse::to_id` 는 원 문자열의 마지막 `/` 조각이다.
 fn created_id(resp: &reqwest::Response) -> Option<String> {
-    resp.headers()
-        .get(reqwest::header::LOCATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split('/').next_back())
-        .map(str::to_string)
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)?
+        .to_str()
+        .ok()?
+        .trim_matches([' ', '\t']);
+    // 빈 값은 풀지 않는다 — 요청 URL 그대로가 되어 그 마지막 조각(컬렉션)을 id 로 읽는다.
+    let resolved = Some(location)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| resp.url().join(value).ok())?;
+    let (collection, id) = last_segments(resolved.path());
+    let posted = last_segments(resp.url().path()).1;
+    (!id.is_empty() && collection == Some(posted)).then(|| id.to_string())
+}
+
+/// URL 경로의 마지막 두 조각(끝 `/` 하나는 무시) — 조각이 하나뿐이면 앞의 것은 `None`.
+fn last_segments(path: &str) -> (Option<&str>, &str) {
+    let path = path.strip_suffix('/').unwrap_or(path);
+    let (head, last) = path
+        .rsplit_once('/')
+        .map_or((None, path), |(head, last)| (Some(head), last));
+    (head.map(|h| h.rsplit_once('/').map_or(h, |(_, s)| s)), last)
 }
 
 /// 2xx 가 아닌 응답의 오류 — **상태로 고른다**(404→NotFound·409→Conflict·403→Forbidden·else→Other). 본문은 쓰지 않는다.
@@ -185,8 +205,8 @@ impl AdminClient {
     }
 
     // ── Users ──
-    /// Creates a user. The created id is the last segment of the response's `Location` header — `None` when absent. The
-    /// response body is not read.
+    /// Creates a user. The created id is the one the response's `Location` header names, resolved against the request URL
+    /// (the last path segment, in the posted collection) — `None` when there is none. The response body is not read.
     pub async fn create_user(&self, user: UserRepresentation) -> Result<Option<String>> {
         let url = format!("{}/users", self.realm_url());
         let resp = self.send(self.http.post(url).json(&user)).await?;
@@ -269,7 +289,8 @@ impl AdminClient {
     }
 
     // ── Clients ──
-    /// Creates a client. The created uuid is the last segment of the response's `Location` header — `None` when absent.
+    /// Creates a client. The created uuid is the one the response's `Location` header names, resolved against the request
+    /// URL (the last path segment, in the posted collection) — `None` when there is none.
     pub async fn create_client(&self, client: ClientRepresentation) -> Result<Option<String>> {
         let url = format!("{}/clients", self.realm_url());
         let resp = self.send(self.http.post(url).json(&client)).await?;
@@ -391,7 +412,8 @@ impl AdminClient {
     }
 
     // ── Groups ──
-    /// Creates a group. The created id is the last segment of the response's `Location` header — `None` when absent.
+    /// Creates a group. The created id is the one the response's `Location` header names, resolved against the request
+    /// URL (the last path segment, in the posted collection) — `None` when there is none.
     pub async fn create_group(&self, group: GroupRepresentation) -> Result<Option<String>> {
         let url = format!("{}/groups", self.realm_url());
         let resp = self.send(self.http.post(url).json(&group)).await?;

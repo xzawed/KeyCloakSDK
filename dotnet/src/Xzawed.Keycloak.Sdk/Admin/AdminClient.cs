@@ -238,11 +238,30 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     {
         if (!resp.IsSuccessStatusCode)
             throw await ErrorResponseAsync(resp, ct).ConfigureAwait(false);
-        var loc = resp.Headers.Location;
-        var id = loc is { IsAbsoluteUri: true } ? loc.Segments[^1].TrimEnd('/') : null;
-        return string.IsNullOrEmpty(id)
-            ? throw new KeycloakAdminException(500, "resource created but no id returned in Location header")
-            : id;
+        return CreatedId(resp) ?? throw new KeycloakAdminException(500, "resource created but no id returned in Location header");
+    }
+
+    /// <summary>The id a create's <c>Location</c> names (registry <c>admin-create-relative-location</c>, the same rule in all
+    /// nine SDKs): the value resolved against the URL the create was sent to (RFC 9110 §10.2.2 — a relative one too), then the
+    /// last segment of the resolved path as it came (not decoded; one trailing <c>/</c> ignored), whose segment before it must
+    /// be the collection the create posted to. Never the query or the fragment. Null — no id — when the value is absent,
+    /// empty or does not parse, or the resolved path names no id in that collection (another collection's id included).</summary>
+    internal static string? CreatedId(HttpResponseMessage resp)
+    {
+        var location = resp.Headers.Location;
+        var target = resp.RequestMessage?.RequestUri;
+        if (location is null || target is null || location.OriginalString.Trim(' ', '\t').Length == 0
+            || !Uri.TryCreate(target, location, out var resolved))
+            return null;
+        var (collection, id) = LastSegments(resolved.AbsolutePath);
+        return id.Length > 0 && collection == LastSegments(target.AbsolutePath).Last ? id : null;
+    }
+
+    /// <summary>The last two segments of a URI path, one trailing <c>/</c> ignored — the first null when it has one only.</summary>
+    private static (string? BeforeLast, string Last) LastSegments(string path)
+    {
+        var segments = (path.EndsWith('/') ? path[..^1] : path).Split('/');
+        return (segments.Length < 2 ? null : segments[^2], segments[^1]);
     }
 
     public void Dispose() => _http.Dispose();
