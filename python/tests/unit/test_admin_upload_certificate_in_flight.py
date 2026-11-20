@@ -4,7 +4,9 @@
 python-keycloak 7.1.1 의 `upload_certificate`·`a_upload_certificate`(`keycloak_admin.py` L7550 ·
 L14374)는 연결의 헤더를 multipart `Content-Type` 의 사본으로 갈아 끼운 채
 (`self.connection.headers = new_headers`) 보내고 돌아온 뒤 되돌린다. 그 admin 의 요청은 전부 그 연결
-하나를 쓴다.
+하나를 쓴다. 이 파일을 수정 전 코드에 돌린 결과(무엇이 어떻게 나갔나)는 `_internal/admin_upload.py`
+머리에 적었다 — 보내는 자리의 훅 시험과 sync 의 비객체 · 본문 상한 · 307 시험은 그때도 통과한
+대조다.
 
 감시 클래스(`_internal/admin_guard.py` 머리 주석 6)는 MRO 가 python-keycloak 자신의 업로드에 닿으면
 SDK 의 업로드(`_internal/admin_upload.py`)를 돈다 — 연결의 헤더를 쓰지 않고 그 요청 하나의 헤더로
@@ -42,7 +44,7 @@ from .test_admin_bearer_in_url import (
     _Seen,
 )
 from .test_admin_grant import LANES, _attempt
-from .test_admin_guard_live import _close
+from .test_admin_guard_live import _close, _close_connection, _connection
 from .test_admin_guard_send_time import _SEND, CAP
 from .test_admin_upload_certificate_headers import (
     _ADMIN_CLIENTS,
@@ -329,6 +331,29 @@ async def test_the_upload_checks_the_bearer_after_the_refresh_like_other_raw_cal
             _, other = await _attempt(lane, kc, lambda c: _raw_user(lane, c.admin.raw))
 
     assert _admin_paths(idp) == [f"/{_USER}"], "규칙 밖의 bearer 가 나갔다"
+    assert _shape(uploaded) == _shape(other) == (KeycloakAuthError, _SEND, None, "None")
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_connection_set_just_before_the_upload_is_guarded_before_it_sends(
+    lane: str,
+) -> None:
+    """소비자가 공개 세터로 새 연결(SDK 를 거치지 않은 python-keycloak 객체)을 끼우고 곧바로
+    업로드한다 — 업로드도 `connection` 을 읽어 그 연결을 무장한 뒤 보내므로, 그 연결에 실린 규칙 밖
+    bearer 는 대조(`get_user`)처럼 보내기 전에 거부된다(머리 주석 1)."""
+    with _fake_idp(TOKENS["plain"]) as idp:
+        async with _client(lane, idp.url) as kc:
+            raw = kc.admin.raw
+            old = raw.connection
+            bad = {"access_token": "a=bc", "expires_in": 300}  # 토큰 세터가 헤더에 싣는다
+            raw.connection = _connection(idp.url, token=bad)  # KeycloakAdmin 의 공개 세터
+            try:
+                _, uploaded = await _attempt(lane, kc, _uploading(lane, "c1", "PEM"))
+                _, other = await _attempt(lane, kc, lambda c: _raw_user(lane, c.admin.raw))
+            finally:
+                await _close_connection(lane, old)
+
+    assert idp.admin_requests() == [], "끼운 연결의 규칙 밖 bearer 가 나갔다"
     assert _shape(uploaded) == _shape(other) == (KeycloakAuthError, _SEND, None, "None")
 
 
