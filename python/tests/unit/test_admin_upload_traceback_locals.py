@@ -12,6 +12,11 @@ SDK 의 `sent`(`request`), sync 의 전송 실패는 requests·urllib3 의 `head
 감시 클래스의 업로드 둘(`_internal/admin_guard.py`)이 헤더를 되돌린 뒤, 그 예외에서 닿는
 traceback(사슬과 `BaseExceptionGroup` 의 구성원)마다 끝난 프레임의 로컬을 비우고 같은 객체를 다시
 던진다 — 타입·메시지·사슬·프레임(줄 번호)은 그대로다.
+
+`raw` 의 업로드는 이제 SDK 의 것이다(`_internal/admin_upload.py` — 연결의 헤더를 갈아 끼우지
+않는다). 그 실패도 같은 걸음이 비운다 — 전송 실패면 그 요청 하나의 헤더를 쥔 SDK 프레임과 하위
+라이브러리 프레임이 bearer 를 쥔다. python-keycloak 의 업로드를 밟는 시험은 소비자 하위 클래스가
+`super()` 로 부른다.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import traceback
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 import requests
 from keycloak.exceptions import KeycloakConnectionError, KeycloakPostError
@@ -34,7 +40,7 @@ from keycloak_sdk.exceptions import KeycloakTransportError
 
 from .test_admin_bearer_in_url import _UPLOAD, _USER, IN_URL, TOKENS, _client, _fake_idp
 from .test_admin_grant import LANES, _attempt, _inner_frames
-from .test_admin_upload_certificate_headers import _cfg, _consumer
+from .test_admin_upload_certificate_headers import _UPLOADS, _cfg, _consumer
 
 pytestmark = pytest.mark.usefixtures("fast_tls")
 
@@ -126,6 +132,54 @@ async def test_a_sync_upload_the_server_rejects_renders_without_the_bearer() -> 
     assert err is admin.__dict__["raised"]
     assert (type(err), err.response_code) == (KeycloakPostError, 404)
     assert "keycloak.keycloak_admin.upload_certificate" in _inner_frames(err)
+    assert _TOKEN not in _render(err), "프레임 로컬이 bearer 를 찍는다"
+
+
+async def _sdk_upload(lane: str, kc: Any, client_id: str) -> Any:
+    """`raw` 의 업로드 — 감시 클래스가 SDK 의 것으로 보낸다."""
+    result = getattr(kc.admin.raw, _UPLOADS[lane])(client_id, "PEM")
+    return await result if lane == "aio" else result
+
+
+async def _admin_get(lane: str, kc: Any) -> None:
+    """토큰을 받아 둔다 — 업로드 전에 bearer 가 연결의 헤더에 있다."""
+    result = kc.admin.users.get("u1")
+    if lane == "aio":
+        await result
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_sdk_upload_that_fails_in_transport_renders_without_the_bearer(lane: str) -> None:
+    """`raw` 의 업로드 요청이 응답 없이 끊긴다 — 그 오류는 python-keycloak 의 `raw_post` 와 같은
+    모양이고, 그 요청 하나의 헤더를 쥔 SDK 프레임 · 하위 라이브러리 프레임의 로컬이 빈다."""
+    with _fake_idp(_TOKEN) as idp:
+        async with _client(lane, idp.url) as kc:
+            await _admin_get(lane, kc)
+            held = _TOKEN in repr(kc.admin.raw.connection.headers)
+            idp.hold, idp.held_path = _dropped(), _UPLOAD
+            _, err = await _attempt("aio", kc, lambda c: _sdk_upload(lane, c, "c1"))
+
+    assert held, "전제 — 업로드 전에 bearer 가 연결의 헤더에 없다"
+    assert _paths(idp) == [f"/{_USER}", _UPLOAD], "업로드가 나가서 끊기지 않았다"
+    assert (type(err), str(err)) == (KeycloakConnectionError, "Can't connect to server")
+    lower = (requests.ConnectionError, httpx.TransportError)
+    assert isinstance(err.__cause__, lower), repr(err.__cause__)
+    assert _TOKEN not in _render(err), "프레임 로컬이 bearer 를 찍는다"
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_an_sdk_upload_the_server_rejects_renders_without_the_bearer(lane: str) -> None:
+    """서버가 `raw` 의 업로드를 404 로 거절한다 — 오류는 python-keycloak 이 응답에서 만든
+    그것이다."""
+    missing = "/admin/realms/r/clients/missing/certificates/jwt.credential/upload-certificate"
+    with _fake_idp(_TOKEN) as idp:
+        async with _client(lane, idp.url) as kc:
+            await _admin_get(lane, kc)
+            _, err = await _attempt("aio", kc, lambda c: _sdk_upload(lane, c, "missing"))
+
+    assert _paths(idp) == [f"/{_USER}", missing]
+    assert (type(err), err.response_code) == (KeycloakPostError, 404)
+    assert "keycloak.exceptions.raise_error_from_response" in _inner_frames(err)
     assert _TOKEN not in _render(err), "프레임 로컬이 bearer 를 찍는다"
 
 
