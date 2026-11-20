@@ -62,6 +62,21 @@ describe('carriedOAuthError — 보낸 비밀과의 겹침', () => {
     expect(carriedOAuthError(value, sent)).toBe(want)
   })
 
+  // 아홉 언어가 함께 가진 행 — 겹침은 ASCII 대소문자를 무시하고(비밀을 소문자로 되울리는 IdP · 프록시), 모양은 정확히
+  // [a-z_]{1,64} 다. V5 는 U+212A KELVIN SIGN 뒤에 "ey" 를 코드 포인트로 만든다 — 접기는 ASCII 라 아홉이 같은 답을 내고,
+  // 비밀의 비 ASCII 글자는 그 글자 그대로 댄다.
+  it.each([
+    ['V1 소문자로 되울림', 'mysecret', ['MySecret'], undefined],
+    ['V2 잘린 소문자 되울림', 'mysec', ['MySecret'], undefined],
+    ['V3 덧붙은 소문자 되울림', 'invalid_mysecret_x', ['MySecret'], undefined],
+    ['V4 대조군', 'invalid_grant', ['MySecret'], 'invalid_grant'],
+    ['V5 접기는 ASCII 만', 'key', [`${String.fromCodePoint(0x212a)}ey`], 'key'],
+    ['V6 모양', 'invalid__grant', [], 'invalid__grant'],
+    ['V6 모양', '_', [], '_'],
+  ] as const)('%s — %s', (_row, value, sent, want) => {
+    expect(carriedOAuthError(value, sent)).toBe(want)
+  })
+
   // JS 호출자의 문자열 아닌 값은 문자열로 나간다(`URLSearchParams.set` — 교환의 code) — 나간 그 문자열과 댄다.
   it('문자열이 아닌 비밀은 나간 문자열로 대고, null 은 보내지 않은 것이다', () => {
     expect(carriedOAuthError('vulturecodeby', [['vulturecodeby']])).toBeUndefined()

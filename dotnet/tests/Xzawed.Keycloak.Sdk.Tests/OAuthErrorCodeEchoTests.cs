@@ -183,6 +183,17 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
         }
     }
 
+    /// <summary>An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case.</summary>
+    [Theory]
+    [MemberData(nameof(SurfaceNames))]
+    public async Task A_lowercased_echo_of_the_client_secret_is_never_carried(string surface)
+    {
+        _error = sent => sent.GetValueOrDefault("client_secret", "").ToLowerInvariant();
+        var e = await Fail(surface, secret: "EchoMixedCase");
+        Assert.Equal("EchoMixedCase", FirstSent().GetValueOrDefault("client_secret"));
+        AssertWithheld($"{surface} · lowercased", e, "echomixedcase");
+    }
+
     [Theory]
     [MemberData(nameof(SurfaceNames))]
     public async Task An_echoed_grant_value_is_never_carried(string surface)

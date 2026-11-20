@@ -192,6 +192,19 @@ async def test_an_echoed_client_secret_is_never_carried(lane: str, surface: str,
     _withheld(err, ECHO_FORMS[form](SECRET))
 
 
+@pytest.mark.parametrize("surface", list(SURFACES))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_lowercased_echo_of_the_client_secret_is_never_carried(
+    lane: str, surface: str
+) -> None:
+    """An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case."""
+    act, _ = SURFACES[surface]
+    with _echo_idp(echo=lambda sent: sent["client_secret"].lower()) as idp:
+        err = await _fail(lane, idp.url, act, secret="EchoMixedCase")
+    assert idp.seen and idp.seen[0]["client_secret"] == "EchoMixedCase"
+    _withheld(err, "echomixedcase")
+
+
 @pytest.mark.parametrize("form", list(ECHO_FORMS))
 @pytest.mark.parametrize(
     ("surface", "param"),

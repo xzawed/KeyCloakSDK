@@ -236,6 +236,31 @@ async fn an_echoed_client_secret_is_never_carried() {
     }
 }
 
+/// An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case.
+#[tokio::test]
+async fn a_lowercased_echo_of_the_client_secret_is_never_carried() {
+    for surface in SURFACES {
+        let run = idp(
+            serde_json::Value::Null,
+            Some(Arc::new(|sent: &Sent| {
+                sent.get("client_secret")
+                    .map(|s| s.to_ascii_lowercase())
+                    .unwrap_or_default()
+                    .into()
+            })),
+        )
+        .await;
+        let e = fail(surface, &config(&run.server.uri(), Some("EchoMixedCase"))).await;
+        let first = run.seen.lock().unwrap()[0].clone();
+        assert_eq!(
+            first.get("client_secret").map(String::as_str),
+            Some("EchoMixedCase"),
+            "{surface}"
+        );
+        assert_withheld(&format!("{surface} · lowercased"), &e, "echomixedcase");
+    }
+}
+
 #[tokio::test]
 async fn an_echoed_grant_value_is_never_carried() {
     for surface in SURFACES {

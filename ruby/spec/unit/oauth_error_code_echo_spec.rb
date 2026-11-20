@@ -139,6 +139,37 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # The rows all nine languages share: the overlap ignores ASCII case (an IdP or proxy that echoes the secret
+  # lowercased), and the shape is exactly `[a-z_]{1,64}`. V5's secret is U+212A KELVIN SIGN then "ey", built from the
+  # code point — the fold is ASCII so the nine agree; a secret's non-ASCII letter is compared as itself.
+  describe "KeycloakSdk::OAuthErrorCode.carried — the rows all nine share" do
+    {
+      "V1 a lowercased echo" => ["mysecret", ["MySecret"], nil],
+      "V2 a truncated lowercased echo" => ["mysec", ["MySecret"], nil],
+      "V3 an extended lowercased echo" => ["invalid_mysecret_x", ["MySecret"], nil],
+      "V4 control" => ["invalid_grant", ["MySecret"], "invalid_grant"],
+      "V5 the fold is ASCII only" => ["key", ["#{0x212A.chr(Encoding::UTF_8)}ey"], "key"],
+      "V6 the shape" => ["invalid__grant", [], "invalid__grant"],
+      "V6 the shape (_)" => ["_", [], "_"]
+    }.each do |row, (value, sent, expected)|
+      it "#{row}: #{value.inspect} is #{expected.inspect}" do
+        expect(KeycloakSdk::OAuthErrorCode.carried(value, sent)).to eq(expected)
+      end
+    end
+  end
+
+  # An IdP or proxy that echoes the secret lowercased — the overlap ignores ASCII case.
+  context "with a mixed-case secret the IdP echoes lowercased" do
+    let(:secret) { "EchoMixedCase" }
+
+    %w[client_credentials refresh exchange_code provider admin].each do |surface|
+      it "withholds the lowercased echo on #{surface}" do
+        answer_with { |s| s.fetch("client_secret").downcase }
+        expect_withheld(failure(surface), "echomixedcase")
+      end
+    end
+  end
+
   %w[client_credentials refresh exchange_code provider admin].each do |surface|
     echo_forms.each do |form, shape|
       it "withholds an echoed client secret (#{form}) on #{surface}" do
