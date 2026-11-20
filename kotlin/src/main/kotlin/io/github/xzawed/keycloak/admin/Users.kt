@@ -14,9 +14,12 @@ import java.net.URI
 // Optional.of(...) 래핑은 항상 non-empty라 사실상 무의미한 관용이었다 — Kotlin은 값을 직접 반환한다).
 public class UsersResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.UsersResource,
-    // create 를 보내는 URL — users 컬렉션(AdminClient.users())
-    private val collection: URI,
+    // create 를 보내는 URL — users 컬렉션(AdminClient.users()). null 이면 아래 1.0.9 생성자로 만든 것이다(createdId.kt).
+    private val collection: URI?,
 ) {
+    // 1.0.9 의 생성자 그대로 — 바이트코드에서 public 인 게시된 API 다(Clients.kt 의 같은 자리). create 는 이름 `users` 로 판정한다.
+    internal constructor(delegate: org.keycloak.admin.client.resource.UsersResource) : this(delegate, null)
+
     /**
      * Creates a user and returns the new user's id — the one the response's Location header names, resolved against the
      * request URL (the last path segment, in the users collection). Throws [io.github.xzawed.keycloak.KeycloakAdminException]
@@ -27,7 +30,7 @@ public class UsersResource internal constructor(
         return adminCall {
             val response = delegate.create(representation)
             try {
-                createdId(response, collection)
+                createdId(response, collection, "users")
             } finally {
                 response.close()
             }

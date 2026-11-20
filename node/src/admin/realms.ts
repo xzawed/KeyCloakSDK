@@ -1,6 +1,15 @@
 import type RealmRepresentation from '@keycloak/keycloak-admin-client/lib/defs/realmRepresentation.js'
 import { call, requireFound } from './call.js'
-import { type AdminHttp, adminPath, createNamed, omit, orEmpty, read, readOne, write } from './http.js'
+import {
+  type AdminHttp,
+  adminPath,
+  createNamed,
+  omit,
+  orEmpty,
+  read,
+  readOne,
+  write,
+} from './http.js'
 
 /**
  * Realm create/get/delete facade. `RealmsResource` is not realm-scoped; it takes the realm name as an argument

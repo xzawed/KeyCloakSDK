@@ -13,9 +13,13 @@ import java.net.URI
 // 그대로 전파한다.
 public class ClientsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.ClientsResource,
-    // create 를 보내는 URL — clients 컬렉션(AdminClient.clients())
-    private val collection: URI,
+    // create 를 보내는 URL — clients 컬렉션(AdminClient.clients()). null 이면 아래 1.0.9 생성자로 만든 것이다(createdId.kt).
+    private val collection: URI?,
 ) {
+    // 1.0.9 의 생성자 그대로 — Kotlin `internal` 이어도 생성자는 이름이 망글되지 않아 바이트코드에서 public 이고, 그래서 게시된
+    // API 다(지우면 kotlin-ci 의 japicmp 가 CONSTRUCTOR_REMOVED 로 막는다). 보낸 URL 을 모르므로 create 는 이름 `clients` 로 판정한다.
+    internal constructor(delegate: org.keycloak.admin.client.resource.ClientsResource) : this(delegate, null)
+
     /**
      * Creates a client and returns the new client's id — the one the response's Location header names, resolved against the
      * request URL (the last path segment, in the clients collection). Throws
@@ -26,7 +30,7 @@ public class ClientsResource internal constructor(
         return adminCall {
             val response = delegate.create(representation)
             try {
-                createdId(response, collection)
+                createdId(response, collection, "clients")
             } finally {
                 response.close()
             }

@@ -288,27 +288,67 @@ internal class AdminBoundaryTest {
             }
         }
 
-    /** [coll] 의 create 가 [response] 를 받고 돌려준 id — 보낸 URL 은 `https://kc.example.com/admin/realms/r/[coll]`. */
+    /**
+     * 1.0.9 의 생성자(delegate 하나 — 바이트코드에서 public 이라 Java 소비자가 부를 수 있다)로 만든 파사드는 보낸 URL 을 모른다: 기준
+     * 없이 서는 `Location` — 절대 URI · `/` 로 시작하는 참조 — 만 그 컬렉션 이름으로 읽고, 기준이 있어야 풀리는 상대 경로는 id 없음
+     * 오류다(fail closed).
+     */
+    @Test
+    fun `a facade built with the 1-arg constructor reads only a Location that needs no base`(): Unit =
+        runTest {
+            val wrong = mutableListOf<String>()
+            for (coll in listOf("users", "clients", "groups")) {
+                val path = "/admin/realms/r/$coll"
+                val other = if (coll == "groups") "users" else "groups"
+                val cases =
+                    listOf(
+                        "https://kc.example.com$path/abc-123" to "ok abc-123",
+                        "$path/abc-123?x=1#f" to "ok abc-123",
+                        "//gw.example/kc$path/abc-123/" to "ok abc-123",
+                        "$coll/abc-123" to NO_ID,
+                        "abc-123" to NO_ID,
+                        "https://kc.example.com/admin/realms/r/$other/abc-123" to NO_ID,
+                        "mailto:abc-123" to NO_ID,
+                    )
+                for ((location, expected) in cases) {
+                    val response = Response.status(201).header("Location", location).build()
+                    val got =
+                        try {
+                            "ok " + createWith(coll, response, oneArg = true)
+                        } catch (e: KeycloakAdminException) {
+                            "${e::class.simpleName}(${e.status}): ${e.keycloakError}"
+                        }
+                    if (got != expected) wrong += "$coll $location: $got — want $expected"
+                }
+            }
+            assertTrue(wrong.isEmpty(), "${wrong.size} cell(s) wrong:\n${wrong.joinToString("\n")}")
+        }
+
+    /**
+     * [coll] 의 create 가 [response] 를 받고 돌려준 id — 보낸 URL 은 `https://kc.example.com/admin/realms/r/[coll]`, [oneArg] 면 1.0.9
+     * 의 생성자(delegate 하나)로 만들어 그 URL 을 모른다.
+     */
     private suspend fun createWith(
         coll: String,
         response: Response,
+        oneArg: Boolean = false,
     ): String {
         val sentTo = URI("https://kc.example.com/admin/realms/r/$coll")
         return when (coll) {
             "users" -> {
                 val delegate = mockk<org.keycloak.admin.client.resource.UsersResource>()
                 every { delegate.create(any()) } returns response
-                UsersResource(delegate, sentTo).create(UserRepresentation())
+                (if (oneArg) UsersResource(delegate) else UsersResource(delegate, sentTo)).create(UserRepresentation())
             }
             "clients" -> {
                 val delegate = mockk<org.keycloak.admin.client.resource.ClientsResource>()
                 every { delegate.create(any()) } returns response
-                ClientsResource(delegate, sentTo).create(ClientRepresentation())
+                (if (oneArg) ClientsResource(delegate) else ClientsResource(delegate, sentTo)).create(ClientRepresentation())
             }
             else -> {
                 val delegate = mockk<org.keycloak.admin.client.resource.GroupsResource>()
                 every { delegate.add(any()) } returns response
-                GroupsResource(delegate, sentTo).create(GroupRepresentation())
+                (if (oneArg) GroupsResource(delegate) else GroupsResource(delegate, sentTo)).create(GroupRepresentation())
             }
         }
     }

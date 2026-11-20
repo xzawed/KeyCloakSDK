@@ -20,23 +20,34 @@ internal const val NO_CREATED_ID = "resource created but no id returned in Locat
  * 않고 · 끝 `/` 하나는 무시)의 마지막 조각을 id 로 돌려준다 — 그 앞 조각은 보낸 컬렉션이어야 한다. 쿼리 · 조각은 id 가 아니다. 없거나
  * 비었거나 풀리지 않는 값, 그 컬렉션의 id 를 이름하지 않는 경로(다른 컬렉션의 id 도)는 id 없음 — [KeycloakAdminException.Other]
  * (500, [NO_CREATED_ID]). 201 이 아닌 답은 admin-client 처럼 실패한다.
+ *
+ * [sentTo] 가 null 이면 — 소비자가 1.0.9 의 생성자(delegate 하나)로 만든 파사드라 보낸 URL 을 모른다 — 기준 없이 서는 값만 읽는다: 절대
+ * URI 와 `/` 로 시작하는 참조(path-absolute · network-path)는 그 경로로 읽고, 기준이 있어야 풀리는 상대 경로는 id 없음이다(fail
+ * closed). 그때의 컬렉션은 [collectionName] — 그 파사드가 create 를 보내는 컬렉션의 이름 — 이다.
  */
 internal fun createdId(
     response: Response,
-    sentTo: URI,
+    sentTo: URI?,
+    collectionName: String,
 ): String {
     if (response.statusInfo != Response.Status.CREATED) {
         return CreatedResponseUtil.getCreatedId(response) // 201 이 아니면 던진다 — 예전 그대로
     }
     val value = response.getHeaderString(HttpHeaders.LOCATION).orEmpty().trim(' ', '\t')
-    val resolved =
+    // 불투명 URI(`mailto:x`)의 경로는 null 이다 — 아래에서 빈 id 로 떨어진다.
+    val path =
         try {
-            if (value.isEmpty()) null else sentTo.resolve(URI(value))
+            when {
+                value.isEmpty() -> null
+                sentTo != null -> sentTo.resolve(URI(value)).rawPath
+                else -> URI(value).rawPath?.takeIf { it.startsWith('/') }
+            }
         } catch (unparsable: URISyntaxException) {
             null
         }
-    val (collection, id) = lastSegments(resolved?.rawPath.orEmpty()) // 불투명 URI(`mailto:x`)의 경로는 null 이다
-    if (resolved == null || id.isEmpty() || collection != lastSegments(sentTo.rawPath).second) {
+    val expected = if (sentTo != null) lastSegments(sentTo.rawPath).second else collectionName
+    val (collection, id) = lastSegments(path.orEmpty())
+    if (id.isEmpty() || collection != expected) {
         throw KeycloakAdminException.Other(500, NO_CREATED_ID)
     }
     return id

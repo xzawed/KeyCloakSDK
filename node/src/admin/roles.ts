@@ -1,6 +1,15 @@
 import type RoleRepresentation from '@keycloak/keycloak-admin-client/lib/defs/roleRepresentation.js'
 import { call, requireFound } from './call.js'
-import { type AdminHttp, adminPath, createNamed, omit, orEmpty, read, readOne, write } from './http.js'
+import {
+  type AdminHttp,
+  adminPath,
+  createNamed,
+  omit,
+  orEmpty,
+  read,
+  readOne,
+  write,
+} from './http.js'
 
 /**
  * Realm role CRUD facade. It itself sends the same requests the official admin-client's `roles` resource sends
