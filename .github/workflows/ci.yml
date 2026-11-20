@@ -22,6 +22,14 @@ on:
 permissions:
   contents: read
 jobs:
+  # ⚠️ ~/.m2 캐시는 잡마다 제 키다(등록부 ci-maven-cache-shared-key). setup-java 의 `cache: 'maven'` 키
+  # (`setup-java-<OS>-<arch>-maven-<pom 해시>`)에는 잡 이름이 없어 이 파일의 다섯 잡 · release.yml · security-audit.yml 이 한 키를
+  # 나눴고, 키는 불변이라 먼저 저장한 잡의 ~/.m2 로 굳었다 — 나머지 잡은 제 플러그인(unit-unreached 의 maven-clean-plugin ·
+  # release-bundle 의 versions-maven-plugin …)을 매번 Central 에서 받다 「Could not find artifact」로 빨갰다(#1168 · #1175,
+  # 재실행 통과). 넷은 actions/cache 의 `ci-maven-<잡>-` 키다 — 이 파일 · pom · 통합 스크립트가 바뀌면 새 키, restore-keys 가
+  # 직전 것을 잇는다. build 의 JDK 셋은 한 키를 나눈다(같은 골). ⚠️ release-bundle 만 setup-java 기본 키를 그대로 쓴다 —
+  # release.yml 의 태그 실행이 main 의 그 키를 복원하고(v1.2.4 실측: 두 잡 cache hit), 그 잡과 골(versions:set · -Prelease
+  # deploy)이 같은 것이 이 잡이다. 기본 키를 쓰는 잡을 더하지 말 것.
   build:
     name: Build & unit test (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
@@ -35,7 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        with: { distribution: 'temurin', java-version: '${{ matrix.java }}', cache: 'maven' }
+        with: { distribution: 'temurin', java-version: '${{ matrix.java }}' }
+      - name: ~/.m2 캐시(이 잡의 키 — 위 jobs 머리)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: ci-maven-${{ github.job }}-${{ runner.os }}-${{ hashFiles('java/**/pom.xml', '.github/workflows/ci.yml', 'scripts/integration-coverage.mjs') }}
+          restore-keys: ci-maven-${{ github.job }}-${{ runner.os }}-
       - name: Build & unit test (커버리지 게이트 90/85 포함)
         # attest — 적대 경로 행렬은 모든 단언이 통과한 뒤에만 $HP_ATTEST_DIR/java.json 을 쓴다(nonce 는 이 잡·이 레그의 것).
         env:
@@ -70,7 +84,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+        with: { distribution: 'temurin', java-version: '21' }
+      - name: ~/.m2 캐시(이 잡의 키 — 위 jobs 머리)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: ci-maven-${{ github.job }}-${{ runner.os }}-${{ hashFiles('java/**/pom.xml', '.github/workflows/ci.yml', 'scripts/integration-coverage.mjs') }}
+          restore-keys: ci-maven-${{ github.job }}-${{ runner.os }}-
       # 같은 리액터 · 골(`mvn -B -f java/pom.xml verify`)에 통합 전용 경계 커버리지만 더한다. 단위 테스트는 여기서 끈다 — surefire 와
       # failsafe 가 같은 에이전트 인자를 써 단위와 IT 가 한 exec 에 합쳐진다(단위 테스트 · 커버리지 게이트는 build 잡이 돈다). 명령
       # (`clean` · `-Dtest=NONE` · `-Djacoco.destFile` · JaCoCo CLI · javap)은 `scripts/integration-coverage.mjs` 의 run 이 소유한다 —
@@ -95,7 +115,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+        with: { distribution: 'temurin', java-version: '21' }
+      - name: ~/.m2 캐시(이 잡의 키 — 위 jobs 머리)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: ci-maven-${{ github.job }}-${{ runner.os }}-${{ hashFiles('java/**/pom.xml', '.github/workflows/ci.yml', 'scripts/integration-coverage.mjs') }}
+          restore-keys: ci-maven-${{ github.job }}-${{ runner.os }}-
       - name: 단위 미도달 장부 — 경계의 놓친 줄 · 가지 ↔ scripts/unit-unreached.json
         run: node scripts/integration-coverage.mjs unit java --out "$RUNNER_TEMP/unit-unreached"
 
@@ -112,7 +138,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+        with: { distribution: 'temurin', java-version: '21' }
+      - name: ~/.m2 캐시(이 잡의 키 — 위 jobs 머리)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: ci-maven-${{ github.job }}-${{ runner.os }}-${{ hashFiles('java/**/pom.xml', '.github/workflows/ci.yml', 'scripts/integration-coverage.mjs') }}
+          restore-keys: ci-maven-${{ github.job }}-${{ runner.os }}-
       - name: 해석된 런타임 의존성 좌표 수집(리액터 전체)
         # `compile`을 함께 도는 이유: dependency:list 단독 실행은 리액터 형제 모듈이 아직
         # target/classes를 갖지 않아 의존성 해석에 실패한다(SNAPSHOT 미설치 상태).

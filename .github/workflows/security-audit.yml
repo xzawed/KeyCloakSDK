@@ -30,8 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # ~/.m2 캐시는 제 키다 — 이 파일을 해시에 넣는다. setup-java 기본 키는 release.yml 의 태그 실행이 복원하는 것이고
+      # ci.yml release-bundle 만 데운다(그 파일 jobs 머리 · 등록부 ci-maven-cache-shared-key).
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        with: { distribution: 'temurin', java-version: '21', cache: 'maven' }
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+          cache-dependency-path: |
+            java/**/pom.xml
+            .github/workflows/security-audit.yml
       - name: 해석된 런타임 의존성 좌표 수집(리액터 전체)
         # `compile`을 함께 도는 이유: dependency:list 단독 실행은 리액터 형제 모듈이 아직
         # target/classes를 갖지 않아 의존성 해석에 실패한다(SNAPSHOT 미설치 상태).
