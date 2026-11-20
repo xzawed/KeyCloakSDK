@@ -38,7 +38,7 @@ jobs:
       # (main run 44371486898 · PR #1162 첫 시도). ci.yml java 잡과 키가 같으면 먼저 저장한 잡의 ~/.m2 로 굳어(키는 불변)
       # 이 잡의 골(dependency:build-classpath 등)에만 드는 것을 매번 다시 받는다.
       - name: Set up JDK 21
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
@@ -311,7 +311,7 @@ jobs:
       # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는 가설이다.
       # 스캐너는 JRE 를 스스로 받는다(로그 「JRE provisioning」 — Java 21) — 이 잡에 setup-java 가 없는 이유다.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8
         with:
           args: -Dsonar.qualitygate.wait=true -Dsonar.java.libraries=${{ env.SONAR_JAVA_LIBS }}
         env:
