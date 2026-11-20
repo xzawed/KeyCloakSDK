@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import string
 from collections.abc import Iterable
 
 from keycloak.exceptions import KeycloakError
@@ -27,6 +28,9 @@ from .token_cap import Answered, ResponseRefused
 #: 등록된 OAuth 오류 코드의 모양(`invalid_grant` 등 — RFC 6749 §5.2 · IANA 레지스트리 · Keycloak 의
 #: 코드가 전부 이렇다). `carried_code` 가 쓴다.
 _OAUTH_ERROR_CODE = re.compile(r"[a-z_]{1,64}")
+#: A-Z 만 a-z 로, 나머지 글자는 그대로 — 아홉 언어가 같은 답을 낸다(유니코드 소문자 `str.lower` 는
+#: U+212A KELVIN SIGN 을 `k` 로 바꾼다). `carried_code` 가 비밀마다 이것으로 접는다.
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 _LOWER_PACKAGE = "keycloak"
 _OWN_PACKAGE = __name__.partition(".")[0]
 
@@ -91,7 +95,8 @@ def oauth_error(exc: BaseException) -> object:
 
 def carried_code(value: object, sent: Iterable[str | None]) -> str | None:
     """`KeycloakAuthError.error` 와 메시지가 싣는 OAuth 코드 — 문자열이고 `[a-z_]{1,64}` 이며 그
-    요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때)만.
+    요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때 —
+    ASCII 대소문자는 무시한다)만.
 
     ⚠️ `error` 도 응답 본문이다 — 보낸 것을 되울리는 IdP(나 그 앞의 프록시)는 client secret ·
     refresh token · introspect 한 토큰을 거기 싣는다. 예전에는 값이 무엇이든 `str()` 해 필드에
@@ -102,9 +107,17 @@ def carried_code(value: object, sent: Iterable[str | None]) -> str | None:
     """
     if not isinstance(value, str) or _OAUTH_ERROR_CODE.fullmatch(value) is None:
         return None
-    if any(secret and (secret in value or value in secret) for secret in sent):
+    if any(_overlaps(value, secret) for secret in sent):
         return None
     return value
+
+
+def _overlaps(value: str, secret: str | None) -> bool:
+    """`secret` 가 비어 있지 않고, ASCII 로 접은 그것과 `value` 중 하나가 다른 하나를 품는다."""
+    if not secret:
+        return False
+    folded = secret.translate(_ASCII_LOWER)
+    return folded in value or value in folded
 
 
 def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError | None:

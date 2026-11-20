@@ -24,10 +24,11 @@ module KeycloakSdk
 
   # What `AuthError#oauth_error` (and a grant's message) carries of the IdP's `error`: a String of `[a-z_]{1,64}` —
   # every registered OAuth and Keycloak code has that shape — that overlaps no non-empty secret the request sent
-  # (neither contains the other). ⚠️ `error` is response body too: an IdP that echoes what it got puts the client
-  # secret, the refresh token or the code there, and the grants used to copy any String (the provider any JSON
-  # value) into `oauth_error` (`spec/unit/oauth_error_code_echo_spec.rb`). The overlap also withholds a truncated or
-  # extended echo; its price is a secret that is a piece of a registered code (`client`) withholding that code.
+  # (neither contains the other, ASCII case ignored). ⚠️ `error` is response body too: an IdP that echoes what it got
+  # puts the client secret, the refresh token or the code there, and the grants used to copy any String (the provider
+  # any JSON value) into `oauth_error` (`spec/unit/oauth_error_code_echo_spec.rb`). The overlap also withholds a
+  # truncated, extended or lowercased echo; its price is a secret that is a piece of a registered code (`client`)
+  # withholding that code.
   module OAuthErrorCode
     SHAPE = /\A[a-z_]{1,64}\z/
 
@@ -37,9 +38,13 @@ module KeycloakSdk
       value unless sent.any? { |secret| overlap?(value, secret) }
     end
 
-    # An absent or empty secret is not compared — "" is a piece of every code (a public client sends none).
+    # An absent or empty secret is not compared — "" is a piece of every code (a public client sends none). The secret
+    # is folded A–Z → a–z only, so the nine languages agree (`downcase` maps U+212A KELVIN SIGN to "k").
     def self.overlap?(code, secret)
-      secret.is_a?(String) && !secret.empty? && (code.include?(secret) || secret.include?(code))
+      return false unless secret.is_a?(String) && !secret.empty?
+
+      folded = secret.downcase(:ascii)
+      code.include?(folded) || folded.include?(code)
     end
     private_class_method :overlap?
   end

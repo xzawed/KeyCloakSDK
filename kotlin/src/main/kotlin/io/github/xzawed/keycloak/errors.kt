@@ -19,7 +19,7 @@ public class KeycloakAuthException(
 
 /**
  * [KeycloakAuthException.oauthError] 가 싣는 IdP 의 `error` — `[a-z_]{1,64}` 이고(등록된 OAuth · Keycloak 코드는 전부 이 모양이다) 그
- * 요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때)만.
+ * 요청이 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않을 때(어느 쪽도 다른 쪽을 품지 않을 때 — ASCII 대소문자는 무시한다)만.
  *
  * ⚠️ `error` 도 응답 본문이다 — 보낸 것을 되울리는 IdP(나 그 앞의 프록시)는 client secret · refresh token · introspect 한 토큰을
  * 거기 싣는다. 예전에는 Nimbus 의 `ErrorObject.code`(RFC 6749 문법 — Keycloak 모양 시크릿 · JWT 도 그 안이다)를 그대로 넘겨
@@ -33,9 +33,18 @@ internal object OAuthErrorCode {
         sent: List<String?>,
     ): String? {
         if (value.isNullOrEmpty() || value.length > 64 || value.any { (it < 'a' || it > 'z') && it != '_' }) return null
-        val echoed = sent.any { !it.isNullOrEmpty() && (value.contains(it) || it.contains(value)) }
+        val echoed =
+            sent.any { secret ->
+                !secret.isNullOrEmpty() && asciiLower(secret).let { value.contains(it) || it.contains(value) }
+            }
         return value.takeUnless { echoed }
     }
+
+    /** A–Z → a–z, every other char as it is, so the nine languages agree — a Unicode lowercase maps U+212A KELVIN SIGN to `k`. */
+    private fun asciiLower(s: String): String =
+        buildString(s.length) {
+            for (c in s) append(if (c in 'A'..'Z') c + ('a' - 'A') else c)
+        }
 }
 
 public class KeycloakTransportException(
