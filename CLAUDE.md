@@ -200,7 +200,7 @@ auth(하위 OIDC 라이브러리 래핑) · admin/(users·clients·realms·roles
 <!-- doc-guard: kind=dep source=java/pom.xml min=5 undocumented=20 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.12 |
+| Keycloak admin-client | `org.keycloak:keycloak-admin-client` | 26.0.13 |
 | OAuth2/OIDC SDK | `com.nimbusds:oauth2-oidc-sdk` | 11.39 |
 | JOSE/JWT | `com.nimbusds:nimbus-jose-jwt` | 10.10 |
 | 통합 테스트 | `com.github.dasniko:testcontainers-keycloak` | 4.4.0 |
@@ -341,7 +341,7 @@ dev(테스트 csproj — **앵커 있음**):
 <!-- doc-guard: kind=dep source=kotlin/build.gradle.kts min=6 undocumented=16 -->
 | 의존성 | 좌표 | 버전 |
 |---|---|---|
-| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.12 |
+| Admin(재사용, api) | `org.keycloak:keycloak-admin-client` | 26.0.13 |
 | 인증(재사용) | `com.nimbusds:oauth2-oidc-sdk` | 11.39 |
 | JWT(재사용, 강화 검증) | `com.nimbusds:nimbus-jose-jwt` | 10.10 |
 | 코루틴(신규, 공개 suspend 노출 → api) | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 |
