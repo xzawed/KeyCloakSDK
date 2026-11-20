@@ -57,4 +57,30 @@ public class KeycloakClientTests
         var tokenReqs = mock.LogEntries.Count(e => e.RequestMessage?.Path == "/realms/r/protocol/openid-connect/token");
         Assert.Equal(1, tokenReqs);
     }
+
+    /// <summary>Once built, the facade is handed back before the build gate, with no request — a call whose token is already
+    /// cancelled still gets it, and the token endpoint saw only the build. Control: on a client not built yet the same call
+    /// stops at that gate (its wait refuses the cancelled token), so the call above never reached it.</summary>
+    [Fact]
+    public async Task AdminAsync_hands_back_the_built_facade_without_the_gate_or_a_request()
+    {
+        using var mock = WireMock.Server.WireMockServer.Start();
+        mock.Given(WireMock.RequestBuilders.Request.Create()
+                .WithPath("/realms/r/protocol/openid-connect/token").UsingPost())
+            .RespondWith(WireMock.ResponseBuilders.Response.Create().WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBodyAsJson(new { access_token = "AT", token_type = "Bearer", expires_in = 300 }));
+        var config = new KeycloakConfig { ServerUrl = mock.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "s" };
+        int TokenRequests() => mock.LogEntries.Count(e => e.RequestMessage?.Path == "/realms/r/protocol/openid-connect/token");
+        var cancelled = new CancellationToken(canceled: true);
+
+        await using var kc = KeycloakClient.Create(config);
+        var built = await kc.AdminAsync();
+        Assert.Same(built, await kc.AdminAsync(cancelled));
+        Assert.Equal(1, TokenRequests());
+
+        await using var cold = KeycloakClient.Create(config);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cold.AdminAsync(cancelled));
+        Assert.Equal(1, TokenRequests());
+    }
 }

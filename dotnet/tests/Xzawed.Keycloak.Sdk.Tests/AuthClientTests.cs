@@ -183,6 +183,92 @@ public class AuthClientTests : IDisposable
         Assert.Equal("c", ir.ClientId);
     }
 
+    /// <summary>A claim the response carries more than once — the values of a JSON array (<c>aud</c>), or the scopes Duende
+    /// splits out of the space-separated <c>scope</c> — comes back as all of them, in order; a claim carried once stays a single
+    /// string.</summary>
+    [Fact]
+    public async Task Introspect_returns_a_repeated_claim_as_all_its_values_in_order()
+    {
+        var auth = Build(out _);
+        _mock.Given(Request.Create().WithPath("/realms/r/protocol/openid-connect/token/introspect").UsingPost())
+             .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                 .WithBody("""{"active":true,"sub":"u","aud":["api","account"],"scope":"openid profile"}"""));
+        var ir = await auth.IntrospectAsync("some-token");
+        Assert.Equal(new[] { "api", "account" }, Assert.IsType<string[]>(ir.Claims["aud"]));
+        Assert.Equal(new[] { "openid", "profile" }, Assert.IsType<string[]>(ir.Claims["scope"]));
+        Assert.Equal("u", Assert.IsType<string>(ir.Claims["sub"]));
+    }
+
+    // ── The client's timeout and the caller's cancellation, on every lane that sends a request. HttpClient raises both as a
+    // TaskCanceledException; only its Timeout puts a TimeoutException under it — and that one alone becomes the SDK's
+    // transport error (the catch's filter). A caller who cancelled gets the cancellation back, never "timed out". ──
+
+    /// <summary>Every public call of this class that sends a request, by name.</summary>
+    private static readonly Dictionary<string, Func<AuthClient, CancellationToken, Task>> Lanes = new(StringComparer.Ordinal)
+    {
+        ["ClientCredentialsTokenAsync"] = (auth, ct) => auth.ClientCredentialsTokenAsync(ct),
+        ["ExchangeCodeAsync"] = (auth, ct) => auth.ExchangeCodeAsync("code", "https://app/cb", "verifier", ct: ct),
+        ["RefreshAsync"] = (auth, ct) => auth.RefreshAsync("rt", ct),
+        ["IntrospectAsync"] = (auth, ct) => auth.IntrospectAsync("some-token", ct),
+        ["LogoutAsync"] = (auth, ct) => auth.LogoutAsync("rt", ct),
+    };
+
+    /// <summary>An AuthClient whose every request goes to <paramref name="http"/> — no IdP behind it.</summary>
+    private static AuthClient Offline(HttpClient http)
+    {
+        var cfg = new KeycloakConfig { ServerUrl = "http://kc.example", Realm = "r", ClientId = "c", ClientSecret = "s" }.Normalized();
+        var ep = OidcEndpoints.For(cfg.ServerUrl, cfg.Realm);
+        var validator = new JwtValidator(JwtValidator.BuildParameters(ep.Issuer,
+            new JwtValidatorOptions { Issuer = ep.Issuer, Audiences = new[] { "c" } }));
+        return new AuthClient(cfg, ep, validator, http);
+    }
+
+    /// <summary>The client's Timeout ends a stalled call as a <see cref="KeycloakTransportException"/> in its lane's words, the
+    /// timeout as its cause — on every lane (the three grants share the token endpoint's words).</summary>
+    [Theory]
+    [InlineData("ClientCredentialsTokenAsync", "token request timed out")]
+    [InlineData("ExchangeCodeAsync", "token request timed out")]
+    [InlineData("RefreshAsync", "token request timed out")]
+    [InlineData("IntrospectAsync", "introspection request timed out")]
+    [InlineData("LogoutAsync", "logout request timed out")]
+    public async Task A_client_timeout_is_a_transport_error_on_every_lane(string lane, string message)
+    {
+        using var http = new HttpClient(new StallingHandler()) { Timeout = TimeSpan.FromMilliseconds(100) };
+        var refused = await Assert.ThrowsAsync<KeycloakTransportException>(() => Lanes[lane](Offline(http), CancellationToken.None));
+        Assert.Equal(message, refused.Message);
+        var cancelled = Assert.IsType<TaskCanceledException>(refused.InnerException);
+        Assert.IsType<TimeoutException>(cancelled.InnerException);
+    }
+
+    /// <summary>Control: the caller's own cancellation of the same stalled call is no timeout — it comes back as the caller's
+    /// cancellation (the caller's token on it, no timeout under it), on every lane.</summary>
+    [Theory]
+    [InlineData("ClientCredentialsTokenAsync")]
+    [InlineData("ExchangeCodeAsync")]
+    [InlineData("RefreshAsync")]
+    [InlineData("IntrospectAsync")]
+    [InlineData("LogoutAsync")]
+    public async Task A_callers_cancellation_stays_the_callers_on_every_lane(string lane)
+    {
+        using var http = new HttpClient(new StallingHandler()) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var cancelled = await Assert.ThrowsAsync<TaskCanceledException>(() => Lanes[lane](Offline(http), cts.Token));
+        Assert.Equal(cts.Token, cancelled.CancellationToken);
+        Assert.IsNotType<TimeoutException>(cancelled.InnerException);
+    }
+
+    /// <summary>Holds every request until its token is cancelled — by the client's Timeout or by the caller, whichever comes
+    /// first. Which of the two it was is the HttpClient's to say: for its Timeout it puts a TimeoutException under the
+    /// TaskCanceledException it raises.</summary>
+    private sealed class StallingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("an infinite delay ended without a cancellation");
+        }
+    }
+
     /// <summary>Keycloak 의 성공은 204 뿐이다 — IsSuccessStatusCode(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다(등록부
     /// logout-2xx-html-false-success, 2026-11-12 판정: 204 밖은 전부 KeycloakAuthException, 상태를 메시지에).</summary>
     [Theory]
