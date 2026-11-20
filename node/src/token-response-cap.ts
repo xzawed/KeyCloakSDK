@@ -17,7 +17,11 @@
  *
  * ⚠️ **It is not applied to admin REST responses** — user lists are legitimately large. The JWKS applies its own
  * cap (51,200, `JWKS_MAX_BYTES` in `jwt.ts`) separately.
+ *
+ * The same place turns a 200 token or introspection body that carries an OAuth `error` into the error a 4xx carrying
+ * it produces ({@link fetchTokenEndpointBounded}).
  */
+import { ResponseBodyError } from 'openid-client'
 
 /**
  * The cap — 16 times the longest Bearer that Keycloak 26.6 accepts with its default settings (65,459 bytes,
@@ -157,8 +161,9 @@ function hex4(json: Uint8Array, at: number): number {
 
 /**
  * Whose body is judged — the token and introspection responses: a 2xx body must be UTF-8 without an unpaired surrogate
- * escape, and no body's content coding may fail to decode. Discovery and logout keep what they had: an error status is
- * judged by its status, and logout only drains its body ({@link drainCapped}).
+ * escape, a 200 body must not carry an OAuth `error`, and no body's content coding may fail to decode. Discovery and
+ * logout keep what they had: an error status is judged by its status, and logout only drains its body
+ * ({@link drainCapped}).
  */
 function utf8Kind(url: string): string | undefined {
   const path = new URL(url).pathname.replace(/\/+$/, '')
@@ -174,6 +179,33 @@ function isUtf8(body: Uint8Array): boolean {
   } catch {
     return false
   }
+}
+
+/** The body {@link ResponseBodyError} carries — oauth4webapi's `OAuth2Error`, which openid-client does not export. */
+type OAuthErrorBody = ConstructorParameters<typeof ResponseBodyError>[1]['cause']
+
+/**
+ * The message of the {@link ResponseBodyError} oauth4webapi throws for a 4xx carrying `error` (`checkOAuthBodyError`) —
+ * the success-status one is thrown with the same, so the SDK error reads the same (`oauth-error-code-echo.test.ts`
+ * pins both against one string).
+ */
+const BODY_ERROR = 'server responded with an error in the response body'
+
+/**
+ * The body when it is a JSON object whose `error` is a non-empty string — the test oauth4webapi applies to a 4xx
+ * (`parseOAuthResponseErrorBody`) — otherwise `undefined`: an `error` that is a number, an object, null or "", and a
+ * body that is not a JSON object, are left to what follows as before. It runs on a body that passed the UTF-8 check.
+ */
+function oauthErrorBody(body: Uint8Array): OAuthErrorBody | undefined {
+  let json: unknown
+  try {
+    json = JSON.parse(new TextDecoder().decode(body))
+  } catch {
+    return undefined
+  }
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return undefined
+  const error = (json as Record<string, unknown>)['error']
+  return typeof error === 'string' && error.length > 0 ? (json as OAuthErrorBody) : undefined
 }
 
 /**
@@ -321,6 +353,14 @@ export async function drainCapped(body: ReadableStream<Uint8Array> | null): Prom
  * are returned as is. The latter cannot be rebuilt because the `Response` constructor rejects it (measured: undici
  * passes 600 and 999 through as is), and oauth4webapi reads only the bodies of 200 and 400–499, so that body is
  * never read — the same as now.
+ *
+ * ⚠️ **A 200 token or introspection body carrying an OAuth `error` throws** the {@link ResponseBodyError} a 4xx
+ * carrying it gets (openid-client passes that error through as is), before oauth4webapi reads the body — so the SDK
+ * error, its message and its `oauthError` are the 4xx ones, and nothing else in the body is used: no token returned or
+ * cached, no admin request, no `active` (registry `auth-2xx-error-code-divergent`). oauth4webapi took such a body as an
+ * answer: one beside a token was a success and one without was "invalid response encountered", with no code (measured
+ * 2026-11-20). 200 is the only status the grants and introspection take as success (`checkOAuthBodyError`); another 2xx
+ * stays rejected by its status, as before.
  */
 export async function fetchTokenEndpointBounded(
   url: string,
@@ -335,9 +375,13 @@ export async function fetchTokenEndpointBounded(
     if (holdsUnpairedSurrogate(body))
       throw new ResponseUnusableError(`${kind} holds an unpaired surrogate escape`)
   }
-  return new Response(body, {
+  const bounded = new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
   })
+  const error = kind !== undefined && response.status === 200 ? oauthErrorBody(body) : undefined
+  if (error !== undefined)
+    throw new ResponseBodyError(BODY_ERROR, { cause: error, response: bounded })
+  return bounded
 }

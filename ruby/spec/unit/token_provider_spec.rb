@@ -91,6 +91,43 @@ RSpec.describe KeycloakSdk::ClientCredentialsTokenProvider do
     expect { provider.access_token }.to raise_error(KeycloakSdk::TransportError)
   end
 
+  # 성공 상태가 OAuth `error` 를 실은 응답(등록부 auth-2xx-error-code-divergent) — 오류 상태(위 401)와 같은 AuthError · 같은
+  # 메시지 꼴 · 같은 코드이고, 실린 토큰은 돌려주지도 캐시하지도 않는다: 다음 호출이 다시 묻는다. 수정 전(실측): B1 은 코드 없는
+  # 「token response has no usable access_token」, B2 는 그 토큰을 돌려주고 캐시했다(admin 이 그것으로 요청을 보냈다).
+  describe "a success-status OAuth error (success_status_oauth_error)" do
+    let(:json) { { "Content-Type" => "application/json" } }
+    let(:fresh) do
+      { status: 200, body: { access_token: "AT2", expires_in: 300, token_type: "Bearer" }.to_json, headers: json }
+    end
+
+    {
+      "B1" => '{"error":"invalid_grant","error_description":"d"}',
+      "B2 with a token" => '{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.' \
+                           'c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}'
+    }.each do |name, body|
+      it "fails on HTTP 200 #{name} as on an error status and caches nothing (success-status OAuth error)" do
+        stub = stub_request(:post, token_url).to_return({ status: 200, body: body, headers: json }, fresh)
+        expect { provider.access_token }.to raise_error(KeycloakSdk::AuthError) do |e|
+          expect([e.message, e.oauth_error])
+            .to eq(["client-credentials token request failed: HTTP 200", "invalid_grant"])
+        end
+        expect(provider.access_token).to eq("AT2")
+        expect(stub).to have_been_requested.twice
+      end
+    end
+
+    # 대조군 — 비지 않은 JSON 문자열이 아닌 `error`(수 · 객체 · 배열 · "" · null)는 예전처럼 보지 않는다: 토큰을 쓰고 캐시한다.
+    [400, { "code" => "invalid_grant" }, ["invalid_grant"], "", nil].each do |error|
+      it "ignores an error member #{error.inspect} on HTTP 200, as before (success-status OAuth error control)" do
+        stub = stub_request(:post, token_url)
+               .to_return(status: 200, headers: json,
+                          body: { error: error, access_token: "AT1", expires_in: 300, token_type: "Bearer" }.to_json)
+        expect(Array.new(2) { provider.access_token }).to eq(%w[AT1 AT1])
+        expect(stub).to have_been_requested.once
+      end
+    end
+  end
+
   # 기본 `inspect` 는 인스턴스 변수를 전부 찍는다. 이 클래스는 **원시 액세스 토큰 문자열**을
   # `@cached` 에 들고 있어(`ts.access_token`, TokenSet 이 아니다) 형제들의 마스킹이 닿지 않는다.
   # 실측(2026-09-12): `p provider` 가 `@cached="AT-CENSUS-TOKEN-…"` 를 원문으로 찍었다.

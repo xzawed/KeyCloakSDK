@@ -63,7 +63,7 @@ from keycloak.exceptions import KeycloakError
 from ..exceptions import KeycloakAuthError
 from ..tokens import _usable_access_token
 from .bearer import GRANTED, sendable
-from .lower import is_lower_failure, unusable_answer
+from .lower import error_in_success, is_lower_failure, unusable_answer
 from .token_cap import Answered, answering
 
 #: 중첩 `KeycloakOpenID` 의 그랜트 메서드 — 연결이 토큰을 받는 자리 전부다.
@@ -82,10 +82,22 @@ def is_grant_failure(exc: BaseException) -> bool:
     return exc in _FAILED_GRANTS
 
 
-def _carried(response: dict[str, Any]) -> dict[str, Any]:
+def _carried(
+    response: dict[str, Any], answered: Answered, sent: tuple[str | None, ...]
+) -> dict[str, Any]:
     """세터에 넘길 그랜트 응답 — access_token 이 쓸 수 있고 bearer 규칙에 맞으며
     `expires_in` 을 세터가 쓸 수 있으면 그 값을 다듬은 응답, 아니면 `KeycloakAuthError`.
-    세터 앞이라 거부한 토큰은 캐시되지 않는다(`bearer.py`)."""
+    세터 앞이라 거부한 토큰은 캐시되지 않는다(`bearer.py`).
+
+    ⚠️ 성공 상태인데 OAuth `error` 를 실은 응답은 그 무엇보다 먼저 거부한다 — 그 토큰은 IdP 가
+    스스로 부인한 것이다. 판정은 auth 레인과 같다(`lower.oauth_failure` — 상태와, 그 그랜트가
+    보낸 비밀(`sent` — `_sent`)과 겹치지 않는 코드). 아홉 언어의 규칙이다 — ⚠️ 4xx 의 그랜트
+    실패는 지금처럼 코드를 싣지 않는다(`lower.grant_failure` — 상태의 수용 범위 밖이라 이
+    변경이 건드리지 않는다). 예전에는 그 토큰을 세터에 넘겨 admin 요청이 그것을 싣고
+    나갔다(등록부 auth-2xx-error-code-divergent)."""
+    named = error_in_success(response, answered, sent=sent)
+    if named is not None:
+        raise named
     token = _usable_access_token(response)
     bearer = sendable(token)
     if bearer is None:
@@ -116,6 +128,22 @@ def _usable_expiry(response: Mapping[str, Any]) -> None:
         raise KeycloakAuthError("token response has an invalid expires_in")
 
 
+def _sent(
+    owner: object, args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> tuple[str | None, ...]:
+    """그랜트가 보낸 비밀 — 그 주인(중첩 `KeycloakOpenID`)의 client secret 과 그랜트가 받은 문자열
+    인자 전부(`token(username, password, …, totp=…)` 의 password · totp,
+    `refresh_token(refresh_token)` 의 refresh token). 비밀이 아닌 인자(username · grant_type ·
+    scope)까지 넣는 것은 닫는 쪽이다 — 겹치는 코드를 더 거를 뿐 싣지는 않는다(`carried_code`).
+    비밀은 그때 읽는다 — 소비자가 세터로 바꾼 값도 그대로다."""
+    secret = getattr(owner, "client_secret_key", None)
+    given = (*args, *kwargs.values())
+    return (
+        secret if isinstance(secret, str) else None,
+        *(value for value in given if isinstance(value, str)),
+    )
+
+
 def _unusable(exc: Exception, answered: Answered) -> KeycloakAuthError | None:
     """그랜트에서 빠져나온 python-keycloak 의 비-`KeycloakError` 실패 — 전송 실패는
     python-keycloak 이 전부 `KeycloakConnectionError` 로 감싸므로 이것은 끝까지 온 응답을 못
@@ -124,7 +152,7 @@ def _unusable(exc: Exception, answered: Answered) -> KeycloakAuthError | None:
     return unusable_answer(exc, answered) if is_lower_failure(exc) else None
 
 
-def _checked(grant: _Grant) -> _Grant:
+def _checked(grant: _Grant, owner: object) -> _Grant:
     def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
         refused: KeycloakAuthError | None = None
         answered = Answered()
@@ -142,12 +170,14 @@ def _checked(grant: _Grant) -> _Grant:
         # `__context__` 로 매달린다.
         if refused is not None:
             raise refused
-        return _carried(response)
+        return _carried(response, answered, _sent(owner, args, kwargs))
 
     return checked
 
 
-def _achecked(grant: _AsyncGrant) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
+def _achecked(
+    grant: _AsyncGrant, owner: object
+) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
     async def checked(*args: Any, **kwargs: Any) -> dict[str, Any]:
         refused: KeycloakAuthError | None = None
         answered = Answered()
@@ -163,6 +193,6 @@ def _achecked(grant: _AsyncGrant) -> Callable[..., Coroutine[Any, Any, dict[str,
                 raise
         if refused is not None:
             raise refused
-        return _carried(response)
+        return _carried(response, answered, _sent(owner, args, kwargs))
 
     return checked

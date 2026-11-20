@@ -167,6 +167,27 @@ private fun trxExpect(
 private fun trxAdminAuth(status: Int): String =
     "Admin token request failed: HTTP $status" + if (status / 100 == 2) " (unusable token response)" else ""
 
+// 성공 상태의 본문(등록부 auth-2xx-error-code-divergent) — B1 은 error 와 설명뿐, B2 는 error 와 쓸 수 있어 보이는 JWT 모양의 토큰이다.
+// IN_ 은 introspection 의 둘 — error 뿐 · error 와 active:true.
+private const val TRX_SUCCESS_STATUS_AT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
+private const val TRX_B1 = """{"error":"invalid_grant","error_description":"d"}"""
+private const val TRX_B2 =
+    """{"error":"invalid_grant","access_token":"$TRX_SUCCESS_STATUS_AT","token_type":"Bearer","expires_in":300}"""
+private const val TRX_IN_B1 = """{"error":"invalid_token"}"""
+private const val TRX_IN_B2 = """{"error":"invalid_token","active":true}"""
+
+// 실패가 OAuth 코드 code(null 이면 싣지 않는다)를 싣고, 어느 표현도 B2 의 access_token 을 찍지 않는다.
+private fun trxExpectCode(
+    label: String,
+    o: TrxOutcome,
+    code: String?,
+    wrong: MutableList<String>,
+) {
+    val thrown = o.thrown as? KeycloakAuthException ?: return // trxExpect 가 이미 적었다
+    if (thrown.oauthError != code) wrong += "$label: OAuth 코드 ${thrown.oauthError} ≠ $code"
+    if (TRX_SUCCESS_STATUS_AT in thrown.stackTraceToString()) wrong += "$label: 응답의 access_token 이 찍혔다"
+}
+
 private fun trxClosedPort(): Int = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }
 
 internal class TokenResponseClassTest {
@@ -593,6 +614,145 @@ internal class TokenResponseClassTest {
             ) {
                 wrong += "S5 갱신 400 의 복구 경로: $twice · grants ${grants()} · admin ${adminHits()}"
             }
+            assertNone(wrong)
+        }
+
+    // ───────────── 성공 상태의 OAuth error(등록부 auth-2xx-error-code-divergent · Java 동형) ─────────────
+
+    // 성공 상태(200)의 본문이 비어 있지 않은 문자열 error 를 실으면 그것은 그 레인의 OAuth 오류 응답이다 — 같은 본문을 실은 400 과 같은
+    // 타입 · 같은 메시지 꼴(설명 「d」, 없으면 상태) · OAuth 코드(아홉 언어의 규칙). 400 행이 그 기준이다(바뀌지 않는다) — admin 의 자기
+    // 그랜트는 400 에서 코드를 싣지 않고 그대로 둔다(상태의 수용 범위 밖), 200 은 싣는다. 수정 전에는 B1 이 코드 없는 「Malformed …」 ·
+    // 「(unusable token response)」 였고 B2 는 성공이었다 — 토큰을 돌려주고, admin 요청을 보내고, introspection 을 활성으로 읽었다.
+    @Test
+    fun `success status OAuth error fails as the lanes error response`() =
+        runTest(timeout = 120.seconds) {
+            val wrong = mutableListOf<String>()
+            for (status in listOf(200, 400)) {
+                for ((label, op, prefix) in listOf(
+                    Triple("S1", cc, "Client credentials failed: "),
+                    Triple("S2", prov, "Client credentials failed: "),
+                    Triple("refresh", rf, "Token refresh failed: "),
+                    Triple("code exchange", codeExchange, "Authorization code exchange failed: "),
+                )) {
+                    tokens(trxJson(status, TRX_B1))
+                    val b1 = call(block = op)
+                    trxExpect("$label $status B1", b1, KeycloakAuthException::class.java, "${prefix}d", wrong)
+                    trxExpectCode("$label $status B1", b1, "invalid_grant", wrong)
+                    tokens(trxJson(status, TRX_B2))
+                    val b2 = call(block = op)
+                    trxExpect("$label $status B2", b2, KeycloakAuthException::class.java, "${prefix}HTTP $status", wrong)
+                    trxExpectCode("$label $status B2", b2, "invalid_grant", wrong)
+                }
+                for (body in listOf(TRX_IN_B1, TRX_IN_B2)) {
+                    introspectReply = trxJson(status, body)
+                    val o = call(block = introspect)
+                    trxExpect("IN $status $body", o, KeycloakAuthException::class.java, "Introspection failed: HTTP $status", wrong)
+                    trxExpectCode("IN $status $body", o, "invalid_token", wrong)
+                }
+                for ((name, body) in listOf("B1" to TRX_B1, "B2" to TRX_B2)) {
+                    tokens(trxJson(status, body))
+                    val o = call(block = admin)
+                    trxExpect("S5 $status $name", o, KeycloakAuthException::class.java, "Admin token request failed: HTTP $status", wrong)
+                    trxExpectCode("S5 $status $name", o, if (status == 200) "invalid_grant" else null, wrong)
+                    if (adminHits() != 0) wrong += "S5 $status $name: admin 요청이 나갔다 — ${adminHits()}"
+                }
+            }
+            assertNone(wrong)
+        }
+
+    // 그 본문에서는 아무것도 쓰지 않는다 — 거부한 토큰은 캐시되지 않는다: 같은 공급자 · 같은 admin 파사드의 다음 호출이 토큰 엔드포인트에
+    // 다시 가서 좋은 토큰을 받는다(캐시됐다면 B2 의 토큰이 300 초 동안 쓰였다).
+    @Test
+    fun `success status OAuth error is neither cached nor sent`() =
+        runTest(timeout = 120.seconds) {
+            val wrong = mutableListOf<String>()
+            tokens(trxJson(200, TRX_B2), trxJson(200, trxToken("AT-good")))
+            KeycloakClient.create(config()).use { kc ->
+                val provider = ClientCredentialsTokenProvider(fetch = { kc.auth.clientCredentialsToken() })
+                val first = trxOutcome { provider.accessToken() }
+                val second = trxOutcome { provider.accessToken() }
+                if (first.thrown !is KeycloakAuthException || second.value != "AT-good" || grants().size != 2) {
+                    wrong += "S2 B2 뒤: $first · $second · grants ${grants()}"
+                }
+            }
+            tokens(trxJson(200, TRX_B2), trxJson(200, trxToken("AT-good")))
+            KeycloakClient.create(config()).use { kc ->
+                val first = trxOutcome { admin(kc) }
+                val hitsAfterFirst = adminHits()
+                val second = trxOutcome { admin(kc) }
+                if (first.thrown !is KeycloakAuthException ||
+                    hitsAfterFirst != 0 ||
+                    second.value != "alice" ||
+                    adminHits() != 1 ||
+                    grants().size != 2
+                ) {
+                    wrong += "S5 B2 뒤: $first · $second · grants ${grants()} · admin ${adminHits()}"
+                }
+            }
+            assertNone(wrong)
+        }
+
+    // 보낸 시크릿(문자뿐 — 코드 모양이 된다)을 소문자로 되울린 error — 실패하되 코드도 그 값도 싣지 않는다(겹침은 ASCII 대소문자를
+    // 무시한다, OAuthErrorCodeEchoTest 의 규칙이 성공 상태에도 그대로다).
+    @Test
+    fun `success status OAuth error carries no echo of the secret`() =
+        runTest(timeout = 120.seconds) {
+            tokens(trxJson(200, """{"error":"echoedsecret","error_description":"d"}"""))
+            val echoing =
+                KeycloakConfig(
+                    "http://127.0.0.1:${server.address.port}",
+                    TRX_REALM,
+                    "app",
+                    "EchoedSecret".toCharArray(),
+                    connectTimeout = Duration.ofSeconds(5),
+                    readTimeout = Duration.ofSeconds(5),
+                )
+            val o = call(echoing, cc)
+            val wrong = mutableListOf<String>()
+            trxExpect("S1 200 되울린 시크릿", o, KeycloakAuthException::class.java, "Client credentials failed: d", wrong)
+            trxExpectCode("S1 200 되울린 시크릿", o, null, wrong)
+            val printed = o.thrown?.let { it.stackTraceToString().lowercase() } ?: ""
+            if ("echoedsecret" in printed) wrong += "S1 200 되울린 시크릿: 오류가 그 값을 찍었다"
+            // admin 의 자기 그랜트 — 시크릿은 Basic 자격으로 나간다(TokenManager 의 BasicAuthFilter). 대조 행(invalid_grant)은 실린다.
+            for (error in listOf("echoedsecret", "invalid_grant")) {
+                tokens(trxJson(200, """{"error":"$error","error_description":"d"}"""))
+                val s5 = call(echoing, admin)
+                trxExpect("S5 200 error $error", s5, KeycloakAuthException::class.java, "Admin token request failed: HTTP 200", wrong)
+                trxExpectCode("S5 200 error $error", s5, if (error == "echoedsecret") null else error, wrong)
+                if ("echoedsecret" in (s5.thrown?.stackTraceToString()?.lowercase() ?: "")) {
+                    wrong += "S5 200 error $error: 오류가 되울린 시크릿을 찍었다"
+                }
+                if (adminHits() != 0) wrong += "S5 200 error $error: admin 요청이 나갔다 — ${adminHits()}"
+            }
+            assertNone(wrong)
+        }
+
+    // 대조 — error 가 비어 있지 않은 JSON 문자열이 아니면(숫자 · 객체 · 배열 · 불리언 · null · "") 지금처럼 본문의 나머지가 판정한다. auth
+    // 레인은 토큰을 쓰고 활성으로 읽는다. admin 의 결합(keycloak-admin-client 의 AccessTokenResponse 는 문자열 error 칸을 가진다 —
+    // TokenManager 는 그것을 읽지 않는다)은 스칼라를 받고 객체 · 배열에서 실패한다 — 그대로다. JSON 객체가 아닌 본문도 판정하지 않는다.
+    @Test
+    fun `success status OAuth error counts only a non-empty string`() =
+        runTest(timeout = 120.seconds) {
+            val wrong = mutableListOf<String>()
+            for (value in listOf("12345", """{"e":"invalid_grant"}""", """["invalid_grant"]""", "true", "null", "\"\"")) {
+                tokens(trxJson(200, """{"error":$value,"access_token":"AT-ok","token_type":"Bearer","expires_in":300}"""))
+                val s1 = call(block = cc)
+                if (s1.value != "AT-ok") wrong += "S1 error $value: 토큰을 써야 한다 — $s1"
+                introspectReply = trxJson(200, """{"error":$value,"active":true,"username":"svc"}""")
+                val inspected = call(block = introspect)
+                if (inspected.value != "svc") wrong += "IN error $value: 활성으로 읽어야 한다 — $inspected"
+                tokens(trxJson(200, """{"error":$value,"access_token":"good","token_type":"Bearer","expires_in":300}"""))
+                val s5 = call(block = admin)
+                if (value.startsWith("{") || value.startsWith("[")) {
+                    trxExpect("S5 error $value", s5, KeycloakAuthException::class.java, trxAdminAuth(200), wrong)
+                } else if (s5.value != "alice" || adminHits() != 1) {
+                    wrong += "S5 error $value: 토큰을 써야 한다 — $s5 · admin ${adminHits()}"
+                }
+            }
+            tokens(trxJson(200, "[$TRX_B1]"))
+            trxExpect("S1 200 배열 본문", call(block = cc), KeycloakAuthException::class.java, "Malformed auth response", wrong)
+            tokens(TrxReply(200, "text/plain", TRX_B1.toByteArray()))
+            trxExpect("S1 200 text/plain", call(block = cc), KeycloakAuthException::class.java, "Malformed auth response", wrong)
             assertNone(wrong)
         }
 }

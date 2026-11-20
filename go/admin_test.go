@@ -26,6 +26,70 @@ func TestNewAdminClientRequiresSecret(t *testing.T) {
 	}
 }
 
+// TestSuccessStatusOAuthErrorAdminSendsNothing — the admin lane's own token grant (gocloak's login, which binds a 2xx into a
+// JWT with no field for `error`): B1 and B2 at 200 (auth_test.go successStatusBodies) fail with the code, at construction
+// and at a later refresh, and no admin request goes out. Between the two, a usable answer is fetched anew and is the
+// bearer the admin API gets — the refused answer was neither kept nor sent.
+func TestSuccessStatusOAuthErrorAdminSendsNothing(t *testing.T) {
+	for _, b := range successStatusBodies {
+		t.Run(b.name, func(t *testing.T) {
+			ctx := context.Background()
+			p := newSuccessStatusIdP(t)
+			c := p.client(t, "sekret")
+
+			p.token.Store(b.token)
+			a, err := c.Admin(ctx)
+			if a != nil {
+				t.Errorf("construction handed out an admin client")
+			}
+			successStatusRefused(t, b.name+" at construction", err, "invalid_grant")
+			if n := p.adminHits.Load(); n != 0 {
+				t.Fatalf("%d admin request(s) went out after the refused token answer", n)
+			}
+
+			// expires_in 1 is under the clock skew, so every admin call fetches its token again.
+			p.token.Store(`{"access_token":"` + successStatusFresh + `","token_type":"Bearer","expires_in":1}`)
+			if a, err = c.Admin(ctx); err != nil {
+				t.Fatalf("construction with a usable answer: %v", err)
+			}
+			if _, err := a.Users.Get(ctx, "u1"); err != nil {
+				t.Fatalf("an admin call with a usable answer: %v", err)
+			}
+			if got := p.bearer.Load(); got != "Bearer "+successStatusFresh {
+				t.Fatalf("the admin request carried %q, want the usable answer's token", got)
+			}
+
+			p.token.Store(b.token)
+			before := p.adminHits.Load()
+			u, err := a.Users.Get(ctx, "u1")
+			if u != nil {
+				t.Errorf("the admin call handed out a user")
+			}
+			successStatusRefused(t, b.name+" at a refresh", err, "invalid_grant")
+			if n := p.adminHits.Load() - before; n != 0 {
+				t.Errorf("%d admin request(s) went out after the refused token answer", n)
+			}
+		})
+	}
+}
+
+// TestSuccessStatusOAuthErrorAdminComesBeforeGocloaksDecode — the `error` is looked at before anything else in the body:
+// a 2xx carrying one beside a member gocloak's JWT cannot decode (expires_in a string) fails as the OAuth error, with its
+// code, rather than as an unusable token response.
+func TestSuccessStatusOAuthErrorAdminComesBeforeGocloaksDecode(t *testing.T) {
+	p := newSuccessStatusIdP(t)
+	p.token.Store(`{"error":"invalid_grant","access_token":"` + successStatusToken + `","token_type":"Bearer","expires_in":"soon"}`)
+	_, err := p.client(t, "sekret").Admin(context.Background())
+	successStatusRefused(t, "expires_in a string", err, "invalid_grant")
+	var ae *AuthError
+	if errors.As(err, &ae) && !strings.HasSuffix(ae.Msg, "HTTP 200 OK: invalid_grant") {
+		t.Errorf("Msg = %q, want the form of a status that carries the error", ae.Msg)
+	}
+	if n := p.adminHits.Load(); n != 0 {
+		t.Errorf("%d admin request(s) went out after the refused token answer", n)
+	}
+}
+
 func TestToSDKError(t *testing.T) {
 	// *gocloak.APIError → *AdminError, matching sentinels.
 	for status, sentinel := range map[int]error{404: ErrNotFound, 409: ErrConflict, 403: ErrForbidden} {

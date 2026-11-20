@@ -253,6 +253,28 @@ final class OAuthErrorCodeEchoTest extends TestCase
         self::assertWithheld($e, 'echomixedcase');
     }
 
+    /** @return array<string, array{string}> the lanes whose request sends the client secret by client credentials */
+    public static function clientCredentialsSurfaces(): array
+    {
+        return ['client_credentials' => ['client_credentials'], 'provider' => ['provider'], 'admin' => ['admin']];
+    }
+
+    /**
+     * The same rule at a success status — a 200 that answers an OAuth error fails like the error status does, and its `error`
+     * is no code when it overlaps the secret the request sent (registry `auth-2xx-error-code-divergent`).
+     */
+    #[DataProvider('clientCredentialsSurfaces')]
+    public function testSuccessStatusOAuthErrorALowercasedEchoOfTheClientSecretIsNeverCarried(string $surface): void
+    {
+        self::state(['echo' => 'client_secret', 'form' => 'lowercased', 'status' => 200, 'description' => 'd']);
+        $e = self::fail2($surface, 'EchoedSecret');
+        self::assertSame('EchoedSecret', self::sentForms()[0]['client_secret'] ?? null, 'the secret went out');
+        self::assertWithheld($e, 'echoedsecret');
+        foreach (['echoedsecret', 'EchoedSecret'] as $value) {
+            self::assertFalse(str_contains($e->getMessage(), $value), "the message shows $value");
+        }
+    }
+
     /** @return array<string, array{string, string, string}> */
     public static function grantEchoes(): array
     {

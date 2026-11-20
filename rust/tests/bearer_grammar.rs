@@ -291,6 +291,44 @@ async fn sdk_provider_caches_the_trimmed_token_and_never_a_refused_one() {
     report("ClientCredentialsTokenProvider", &wrong);
 }
 
+/// 성공 상태로 온 OAuth 오류(등록부 `auth-2xx-error-code-divergent`) — SDK 의 캐싱 공급자는 400 의 `error` 와 같은 `Auth`
+/// (같은 문구 · 코드)로 실패하고, 같이 온 `access_token` 은 돌려주지도 캐시하지도 않는다. 첫 응답만 그 본문(우선순위 1 · 한 번),
+/// 그 뒤는 쓸 수 있는 200 이다 — 둘째 호출이 IdP 에 다시 묻는다.
+#[tokio::test]
+async fn success_status_oauth_error_is_neither_returned_nor_cached_by_the_sdk_provider() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(TOKEN_PATH))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            r#"{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}"#,
+            "application/json",
+        ))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(TOKEN_PATH))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "AT2", "token_type": "Bearer", "expires_in": 300
+        })))
+        .mount(&server)
+        .await;
+    let provider = ClientCredentialsTokenProvider::new(config(&server), reqwest::Client::new());
+    match provider.access_token().await {
+        Err(KeycloakError::Auth {
+            message,
+            oauth_error,
+        }) => {
+            assert_eq!(message, "client-credentials failed");
+            assert_eq!(oauth_error.as_deref(), Some("invalid_grant"));
+        }
+        other => panic!("expected the 400 path's Auth with the code, got {other:?}"),
+    }
+    assert_eq!(provider.access_token().await.expect("second grant"), "AT2");
+    assert_eq!(received(&server, TOKEN_PATH).await.len(), 2);
+}
+
 /// 기본 경로 — `KeycloakClient` 의 캐싱 공급자가 먼저 거르므로, 거부한 토큰이면 파사드는 그 공급자의 오류 그대로
 /// (`Auth` — 위 시험의 `client-credentials failed`), `raw()` 는 `HttpFailure { status: 401 }` 이고 admin 요청은 없다.
 #[tokio::test]

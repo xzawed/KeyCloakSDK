@@ -273,6 +273,71 @@ RSpec.describe KeycloakSdk::AuthClient do
     end
   end
 
+  # 성공 상태가 OAuth `error` 를 실은 응답(등록부 auth-2xx-error-code-divergent · 아홉 언어 같은 규칙) — 레인이 성공으로 받는
+  # 상태라도 본문이 `error` 가 비지 않은 문자열인 JSON 객체면 오류 상태의 그 응답과 같은 AuthError · 같은 메시지 꼴 · 같은
+  # 코드(`OAuthErrorCode.carried`)이고, 본문의 나머지(access_token · active)는 쓰지 않는다. 수정 전(실측): 그랜트의 B1 은 코드
+  # 없는 「unusable token response (RuntimeError)」, B2 는 실린 토큰을 돌려줬고, introspection 의 B2 는 active=true 였다.
+  # 보내는 비밀은 코드와 겹치지 않게 골랐다 — 겹치면 코드를 뺀다(`oauth_error_code_echo_spec`).
+  describe "a success-status OAuth error (success_status_oauth_error)" do
+    token_bodies = {
+      "B1" => '{"error":"invalid_grant","error_description":"d"}',
+      "B2 with a token" => '{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.' \
+                           'c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}'
+    }
+    introspection_bodies = {
+      "B1" => '{"error":"invalid_token"}',
+      "B2 with active" => '{"error":"invalid_token","active":true}'
+    }
+
+    def answer(url, body)
+      stub_request(:post, url).to_return(status: 200, body: body, headers: { "Content-Type" => "application/json" })
+    end
+
+    # B2 의 토큰 — 오류의 어느 표현에도 없어야 한다.
+    def jwt
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
+    end
+
+    {
+      "client_credentials_token" => ["client-credentials", lambda(&:client_credentials_token)],
+      "access_token" => ["client-credentials", lambda(&:access_token)],
+      "refresh" => ["refresh", ->(a) { a.refresh(refresh_token: "RT-opaque-refresh") }],
+      "exchange_code" => ["authorization_code exchange", lambda { |a|
+        a.exchange_code(code: "AUTH-CODE-1234", code_verifier: "pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz",
+                        redirect_uri: "https://app/cb")
+      }]
+    }.each do |lane, (operation, call)|
+      token_bodies.each do |name, body|
+        it "fails #{lane} on HTTP 200 #{name} as on an error status, no token returned (success-status OAuth error)" do
+          answer(token_url, body)
+          expect { call.call(auth) }.to raise_error(KeycloakSdk::AuthError) do |e|
+            expect([e.message, e.oauth_error]).to eq(["#{operation} failed: invalid_grant (HTTP 200)", "invalid_grant"])
+            expect(e.full_message(highlight: false)).not_to include(jwt)
+          end
+        end
+      end
+    end
+
+    introspection_bodies.each do |name, body|
+      it "fails introspect on HTTP 200 #{name} with the code, never active (success-status OAuth error)" do
+        answer(introspect_url, body)
+        expect { auth.introspect("AT-introspected-token") }.to raise_error(KeycloakSdk::AuthError) do |e|
+          expect([e.message, e.oauth_error]).to eq(["introspection failed: HTTP 200", "invalid_token"])
+        end
+      end
+    end
+
+    # 대조군 — 비지 않은 JSON 문자열이 아닌 `error`(수 · 객체 · 배열 · "" · null)는 예전처럼 보지 않는다.
+    [400, { "code" => "invalid_grant" }, ["invalid_grant"], "", nil].each do |error|
+      it "ignores an error member #{error.inspect} on HTTP 200, as before (success-status OAuth error control)" do
+        answer(token_url, { error: error, access_token: "AT", token_type: "Bearer", expires_in: 300 }.to_json)
+        answer(introspect_url, { error: error, active: true }.to_json)
+        expect(auth.client_credentials_token.access_token).to eq("AT")
+        expect(auth.introspect("AT-introspected-token").active?).to be(true)
+      end
+    end
+  end
+
   # rack-oauth2 의 HTTP 설정은 프로세스 전역이고 먼저 건 쪽이 이긴다(`@@http_config ||= block`) — SDK 가 걸면 호스트
   # 앱이 나중에 건 블록이 조용히 버려진다. SDK 의 요청은 그 연결을 타지 않으므로(`host_http_config_spec.rb`) 걸지 않는다.
   describe "rack-oauth2's process-global http_config" do

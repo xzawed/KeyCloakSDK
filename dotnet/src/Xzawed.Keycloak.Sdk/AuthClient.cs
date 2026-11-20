@@ -334,10 +334,12 @@ public sealed class AuthClient : ITokenSource
             throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
         if (undecodable is { } why)
             throw new KeycloakAuthException($"{failureMessage}: {why}");
-        // A 2xx that carries an error fails as a 400 does. Duende's IsError alone misses a space-only one there — it does not
-        // flag a whitespace error text on a 2xx (measured: OAuthErrorCodeGrammarTests) — so the RFC grammar decides whether
-        // there is an error at all (InGrammar); what is carried of it is OAuthErrorOf's, which is narrower.
-        if (resp.IsError || InGrammar(resp.Json))
+        // A 2xx that carries an error fails as a 400 does, and nothing else in its body is used: an `error` member that is a
+        // non-empty JSON string is one, the same test in all nine (registry auth-2xx-error-code-divergent). Duende's IsError
+        // alone misses a whitespace-only one on a 2xx, and the RFC grammar this used to add missed one that is not spaces — a
+        // tab, an LF or an NBSP left the token beside it returned and introspection active (measured 2026-11-20; the tab is
+        // AuthClientTests' SuccessStatusOAuthError rows). What is carried of it is OAuthErrorOf's, which is narrower.
+        if (resp.IsError || CarriesError(resp.Json))
         {
             var code = OAuthErrorOf(resp.Json, sent);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
@@ -348,20 +350,18 @@ public sealed class AuthClient : ITokenSource
     // into a code. Anything else is no code: Duende renders a non-string as its raw JSON text, a string with a control
     // character split the logged SDK error into lines (measured: OAuthErrorCodeGrammarTests), and a string
     // System.Text.Json will not decode (an unpaired surrogate escape) threw out of the SDK raw before (UndecodableResponseTests).
-    // The grammar filter first changes no result ([a-z_] is inside NQSCHAR) — it keeps both callers on one path.
     private static string? OAuthErrorOf(JsonElement? json, string?[] sent) =>
         ErrorText(json) is { } text ? OAuthErrorCode.Carried(text, sent) : null;
 
-    // Whether a 2xx carries an error at all.
-    private static bool InGrammar(JsonElement? json) => ErrorText(json) is not null;
+    // Whether a 2xx carries an error at all: its `error` member is a non-empty JSON string — in the RFC 6749 §5.2 grammar
+    // (1*NQSCHAR) or not, the same test in all nine.
+    private static bool CarriesError(JsonElement? json) => ErrorText(json) is not null;
 
-    // RFC 6749 §5.2: error = 1*NQSCHAR, NQSCHAR = %x20-21 / %x23-5B / %x5D-7E — the decoded `error` string when it is in it.
+    // The decoded `error` string when it is a non-empty one.
     private static string? ErrorText(JsonElement? json) =>
-        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 } && code.All(IsNqsChar)
+        ErrorMember(json) is { ValueKind: JsonValueKind.String } e && TryDecode(e, out var code) && code is { Length: > 0 }
             ? code
             : null;
-
-    private static bool IsNqsChar(char c) => c is >= '\x20' and <= '\x21' or >= '\x23' and <= '\x5B' or >= '\x5D' and <= '\x7E';
 
     // Why a 400 carried no code — a string that is not carried is still a JSON string, so it gets its own words, and so does a
     // body with no error member at all ({}, an error_description alone, an empty body): Duende flags that 400 too (ErrorType

@@ -1070,6 +1070,49 @@ def test_introspect_maps_inactive_token_with_missing_fields():
     assert result == IntrospectionResult(active=False, username=None, client_id=None)
 
 
+#: python-keycloak 이 성공으로 받은 응답(2xx)이 OAuth `error` 를 실었다 — 등록부
+#: auth-2xx-error-code-divergent. B2 는 쓸 수 있어 보이는 토큰 · `active: true` 까지 싣는다.
+_SUCCESS_STATUS_OAUTH_ERROR: dict[str, tuple[dict[str, object], dict[str, object]]] = {
+    "B1": ({"error": "invalid_grant", "error_description": "d"}, {"error": "invalid_token"}),
+    "B2": (
+        {
+            "error": "invalid_grant",
+            "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl",
+            "token_type": "Bearer",
+            "expires_in": 300,
+        },
+        {"error": "invalid_token", "active": True},
+    ),
+}
+_LANE_CALLS = {
+    "client_credentials_token": lambda c: c.client_credentials_token(),
+    "refresh": lambda c: c.refresh("old-refresh"),
+    "exchange_code": lambda c: c.exchange_code("auth-code", "https://app/cb", "verifier-xyz"),
+    "introspect": lambda c: c.introspect("some-token"),
+}
+
+
+@pytest.mark.parametrize("body", list(_SUCCESS_STATUS_OAUTH_ERROR))
+@pytest.mark.parametrize("lane", list(_LANE_CALLS))
+def test_success_status_oauth_error_fails_like_an_error_status(lane, body):
+    """4xx 가 그 `error` 를 실었을 때와 같은 `KeycloakAuthError` · 같은 코드이고, 본문의 나머지는
+    쓰지 않는다. 목은 HTTP 상태를 남기지 않는다(상태는 세션이 적는다) — 메시지는 상태 없이 코드만
+    싣는다. 상태를 싣는 실제 왕복은 test_token_response_class.py 다."""
+    token, introspection = _SUCCESS_STATUS_OAUTH_ERROR[body]
+    openid = MagicMock(spec=KeycloakOpenID)
+    openid.token.return_value = token
+    openid.refresh_token.return_value = token
+    openid.introspect.return_value = introspection
+    client = _client(openid)
+
+    with pytest.raises(KeycloakAuthError) as excinfo:
+        _LANE_CALLS[lane](client)
+
+    code = "invalid_token" if lane == "introspect" else "invalid_grant"
+    assert excinfo.value.error == code
+    assert str(excinfo.value) == f"Keycloak request failed ({code})"
+
+
 # --- 3.5: validate() — JWKS 로드(+캐시) 후 JwtValidator에 위임 -------------------
 
 

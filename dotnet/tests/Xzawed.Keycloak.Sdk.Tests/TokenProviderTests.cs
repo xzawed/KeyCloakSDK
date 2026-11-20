@@ -1,6 +1,9 @@
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
+using WireMock.Server;
 using Xunit;
 using Xzawed.Keycloak;
 
@@ -82,5 +85,40 @@ public class TokenProviderTests
         var result = cached.ToString();
         Assert.DoesNotContain("CANARY-DOTNET-CACHED-AT", result);
         Assert.Contains("***", result);
+    }
+
+    // ── A success status whose body carries an OAuth error (registry auth-2xx-error-code-divergent): the provider fails with
+    // the grant's error and caches nothing — the next call asks the token endpoint again. ──
+
+    private const string TokenPath = "/realms/r/protocol/openid-connect/token";
+    private const string TokenB1 = """{"error":"invalid_grant","error_description":"d"}""";
+    private const string TokenB2 = """{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}""";
+    private const string NextAccessToken = "next-access-token";
+
+    [Theory]
+    [InlineData(TokenB1)]
+    [InlineData(TokenB2)]
+    public async Task SuccessStatusOAuthError_fails_the_provider_and_caches_nothing(string body)
+    {
+        using var idp = WireMockServer.Start();
+        AnswerToken(idp, body);
+        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = "zebrasecretjk" });
+        var provider = new ClientCredentialsTokenProvider(kc.Auth);
+
+        var refused = await Assert.ThrowsAsync<KeycloakAuthException>(() => provider.GetAccessTokenAsync());
+        Assert.Equal("invalid_grant", refused.OAuthError);
+        Assert.Equal("Client credentials grant failed: invalid_grant", refused.Message);
+
+        AnswerToken(idp, $$"""{"access_token":"{{NextAccessToken}}","token_type":"Bearer","expires_in":300}""");
+        Assert.Equal(NextAccessToken, await provider.GetAccessTokenAsync());
+        Assert.Equal(2, idp.LogEntries.Count(e => e.RequestMessage?.Path == TokenPath));
+    }
+
+    /// <summary>The token endpoint answers 200 with <paramref name="body"/>; whatever it answered before is gone.</summary>
+    private static void AnswerToken(WireMockServer idp, string body)
+    {
+        idp.ResetMappings();
+        idp.Given(Request.Create().WithPath(TokenPath).UsingPost())
+           .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json").WithBody(body));
     }
 }

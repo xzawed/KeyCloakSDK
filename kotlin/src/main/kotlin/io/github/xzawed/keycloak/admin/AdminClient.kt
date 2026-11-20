@@ -5,6 +5,7 @@ import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakConfigException
 import io.github.xzawed.keycloak.KeycloakTransportException
+import io.github.xzawed.keycloak.OAuthErrorTokenResponse
 import io.github.xzawed.keycloak.RESPONSE_LATE
 import io.github.xzawed.keycloak.RESPONSE_MAX_HEADER_COUNT
 import io.github.xzawed.keycloak.RESPONSE_MAX_LINE_LENGTH
@@ -539,7 +540,7 @@ internal suspend fun <T> adminCall(block: () -> T): T =
         throw translateAdminException(e)
     } catch (e: ProcessingException) {
         val grant = grantFailure(e)
-        if (grant != null) throw KeycloakAuthException(grant, c = RedactedCause.of(e))
+        if (grant != null) throw KeycloakAuthException(grant, oauthError = grantCode(e), c = RedactedCause.of(e))
         throw KeycloakTransportException("Admin request failed", transportCause(e))
     }
 
@@ -590,15 +591,30 @@ private const val GRANT_CAUSE_DEPTH = 16
  * 수 없는 2xx 다. 둘 다 응답이 다 왔다 — 인증 오류다(전에는 전송 오류였다). 그 밖(연결 거부 · 타임아웃 · 상한 초과 · 깨진 틀)은 null —
  * 전송 실패 그대로다. ⚠️ 메시지는 상태만 싣는다 — 토큰 엔드포인트의 오류 본문은 그 요청의 클라이언트 시크릿을 되울릴 수 있다
  * (`AdminTokenEchoTest`). 원인 사슬은 늘 [RedactedCause] 로 단다(응답을 쥔 Response · 결합 예외가 그 안에 있다). 분류는 타입으로만 한다.
- * 갱신 400 의 복구(TokenManager 가 `BadRequestException` 을 잡아 다시 부여한다)는 여기 오지 않는다 — 다시 부여도 실패해야 온다.
+ * 갱신 400 의 복구(TokenManager 가 `BadRequestException` 을 잡아 다시 부여한다)는 여기 오지 않는다 — 다시 부여도 실패해야 온다. (3)
+ * [OAuthErrorTokenResponse] 는 성공 상태로 온 OAuth 오류 응답이다 — 4xx 와 같은 꼴이고, 그 코드는 [grantCode] 가 싣는다(등록부
+ * auth-2xx-error-code-divergent).
  */
 internal fun grantFailure(e: ProcessingException): String? {
     for (t in generateSequence(e.cause) { it.cause }.take(GRANT_CAUSE_DEPTH)) {
-        if (t is UnusableTokenResponse) return "Admin token request failed: HTTP ${t.status} (unusable token response)"
-        if (t is WebApplicationException) return "Admin token request failed: HTTP ${t.response?.status ?: 0}"
+        if (t is OAuthErrorTokenResponse) return "$GRANT_FAILED ${t.status}"
+        if (t is UnusableTokenResponse) return "$GRANT_FAILED ${t.status} (unusable token response)"
+        if (t is WebApplicationException) return "$GRANT_FAILED ${t.response?.status ?: 0}"
     }
     return null
 }
+
+// 그랜트가 끝까지 온 응답으로 실패했다는 메시지의 머리 — 상태만 싣는다(본문은 그 요청의 시크릿을 되울릴 수 있다).
+private const val GRANT_FAILED = "Admin token request failed: HTTP"
+
+// [grantFailure] 의 실패가 성공 상태의 OAuth 오류 응답이면 그 코드([OAuthErrorTokenResponse.code] — 보낸 비밀과 겹치지 않는 코드 모양의
+// 값만), 아니면 null. 오류 상태는 지금처럼 코드를 싣지 않는다(응답 하나는 셋 중 하나만 낳는다). Java `AdminExceptions.grantCode` 동형.
+internal fun grantCode(e: ProcessingException): String? =
+    generateSequence(e.cause) { it.cause }
+        .take(GRANT_CAUSE_DEPTH)
+        .filterIsInstance<OAuthErrorTokenResponse>()
+        .firstOrNull()
+        ?.code
 
 // ⚠️ [ResponseProcessingException] 은 응답을 **받았으나** 읽지 못했다는 JAX-RS 의 표시다 — 그 아래 Jackson 예외가
 // 본문을 인용한다(「Unrecognized token '<본문>'」·JSON 문자열 값·expires_in 값). admin 자원 응답의 결합 실패가 여기로 온다

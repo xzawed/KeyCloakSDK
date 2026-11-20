@@ -78,13 +78,16 @@ module KeycloakSdk
     end
 
     # A response that arrived but cannot be read is an AuthError — a 2xx is judged by `TokenResponse`, an error status
-    # by the status check below.
+    # by the status check below. A 2xx whose body carries an OAuth `error` fails like an error status, before `active`
+    # is read, and carries the code unless it overlaps the client secret or the token sent.
     def introspect(token)
       form = form!("introspection", token: token, client_id: @config.client_id, client_secret: @config.client_secret)
       resp = TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.introspection,
                                                    body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES,
                                                    what: "introspection"), what: "introspection")
-      raise AuthError, "introspection failed: HTTP #{resp.status}" unless resp.success?
+      error = TokenResponse.oauth_error(resp.body) if resp.success?
+      code = error && OAuthErrorCode.carried(error, [@config.client_secret, token])
+      raise AuthError.new("introspection failed: HTTP #{resp.status}", oauth_error: code) if error || !resp.success?
 
       IntrospectionResult.from_response(resp.body)
     rescue Error
@@ -190,9 +193,11 @@ module KeycloakSdk
     # 200·201 은 token_type 이 bearer 인 `AccessToken::Bearer`, 그 밖은 `Client::Error`(본문이 객체가 아니면 'Unknown').
     # 그 메서드는 private 이라 규칙만 옮겼다 — 결과·오류는 rack-oauth2 의 공개 타입이라 위 오류 대응이 그대로다.
     # 객체가 아닌 200 본문은 rack-oauth2 처럼 NoMethodError 로 떨어져 `token_request` 가 AuthError 로 바꾼다.
+    # ⚠️ 하나는 rack-oauth2 와 다르다: 200·201 이라도 OAuth `error` 를 실은 본문은 `Client::Error` 다(`TokenResponse.granted?`)
+    # — 오류 상태와 같은 메시지 · 코드이고 실린 토큰은 쓰지 않는다(등록부 auth-2xx-error-code-divergent).
     def oauth_token(resp)
       body = resp.body
-      unless (200..201).cover?(resp.status)
+      unless TokenResponse.granted?(resp)
         error = body.is_a?(Hash) ? body.transform_keys(&:to_sym) : { error: "Unknown", error_description: body }
         raise Rack::OAuth2::Client::Error.new(resp.status, error)
       end

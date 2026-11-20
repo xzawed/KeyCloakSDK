@@ -110,6 +110,10 @@ final class ErrorTranslation
             }
             throw new KeycloakAdminError(self::failed($e), $e->getResponse()->getStatusCode(), SanitizedCause::of($e));
         } catch (BadResponseException $e) {
+            if (self::isTokenGrant($e->getRequest())) {
+                // 부여가 성공 상태로 OAuth 오류 응답을 줬다(`BearerToken::grantMiddleware`) — 오류 상태의 같은 본문과 같은 형·메시지·코드다.
+                throw self::grantFailed($e);
+            }
             // 400 아래 — 파사드 호출이 받은 3xx 를 `AdminResponseBody` 가 거부했다(리다이렉트는 따라가지 않는다 — `HttpOptions`).
             // 토큰 부여는 그 미들웨어가 건드리지 않는다(부여의 3xx 는 `BearerToken` 의 거부다). 제 형이 없는 4xx 와 같은 형·메시지·원인 사본.
             throw new KeycloakAdminError(self::failed($e), $e->getResponse()->getStatusCode(), SanitizedCause::of($e));
@@ -168,7 +172,7 @@ final class ErrorTranslation
     }
 
     /**
-     * admin 의 토큰 부여가 끝까지 온 오류 응답으로 실패했다 — auth 계급이다(auth 클라이언트의 같은 칸과 같다). 상태는 메시지에,
+     * admin 의 토큰 부여가 끝까지 온 오류 응답(오류 상태 · 또는 `error` 를 실은 2xx)으로 실패했다 — auth 계급이다(auth 클라이언트의 같은 칸과 같다). 상태는 메시지에,
      * 코드 모양의 OAuth `error` 는 메시지와 `oauthError` 에. ⚠️ 상태로 형을 고르지 않는다 — 토큰 엔드포인트의 404 가
      * `KeycloakNotFoundError` 가 되어 토큰을 못 받은 `users()->delete()` 가 admin 요청 0 번에 「이미 없다」로 읽혔다(403 · 409 도 —
      * 실측 2026-11-10, go #952 와 같은 위험).

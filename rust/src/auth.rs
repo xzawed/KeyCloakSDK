@@ -5,7 +5,7 @@
 //! get a concrete type, `KcOidcClient`, that is callable without `?` (infallible). The id_token is validated by the
 //! hardened `JwtValidator` instead of openidconnect's own validator, so the `JsonWebKeySet` is left empty.
 use crate::config::KeycloakConfig;
-use crate::error::{KeycloakError, Result, oauth_error_code, token_http_error};
+use crate::error::{KeycloakError, Result, oauth_error_code, oauth_error_member, token_http_error};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, drain_capped, read_capped};
 use crate::jwt::JwtValidator;
 use crate::oidc::{OidcEndpoints, authorization_scopes};
@@ -70,8 +70,9 @@ impl<'c> AsyncHttpClient<'c> for CappedHttp<'_> {
                 .execute(request.try_into().map_err(Box::new)?)
                 .await
                 .map_err(Box::new)?;
+            let status = response.status();
             let mut builder = openidconnect::http::Response::builder()
-                .status(response.status())
+                .status(status)
                 .version(response.version());
             for (name, value) in response.headers() {
                 builder = builder.header(name, value);
@@ -85,6 +86,14 @@ impl<'c> AsyncHttpClient<'c> for CappedHttp<'_> {
                         self.what
                     ))
                 })?;
+            // ⚠️ **성공 상태의 OAuth 오류는 오류다** — oauth2 5.0 은 200 만 성공으로 읽고(`check_response_status`) 그 본문의
+            // `error` 를 보지 않아, 같이 온 `access_token`·`active` 를 그대로 썼다(등록부 `auth-2xx-error-code-divergent`).
+            // 같은 본문을 400 으로 넘겨 400 의 `error` 와 한 길로 보낸다 — `map_token_err` 의 `ServerResponse`(같은 문구 ·
+            // `oauth_error_code`)이고, 그 본문의 토큰은 아무도 읽지 않는다. 200 아닌 상태는 oauth2 가 이미 오류 본문으로 읽는다.
+            // 다른 본문 검사보다 먼저다 — 꼬리 붙은 본문은 JSON 객체로 풀리지 않아 여기서 걸리지 않고 아래 규칙이 정한다.
+            if status == reqwest::StatusCode::OK && carries_oauth_error(&body) {
+                builder = builder.status(reqwest::StatusCode::BAD_REQUEST);
+            }
             // ⚠️ **본문은 JSON 값 하나다** — oauth2 5.0 은 값 하나만 읽고 `end()` 를 부르지 않아(`endpoint.rs` 의
             // `endpoint_response`·`check_response_status`) `{…}garbage` 를 받았다. admin provider·JWKS·admin 파사드는
             // `from_slice` 라 거부한다 — 그 답에 맞춘다. 상태와 무관하다(오류 본문도). 분류는 다른 형식 오류와 같다.
@@ -105,6 +114,12 @@ const UNPARSABLE_RESPONSE: &str = "token request failed: Failed to parse server 
 fn trails_json_value(body: &[u8]) -> bool {
     let mut de = serde_json::Deserializer::from_slice(body);
     <serde::de::IgnoredAny as serde::Deserialize>::deserialize(&mut de).is_ok() && de.end().is_err()
+}
+
+/// 본문이 [`oauth_error_member`] 를 가진 JSON 객체인가 — 값 하나만 받는 해석(`from_slice`)이라 꼬리 붙은 본문은 `false` 다.
+fn carries_oauth_error(body: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(body)
+        .is_ok_and(|value| oauth_error_member(&value).is_some())
 }
 
 fn now_secs() -> u64 {
@@ -523,6 +538,7 @@ fn map_token_err(
 ) -> KeycloakError {
     use openidconnect::RequestTokenError as RTE;
     match e {
+        // 200 이 `error` 를 실어 온 본문도 여기로 온다(`CappedHttp` 가 400 으로 넘긴다).
         RTE::ServerResponse(resp) => KeycloakError::Auth {
             message: "token endpoint rejected".into(),
             // RFC 6749 §5.2 의 `error` — 코드다. description·uri 는 서버의 자유 서술이라 싣지 않는다.
