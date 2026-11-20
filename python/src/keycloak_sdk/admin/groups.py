@@ -3,11 +3,11 @@ exceptions to SDK exceptions with `_translate.call`."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from keycloak import KeycloakAdmin
 
-from ._translate import call, encodable, write_call
+from ._translate import call, create_call, encodable, write_call
 
 
 class GroupsResource:
@@ -17,12 +17,12 @@ class GroupsResource:
         self._admin = admin
 
     def create(self, rep: dict[str, Any]) -> str:
-        # python-keycloak types create_group() -> str | None (None only when
-        # skip_exists=True and the group already exists; we call with the
-        # default skip_exists=False, which raises instead — so this always
-        # yields the new group's id in practice).
+        """Creates a group and returns its id — the one the answer's `Location` names, resolved
+        against the request URL (the last path segment, in the groups collection)."""
+        # python-keycloak's create_group() returns None for an answer without a Location — the
+        # facade reads the id from the answer itself (`create_call`), so that is the no-id error.
         encodable(rep)
-        return cast(str, write_call(lambda: self._admin.create_group(rep)))
+        return create_call(lambda: self._admin.create_group(rep))
 
     def get(self, group_id: str) -> dict[str, Any] | None:
         """Looks up a group by `group_id`. If it does not exist, `KeycloakNotFoundError`

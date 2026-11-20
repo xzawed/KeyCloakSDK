@@ -287,8 +287,70 @@ final class AdminBearerGrammarTest extends TestCase
             'NUMBER-REFRESH' => '{"access_token":"' . $jwt . '","token_type":"Bearer","refresh_token":12345}',
             'ABC-ACCESS' => '{"access_token":"a.b.c","token_type":"Bearer"}',
             'NULL-EXP-ACCESS' => '{"access_token":"' . $nullExp . '","token_type":"Bearer"}',
+            // B2 · zero — an OAuth `error` beside a token fschmtt reads (the B2 token is the one the nine lanes are measured with).
+            'ERROR-BESIDE-TOKEN' => '{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}',
+            'ZERO-BESIDE-TOKEN' => '{"error":"0","access_token":"' . $jwt . '","token_type":"Bearer","expires_in":300}',
             default => $body,
         };
+    }
+
+    /**
+     * admin 의 토큰 부여가 **성공 상태(200)** 로 OAuth `error` 를 실어 왔다 — 오류 상태의 같은 본문처럼 실패한다: 같은 형 · 같은 메시지
+     * (`admin token request failed: HTTP <상태> (<코드>)`) · 같은 코드 유도(보낸 비밀과 겹치면 싣지 않는다). 옆의 토큰은 저장되지 않고
+     * 그 토큰을 실은 admin 요청은 나가지 않는다(등록부 `auth-2xx-error-code-divergent` — 수정 전: B1 은 코드 없이 `no access_token`,
+     * B2 는 그 토큰으로 admin 요청이 나갔다). `zero` 는 `"0"` — 비어 있지 않은 문자열이다(PHP 의 `empty()` 는 비었다고 본다).
+     *
+     * @return array<string, array{string, string, ?string}> [본문, 메시지, oauthError]
+     */
+    public static function successStatusOAuthErrorGrants(): array
+    {
+        $head = 'admin token request failed: HTTP 200';
+
+        return [
+            'B1' => ['{"error":"invalid_grant","error_description":"d"}', "$head (invalid_grant)", 'invalid_grant'],
+            'B2' => ['ERROR-BESIDE-TOKEN', "$head (invalid_grant)", 'invalid_grant'],
+            'zero' => ['ZERO-BESIDE-TOKEN', $head, null],
+        ];
+    }
+
+    #[DataProvider('successStatusOAuthErrorGrants')]
+    public function testSuccessStatusOAuthErrorFailsTheAdminGrantAndSendsNoAdminRequest(string $body, string $message, ?string $code): void
+    {
+        self::serveRaw(200, 'application/json', self::grantBody($body));
+        $admin = KeycloakClient::create(self::config())->admin();
+        $first = self::thrown(static fn (): int => count($admin->users()->search()));
+        // 같은 클라이언트의 두 번째 호출 — 실패한 부여에서 아무것도 저장되지 않아 IdP 에 다시 묻고 같은 이유로 실패한다.
+        $second = self::thrown(static fn (): int => count($admin->users()->search()));
+
+        foreach (['first' => $first, 'second' => $second] as $call => $e) {
+            self::assertInstanceOf(KeycloakAuthError::class, $e, "$call: " . self::describe($e));   // final — 정확한 클래스다
+            self::assertSame($message, $e->getMessage(), $call);
+            self::assertSame($code, $e->oauthError, $call);
+        }
+        self::assertSame(2, self::tokenRequests(), '호출마다 부여가 한 번씩 나갔다 — 실패한 부여는 저장되지 않는다');
+        self::assertSame([], self::adminRequests(), 'admin 요청은 나가지 않는다 — `error` 옆의 토큰을 쓰지 않는다');
+    }
+
+    /**
+     * 비어 있지 않은 문자열 `error` 만 센다 — 빈 문자열 · null · 숫자 · false 는 옆의 토큰과 함께 예전처럼 받아들인다(위 칸의 대조군).
+     *
+     * @return array<string, array{string}> `error` 자리의 JSON 리터럴
+     */
+    public static function successStatusOAuthErrorIgnored(): array
+    {
+        return ['empty string' => ['""'], 'null' => ['null'], 'number' => ['0'], 'false' => ['false']];
+    }
+
+    #[DataProvider('successStatusOAuthErrorIgnored')]
+    public function testSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString(string $literal): void
+    {
+        self::serveRaw(200, 'application/json', '{"error":' . $literal . ',"access_token":"' . self::jwt() . '","token_type":"Bearer","expires_in":300}');
+        $admin = KeycloakClient::create(self::config())->admin();
+        $e = self::thrown(static fn (): int => count($admin->users()->search()));
+
+        self::assertNull($e, self::describe($e));
+        self::assertSame(1, self::tokenRequests(), '부여는 한 번 — 받아들여 저장했다');
+        self::assertNotSame([], self::adminRequests(), 'admin 요청이 나갔다');
     }
 
     #[DataProvider('grantResponses')]

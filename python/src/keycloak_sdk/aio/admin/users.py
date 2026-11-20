@@ -9,7 +9,7 @@ from typing import Any
 from keycloak import KeycloakAdmin
 
 from ...admin._translate import encodable
-from ._translate import acall, awrite_call
+from ._translate import acall, acreate_call, awrite_call
 
 
 class AsyncUsersResource:
@@ -20,8 +20,10 @@ class AsyncUsersResource:
         self._admin = admin
 
     async def create(self, rep: dict[str, Any]) -> str:
+        """Creates a user and returns its id — the one the answer's `Location` names, resolved
+        against the request URL (the last path segment, in the users collection)."""
         encodable(rep)
-        return await awrite_call(self._admin.a_create_user(rep))
+        return await acreate_call(self._admin.a_create_user(rep))
 
     async def get(self, user_id: str) -> dict[str, Any] | None:
         """Looks up a user by `user_id`. If it does not exist, `KeycloakNotFoundError`

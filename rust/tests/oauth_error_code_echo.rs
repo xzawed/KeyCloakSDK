@@ -261,6 +261,26 @@ async fn a_lowercased_echo_of_the_client_secret_is_never_carried() {
     }
 }
 
+/// The same lowercased echo under a success status (registry `auth-2xx-error-code-divergent`): the body carries an `error`, so
+/// every surface fails as it does for a 400 — and the overlap rule still withholds the code.
+#[tokio::test]
+async fn success_status_oauth_error_withholds_a_lowercased_echo_of_the_client_secret() {
+    for surface in SURFACES {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"error":"echoedsecret","error_description":"d"}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+        let e = fail(surface, &config(&server.uri(), Some("EchoedSecret"))).await;
+        for value in ["echoedsecret", "EchoedSecret"] {
+            assert_withheld(&format!("{surface} · 200 · lowercased"), &e, value);
+        }
+    }
+}
+
 #[tokio::test]
 async fn an_echoed_grant_value_is_never_carried() {
     for surface in SURFACES {

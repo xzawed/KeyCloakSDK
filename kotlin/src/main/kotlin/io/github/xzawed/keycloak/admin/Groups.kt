@@ -1,8 +1,9 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.createdId
 import io.github.xzawed.keycloak.requireEncodableBody
-import org.keycloak.admin.client.CreatedResponseUtil
 import org.keycloak.representations.idm.GroupRepresentation
+import java.net.URI
 
 // Groups.kt — GroupsResource: 공식 admin-client의 org.keycloak.admin.client.resource.GroupsResource를
 // 감싸며 모든 호출을 adminCall(AdminClient.kt)로 경계 변환한다(Java GroupsResource 동형).
@@ -13,14 +14,23 @@ import org.keycloak.representations.idm.GroupRepresentation
 // (UsersResource.get()과 동일한 정책).
 public class GroupsResource internal constructor(
     private val delegate: org.keycloak.admin.client.resource.GroupsResource,
+    // create 를 보내는 URL — groups 컬렉션(AdminClient.groups()). null 이면 아래 1.0.9 생성자로 만든 것이다(createdId.kt).
+    private val collection: URI?,
 ) {
-    /** Creates a group, then extracts the new group's id from the response's Location header and returns it. */
+    // 1.0.9 의 생성자 그대로 — 바이트코드에서 public 인 게시된 API 다(Clients.kt 의 같은 자리). create 는 이름 `groups` 로 판정한다.
+    internal constructor(delegate: org.keycloak.admin.client.resource.GroupsResource) : this(delegate, null)
+
+    /**
+     * Creates a group and returns the new group's id — the one the response's Location header names, resolved against the
+     * request URL (the last path segment, in the groups collection). Throws [io.github.xzawed.keycloak.KeycloakAdminException]
+     * (500) when it names none.
+     */
     public suspend fun create(representation: GroupRepresentation): String {
         requireEncodableBody(representation)
         return adminCall {
             val response = delegate.add(representation)
             try {
-                CreatedResponseUtil.getCreatedId(response)
+                createdId(response, collection, "groups")
             } finally {
                 response.close()
             }

@@ -27,7 +27,7 @@ from ._internal.jwks_cache import JwksKeyCache
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwks_keys import import_usable_keys
 from ._internal.jwt import JwtValidator, TokenKind, check_token_size, refuse_hs_algorithm
-from ._internal.lower import auth_failure, is_lower_failure, summarize
+from ._internal.lower import auth_failure, error_in_success, is_lower_failure, summarize
 from ._internal.redirect_uri import checked_redirect_uri
 from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
@@ -138,16 +138,27 @@ class AuthClient:
         ⚠️ **상류 메시지도 원본 예외도 옮기지 않는다** — python-keycloak 은 거기에 응답 본문을
         싣는다(토큰·되돌린 `client_secret`). 규칙과 실측은 `_internal/lower.py`. 원본은 `except`
         **밖에서** 다시 던져 `__context__` 로도 닿지 않게 한다.
+
+        python-keycloak 이 성공으로 받은 응답(2xx)도 OAuth `error` 를 실었으면 여기서 같은 판정으로
+        실패한다 — 그 응답은 레인의 어떤 검사(토큰 · `active`)에도 닿지 않는다(`error_in_success`).
         """
         answered = Answered()  # 그 호출이 받은 마지막 응답의 상태(`token_cap.py`)
+        sent_secrets = (self._config.client_secret, *sent)
+        error: KeycloakAuthError | KeycloakTransportError
+        cause: BaseException | None = None
         try:
             with answering(answered):
-                return fn()
+                answer = fn()
         except Exception as exc:
             if not is_lower_failure(exc):
                 raise
-            error = auth_failure(exc, sent=(self._config.client_secret, *sent), answered=answered)
+            error = auth_failure(exc, sent=sent_secrets, answered=answered)
             cause = summarize(exc)
+        else:
+            named = error_in_success(answer, answered, sent=sent_secrets)
+            if named is None:
+                return answer
+            error = named
         raise error from cause
 
     @scrub_frames

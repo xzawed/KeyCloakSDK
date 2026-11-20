@@ -1061,3 +1061,196 @@ func TestIntrospectAcceptsAny2xx(t *testing.T) {
 		})
 	}
 }
+
+// The success-status OAuth error (registry auth-2xx-error-code-divergent). A token or introspection response whose status
+// the lane takes as success, and whose body is a JSON object carrying a non-empty string `error`, fails as that lane's
+// OAuth error — the code through oauthErrorCode — and nothing else in the body is used: no token is returned or cached, no
+// admin request goes out with it, and introspection does not report active. Measured on main 350836b9: the three grants
+// and a provider over them already failed with the code (x/oauth2 refuses a 2xx that carries `error`); Introspect said "no
+// boolean active" without a code for B1 and read B2 as active, and the admin login said "returned no access token"
+// without a code for B1 and sent its admin request with B2's token.
+const (
+	successStatusToken  = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl" // B2's access token
+	successStatusFresh  = "fresh-token-value"                                         // the usable answer's
+	successStatusUsable = `{"access_token":"` + successStatusFresh + `","token_type":"Bearer","expires_in":300}`
+)
+
+// successStatusBodies are the bodies at status 200: B1 carries only the error, B2 the error and a token (introspection:
+// active true).
+var successStatusBodies = []struct{ name, token, introspect string }{
+	{"B1", `{"error":"invalid_grant","error_description":"d"}`, `{"error":"invalid_token"}`},
+	{"B2", `{"error":"invalid_grant","access_token":"` + successStatusToken + `","token_type":"Bearer","expires_in":300}`,
+		`{"error":"invalid_token","active":true}`},
+}
+
+// successStatusIdP answers the token and introspection endpoints with 200 and the body last set for each, serves
+// /admin/realms/r/users/{id}, and counts token and admin requests (keeping the last admin request's Authorization).
+type successStatusIdP struct {
+	srv                  *httptest.Server
+	token, introspect    atomic.Value
+	bearer               atomic.Value
+	tokenHits, adminHits atomic.Int32
+}
+
+func newSuccessStatusIdP(t *testing.T) *successStatusIdP {
+	t.Helper()
+	p := &successStatusIdP{}
+	p.token.Store(successStatusUsable)
+	p.introspect.Store(`{"active":true}`)
+	p.bearer.Store("")
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token/introspect"):
+			_, _ = w.Write([]byte(p.introspect.Load().(string)))
+		case strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token"):
+			p.tokenHits.Add(1)
+			_, _ = w.Write([]byte(p.token.Load().(string)))
+		case strings.HasPrefix(r.URL.Path, "/admin/realms/r/users/"):
+			p.adminHits.Add(1)
+			p.bearer.Store(r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"id":"u1","username":"alice"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+func (p *successStatusIdP) client(t *testing.T, secret string) *Client {
+	t.Helper()
+	c, err := New(Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c", ClientSecret: secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// successStatusRefused asserts that err is *AuthError carrying code.
+func successStatusRefused(t *testing.T, label string, err error, code string) {
+	t.Helper()
+	var ae *AuthError
+	if !errors.As(err, &ae) {
+		t.Fatalf("%s: want *AuthError, got %T: %v", label, err, err)
+	}
+	if ae.OAuthError != code {
+		t.Errorf("%s: OAuthError = %q, want %q — %v", label, ae.OAuthError, code, err)
+	}
+}
+
+// handedOut is what a grant handed out: "" when it returned no TokenSet.
+func handedOut(ts *TokenSet, err error) (string, error) {
+	if ts != nil {
+		return "a TokenSet with access token " + ts.AccessToken, err
+	}
+	return "", err
+}
+
+// TestSuccessStatusOAuthErrorFailsTheAuthLanes — the three grants and Introspect: B1 and B2 at 200 fail with *AuthError
+// carrying the code and hand out nothing (B2's token is not returned, B2's active true is not reported).
+func TestSuccessStatusOAuthErrorFailsTheAuthLanes(t *testing.T) {
+	p := newSuccessStatusIdP(t)
+	c := p.client(t, "sekret")
+	lanes := []struct {
+		name, code string
+		run        func(context.Context, *AuthClient) (string, error)
+	}{
+		{"ClientCredentialsToken", "invalid_grant", func(ctx context.Context, a *AuthClient) (string, error) {
+			return handedOut(a.ClientCredentialsToken(ctx))
+		}},
+		{"Refresh", "invalid_grant", func(ctx context.Context, a *AuthClient) (string, error) {
+			return handedOut(a.Refresh(ctx, "rt-in"))
+		}},
+		{"ExchangeCode", "invalid_grant", func(ctx context.Context, a *AuthClient) (string, error) {
+			return handedOut(a.ExchangeCode(ctx, "code-in", "https://app/cb", "verifier-in", ""))
+		}},
+		{"Introspect", "invalid_token", func(ctx context.Context, a *AuthClient) (string, error) {
+			r, err := a.Introspect(ctx, "tok-in")
+			if r != nil {
+				return fmt.Sprintf("an introspection result with active=%v", r.Active), err
+			}
+			return "", err
+		}},
+	}
+	for _, b := range successStatusBodies {
+		for _, l := range lanes {
+			t.Run(b.name+"/"+l.name, func(t *testing.T) {
+				p.token.Store(b.token)
+				p.introspect.Store(b.introspect)
+				got, err := l.run(context.Background(), c.Auth)
+				if got != "" {
+					t.Errorf("handed out %s", got)
+				}
+				successStatusRefused(t, b.name+" "+l.name, err, l.code)
+			})
+		}
+	}
+}
+
+// TestSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString — an `error` member that is not a JSON string of at
+// least one character is ignored, as it was: Introspect still reads active, and the admin login still uses the token. (The
+// three grants' handling of such a member is x/oauth2's and unchanged — a number or an object fails its decode.)
+func TestSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString(t *testing.T) {
+	for _, v := range []string{`5`, `{}`, `[]`, `true`, `null`, `""`} {
+		t.Run(v, func(t *testing.T) {
+			ctx := context.Background()
+			p := newSuccessStatusIdP(t)
+			c := p.client(t, "sekret")
+			p.token.Store(`{"error":` + v + `,"access_token":"` + successStatusFresh + `","token_type":"Bearer","expires_in":300}`)
+			p.introspect.Store(`{"error":` + v + `,"active":true}`)
+			if r, err := c.Auth.Introspect(ctx, "tok-in"); err != nil || !r.Active {
+				t.Errorf("Introspect: %+v, %v — want active as before", r, err)
+			}
+			a, err := c.Admin(ctx)
+			if err != nil {
+				t.Fatalf("admin: %v — want the token used as before", err)
+			}
+			if _, err := a.Users.Get(ctx, "u1"); err != nil || p.bearer.Load() != "Bearer "+successStatusFresh {
+				t.Errorf("admin call: %v, bearer %q — want the token used as before", err, p.bearer.Load())
+			}
+		})
+	}
+}
+
+// TestSuccessStatusOAuthErrorWithholdsALowercasedSecretEcho — at 200 too, an `error` that is the client secret lowercased
+// is no code: the lane fails as it does for B1, without a code, and no rendering shows the echo. ClientCredentialsToken is
+// the nine languages' vector; Introspect, the provider and the admin login read their code through this fix's paths.
+func TestSuccessStatusOAuthErrorWithholdsALowercasedSecretEcho(t *testing.T) {
+	const secret = "EchoedSecret" // letters only: lowercased, it has the code shape
+	p := newSuccessStatusIdP(t)
+	p.token.Store(`{"error":"echoedsecret","error_description":"d"}`)
+	p.introspect.Store(`{"error":"echoedsecret"}`)
+	for _, l := range []struct {
+		name string
+		run  func(context.Context, *Client) error
+	}{
+		{"ClientCredentialsToken", func(ctx context.Context, c *Client) error {
+			_, err := c.Auth.ClientCredentialsToken(ctx)
+			return err
+		}},
+		{"Introspect", func(ctx context.Context, c *Client) error {
+			_, err := c.Auth.Introspect(ctx, "tok-in")
+			return err
+		}},
+		{"provider", func(ctx context.Context, c *Client) error {
+			_, err := NewClientCredentialsTokenProvider(c.Auth.ClientCredentialsToken, 30).Token(ctx)
+			return err
+		}},
+		{"admin", func(ctx context.Context, c *Client) error {
+			_, err := c.Admin(ctx)
+			return err
+		}},
+	} {
+		t.Run(l.name, func(t *testing.T) {
+			err := l.run(context.Background(), p.client(t, secret))
+			successStatusRefused(t, l.name, err, "")
+			for i, text := range renderings(err) {
+				if strings.Contains(strings.ToLower(text), "echoedsecret") {
+					t.Errorf("%s: rendering #%d shows the echoed secret: %s", l.name, i, text)
+				}
+			}
+		})
+	}
+}

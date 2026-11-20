@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=7062 -->
+<!-- doc-budget: max-bytes=7167 -->
+<!-- 7062 → 7167 (2026-11-20): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 「OAuth error code」 줄에 더한
+     문장(성공 상태의 토큰 · introspection 응답이 비어 있지 않은 문자열 `error` 를 실으면 400 처럼 실패하고 그 안의 것은 쓰지
+     않는다)은 아홉 언어 레인 시험이 잰다 — 이름이 `success.?status.?oauth.?error` 에 맞는 것, 200 의 B1 · B2 와 겹침 벡터, 수정 전
+     350836b9 에서 아홉 모두 RED(등록부 auth-2xx-error-code-divergent). **교환** — 이 변경으로 거짓 · 중복이 된 문장은 이 파일에 없어, 머리 문장(「Only what the nine
+     must move **together** lives here」)이 이미 말하는 「Move all nine at once」 둘(Token-response cap · Inbound token cap)을 덜었다. -->
 <!-- 6807 → 7062 (2026-11-11): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 새 「OAuth error code」 줄은
      여덟 레인의 echo 시험(`OAuthErrorCodeEcho*` · `*oauth_error_code_echo*` — 수정 전 main 에서 RED, 대조군 「코드는 실린다」
      는 초록)이 재고 node 는 코드를 싣지 않는다(실측). 아홉이 함께 움직이는 새 규칙이라 이 파일이 자리다(등록부
@@ -105,11 +110,11 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## Token-response cap
 
-⚠️ **Token-endpoint and introspection response bodies are capped at 1,048,576 bytes in all nine** — ≈16× the longest Bearer Keycloak 26.6 accepts by default (65,459 B; one more is HTTP 431), so it refuses no token a default server accepts. Move all nine at once; guard: axis 1e of `scripts/test/test-security-defaults.sh`.
+⚠️ **Token-endpoint and introspection response bodies are capped at 1,048,576 bytes in all nine** — ≈16× the longest Bearer Keycloak 26.6 accepts by default (65,459 B; one more is HTTP 431), so it refuses no token a default server accepts. Guard: axis 1e of `scripts/test/test-security-defaults.sh`.
 
 ## Inbound token cap
 
-⚠️ **Validators reject a token over 256,000 bytes in all nine, before any decode or JWKS load** — the libraries decode before the signature (up to ≈203 B per input byte, measured 2026-10-27); the value is Microsoft.IdentityModel's default. Move all nine at once; guard: axis 1f.
+⚠️ **Validators reject a token over 256,000 bytes in all nine, before any decode or JWKS load** — the libraries decode before the signature (up to ≈203 B per input byte, measured 2026-10-27); the value is Microsoft.IdentityModel's default. Guard: axis 1f.
 
 ## Admin bearer grammar
 
@@ -121,7 +126,7 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## OAuth error code
 
-⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*`.
+⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A success-status token or introspection response whose `error` is a non-empty string fails like a 400 carrying it; nothing in it is used.** Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error`.
 
 ## Token kind
 

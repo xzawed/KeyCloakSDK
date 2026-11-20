@@ -1,6 +1,9 @@
 package io.github.xzawed.keycloak
 
 import dasniko.testcontainers.keycloak.KeycloakContainer
+import io.github.xzawed.keycloak.admin.ClientsResource
+import io.github.xzawed.keycloak.admin.GroupsResource
+import io.github.xzawed.keycloak.admin.UsersResource
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -316,6 +319,60 @@ internal class FullFlowIT {
                 }
             }
         }
+
+    /**
+     * 1.0.9 의 파사드 생성자(delegate 하나)로 만든 users · clients · groups 의 create 가 실 Keycloak 의 201(절대 `Location`)에서 Keycloak
+     * 이 매긴 id 를 돌려준다(등록부 admin-create-relative-location — 보낸 URL 을 모르는 파사드는 그 컬렉션 이름으로 판정한다). 그
+     * 생성자는 Kotlin `internal` 이라 이 스위트(별도 모듈)에서는 컴파일되지 않는다(「Cannot access … it is internal」) — 바이트코드에서는
+     * public 이라 1.0.9 에 맞춰 컴파일된 소비자 · Java 소비자가 부르는 그대로 JVM 서명으로 부른다. 서명이 바뀌면 여기서
+     * NoSuchMethodException 이다.
+     */
+    @Test
+    fun `facades built with the 1_0_9 constructor return the id Keycloak assigned`(): Unit =
+        runBlocking {
+            val suffix = UUID.randomUUID().toString()
+            KeycloakClient.create(config()).use { kc ->
+                // 판정은 AdminClient 가 만든 파사드(2-인자)의 조회로 한다 — Keycloak 이 이름으로 찾아 준 id 와 같아야 한다.
+                val sdk = kc.admin
+                val realm = sdk.raw().realm("it-realm")
+
+                val users = compat<UsersResource>(org.keycloak.admin.client.resource.UsersResource::class.java, realm.users())
+                val username = "kotlin-it-compat-user-$suffix"
+                val userId = users.create(UserRepresentation().apply { this.username = username })
+                try {
+                    val listed = sdk.users().search(username, 0, 10).filter { it.username == username }
+                    assertEquals(listOf(userId), listed.map { it.id })
+                } finally {
+                    runCatching { users.delete(userId) }
+                }
+
+                val clients = compat<ClientsResource>(org.keycloak.admin.client.resource.ClientsResource::class.java, realm.clients())
+                val clientId = "kotlin-it-compat-client-$suffix"
+                val clientUuid = clients.create(ClientRepresentation().apply { this.clientId = clientId })
+                try {
+                    val listed = sdk.clients().findByClientId(clientId)
+                    assertEquals(listOf(clientUuid), listed.map { it.id })
+                } finally {
+                    runCatching { clients.delete(clientUuid) }
+                }
+
+                val groups = compat<GroupsResource>(org.keycloak.admin.client.resource.GroupsResource::class.java, realm.groups())
+                val groupName = "kotlin-it-compat-group-$suffix"
+                val groupId = groups.create(GroupRepresentation().apply { name = groupName })
+                try {
+                    val listed = sdk.groups().list(0, 100).filter { it.name == groupName }
+                    assertEquals(listOf(groupId), listed.map { it.id })
+                } finally {
+                    runCatching { groups.delete(groupId) }
+                }
+            }
+        }
+
+    /** [T] 의 1.0.9 생성자 `(delegate)` — 1.0.9 에 맞춰 컴파일된 소비자가 부르는 JVM 서명 그대로. */
+    private inline fun <reified T : Any> compat(
+        delegateType: Class<*>,
+        delegate: Any,
+    ): T = T::class.java.getConstructor(delegateType).newInstance(delegate)
 
     // admin 의 자기 토큰 그랜트가 틀린 client secret 으로 실패하면(실 Keycloak 은 401) 전송 오류도 admin 계열도 아니라 인증
     // 오류다(등록부 token-response-class-divergent D4). 전에는 KeycloakTransportException 이었다.

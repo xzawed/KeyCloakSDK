@@ -99,10 +99,19 @@ var dumpWalkExempt = map[string]string{
 		"필드는 원래 본문 하나뿐이고 본문 바이트를 쥐지 않는다(adminbody.go)",
 	"failedRead": "admin 오류 본문의 읽기 오류를 resty 에 건네는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 그 오류 하나뿐이다(전송층이 정화한 오류 · 토큰 상한의 SDK 오류 — adminbody.go)",
+	"loginBody": "admin 로그인 하나의 ctx 값으로만 산다(withLoginBody) — 파사드가 쥐지 않는다. 필드는 그 로그인의 마지막 응답이 " +
+		"OAuth `error` 를 실은 2xx 였을 때의 기록(loginErrorBody) 포인터 하나뿐이다(adminbody.go)",
+	"loginErrorBody": "loginBody 안에서만 산다 — 상태 코드 · 2xx 본문의 `error` 값 · gocloak 이 오류 상태의 본문으로 짓는 메시지" +
+		"(error · errorMessage · error_description)를 쥔다. IdP 가 쓴 글자라 비밀의 되울림일 수 있다 — loginRefused 가 " +
+		"oauthErrorCode 를 거쳐서만 읽고, 그것이 내준 조각 말고는 오류에 옮기지 않는다(cause.go · adminbody.go)",
 	"gunzipBody": "net/http 가 풀지 않은 gzip 응답 본문을 감싸 푸는 동안만 산다 — 파사드가 쥐지 않는다. " +
 		"필드는 원래 본문과 gzip 리더뿐이고 본문을 쌓지 않는다(tokencap.go)",
 	"jwksFlight": "JWKS 조회가 비행 중인 동안만 jwksState.flight 에 산다 — 뿌리를 만든 뒤에는 nil 이라 걷기가 못 닿는다. " +
 		"필드는 끝 신호 채널과 조회 오류(JWKS 응답 바이트를 인용하지 않는 SDK·정화된 전송 오류)뿐이다(jwt.go)",
+	"createdSlot": "파사드 create 하나의 ctx 값으로만 산다(created) — 파사드가 쥐지 않는다. " +
+		"필드는 그 create 의 2xx 를 적은 createdAnswer 하나뿐이다(admincreate.go)",
+	"createdAnswer": "createdSlot 안에서만 산다 — 파사드가 쥐지 않는다. 필드는 2xx 의 Location 값과 그 요청의 URL 뿐이고 " +
+		"토큰 · 비밀을 싣지 않는다(bearer 는 머리에 있다 — admincreate.go)",
 }
 
 // 가짜 IdP — 토큰·introspect·JWKS·실패 realm·admin 404 를 한 서버가 낸다.

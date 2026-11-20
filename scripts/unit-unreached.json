@@ -20,11 +20,6 @@
       "branches": 2,
       "why": "defensive: 응답을 인용하는 예외 형 가운데 단위 시험이 안 만드는 한 형 — 이름으로 거르는 방어선이다(grantFailure · AdminEngine.Settled 가 먼저 가린다 — 함수 주석, #1125)"
     },
-    "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Clients.kt:ClientsResource.create": {
-      "lines": 2,
-      "branches": 0,
-      "why": "integration: 생성이 성공한 뒤의 줄(Location 에서 id 읽기 · 응답 닫기) — 단위 시험은 실패 응답으로만 부른다. FullFlowIT 의 클라이언트 CRUD 가 돈다"
-    },
     "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Clients.kt:ClientsResource.findByClientId": {
       "lines": 1,
       "branches": 0,
@@ -44,11 +39,6 @@
       "lines": 1,
       "branches": 0,
       "why": "integration: 정상 반환(닫는 중괄호) — 단위 시험은 실패 응답으로만 불러 늘 던진다. FullFlowIT 가 끝까지 돈다"
-    },
-    "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Groups.kt:GroupsResource.create": {
-      "lines": 2,
-      "branches": 0,
-      "why": "integration: 생성이 성공한 뒤의 줄(Location 에서 id 읽기 · 응답 닫기) — 단위 시험은 실패 응답으로만 부른다. FullFlowIT 의 그룹 CRUD 가 돈다"
     },
     "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Groups.kt:GroupsResource.get": {
       "lines": 1,

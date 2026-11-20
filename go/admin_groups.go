@@ -9,14 +9,16 @@ import (
 // GroupsResource manages groups.
 type GroupsResource struct{ a *AdminClient }
 
-// Create creates a group and returns its new id.
+// Create creates a group and returns its new id — the one the answer's Location names, resolved against the request URL
+// (the last path segment, in the groups collection); "" when it names none.
 func (r *GroupsResource) Create(ctx context.Context, group gocloak.Group) (string, error) {
 	tok, err := r.a.writeToken(ctx, group)
 	if err != nil {
 		return "", err
 	}
-	return call(ctx, func(ctx context.Context) (string, error) {
-		return r.a.gc.CreateGroup(withoutBody(ctx), tok, r.a.realm, group)
+	return created(ctx, func(ctx context.Context) error {
+		_, err := r.a.gc.CreateGroup(ctx, tok, r.a.realm, group)
+		return err
 	})
 }
 

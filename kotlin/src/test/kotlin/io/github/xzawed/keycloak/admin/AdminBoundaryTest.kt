@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.KeycloakAdminException
 import io.github.xzawed.keycloak.KeycloakAuthException
+import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
 import io.mockk.every
 import io.mockk.mockk
@@ -11,6 +12,8 @@ import jakarta.ws.rs.client.ResponseProcessingException
 import jakarta.ws.rs.core.Response
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import org.keycloak.representations.idm.ClientRepresentation
+import org.keycloak.representations.idm.GroupRepresentation
 import org.keycloak.representations.idm.UserRepresentation
 import java.net.URI
 import kotlin.test.Test
@@ -203,10 +206,173 @@ internal class AdminBoundaryTest {
             val delegate = mockk<org.keycloak.admin.client.resource.UsersResource>()
             val response = Response.created(URI("http://localhost:8080/admin/realms/test/users/abc-123")).build()
             every { delegate.create(any()) } returns response
-            val users = UsersResource(delegate)
+            val users = UsersResource(delegate, URI("http://localhost:8080/admin/realms/test/users"))
 
             val id = users.create(UserRepresentation())
 
             assertEquals("abc-123", id)
         }
+
+    /**
+     * 아홉 SDK 가 같이 쓰는 `Location` 벡터(등록부 admin-create-relative-location) — id 는 201 의 `Location` 을 요청 URL 에 대해 푼
+     * (RFC 9110 §10.2.2) 경로의 마지막 조각이고, 그 앞 조각은 보낸 컬렉션이어야 한다. 상대 `Location` 도 읽고, 쿼리 · 조각은 id 가
+     * 아니며, 퍼센트 인코딩은 풀지 않는다. 없거나 빈 값, 다른 컬렉션 · id 없는 경로는 id 없음 오류다. users 는 열셋 전부, clients ·
+     * groups 는 L1 · L2 · L4 · L7 · L9. Response 는 실객체다(MockK 금지 — 위 머리 주석).
+     */
+    @Test
+    fun `create reads the id from the Location resolved against the request URL`(): Unit =
+        runTest {
+            val wrong = mutableListOf<String>()
+            var cells = 0
+            for (coll in listOf("users", "clients", "groups")) {
+                val path = "/admin/realms/r/$coll"
+                for ((vector, template, want) in LOCATION_VECTORS) {
+                    if (coll != "users" && vector.substringBefore(' ') !in listOf("L1", "L2", "L4", "L7", "L9")) continue
+                    cells++
+                    val location =
+                        template
+                            ?.replace("{base}", "https://kc.example.com")
+                            ?.replace("{path}", path)
+                            ?.replace("{coll}", coll)
+                            ?.replace("{other}", if (coll == "groups") "users" else "groups")
+                    val built = Response.status(201)
+                    val response = (if (location == null) built else built.header("Location", location)).build()
+                    val got =
+                        try {
+                            "ok " + createWith(coll, response)
+                        } catch (e: KeycloakAdminException) {
+                            "${e::class.simpleName}(${e.status}): ${e.keycloakError}"
+                        } catch (e: RuntimeException) {
+                            "${e::class.qualifiedName}: ${e.message}"
+                        }
+                    val expected = if (want == null) NO_ID else "ok $want"
+                    if (got != expected) wrong += "$coll $vector: $got — want $expected"
+                }
+            }
+            assertEquals(23, cells)
+            assertTrue(wrong.isEmpty(), "${wrong.size} cell(s) wrong:\n${wrong.joinToString("\n")}")
+        }
+
+    /**
+     * 파사드는 create 의 `Location` 을 그 컬렉션의 URL(`{serverUrl}/admin/realms/{realm}/{컬렉션}` — admin-client 의 프록시가 짓는
+     * 그대로)에 대해 푼다: 컬렉션 이름으로 시작하는 상대 값은 id 이고, 맨 `u-1` 은 realm 아래라 id 없음 오류다(Java 동형).
+     */
+    @Test
+    fun `facades resolve the create Location against their collection`(): Unit =
+        runTest {
+            val realm = mockk<org.keycloak.admin.client.resource.RealmResource>()
+            val users = mockk<org.keycloak.admin.client.resource.UsersResource>()
+            val keycloak = mockk<org.keycloak.admin.client.Keycloak>()
+            every { keycloak.realm("r") } returns realm
+            every { realm.users() } returns users
+            every { users.create(any()) } returnsMany
+                listOf(
+                    Response.status(201).header("Location", "users/u-1").build(),
+                    Response.status(201).header("Location", "u-1").build(),
+                )
+            val admin = AdminClient(KeycloakConfig("https://kc.example.com/auth", "r", "app"), keycloak)
+
+            assertEquals("u-1", admin.users().create(UserRepresentation()))
+            assertFailsWith<KeycloakAdminException.Other> { admin.users().create(UserRepresentation()) }
+        }
+
+    /** 풀 수 없는 값(날 공백 — [URI] 가 거부한다)과 경로가 없는 불투명 URI(`mailto:`)도 id 없음 오류다. */
+    @Test
+    fun `create reads no id from a Location that does not parse or has no path`(): Unit =
+        runTest {
+            for (location in listOf("https://kc.example.com/admin/realms/r/users/abc 123", "mailto:abc-123")) {
+                val response = Response.status(201).header("Location", location).build()
+                val e = assertFailsWith<KeycloakAdminException.Other>(location) { createWith("users", response) }
+                assertEquals(500, e.status)
+                assertEquals(NO_ID.substringAfter(": "), e.keycloakError)
+            }
+        }
+
+    /**
+     * 1.0.9 의 생성자(delegate 하나 — 바이트코드에서 public 이라 Java 소비자가 부를 수 있다)로 만든 파사드는 보낸 URL 을 모른다: 기준
+     * 없이 서는 `Location` — 절대 URI · `/` 로 시작하는 참조 — 만 그 컬렉션 이름으로 읽고, 기준이 있어야 풀리는 상대 경로는 id 없음
+     * 오류다(fail closed).
+     */
+    @Test
+    fun `a facade built with the 1-arg constructor reads only a Location that needs no base`(): Unit =
+        runTest {
+            val wrong = mutableListOf<String>()
+            for (coll in listOf("users", "clients", "groups")) {
+                val path = "/admin/realms/r/$coll"
+                val other = if (coll == "groups") "users" else "groups"
+                val cases =
+                    listOf(
+                        "https://kc.example.com$path/abc-123" to "ok abc-123",
+                        "$path/abc-123?x=1#f" to "ok abc-123",
+                        "//gw.example/kc$path/abc-123/" to "ok abc-123",
+                        "$coll/abc-123" to NO_ID,
+                        "abc-123" to NO_ID,
+                        "https://kc.example.com/admin/realms/r/$other/abc-123" to NO_ID,
+                        "mailto:abc-123" to NO_ID,
+                    )
+                for ((location, expected) in cases) {
+                    val response = Response.status(201).header("Location", location).build()
+                    val got =
+                        try {
+                            "ok " + createWith(coll, response, oneArg = true)
+                        } catch (e: KeycloakAdminException) {
+                            "${e::class.simpleName}(${e.status}): ${e.keycloakError}"
+                        }
+                    if (got != expected) wrong += "$coll $location: $got — want $expected"
+                }
+            }
+            assertTrue(wrong.isEmpty(), "${wrong.size} cell(s) wrong:\n${wrong.joinToString("\n")}")
+        }
+
+    /**
+     * [coll] 의 create 가 [response] 를 받고 돌려준 id — 보낸 URL 은 `https://kc.example.com/admin/realms/r/[coll]`, [oneArg] 면 1.0.9
+     * 의 생성자(delegate 하나)로 만들어 그 URL 을 모른다.
+     */
+    private suspend fun createWith(
+        coll: String,
+        response: Response,
+        oneArg: Boolean = false,
+    ): String {
+        val sentTo = URI("https://kc.example.com/admin/realms/r/$coll")
+        return when (coll) {
+            "users" -> {
+                val delegate = mockk<org.keycloak.admin.client.resource.UsersResource>()
+                every { delegate.create(any()) } returns response
+                (if (oneArg) UsersResource(delegate) else UsersResource(delegate, sentTo)).create(UserRepresentation())
+            }
+            "clients" -> {
+                val delegate = mockk<org.keycloak.admin.client.resource.ClientsResource>()
+                every { delegate.create(any()) } returns response
+                (if (oneArg) ClientsResource(delegate) else ClientsResource(delegate, sentTo)).create(ClientRepresentation())
+            }
+            else -> {
+                val delegate = mockk<org.keycloak.admin.client.resource.GroupsResource>()
+                every { delegate.add(any()) } returns response
+                (if (oneArg) GroupsResource(delegate) else GroupsResource(delegate, sentTo)).create(GroupRepresentation())
+            }
+        }
+    }
+
+    private companion object {
+        /** id 없음 — 응답은 201 이지만 쓸 수 있는 id 가 없다. */
+        const val NO_ID = "Other(500): resource created but no id returned in Location header"
+
+        /** (벡터, `Location`(`null` 이면 머리 없음), 돌려줄 id(`null` 이면 [NO_ID])). */
+        val LOCATION_VECTORS: List<Triple<String, String?, String?>> =
+            listOf(
+                Triple("L1 absolute", "{base}{path}/abc-123", "abc-123"),
+                Triple("L2 path-absolute", "{path}/abc-123", "abc-123"),
+                Triple("L3 relative path", "{coll}/abc-123", "abc-123"),
+                Triple("L4 relative", "abc-123", null),
+                Triple("L5 another host", "https://internal.example:8443{path}/abc-123", "abc-123"),
+                Triple("L6 gateway prefix", "https://gw.example/kc{path}/abc-123", "abc-123"),
+                Triple("L7 query and fragment", "{base}{path}/abc-123?x=1#f", "abc-123"),
+                Triple("L8 trailing slash", "{base}{path}/abc-123/", "abc-123"),
+                Triple("L9 another collection", "../{other}/abc-123", null),
+                Triple("L10 root", "/", null),
+                Triple("L11 empty value", "", null),
+                Triple("L12 absent", null, null),
+                Triple("L13 percent-encoded", "{base}{path}/abc%20123", "abc%20123"),
+            )
+    }
 }

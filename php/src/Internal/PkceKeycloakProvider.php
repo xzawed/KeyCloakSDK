@@ -58,9 +58,12 @@ final class PkceKeycloakProvider extends Keycloak
      * it an "Array to string conversion" warning (Grok leg). The message was never used — `AuthClient` builds its own from the
      * vetted code (`OAuthErrorCode`, which carries only a string) and `SanitizedCause` withholds this one.
      *
-     * Which bodies are errors stays upstream's (a non-empty `error` — `"0"`, `0` and `false` are none), plus any array: upstream
+     * Which bodies are errors stays upstream's (a non-empty `error` — `0` and `false` are none), plus any array: upstream
      * skipped an empty one, so a 400 `{"error":[]}` went on to fail as "no usable access_token", a reason that was not the one
-     * (.NET also refuses any `error` member that is present). And the status decides first: a 3xx · 4xx · 5xx that carried an
+     * (.NET also refuses any `error` member that is present). Plus the string `"0"` in a JSON body — upstream's `empty()` let
+     * it through, and the token beside it went out at a success status; in the nine a JSON object with any non-empty string
+     * `error` is an error response (`OAuthErrorCode::isErrorResponse`). A form-encoded body is no JSON object, so it keeps
+     * upstream's reading. And the status decides first: a 3xx · 4xx · 5xx that carried an
      * `access_token` and no `error` went on to `createAccessToken` and the three grants succeeded with it (review leg, on
      * `origin/main` too — the provider and the admin grant already refused it).
      *
@@ -69,7 +72,10 @@ final class PkceKeycloakProvider extends Keycloak
     protected function checkResponse(ResponseInterface $response, $data): void
     {
         $error = \is_array($data) ? $data['error'] ?? null : null;
-        if ($response->getStatusCode() >= 300 || \is_array($error) || (bool) $error) {
+        // `$data` is a decoded JSON body, a form-encoded one (league `parse_str`) or upstream's `['jwt' => …]` — of those, only the
+        // form can carry an `error` without being a JSON object.
+        $json = !str_contains($this->getContentType($response), 'urlencoded');
+        if ($response->getStatusCode() >= 300 || \is_array($error) || (bool) $error || ($json && OAuthErrorCode::isErrorResponse($data))) {
             throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
         }
         parent::checkResponse($response, $data);

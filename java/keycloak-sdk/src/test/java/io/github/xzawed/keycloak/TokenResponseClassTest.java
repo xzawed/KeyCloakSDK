@@ -564,4 +564,151 @@ class TokenResponseClassTest {
     }
     assertNone(wrong);
   }
+
+  // ───────────── 성공 상태의 OAuth error(등록부 auth-2xx-error-code-divergent) ─────────────
+
+  /** B2 의 access_token — 쓸 수 있어 보이는 JWT 모양이다(성공 상태에 error 와 함께 실린다). */
+  private static final String SUCCESS_STATUS_AT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl";
+  /** 성공 상태의 토큰 본문 — B1 은 error 와 설명뿐, B2 는 error 와 쓸 수 있어 보이는 토큰이다. */
+  private static final String B1 = "{\"error\":\"invalid_grant\",\"error_description\":\"d\"}";
+  private static final String B2 = "{\"error\":\"invalid_grant\",\"access_token\":\"" + SUCCESS_STATUS_AT
+      + "\",\"token_type\":\"Bearer\",\"expires_in\":300}";
+  /** 성공 상태의 introspection 본문 — B1 은 error 뿐, B2 는 error 와 active:true 다. */
+  private static final String IN_B1 = "{\"error\":\"invalid_token\"}";
+  private static final String IN_B2 = "{\"error\":\"invalid_token\",\"active\":true}";
+
+  private static Outcome outcomeOf(java.util.function.Supplier<Object> call) {
+    try {
+      return new Outcome(call.get(), null);
+    } catch (RuntimeException e) {
+      return new Outcome(null, e);
+    }
+  }
+
+  /** 실패가 OAuth 코드 {@code code}(null 이면 싣지 않는다)를 싣고, 어느 표현도 B2 의 access_token 을 찍지 않는다. */
+  private static void expectCode(String label, Outcome o, String code, List<String> wrong) {
+    if (!(o.thrown() instanceof KeycloakAuthException e)) return; // expect 가 이미 적었다
+    if (!java.util.Objects.equals(code, e.getError())) wrong.add(label + ": OAuth 코드 " + e.getError() + " ≠ " + code);
+    if (trace(e).contains(SUCCESS_STATUS_AT)) wrong.add(label + ": 응답의 access_token 이 찍혔다");
+  }
+
+  /**
+   * 성공 상태(200)의 본문이 비어 있지 않은 문자열 {@code error} 를 실으면 그것은 그 레인의 OAuth 오류 응답이다 — 같은 본문을 실은 400 과
+   * 같은 타입 · 같은 메시지 꼴(설명 「d」, 없으면 상태) · OAuth 코드(아홉 언어의 규칙). 400 행이 그 기준이다(바뀌지 않는다) — admin 의
+   * 자기 그랜트는 400 에서 코드를 싣지 않고({@code OAuthErrorCodeEchoTest}) 그대로 둔다(상태의 수용 범위 밖), 200 은 싣는다. 수정 전에는
+   * B1 이 코드 없는 「… request error」 · 「(unusable token response)」 였고 B2 는 성공이었다 — 토큰을 돌려주고, admin 요청을 보내고,
+   * introspection 을 활성으로 읽었다.
+   */
+  @Test void successStatusOAuthError_failsAsTheLanesErrorResponse() {
+    List<String> wrong = new ArrayList<>();
+    for (int status : new int[] {200, 400}) {
+      for (Object[] row : new Object[][] {
+          {"S1", CC, "Client credentials failed: "},
+          {"S2", PROV, "Client credentials failed: "},
+          {"refresh", RF, "Token refresh failed: "},
+          {"code exchange", EX, "Authorization code exchange failed: "}}) {
+        tokens(json(status, B1));
+        Outcome b1 = call((Call) row[1]);
+        expect(row[0] + " " + status + " B1", b1, KeycloakAuthException.class, row[2] + "d", wrong);
+        expectCode(row[0] + " " + status + " B1", b1, "invalid_grant", wrong);
+        tokens(json(status, B2));
+        Outcome b2 = call((Call) row[1]);
+        expect(row[0] + " " + status + " B2", b2, KeycloakAuthException.class, row[2] + "HTTP " + status, wrong);
+        expectCode(row[0] + " " + status + " B2", b2, "invalid_grant", wrong);
+      }
+      for (String body : new String[] {IN_B1, IN_B2}) {
+        introspectReply = json(status, body);
+        Outcome in = call(IN);
+        String label = "IN " + status + " " + body;
+        expect(label, in, KeycloakAuthException.class, "Introspection failed: HTTP " + status, wrong);
+        expectCode(label, in, "invalid_token", wrong);
+      }
+      for (String body : new String[] {B1, B2}) {
+        tokens(json(status, body));
+        Outcome admin = call(ADMIN);
+        String label = "S5 " + status + (body.equals(B1) ? " B1" : " B2");
+        expect(label, admin, KeycloakAuthException.class, "admin token request failed: HTTP " + status, wrong);
+        expectCode(label, admin, status == 200 ? "invalid_grant" : null, wrong);
+        if (adminHits() != 0) wrong.add(label + ": admin 요청이 나갔다 — " + adminHits());
+      }
+    }
+    assertNone(wrong);
+  }
+
+  /**
+   * 그 본문에서는 아무것도 쓰지 않는다 — 거부한 토큰은 캐시되지 않는다: 같은 공급자 · 같은 admin 파사드의 다음 호출이 토큰 엔드포인트에
+   * 다시 가서 좋은 토큰을 받는다(캐시됐다면 B2 의 토큰이 300 초 동안 쓰였다).
+   */
+  @Test void successStatusOAuthError_isNeitherCachedNorSent() {
+    List<String> wrong = new ArrayList<>();
+    tokens(json(200, B2), json(200, token("AT-good")));
+    try (KeycloakClient kc = KeycloakClient.create(config())) {
+      ClientCredentialsTokenProvider provider =
+          new ClientCredentialsTokenProvider(kc.auth(), Clock.systemUTC(), Duration.ofSeconds(30));
+      Outcome first = outcomeOf(provider::getAccessToken);
+      Outcome second = outcomeOf(provider::getAccessToken);
+      if (!(first.thrown() instanceof KeycloakAuthException) || !"AT-good".equals(second.value()) || grants().size() != 2) {
+        wrong.add("S2 B2 뒤: " + first + " · " + second + " · grants " + grants());
+      }
+    }
+    tokens(json(200, B2), json(200, token("AT-good")));
+    try (KeycloakClient kc = KeycloakClient.create(config())) {
+      Outcome first = outcomeOf(() -> ADMIN.run(kc));
+      int hitsAfterFirst = adminHits();
+      Outcome second = outcomeOf(() -> ADMIN.run(kc));
+      if (!(first.thrown() instanceof KeycloakAuthException) || hitsAfterFirst != 0 || !"alice".equals(second.value())
+          || adminHits() != 1 || grants().size() != 2) {
+        wrong.add("S5 B2 뒤: " + first + " · " + second + " · grants " + grants() + " · admin " + adminHits());
+      }
+    }
+    assertNone(wrong);
+  }
+
+  /**
+   * 보낸 시크릿(문자뿐 — 코드 모양이 된다)을 소문자로 되울린 error — 실패하되 코드도 그 값도 싣지 않는다(겹침은 ASCII 대소문자를 무시한다,
+   * {@code OAuthErrorCodeEchoTest} 의 규칙이 성공 상태에도 그대로다).
+   */
+  @Test void successStatusOAuthError_aSecretEchoIsNotCarried() {
+    tokens(json(200, "{\"error\":\"echoedsecret\",\"error_description\":\"d\"}"));
+    KeycloakConfig echoing = KeycloakConfig.builder().serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+        .realm(REALM).clientId("app").clientSecret("EchoedSecret".toCharArray())
+        .connectTimeout(Duration.ofSeconds(5)).readTimeout(Duration.ofSeconds(5)).build();
+    Outcome o = call(echoing, CC);
+    List<String> wrong = new ArrayList<>();
+    expect("S1 200 되울린 시크릿", o, KeycloakAuthException.class, "Client credentials failed: d", wrong);
+    expectCode("S1 200 되울린 시크릿", o, null, wrong);
+    if (o.thrown() != null && trace(o.thrown()).toLowerCase(java.util.Locale.ROOT).contains("echoedsecret")) {
+      wrong.add("S1 200 되울린 시크릿: 오류가 그 값을 찍었다");
+    }
+    assertNone(wrong);
+  }
+
+  /**
+   * 대조 — error 가 비어 있지 않은 JSON 문자열이 아니면(숫자 · 객체 · 배열 · 불리언 · null · "") 지금처럼 본문의 나머지가 판정한다. auth 레인은
+   * 토큰을 쓰고 활성으로 읽는다. admin 의 결합(keycloak-admin-client 의 AccessTokenResponse 는 문자열 error 칸을 가진다 — TokenManager 는
+   * 그것을 읽지 않는다)은 스칼라를 받고 객체 · 배열에서 실패한다 — 그대로다. JSON 객체가 아닌 본문도 판정하지 않는다.
+   */
+  @Test void successStatusOAuthError_onlyANonEmptyStringCounts() {
+    List<String> wrong = new ArrayList<>();
+    for (String value : new String[] {"12345", "{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]", "true", "null", "\"\""}) {
+      tokens(json(200, "{\"error\":" + value + ",\"access_token\":\"AT-ok\",\"token_type\":\"Bearer\",\"expires_in\":300}"));
+      Outcome cc = call(CC);
+      if (!"AT-ok".equals(cc.value())) wrong.add("S1 error " + value + ": 토큰을 써야 한다 — " + cc);
+      introspectReply = json(200, "{\"error\":" + value + ",\"active\":true,\"username\":\"svc\"}");
+      Outcome in = call(IN);
+      if (!"svc".equals(in.value())) wrong.add("IN error " + value + ": 활성으로 읽어야 한다 — " + in);
+      tokens(json(200, "{\"error\":" + value + ",\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300}"));
+      Outcome admin = call(ADMIN);
+      if (value.startsWith("{") || value.startsWith("[")) {
+        expect("S5 error " + value, admin, KeycloakAuthException.class, adminAuth(200), wrong);
+      } else if (!"alice".equals(admin.value()) || adminHits() != 1) {
+        wrong.add("S5 error " + value + ": 토큰을 써야 한다 — " + admin + " · admin " + adminHits());
+      }
+    }
+    tokens(json(200, "[" + B1 + "]"));
+    expect("S1 200 배열 본문", call(CC), KeycloakAuthException.class, "Client credentials request error", wrong);
+    tokens(typed(200, "text/plain", utf8(B1)));
+    expect("S1 200 text/plain", call(CC), KeycloakAuthException.class, "Client credentials request error", wrong);
+    assertNone(wrong);
+  }
 }

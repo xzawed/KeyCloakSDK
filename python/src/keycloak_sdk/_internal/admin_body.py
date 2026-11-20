@@ -105,11 +105,14 @@ class Answer:
     번 더 보낸다)가 그 응답을 봐야 한다. 그래서 마지막 것만 둔다: 재시도가 받은 응답이 앞의 401 을
     덮는다(재시도의 2xx 를 못 쓴 실패를 앞의 401 로 보고하지 않는다). 성공 본문은 담지 않는다."""
 
-    __slots__ = ("body", "status")
+    __slots__ = ("body", "created", "status")
 
     def __init__(self) -> None:
         self.status: int | None = None
         self.body = b""
+        #: 마지막 2xx 의 (`Location` — 없으면 None, 그 요청의 URL). create 가 id 를 여기서 읽는다
+        #: (`admin/_translate.create_call` — python-keycloak 이 읽은 값이 아니다).
+        self.created: tuple[str | None, str] | None = None
 
 
 @contextlib.contextmanager
@@ -144,7 +147,8 @@ def _not_a_result(response: requests.Response | httpx.Response) -> None:
     `response.json()["message"]` 에서 `TypeError` 로 깨져 상태 없는
     `KeycloakTransportError` 였다.
 
-    그 밖의 응답은 그 호출의 `Answer` 에 적는다(성공 본문은 담지 않는다 — 목록은 정당하게 크다)."""
+    그 밖의 응답은 그 호출의 `Answer` 에 적는다(성공 본문은 담지 않는다 — 목록은 정당하게 크다).
+    2xx 는 `Location` 과 그 요청의 URL 도 적는다 — create 의 id 는 거기서 읽는다."""
     answer = _FACADE.get()
     if answer is None:
         return
@@ -153,6 +157,8 @@ def _not_a_result(response: requests.Response | httpx.Response) -> None:
         raise RedirectionStatus(status, response.content)
     answer.status = status
     answer.body = response.content if status >= 400 else b""
+    if status < 300:
+        answer.created = (response.headers.get("location"), str(response.url))
 
 
 def _ended(status: int, length: str | None) -> bool:

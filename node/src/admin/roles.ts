@@ -1,6 +1,15 @@
 import type RoleRepresentation from '@keycloak/keycloak-admin-client/lib/defs/roleRepresentation.js'
 import { call, requireFound } from './call.js'
-import { type AdminHttp, adminPath, create, omit, orEmpty, read, readOne, write } from './http.js'
+import {
+  type AdminHttp,
+  adminPath,
+  createNamed,
+  omit,
+  orEmpty,
+  read,
+  readOne,
+  write,
+} from './http.js'
 
 /**
  * Realm role CRUD facade. It itself sends the same requests the official admin-client's `roles` resource sends
@@ -21,7 +30,7 @@ export class RolesResource {
     // 응답의 `Location` 은 admin-client 처럼 요구하되 돌려주지 않는다. (문서 주석이 아닌 것은 의도다 — api-extractor
     // 보고서의 `(undocumented)` 줄이 사라지면 공개 API 가드가 그것을 기준선에서 사라진 줄로 센다.)
     await call(() =>
-      create(
+      createNamed(
         this.http,
         adminPath(this.realm, 'roles'),
         omit({ ...representation, realm: this.realm }, ['realm']),

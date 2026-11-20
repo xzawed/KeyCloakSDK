@@ -13,6 +13,10 @@
 - D4 admin 자체 그랜트 — 끝까지 온 응답이면 S1 과 **같은 판정**이다. 토큰 엔드포인트의 상태로
   admin 형을 골라 404 가 `KeycloakNotFoundError` 였고, 토큰을 받지 못한 `users.delete` 가 admin
   요청 0 번에 「이미 없음」으로 읽혔다(go #952 · php #1003 과 같은 모양).
+- 성공 상태(2xx)에 OAuth `error` 를 실은 응답(`success_status_oauth_error` 칸 — 등록부
+  auth-2xx-error-code-divergent) — 4xx 가 그 `error` 를 실었을 때와 같은 판정이고, 본문의 나머지
+  (`access_token` · `active`)는 쓰지 않는다. 수정 전: B1 은 코드 없는 「없음」 판정, B2 는 그 토큰을
+  받아들이고(admin 은 그것으로 요청을 보냈다) introspection 은 활성이었다(실측 2026-11-20).
 
 S5 의 기대는 손으로 적지 않는다 — 같은 칸에서 S1 이 낸 판정과 대조한다.
 """
@@ -56,6 +60,22 @@ _U = b"\\" + b"u"
 #: Content-Type 뒤에 줄을 바꿔 덧붙이는 헤더 — 가짜 IdP 가 그대로 보낸다.
 _GZIP = "\nContent-Encoding: gzip"
 _CORRUPT_GZIP = b"\x1f\x8b\x08\x00not-a-deflate-stream-at-all-xxxxxxxxxxxx"
+#: 200 에 OAuth `error` 를 실은 본문 — 아홉 언어가 같은 바이트를 쓴다(B1 · B2). B2 의 토큰은 쓸 수
+#: 있어 보이는 모양이다(IdP 가 스스로 부인한 토큰).
+_B1_TOKEN = b'{"error":"invalid_grant","error_description":"d"}'
+_B2_TOKEN = (
+    b'{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.'
+    b'c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}'
+)
+_B1_INTRO = b'{"error":"invalid_token"}'
+_B2_INTRO = b'{"error":"invalid_token","active":true}'
+#: `error` 가 비어 있지 않은 문자열이 아니면 예전 그대로다 — 대조군의 멤버들.
+_NOT_A_NAMED_ERROR = {
+    "a number": b'"error":400',
+    "empty": b'"error":""',
+    "null": b'"error":null',
+    "an object": b'"error":{"code":"invalid_grant"}',
+}
 
 
 def _with(body: bytes, member: bytes) -> bytes:
@@ -163,6 +183,17 @@ TOKEN_CELLS: dict[str, _Answer] = {
     "r18n 500 JSON null": (500, _JSON, b"null"),
     "r18d 400 deeply nested JSON": (400, _JSON, b"[" * 100_000 + b"]" * 100_000),
     "r18r 302 JSON array": (302, _JSON, b"[]"),
+    # 성공 상태에 OAuth `error` — 4xx 가 실었을 때와 같은 판정이다(B2 의 토큰은 쓰지 않는다).
+    "success_status_oauth_error B1 200": (200, _JSON, _B1_TOKEN),
+    "success_status_oauth_error B2 200": (200, _JSON, _B2_TOKEN),
+    **{
+        f"success_status_oauth_error control: error is {what}": (
+            200,
+            _JSON,
+            _with(_GOOD_TOKEN, member),
+        )
+        for what, member in _NOT_A_NAMED_ERROR.items()
+    },
 }
 
 _HTTP = "Keycloak request failed: HTTP"
@@ -225,6 +256,10 @@ S1: dict[str, _Verdict] = {
     "r18n 500 JSON null": _auth(f"{_HTTP} 500"),
     "r18d 400 deeply nested JSON": _auth(f"{_HTTP} 400"),
     "r18r 302 JSON array": _auth(f"{_HTTP} 302"),
+    # 수정 전: B1 은 「token response has no usable access_token」(코드 없음), B2 는 성공이었다.
+    "success_status_oauth_error B1 200": _auth(f"{_HTTP} 200 (invalid_grant)", "invalid_grant"),
+    "success_status_oauth_error B2 200": _auth(f"{_HTTP} 200 (invalid_grant)", "invalid_grant"),
+    **{f"success_status_oauth_error control: error is {what}": OK for what in _NOT_A_NAMED_ERROR},
 }
 
 #: introspection 엔드포인트의 칸 — 토큰 엔드포인트는 정상이다.
@@ -263,6 +298,17 @@ INTROSPECTION_CELLS: dict[str, _Answer] = {
     "r18a 400 JSON array": (400, _JSON, b"[]"),
     "r18n 500 JSON null": (500, _JSON, b"null"),
     "r18d 400 deeply nested JSON": (400, _JSON, b"[" * 100_000 + b"]" * 100_000),
+    # 성공 상태에 OAuth `error` — B2 의 `active: true` 는 쓰지 않는다.
+    "success_status_oauth_error B1 200": (200, _JSON, _B1_INTRO),
+    "success_status_oauth_error B2 200": (200, _JSON, _B2_INTRO),
+    **{
+        f"success_status_oauth_error control: error is {what}": (
+            200,
+            _JSON,
+            _with(_GOOD_INTRO, member),
+        )
+        for what, member in _NOT_A_NAMED_ERROR.items()
+    },
 }
 
 INTRO: dict[str, _Verdict] = {
@@ -286,7 +332,15 @@ INTRO: dict[str, _Verdict] = {
     "r18a 400 JSON array": _auth(f"{_HTTP} 400"),
     "r18n 500 JSON null": _auth(f"{_HTTP} 500"),
     "r18d 400 deeply nested JSON": _auth(f"{_HTTP} 400"),
+    # 수정 전: B1 은 「introspection response has no active」(코드 없음), B2 는 활성이었다.
+    "success_status_oauth_error B1 200": _auth(f"{_HTTP} 200 (invalid_token)", "invalid_token"),
+    "success_status_oauth_error B2 200": _auth(f"{_HTTP} 200 (invalid_token)", "invalid_token"),
+    **{f"success_status_oauth_error control: error is {what}": OK for what in _NOT_A_NAMED_ERROR},
 }
+
+#: introspect 하는 값 — `invalid_token` 의 조각이 아니어야 그 코드가 실린다(보낸 값과 겹치는 코드는
+#: 싣지 않는다 — test_oauth_error_code_echo 의 「값」 칸. 예전 값 `tok` 는 그 조각이다).
+_INTROSPECTED = "opaque-1"
 
 
 # --- 각본대로 답하는 가짜 IdP ---------------------------------------------------------------
@@ -390,11 +444,18 @@ def _verdict(err: BaseException | None) -> _Verdict:
     return (type(err).__name__, str(err))
 
 
-def _as_admin_grant(err: BaseException | None) -> _Verdict:
-    """S1 의 판정을 admin 그랜트가 낼 모양으로 — 같은 형·같은 메시지이되 OAuth 코드는 싣지 않는다
-    (그랜트의 오류 본문은 폼의 `client_secret` 을 `error` 자리에 되울릴 수 있다 —
-    `lower.grant_failure`)."""
-    if isinstance(err, KeycloakAuthError) and err.error is not None:
+#: python-keycloak 의 그랜트가 성공으로 받는 상태(`raise_error_from_response` 의 기본값).
+_GRANT_SUCCESS = (200, 201, 204)
+
+
+def _as_admin_grant(err: BaseException | None, status: int) -> _Verdict:
+    """S1 의 판정을 admin 그랜트가 낼 모양으로 — 같은 형·같은 메시지이되 오류 상태에서는 OAuth
+    코드를 싣지 않는다(그랜트의 오류 본문은 폼의 `client_secret` 을 `error` 자리에 되울릴 수
+    있다 — `lower.grant_failure`). 그랜트가 성공으로 받은 상태에 OAuth `error` 를 실은 응답은
+    S1 처럼 코드를 싣는다 — 아홉 언어의 규칙(등록부 auth-2xx-error-code-divergent · 보낸 비밀과의
+    겹침은 `admin_grant._sent`)."""
+    withheld = status not in _GRANT_SUCCESS
+    if isinstance(err, KeycloakAuthError) and err.error is not None and withheld:
         return _auth(str(err).removesuffix(f" ({err.error})"))
     return _verdict(err)
 
@@ -426,7 +487,7 @@ async def test_admin_grant_gets_the_auth_lane_verdict_and_sends_no_admin_request
             result, err = await _attempt(lane, client, lambda c: c.admin.users.get("u1"))
         sent = idp.admin_requests()
 
-    assert _verdict(err) == _as_admin_grant(auth_err)
+    assert _verdict(err) == _as_admin_grant(auth_err, TOKEN_CELLS[cell][0])
     if err is None:
         assert result == {"id": "u1"}
         assert sent == ["GET /admin/realms/r/users/u1"]
@@ -510,7 +571,7 @@ async def test_a_delete_whose_token_request_404s_is_not_already_gone(lane: str) 
 async def test_introspection_verdict(cell: str, lane: str) -> None:
     with _fake_idp(TOKEN_CELLS["ok"], INTROSPECTION_CELLS[cell]) as idp:
         async with _client(lane, idp) as client:
-            result, err = await _attempt(lane, client, lambda c: c.auth.introspect("tok"))
+            result, err = await _attempt(lane, client, lambda c: c.auth.introspect(_INTROSPECTED))
 
     assert _verdict(err) == INTRO[cell]
     if err is None:
@@ -540,6 +601,31 @@ async def test_refresh_and_logout_keep_the_status_of_a_non_object_error_body(
             )
 
     assert _verdict(err) == S1[cell]
+
+
+#: 성공 상태에 OAuth `error` 를 실은 토큰 칸(대조군 포함) — refresh 와 교환도 같은 경계(`_wrap`)라
+#: client_credentials 와 같은 판정이다.
+_SUCCESS_STATUS_OAUTH_ERROR = [c for c in TOKEN_CELLS if c.startswith("success_status_oauth_error")]
+
+
+@pytest.mark.parametrize("call", ["refresh", "exchange_code"])
+@pytest.mark.parametrize("cell", _SUCCESS_STATUS_OAUTH_ERROR)
+@pytest.mark.parametrize("lane", LANES)
+async def test_success_status_oauth_error_takes_the_same_verdict_on_refresh_and_exchange_code(
+    lane: str, cell: str, call: str
+) -> None:
+    def act(c: Any) -> Any:
+        if call == "refresh":
+            return c.auth.refresh("rt-1")
+        return c.auth.exchange_code("code-1", "http://localhost/cb", "v" * 43)
+
+    with _fake_idp(TOKEN_CELLS[cell]) as idp:
+        async with _client(lane, idp) as client:
+            result, err = await _attempt(lane, client, act)
+
+    assert _verdict(err) == S1[cell]
+    if err is None:
+        assert result.access_token == "AT-ok-token"
 
 
 # --- 짝 없는 서로게이트 판독기 ------------------------------------------------------------------

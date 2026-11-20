@@ -9,11 +9,17 @@ import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.keycloak.admin.client.resource.GroupResource;
 import org.keycloak.representations.idm.GroupRepresentation;
 
 class GroupsResourceTest {
+
+  private static final URI GROUPS = LocationVectors.sentTo("groups");
 
   @Test void create_extractsIdFromLocationHeader() {
     org.keycloak.admin.client.resource.GroupsResource kc =
@@ -23,8 +29,24 @@ class GroupsResourceTest {
     Response created = Response.created(URI.create("https://kc.example.com/admin/realms/r/groups/ghi-789")).build();
     when(kc.add(rep)).thenReturn(created);
 
-    GroupsResource groups = new GroupsResource(kc);
+    GroupsResource groups = new GroupsResource(kc, GROUPS);
     assertEquals("ghi-789", groups.create(rep));
+  }
+
+  static Stream<Arguments> locations() {
+    return LocationVectors.of("groups", false);
+  }
+
+  /** L1 · L2 · L4 · L7 · L9({@link LocationVectors}). */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("locations")
+  void create_readsTheIdFromTheLocationResolvedAgainstTheRequestUrl(String vector, String location, String id) {
+    org.keycloak.admin.client.resource.GroupsResource kc =
+        mock(org.keycloak.admin.client.resource.GroupsResource.class);
+    GroupRepresentation rep = new GroupRepresentation();
+    when(kc.add(rep)).thenReturn(LocationVectors.created(location));
+
+    assertEquals(id, new GroupsResource(kc, GROUPS).create(rep), vector);
   }
 
   @Test void get_existingGroup_returnsRepresentation() {
@@ -36,7 +58,7 @@ class GroupsResourceTest {
     when(kc.group("g1")).thenReturn(gr);
     when(gr.toRepresentation()).thenReturn(rep);
 
-    GroupsResource groups = new GroupsResource(kc);
+    GroupsResource groups = new GroupsResource(kc, GROUPS);
     Optional<GroupRepresentation> result = groups.get("g1");
     assertTrue(result.isPresent());
     assertEquals("g1", result.get().getId());
@@ -49,7 +71,7 @@ class GroupsResourceTest {
     when(kc.group("missing")).thenReturn(gr);
     when(gr.toRepresentation()).thenThrow(new NotFoundException());
 
-    GroupsResource groups = new GroupsResource(kc);
+    GroupsResource groups = new GroupsResource(kc, GROUPS);
     assertThrows(KeycloakNotFoundException.class, () -> groups.get("missing"));
   }
 
@@ -59,7 +81,7 @@ class GroupsResourceTest {
     GroupRepresentation rep = new GroupRepresentation();
     when(kc.groups(0, 10)).thenReturn(List.of(rep));
 
-    GroupsResource groups = new GroupsResource(kc);
+    GroupsResource groups = new GroupsResource(kc, GROUPS);
     List<GroupRepresentation> result = groups.list(0, 10);
     assertEquals(1, result.size());
     verify(kc).groups(0, 10);
@@ -71,7 +93,7 @@ class GroupsResourceTest {
     GroupResource gr = mock(GroupResource.class);
     when(kc.group("g1")).thenReturn(gr);
 
-    GroupsResource groups = new GroupsResource(kc);
+    GroupsResource groups = new GroupsResource(kc, GROUPS);
     groups.delete("g1");
     verify(gr).remove();
   }
@@ -83,7 +105,7 @@ class GroupsResourceTest {
     when(kc.group("missing")).thenReturn(gr);
     doThrow(new NotFoundException()).when(gr).remove();
 
-    GroupsResource groups = new GroupsResource(kc);
+    GroupsResource groups = new GroupsResource(kc, GROUPS);
     assertThrows(KeycloakNotFoundException.class, () -> groups.delete("missing"));
   }
 
@@ -97,7 +119,7 @@ class GroupsResourceTest {
     GroupRepresentation rep = new GroupRepresentation();
     rep.setName("team-renamed");
 
-    new GroupsResource(kc).update("g-1", rep);
+    new GroupsResource(kc, GROUPS).update("g-1", rep);
 
     verify(kc).group("g-1");
     verify(gr).update(rep);

@@ -9,14 +9,16 @@ import (
 // UsersResource manages users. Model type: gocloak.User (documented hiding-exception).
 type UsersResource struct{ a *AdminClient }
 
-// Create creates a user and returns its new id.
+// Create creates a user and returns its new id — the one the answer's Location names, resolved against the request URL
+// (the last path segment, in the users collection); "" when it names none.
 func (r *UsersResource) Create(ctx context.Context, user gocloak.User) (string, error) {
 	tok, err := r.a.writeToken(ctx, user)
 	if err != nil {
 		return "", err
 	}
-	return call(ctx, func(ctx context.Context) (string, error) {
-		return r.a.gc.CreateUser(withoutBody(ctx), tok, r.a.realm, user)
+	return created(ctx, func(ctx context.Context) error {
+		_, err := r.a.gc.CreateUser(ctx, tok, r.a.realm, user)
+		return err
 	})
 }
 

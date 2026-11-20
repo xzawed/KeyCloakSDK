@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
 import io.github.xzawed.keycloak.ResponseTooLargeException
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
+import io.github.xzawed.keycloak.adminSentValues
 import io.github.xzawed.keycloak.judgedTokenBody
 import io.github.xzawed.keycloak.readWithinCap
 import io.github.xzawed.keycloak.unbound
@@ -11,6 +12,7 @@ import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
 import jakarta.ws.rs.client.ClientResponseContext
 import jakarta.ws.rs.client.ClientResponseFilter
+import jakarta.ws.rs.core.HttpHeaders
 import jakarta.ws.rs.core.Response
 import jakarta.ws.rs.ext.ReaderInterceptor
 import jakarta.ws.rs.ext.ReaderInterceptorContext
@@ -88,13 +90,14 @@ internal class TokenResponseGuard :
         if (response.mediaType != null && response.status != 204 && response.status != 205) {
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             request.setProperty(STATUS, response.status)
+            request.setProperty(SENT, sentBy(request).toTypedArray())
             return
         }
         // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
         // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx)로 끝내 전송 실패로 나갔다(등록부
         // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
         // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
-        throw unbound(response.status, usableOrReject(response.entityStream, exchange, response.status))
+        throw unbound(response.status, usableOrReject(response.entityStream, exchange, response.status, sentBy(request)))
     }
 
     // 결합 직전의 판정. 통과한 바이트로 결합을 부르고, 결합이 그것을 쓰지 못하면(Jackson 의 형식 오류 · 결합기 없음)
@@ -102,7 +105,8 @@ internal class TokenResponseGuard :
     override fun aroundReadFrom(context: ReaderInterceptorContext): Any? {
         if (context.getProperty(JUDGE_ENTITY) != true) return context.proceed()
         val status = context.getProperty(STATUS) as? Int ?: 0
-        context.inputStream = usableOrReject(context.inputStream, context.getProperty(AdminEngine.EXCHANGE), status)
+        val sent = (context.getProperty(SENT) as? Array<*>)?.filterIsInstance<String>().orEmpty()
+        context.inputStream = usableOrReject(context.inputStream, context.getProperty(AdminEngine.EXCHANGE), status, sent)
         return try {
             context.proceed()
         } catch (unbound: IOException) {
@@ -135,6 +139,13 @@ internal class TokenResponseGuard :
         internal val STATUS: String = TokenResponseGuard::class.java.name + ".status"
         internal const val REJECTED = "token endpoint response carries no usable access_token"
 
+        // [JUDGE_ENTITY] 와 함께 다는 그 요청이 보낸 비밀(`Array<String>` — [adminSentValues]) — ReaderInterceptor 는 요청을 모른다.
+        private val SENT: String = TokenResponseGuard::class.java.name + ".sent"
+
+        // 그 요청이 보낸 비밀 — 판정은 [adminSentValues](tokenResponses.kt, 단위 게이트가 잰다)이고 여기서는 머리와 엔티티만 넘긴다.
+        private fun sentBy(request: ClientRequestContext): List<String> =
+            adminSentValues(request.getHeaderString(HttpHeaders.AUTHORIZATION), request.entity)
+
         // 2xx 본문이 엄격한 UTF-8 이 아니다(`isUtf8` — auth 레인과 같은 함수) — 끝까지 온 응답을 쓸 수 없다. 응답을 인용하지 않는다.
         internal const val NOT_UTF8 = "token endpoint response is not valid UTF-8"
 
@@ -161,8 +172,9 @@ internal class TokenResponseGuard :
             input: InputStream?,
             exchange: Any?,
             status: Int,
+            sent: List<String>,
         ): ByteArrayInputStream =
-            judgedTokenBody(status, { if (input == null) ByteArray(0) else capPlusOne(input) }, ::carriesUsableAccessToken) {
+            judgedTokenBody(status, { if (input == null) ByteArray(0) else capPlusOne(input) }, ::carriesUsableAccessToken, sent) {
                 release(input, exchange)
             }
 

@@ -606,14 +606,15 @@ async fn a_write_does_not_read_its_2xx_body() {
         ));
     }
 
-    // `Location` 이 `/` 로 끝나면 마지막 조각은 빈 문자열이다 — crate 의 `to_id` 와 같다(고치려면 의도적으로).
+    // `Location` 끝의 `/` 하나는 id 가 아니다 — 그 앞 조각이 id 다(crate 의 `to_id` 는 빈 문자열을 낸다 · 등록부
+    // admin-create-relative-location).
     let server = serve(
         Reply::with(201, 0).header("Location: http://kc/admin/realms/r/users/abc-1/"),
         Reply::with(404, 0),
     );
     let a = admin(&server.url, Duration::from_secs(4));
     let id = a.create_user(UserRepresentation::default()).await;
-    if !matches!(&id, Ok(Some(v)) if v.is_empty()) {
+    if !matches!(&id, Ok(Some(v)) if v == "abc-1") {
         wrong.push(format!("create 201 + Location ending in '/': {id:?}"));
     }
 

@@ -53,10 +53,11 @@ module AdminResponseBodySpec
     KeycloakSdk::Admin::AdminClient.new(config: config, token_provider: provider)
   end
 
-  # 쓰기의 2xx — create 는 201 + Location, 나머지는 200. 본문은 `total` 바이트(아무도 읽지 않는다).
-  def unread(server, verb, total, stop_after: nil)
+  # 쓰기의 2xx — create 는 201 + 보낸 컬렉션(`path`) 안의 Location(id 는 그 안의 것만 읽는다 — 등록부
+  # admin-create-relative-location), 나머지는 200. 본문은 `total` 바이트(아무도 읽지 않는다).
+  def unread(server, verb, path, total, stop_after: nil)
     created = verb == "POST"
-    headers = created ? { "Location" => "#{server.url}/whatever/new-id" } : {}
+    headers = created ? { "Location" => "#{server.url}#{path}/new-id" } : {}
     [created ? 201 : 200, headers, "{}", total - 2, stop_after]
   end
 
@@ -97,7 +98,7 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
       AdminResponseBodySpec::WRITES.each do |name, (verb, path, call, result)|
         it "#{name} leaves its 2xx body unread — the server cannot write it all" do
           server = BodyServer.new(framing: framing)
-          server.route(path) { spec.unread(server, verb, AdminResponseBodySpec::HUGE) }
+          server.route(path) { spec.unread(server, verb, path, AdminResponseBodySpec::HUGE) }
           got, ms = spec.timed { spec.outcome { call.call(spec.admin(server)) } }
           server.close
           spec.note("  [#{framing}] #{name}: #{ms} ms · server wrote #{server.written.last} body bytes · " \
@@ -128,7 +129,7 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
   AdminResponseBodySpec::WRITES.each do |name, (verb, path, call, result)|
     it "#{name} returns without waiting for a 2xx body that stalls after its first bytes" do
       server = BodyServer.new(framing: :length)
-      server.route(path) { spec.unread(server, verb, AdminResponseBodySpec::CAP, stop_after: 2) }
+      server.route(path) { spec.unread(server, verb, path, AdminResponseBodySpec::CAP, stop_after: 2) }
       admin = spec.admin(server, read_timeout: AdminResponseBodySpec::STALL_TIMEOUT)
       got, ms = spec.timed { spec.outcome { call.call(admin) } }
       server.close
@@ -169,7 +170,8 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     big = 2 * AdminResponseBodySpec::CAP
     server = BodyServer.new(framing: :length)
     server.route("#{AdminResponseBodySpec::BASE}/users") do
-      [201, { "Content-Type" => "text/plain", "Location" => "#{server.url}/x/new-id" }, "x", big - 1]
+      location = "#{server.url}#{AdminResponseBodySpec::BASE}/users/new-id"
+      [201, { "Content-Type" => "text/plain", "Location" => location }, "x", big - 1]
     end
     admin = spec.admin(server)
     expect(admin.users.create(username: "u")).to eq("new-id")

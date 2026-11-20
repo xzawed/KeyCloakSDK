@@ -484,6 +484,7 @@ module KeycloakSdk
   #     전에는 `Faraday::ParsingError` 가 경계에서 TransportError 였다.
   #   · 오류 상태의 본문이 그러면 날 바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의
   #     OAuth 코드는 쓰지 않는다).
+  #   · 성공 상태라도 읽힌 본문이 OAuth `error` 를 실었으면(`oauth_error`) 레인은 그 오류 상태처럼 실패한다.
   # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). 커넥션의 json 미들웨어가
   # utf-16 · utf-32 같은 charset 에서 스트리밍 본문의 자리표시를 파싱하다 낸 실패는 `Http.read_capped` 가 받아낸다(2026-11-11 —
   # 전에는 그것이 이 규칙보다 먼저 TransportError 였다). logout 은 본문을 해석하지 않아 이 규칙 밖이다 — 204 만 성공이다
@@ -518,6 +519,23 @@ module KeycloakSdk
       end
 
       raise AuthError, "#{what} response is not valid #{reason}", cause: lower && RedactedCause.new(lower)
+    end
+
+    # The OAuth `error` a decoded body carries — the String when the body is a JSON object whose `error` is a non-empty
+    # String, else nil (a number, an object, an array, "" or null is no error, as before). A status the lane accepts
+    # as success does not make such a body a success (registry auth-2xx-error-code-divergent · the rule all nine
+    # share): the three grants, the provider (the admin's own grant) and introspection fail as for an error status that
+    # carries it — same class, message and code — before any other check of the body, and use nothing else in it (no
+    # token returned or cached, no admin request, never active).
+    def oauth_error(body)
+      error = body["error"] if body.is_a?(Hash)
+      error if error.is_a?(String) && !error.empty?
+    end
+
+    # The grants' success rule — rack-oauth2's 200 · 201 (`AuthClient#oauth_token`) — less a body that carries an
+    # OAuth `error`.
+    def granted?(resp)
+      (200..201).cover?(resp.status) && !oauth_error(resp.body)
     end
 
     # 못 읽는 까닭 — nil(읽힌다) · ["JSON", 해석 실패] · ["UTF-8", nil].

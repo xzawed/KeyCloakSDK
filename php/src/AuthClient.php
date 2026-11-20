@@ -231,6 +231,11 @@ final class AuthClient
         if (!is_array($json)) {
             throw new KeycloakAuthError('introspection returned non-JSON');
         }
+        if (OAuthErrorCode::isErrorResponse($json)) {
+            // 성공 상태여도 OAuth 오류 응답이다 — 오류 상태의 답과 같은 문구(`ResponseFailure::of`)로 실패하고 옆의 `active` 는 읽지
+            // 않는다. 코드는 이 요청이 보낸 비밀(client secret · 물은 토큰)과 겹치지 않을 때만 싣는다(`OAuthErrorCode`).
+            throw new KeycloakAuthError('introspection failed', oauthError: OAuthErrorCode::carried($json['error'] ?? null, $this->config->clientSecret, $token));
+        }
 
         return IntrospectionResult::fromArray(self::stringKeyed($json));
     }

@@ -32,6 +32,7 @@ import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -314,10 +315,12 @@ async def test_facade_writes_read_no_2xx_body(lane: str, call: str) -> None:
     # create 는 201 + 64 MiB 를 받고 id 를 돌려준다. update·delete 는 200 + 64 MiB 를 받는다 —
     # python-keycloak 은 그 둘에 204 만 기대하므로 200 은 지금처럼 오류(KeycloakAdminError
     # 200)이되, 본문은 읽지 않는다. realms.create 는 수정 전에 201 의 JSON 본문을 해석하다
-    # TypeError(KeycloakTransportError)였다 — 본문을 읽지 않으면 성공이다.
-    def route(method: str, _target: str) -> Reply:
+    # TypeError(KeycloakTransportError)였다 — 본문을 읽지 않으면 성공이다. create 의 `Location` 은
+    # 보낸 컬렉션 안이다(id 는 그 안의 것만 읽는다 — 등록부 admin-create-relative-location).
+    def route(method: str, target: str) -> Reply:
         if method == "POST":
-            return _padded("201 Created", LOCATION + TYPED, b"{}", HUGE)
+            location = f"Location: http://127.0.0.1:1{urlsplit(target).path}/abc\r\n"
+            return _padded("201 Created", location + TYPED, b"{}", HUGE)
         return _padded("200 OK", TYPED, b"{}", HUGE)
 
     with _wire(route) as wire:

@@ -11,8 +11,9 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// <summary>
 /// An OAuth <c>error</c> value reaches <c>Message</c> or <c>OAuthError</c> only when it is shaped like a code —
 /// <c>[a-z_]{1,64}</c>, the shape of every registered code — and then unchanged. Any other string is no code at all:
-/// nothing is trimmed or stripped into one (<c>"invalid_client\r\n"</c> gives no code, not <c>"invalid_client"</c>). The
-/// RFC 6749 §5.2 grammar (<c>1*NQSCHAR</c>) still decides whether a 2xx carries an error at all.
+/// nothing is trimmed or stripped into one (<c>"invalid_client\r\n"</c> gives no code, not <c>"invalid_client"</c>). Whether
+/// a 2xx carries an error at all is wider than the RFC 6749 §5.2 grammar (<c>1*NQSCHAR</c>): any non-empty JSON string is one
+/// (a tab too — <c>AuthClientTests</c>' <c>SuccessStatusOAuthError</c> rows).
 /// </summary>
 /// <remarks>
 /// <para>Measured before #710 (2026-10-03): a 400 <c>{"error":"invalid_client\n"}</c> gave the Message
@@ -24,7 +25,7 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// registry token-error-code-secret-echo) — so the code is the narrower shape now, and a value that overlaps a secret the
 /// request sent is withheld too (<c>OAuthErrorCodeEchoTests</c>).</para>
 /// <para>The two branches that carry a code are both here: 400 (the body's <c>error</c> — a 2xx takes the same branch when
-/// it carries an <c>error</c> in the grammar or one Duende flags) and every other HTTP error (the canonical reason, with the
+/// its <c>error</c> is a non-empty JSON string or one Duende flags) and every other HTTP error (the canonical reason, with the
 /// code in <c>OAuthError</c>).</para>
 /// <para>An unpaired UTF-16 surrogate escape (U+D800 alone) is no code either — System.Text.Json will not decode it at all.
 /// It used to leave the SDK as a raw <c>InvalidOperationException</c> (Duende's <c>IsError</c> on 400 and 2xx, the
@@ -51,7 +52,8 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
     /// <param name="Body">The response body — an <c>error</c> member (<see cref="ErrorIs"/>), or a body without one.</param>
     /// <param name="Code">What <c>OAuthError</c> carries — the value itself when it is a code, else <c>null</c>.</param>
     /// <param name="NoCode">The 400 message's tail when it is not one.</param>
-    /// <param name="InGrammar">Whether a 2xx carrying it fails — the RFC grammar decides that, not the code shape.</param>
+    /// <param name="InGrammar">Whether it is in the RFC grammar — those rows run on a 2xx too, where any non-empty JSON string
+    /// fails, not the code shape alone.</param>
     private sealed record Row(string Body, string? Code, string NoCode, bool InGrammar);
 
     /// <summary>A body whose only member is <c>error</c>, holding the JSON text <paramref name="errorJson"/>.</summary>
@@ -82,7 +84,7 @@ public sealed class OAuthErrorCodeGrammarTests : IDisposable
         ["backslash 0x5C, outside NQSCHAR"] = Refused("invalid" + C(0x5C) + "client"),
         ["empty, 1*NQSCHAR needs one"] = Refused(""),
         // In the grammar, not a code: no code is carried, and a 2xx carrying one still fails (Duende does not flag a
-        // whitespace-only error text on a 2xx — the grammar check does).
+        // whitespace-only error text on a 2xx — the SDK's non-empty string check does).
         ["space only, 0x20 is NQSCHAR"] = InGrammarNoCode(" "),
         ["spaces only"] = InGrammarNoCode("   "),
         ["the grammar's inner edges"] = InGrammarNoCode("!#[]~"),

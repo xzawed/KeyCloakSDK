@@ -29,7 +29,7 @@ from .._internal.jwks_cache import JwksKeyCache
 from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwks_keys import import_usable_keys
 from .._internal.jwt import JwtValidator, TokenKind, check_token_size, refuse_hs_algorithm
-from .._internal.lower import auth_failure, is_lower_failure, summarize
+from .._internal.lower import auth_failure, error_in_success, is_lower_failure, summarize
 from .._internal.redirect_uri import checked_redirect_uri
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
@@ -111,16 +111,26 @@ class AsyncAuthClient:
         있으면 인증/토큰 흐름 실패로 간주해 `KeycloakAuthError`로, 없으면 `KeycloakTransportError`로
         변환한다. ⚠️ 상류 메시지도 원본 예외도 옮기지 않는다 — 응답 본문을 싣는다. `sent` 는 그
         요청이 client secret 말고 보낸 비밀 값이다(되울림은 싣지 않는다, `carried_code`).
+        성공으로 받은 응답(2xx)이 OAuth `error` 를 실었으면 같은 판정으로 실패한다 — sync 동형
+        (`error_in_success`).
         """
         answered = Answered()  # 그 호출이 받은 마지막 응답의 상태(`token_cap.py`)
+        sent_secrets = (self._config.client_secret, *sent)
+        error: KeycloakAuthError | KeycloakTransportError
+        cause: BaseException | None = None
         try:
             with answering(answered):
-                return await awaitable
+                answer = await awaitable
         except Exception as exc:
             if not is_lower_failure(exc):
                 raise
-            error = auth_failure(exc, sent=(self._config.client_secret, *sent), answered=answered)
+            error = auth_failure(exc, sent=sent_secrets, answered=answered)
             cause = summarize(exc)
+        else:
+            named = error_in_success(answer, answered, sent=sent_secrets)
+            if named is None:
+                return answer
+            error = named
         raise error from cause
 
     @scrub_frames

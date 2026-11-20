@@ -47,7 +47,7 @@ const (
 	a3xxGroup  = `{"id":"g-1","name":"grp-1"}`
 )
 
-// a3xxOps 는 25 연산이다. create 의 대조 값 "abc" 는 rbLocation 의 마지막 경로 조각이다(gocloak 이 id 를 거기서 읽는다).
+// a3xxOps 는 25 연산이다. create 의 대조 값 "abc" 는 그 호출의 컬렉션 안 Location 의 마지막 경로 조각이다(대조 시험이 단다).
 func a3xxOps() []a3xxOp {
 	s := gocloak.StringP
 	list := func(obj string) string { return "[" + obj + "]" }
@@ -204,9 +204,11 @@ func TestAdminLocationless3xx_isAnAdminErrorOnEveryFacadeCall(t *testing.T) {
 func TestAdminLocationless3xxBodies_bindOn2xx(t *testing.T) {
 	for _, op := range a3xxOps() {
 		t.Run(op.name, func(t *testing.T) {
+			// create 의 Location 은 그 호출이 보낸 컬렉션 안이다 — id 는 그 안의 것만 읽는다(등록부 admin-create-relative-location).
+			location := "Location: http://127.0.0.1:1/admin/realms/r/" + strings.ToLower(strings.TrimSuffix(op.name, ".Create")) + "/abc\r\n"
 			v, seen, err := a3xxRun(t, op, func(method string) rbReply {
 				if method == http.MethodPost {
-					return rbExact("201 Created", rbLocation+rbTyped, op.body)
+					return rbExact("201 Created", location+rbTyped, op.body)
 				}
 				return rbExact("200 OK", rbTyped, op.body)
 			})

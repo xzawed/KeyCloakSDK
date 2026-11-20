@@ -9,11 +9,17 @@ import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.representations.idm.ClientRepresentation;
 
 class ClientsResourceTest {
+
+  private static final URI CLIENTS = LocationVectors.sentTo("clients");
 
   @Test void create_extractsIdFromLocationHeader() {
     org.keycloak.admin.client.resource.ClientsResource kc =
@@ -23,8 +29,24 @@ class ClientsResourceTest {
     Response created = Response.created(URI.create("https://kc.example.com/admin/realms/r/clients/def-456")).build();
     when(kc.create(rep)).thenReturn(created);
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     assertEquals("def-456", clients.create(rep));
+  }
+
+  static Stream<Arguments> locations() {
+    return LocationVectors.of("clients", false);
+  }
+
+  /** L1 · L2 · L4 · L7 · L9({@link LocationVectors}). */
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("locations")
+  void create_readsTheIdFromTheLocationResolvedAgainstTheRequestUrl(String vector, String location, String id) {
+    org.keycloak.admin.client.resource.ClientsResource kc =
+        mock(org.keycloak.admin.client.resource.ClientsResource.class);
+    ClientRepresentation rep = new ClientRepresentation();
+    when(kc.create(rep)).thenReturn(LocationVectors.created(location));
+
+    assertEquals(id, new ClientsResource(kc, CLIENTS).create(rep), vector);
   }
 
   @Test void get_existingClient_returnsRepresentation() {
@@ -36,7 +58,7 @@ class ClientsResourceTest {
     when(kc.get("c1")).thenReturn(cr);
     when(cr.toRepresentation()).thenReturn(rep);
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     Optional<ClientRepresentation> result = clients.get("c1");
     assertTrue(result.isPresent());
     assertEquals("c1", result.get().getId());
@@ -49,7 +71,7 @@ class ClientsResourceTest {
     when(kc.get("missing")).thenReturn(cr);
     when(cr.toRepresentation()).thenThrow(new NotFoundException());
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     assertThrows(KeycloakNotFoundException.class, () -> clients.get("missing"));
   }
 
@@ -59,7 +81,7 @@ class ClientsResourceTest {
     ClientRepresentation rep = new ClientRepresentation();
     when(kc.findByClientId("my-app")).thenReturn(List.of(rep));
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     List<ClientRepresentation> result = clients.findByClientId("my-app");
     assertEquals(1, result.size());
     verify(kc).findByClientId("my-app");
@@ -72,7 +94,7 @@ class ClientsResourceTest {
     ClientRepresentation rep = new ClientRepresentation();
     when(kc.get("c1")).thenReturn(cr);
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     clients.update("c1", rep);
     verify(cr).update(rep);
   }
@@ -82,7 +104,7 @@ class ClientsResourceTest {
         mock(org.keycloak.admin.client.resource.ClientsResource.class);
     when(kc.delete("c1")).thenReturn(Response.noContent().build());
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     assertDoesNotThrow(() -> clients.delete("c1"));
     verify(kc).delete("c1");
   }
@@ -92,7 +114,7 @@ class ClientsResourceTest {
         mock(org.keycloak.admin.client.resource.ClientsResource.class);
     when(kc.delete("missing")).thenReturn(Response.status(Response.Status.NOT_FOUND).build());
 
-    ClientsResource clients = new ClientsResource(kc);
+    ClientsResource clients = new ClientsResource(kc, CLIENTS);
     assertThrows(KeycloakNotFoundException.class, () -> clients.delete("missing"));
   }
 }

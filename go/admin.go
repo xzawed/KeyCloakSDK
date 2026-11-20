@@ -121,21 +121,17 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 	tp := NewClientCredentialsTokenProvider(func(ctx context.Context) (*TokenSet, error) {
 		// The token response is capped (tokencap.go). gocloak flattens the cap's Read error into its message, which
 		// loginError keeps; the flag decides the class (over the cap = not read in full). gocloak flattens a deadline's
-		// error too, which the transport keeps in below — and below records whether the response arrived (cause.go).
+		// error too, which the transport keeps in below — and below records whether the response arrived (cause.go). The
+		// transport reads a 2xx body itself and keeps the OAuth `error` it carries, which gocloak's JWT drops (adminbody.go).
 		ctx, capped := withTokenCap(ctx)
 		ctx, refused := withStrictBody(ctx)
 		ctx, below := withBelowHTTP(ctx)
+		ctx, kept := withLoginBody(ctx)
 		jwt, err := gc.LoginClient(ctx, cfg.ClientID, cfg.ClientSecret, cfg.Realm)
-		if err != nil {
-			// Not toSDKError: gocloak flattened the token response's error body into the message (cause.go).
-			return nil, loginError(err, capped, refused, below, cfg.ClientSecret)
-		}
-		// gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
-		// noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a
-		// nil error. Handing that upward would install an **empty bearer token** on every admin
-		// request. Measured: a 302 on the token endpoint returned ("", nil) before this check.
-		if jwt == nil || jwt.AccessToken == "" {
-			return nil, &AuthError{Msg: "client-credentials login returned no access token"}
+		// Not toSDKError: gocloak flattened the token response's error body into the message, and it reports a 2xx that
+		// carries an OAuth `error`, or a body without an access token, as a success (loginRefused, cause.go).
+		if refusal := loginRefused(jwt, err, capped, refused, below, kept, cfg.ClientSecret); refusal != nil {
+			return nil, refusal
 		}
 		// The provider trims the token and refuses one that is not a bearer token before caching it (sendableBearer).
 		return &TokenSet{AccessToken: jwt.AccessToken, ExpiresIn: int64(jwt.ExpiresIn)}, nil
