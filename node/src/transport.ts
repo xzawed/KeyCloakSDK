@@ -21,9 +21,18 @@ const TRANSPORT_CODES = new Set([
 
 /**
  * Whether this is a transport-layer failure (connection refused/DNS/TLS/timeout). Node fetch (undici) throws a
- * network failure as a `TypeError` (message "fetch failed", the system error — an `Error` — in `cause`), and a timeout
- * (AbortController) as `AbortError`/`TimeoutError`. A `TypeError` whose cause is not an `Error` (a programming bug
- * has none) is not a transport error.
+ * network failure as a `TypeError` with no `code` of its own — message "fetch failed", or "terminated" for a body cut
+ * short — whose `cause` is an `Error`, and a timeout (AbortController) as `AbortError`/`TimeoutError`. Measured on
+ * Node 22.18.0 · undici 6.21.2 for a refused connection, an unresolvable host, a reset, a cut body and TLS to a server
+ * that does not speak it — that last cause's code (`ERR_SSL_WRONG_VERSION_NUMBER`) is not in the table, so this rule
+ * is what makes it one. A `TypeError` whose cause is not an `Error` (a programming bug has none) is not a transport
+ * error.
+ *
+ * ⚠️ **A `TypeError` with its own `code` is a library's error, not undici's fetch failure.** oauth4webapi's
+ * `CodedTypeError` always sets one (`ERR_INVALID_ARG_VALUE` · `ERR_INVALID_ARG_TYPE`) and, for a part of a JWT that is
+ * not base64url, holds the decoder's error as its `cause` — so a 200 token response whose id_token did not decode was a
+ * transport failure (registry `node-typeerror-cause-parse-as-transport` —
+ * `test/unit/auth-id-token-parse-transport.test.ts`). Its cause is still judged by its `code`, like any other cause.
  *
  * ⚠️ **A `cause` speaks for the transport only when it is an `Error`** — one that is not is data. oauth4webapi's
  * `ResponseBodyError` holds the JSON-parsed OAuth error body as its `cause`, so a body member `"code":"ECONNRESET"`
@@ -45,7 +54,7 @@ export function isTransportError(err: unknown): boolean {
   const e = err as { name?: unknown; code?: unknown; cause?: unknown }
   if (e.name === 'AbortError' || e.name === 'TimeoutError') return true
   const cause = e.cause instanceof Error ? (e.cause as Error & { code?: unknown }) : undefined
-  if (err instanceof TypeError && cause !== undefined) return true
+  if (err instanceof TypeError && e.code === undefined && cause !== undefined) return true
   const direct = typeof e.code === 'string' ? e.code : undefined
   const causeCode = typeof cause?.code === 'string' ? cause.code : undefined
   return (
