@@ -99,13 +99,15 @@ final class AdminExceptions {
   }
 
   /**
-   * {@link #grantFailure} 의 실패가 성공 상태의 OAuth 오류 응답이면 그 코드({@link TokenResponseGuard.OAuthErrorResponse#code} — 보낸
-   * 비밀과 겹치지 않는 코드 모양의 값만), 아니면 null. 오류 상태는 지금처럼 코드를 싣지 않는다(응답 하나는 셋 중 하나만 낳는다).
+   * {@link #grantFailure} 의 실패가 실은 OAuth 코드 — 보낸 비밀과 겹치지 않는 코드 모양의 값만, 아니면 null. 성공 상태의 OAuth 오류
+   * 응답이면 그 코드({@link TokenResponseGuard.OAuthErrorResponse#code}), 오류 상태면 가드가 그 응답에 달아 둔 코드다
+   * ({@link TokenResponseGuard#codeOf} — 등록부 oauth-error-code-surface-divergent: 그 전에는 null). 응답 하나는 셋 중 하나만 낳는다.
    */
   static String grantCode(ProcessingException e) {
     Throwable t = e.getCause();
     for (int depth = 0; t != null && depth < MAX_DEPTH; depth++, t = t.getCause()) {
       if (t instanceof TokenResponseGuard.OAuthErrorResponse error) return error.code();
+      if (t instanceof WebApplicationException error) return TokenResponseGuard.codeOf(error.getResponse());
     }
     return null;
   }

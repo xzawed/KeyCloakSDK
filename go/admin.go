@@ -122,7 +122,8 @@ func newAdminClient(ctx context.Context, cfg Config) (*AdminClient, error) {
 		// The token response is capped (tokencap.go). gocloak flattens the cap's Read error into its message, which
 		// loginError keeps; the flag decides the class (over the cap = not read in full). gocloak flattens a deadline's
 		// error too, which the transport keeps in below — and below records whether the response arrived (cause.go). The
-		// transport reads a 2xx body itself and keeps the OAuth `error` it carries, which gocloak's JWT drops (adminbody.go).
+		// transport reads a 2xx body itself and keeps the OAuth `error` it carries, which gocloak's JWT drops, and the one an
+		// error body names, which gocloak's message folds in with the rest (adminbody.go).
 		ctx, capped := withTokenCap(ctx)
 		ctx, refused := withStrictBody(ctx)
 		ctx, below := withBelowHTTP(ctx)

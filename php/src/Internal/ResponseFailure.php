@@ -43,19 +43,43 @@ final class ResponseFailure
      * The SDK error for a failed introspection or logout request — `"<what> failed"` (auth) for an answer the server sent (an
      * error status, or a body that could not be decoded), `"<what> request failed"` (transport) for a request that got none.
      * `$withStatus` names the status of that answer when Guzzle kept it — `"<what> failed (HTTP N)"`, the wording of every
-     * failed logout (`LogoutAnswer`).
+     * failed logout (`LogoutAnswer`). `$sent` — the secrets the request sent — makes the auth error carry the answer's OAuth
+     * `error` as `oauthError` (`oauthError()`): introspection passes its client secret and token, logout none.
      *
      * ⚠️ `$e` is sensitive — the error is built in this frame, and the Guzzle exception holds the request (Basic credentials,
      * the token or refresh token in the form): without the attribute, `var_dump` of the SDK error printed them from the trace
      * (`MalformedTokenResponseTest`, measured).
+     *
+     * @param list<?string>|null $sent
      */
-    public static function of(#[\SensitiveParameter] GuzzleException $e, string $what, bool $withStatus = false): KeycloakException
+    public static function of(#[\SensitiveParameter] GuzzleException $e, string $what, bool $withStatus = false, #[\SensitiveParameter] ?array $sent = null): KeycloakException
     {
         if (!$e instanceof BadResponseException && !self::undecodable($e)) {
             return new KeycloakTransportError("$what request failed", previous: SanitizedCause::of($e));
         }
         $status = $withStatus && $e instanceof RequestException ? $e->getResponse()?->getStatusCode() : null;
+        $code = $sent !== null && $e instanceof BadResponseException ? self::oauthError($e, $sent) : null;
 
-        return new KeycloakAuthError($status === null ? "$what failed" : "$what failed (HTTP $status)", previous: SanitizedCause::of($e));
+        return new KeycloakAuthError($status === null ? "$what failed" : "$what failed (HTTP $status)", $code, SanitizedCause::of($e));
+    }
+
+    /**
+     * The OAuth `error` an error-status answer's body names, when `OAuthErrorCode::carried()` lets it through against what the
+     * request sent — introspection carries it at an error status as the grants do (registry `oauth-error-code-surface-divergent`:
+     * it was null there, while the same `error` at 200 was carried). The body is read within the cap (`TokenResponseCap::read`);
+     * one over the cap, unreadable or not a JSON object carries none.
+     *
+     * @param list<?string> $sent
+     */
+    private static function oauthError(#[\SensitiveParameter] BadResponseException $e, #[\SensitiveParameter] array $sent): ?string
+    {
+        try {
+            $body = TokenResponseCap::read($e->getResponse()->getBody());
+        } catch (\Throwable) {
+            return null;   // an unreadable body carries no code — the read error does not cross the boundary
+        }
+        $json = $body === null ? null : json_decode($body, true);
+
+        return OAuthErrorCode::carried(\is_array($json) ? ($json['error'] ?? null) : null, ...$sent);
     }
 }

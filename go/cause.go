@@ -373,8 +373,9 @@ func (b wireScrubBody) Read(p []byte) (int, error) {
 // it was *AdminError for a status and *TransportError without one, a refused redirect included). gocloak flattens a failed
 // token response into APIError.Message as "<status line>: <error>: <errorMessage>: <error_description>", so the parts cannot
 // be told apart; the message is rebuilt from the status code and the first part oauthErrorCode lets through against what
-// the login sent (sent — an echoed lowercase secret is code-shaped: it reached Msg, measured 2026-11-11) — in Msg only,
-// never in OAuthError, because which part it is cannot be told. On a refused redirect net/http names the redirect
+// the login sent (sent — an echoed lowercase secret is code-shaped: it reached Msg, measured 2026-11-11). OAuthError is not
+// read from those parts — which part it is cannot be told — but from the body itself, which the transport kept
+// (loginBody.refuse · carried in loginRefused). On a refused redirect net/http names the redirect
 // target, which the IdP chose — it is dropped the same way. Without a status, the cause is the error the transport kept
 // in below when gocloak dropped it (a deadline that ended the exchange), so errors.Is still finds it.
 func loginError(err error, capped *atomic.Bool, strict *bodyRefusal, below *belowHTTPSlot, sent ...string) error {
@@ -443,6 +444,9 @@ func loginStatusError(status int, message, typ string, sent ...string) *AuthErro
 //     noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a nil error. Handing that upward
 //     would install an **empty bearer token** on every admin request. Measured: a 302 on the token endpoint returned
 //     ("", nil) before this check.
+//
+// The last two carry the code an error-status body named, as the grants do at any status (kept.carried — registry
+// oauth-error-code-surface-divergent: OAuthError was empty on a 400 · 401 while the 2xx form above carried it).
 func loginRefused(jwt *gocloak.JWT, err error, capped *atomic.Bool, strict *bodyRefusal, below *belowHTTPSlot,
 	kept *loginBody, sent ...string) error {
 	if found := kept.found.Load(); found != nil {
@@ -455,10 +459,10 @@ func loginRefused(jwt *gocloak.JWT, err error, capped *atomic.Bool, strict *body
 		return refused
 	}
 	if err != nil {
-		return loginError(err, capped, strict, below, sent...)
+		return kept.carried(loginError(err, capped, strict, below, sent...), sent...)
 	}
 	if jwt == nil || jwt.AccessToken == "" {
-		return &AuthError{Msg: "client-credentials login returned no access token"}
+		return kept.carried(&AuthError{Msg: "client-credentials login returned no access token"}, sent...)
 	}
 	return nil
 }

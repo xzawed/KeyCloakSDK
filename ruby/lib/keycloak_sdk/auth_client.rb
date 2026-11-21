@@ -79,13 +79,14 @@ module KeycloakSdk
 
     # A response that arrived but cannot be read is an AuthError — a 2xx is judged by `TokenResponse`, an error status
     # by the status check below. A 2xx whose body carries an OAuth `error` fails like an error status, before `active`
-    # is read, and carries the code unless it overlaps the client secret or the token sent.
+    # is read. Either carries the code unless it overlaps the client secret or the token sent — an error status too, as
+    # the grants and the provider do (registry oauth-error-code-surface-divergent: it was nil there).
     def introspect(token)
       form = form!("introspection", token: token, client_id: @config.client_id, client_secret: @config.client_secret)
       resp = TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.introspection,
                                                    body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES,
                                                    what: "introspection"), what: "introspection")
-      error = TokenResponse.oauth_error(resp.body) if resp.success?
+      error = TokenResponse.oauth_error(resp.body)
       code = error && OAuthErrorCode.carried(error, [@config.client_secret, token])
       raise AuthError.new("introspection failed: HTTP #{resp.status}", oauth_error: code) if error || !resp.success?
 

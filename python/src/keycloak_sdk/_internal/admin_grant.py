@@ -38,7 +38,9 @@ token 을 쥔 프레임을 지나고, 폴백이면 python-keycloak 의 `except` 
 않는다 — 토큰 엔드포인트는 그랜트가 폼에 실어 보낸 `client_secret`(갱신이면 admin 의
 refresh token 도)을 오류 본문에 되울릴 수 있고, 예전에는 그것이
 `KeycloakAdminError.keycloak_error` 에 그대로 남았다(등록부
-`secret-echo-form-encoded-rescan`, `tests/unit/test_admin_grant_echo.py`). admin REST
+`secret-echo-form-encoded-rescan`, `tests/unit/test_admin_grant_echo.py`). 싣는 것은 그 본문의 OAuth
+코드 하나다 — 표시할 때 그 그랜트가 보낸 비밀(`_sent`)에 대어 `carried_code` 로 판정해 둔다(경계는
+비밀을 모른다 · 등록부 oauth-error-code-surface-divergent). admin REST
 응답의 오류는 이 래퍼를 지나지 않는다 — 같은 401 `KeycloakAuthenticationError` 라도
 리소스의 것이면 표시가 없다.
 
@@ -56,30 +58,46 @@ import math
 import weakref
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypeGuard
 
 from keycloak.exceptions import KeycloakError
 
 from ..exceptions import KeycloakAuthError
 from ..tokens import _usable_access_token
 from .bearer import GRANTED, sendable
-from .lower import error_in_success, is_lower_failure, unusable_answer
+from .lower import carried_code, error_in_success, is_lower_failure, oauth_error, unusable_answer
 from .token_cap import Answered, answering
 
 #: 중첩 `KeycloakOpenID` 의 그랜트 메서드 — 연결이 토큰을 받는 자리 전부다.
 _SYNC_GRANTS = ("token", "refresh_token")
 _ASYNC_GRANTS = ("a_token", "a_refresh_token")
 
-#: 그랜트 래퍼를 빠져나간 python-keycloak 실패 — 정체로 대조하고, 붙잡아 두지 않는다.
-_FAILED_GRANTS: weakref.WeakSet[KeycloakError] = weakref.WeakSet()
+#: 그랜트 래퍼를 빠져나간 python-keycloak 실패 → 그 오류 본문의 OAuth 코드(그 그랜트가 보낸 비밀에 대어
+#: `carried_code` 가 허락한 것, 아니면 `None`) — 정체로 대조하고, 붙잡아 두지 않는다. 비밀은 담지 않는다.
+_FAILED_GRANTS: weakref.WeakKeyDictionary[KeycloakError, str | None] = weakref.WeakKeyDictionary()
 
 _Grant = Callable[..., dict[str, Any]]
 _AsyncGrant = Callable[..., Awaitable[dict[str, Any]]]
 
 
-def is_grant_failure(exc: BaseException) -> bool:
+def is_grant_failure(exc: BaseException) -> TypeGuard[KeycloakError]:
     """`exc` 가 admin 자체 토큰 그랜트(위 네 메서드)에서 빠져나온 실패인가."""
     return exc in _FAILED_GRANTS
+
+
+def grant_code(exc: KeycloakError) -> str | None:
+    """`is_grant_failure` 인 실패의 OAuth 코드 — 표시할 때 판정해 둔 것(`_failed`)."""
+    return _FAILED_GRANTS.get(exc)
+
+
+def _failed(
+    exc: KeycloakError, owner: object, args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> None:
+    """그랜트 실패를 표시하고, 그 오류 본문의 OAuth 코드를 그 그랜트가 보낸 비밀에 대어
+    판정해 둔다 — 경계(`lower.grant_failure`)가 auth 레인처럼 `error` 에 싣는다(등록부
+    oauth-error-code-surface-divergent — 예전에는 오류 상태에서 싣지 않았다). 비밀은 그때
+    읽고 담지 않는다."""
+    _FAILED_GRANTS[exc] = carried_code(oauth_error(exc), _sent(owner, args, kwargs))
 
 
 def _carried(
@@ -91,10 +109,9 @@ def _carried(
 
     ⚠️ 성공 상태인데 OAuth `error` 를 실은 응답은 그 무엇보다 먼저 거부한다 — 그 토큰은 IdP 가
     스스로 부인한 것이다. 판정은 auth 레인과 같다(`lower.oauth_failure` — 상태와, 그 그랜트가
-    보낸 비밀(`sent` — `_sent`)과 겹치지 않는 코드). 아홉 언어의 규칙이다 — ⚠️ 4xx 의 그랜트
-    실패는 지금처럼 코드를 싣지 않는다(`lower.grant_failure` — 상태의 수용 범위 밖이라 이
-    변경이 건드리지 않는다). 예전에는 그 토큰을 세터에 넘겨 admin 요청이 그것을 싣고
-    나갔다(등록부 auth-2xx-error-code-divergent)."""
+    보낸 비밀(`sent` — `_sent`)과 겹치지 않는 코드). 아홉 언어의 규칙이다 — 4xx 의 그랜트 실패도
+    같은 코드를 `error` 에 싣는다(`_failed`). 예전에는 그 토큰을 세터에 넘겨 admin 요청이 그것을
+    싣고 나갔다(등록부 auth-2xx-error-code-divergent)."""
     named = error_in_success(response, answered, sent=sent)
     if named is not None:
         raise named
@@ -160,7 +177,7 @@ def _checked(grant: _Grant, owner: object) -> _Grant:
             with answering(answered):
                 response = grant(*args, **kwargs)
         except KeycloakError as exc:
-            _FAILED_GRANTS.add(exc)
+            _failed(exc, owner, args, kwargs)
             raise
         except Exception as exc:
             refused = _unusable(exc, answered)
@@ -185,7 +202,7 @@ def _achecked(
             with answering(answered):
                 response = await grant(*args, **kwargs)
         except KeycloakError as exc:
-            _FAILED_GRANTS.add(exc)
+            _failed(exc, owner, args, kwargs)
             raise
         except Exception as exc:
             refused = _unusable(exc, answered)

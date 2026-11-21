@@ -471,12 +471,26 @@ func introspectionRefusal(body []byte, endpoint string, status int, sent ...stri
 	return nil
 }
 
+// withOAuthError is Introspect's error for a status postForm refused: that *AuthError with the code its body's OAuth
+// `error` member names (oauthErrorMember) in OAuthError, when oauthErrorCode lets it through against sent — as the grants
+// carry it at an error status (x/oauth2's RetrieveError) and introspectionRefusal at a 2xx (registry
+// oauth-error-code-surface-divergent: it was left empty). Its message is unchanged. Any other err (no response, over the
+// cap — postForm hands back no body then) is returned as it is. Kept out of auth.go for the reason introspectionRefusal is.
+func withOAuthError(err error, body []byte, sent ...string) error {
+	var refused *AuthError
+	if value, ok := oauthErrorMember(body); ok && errors.As(err, &refused) {
+		refused.OAuthError = oauthErrorCode(value, sent...)
+	}
+	return err
+}
+
 // oauthErrorMember is the OAuth `error` of a token or introspection response body its lane took with a success status: the
 // member's value when body is a JSON object whose member `error` is a JSON string of at least one character, and false
 // otherwise — a number, an object, an array, a boolean, null or "" is no error, and neither is a body that is not a JSON
 // object. The name is matched exactly, as JSON compares member names. Such a response fails as the lane's OAuth error and
 // nothing else in it is used (registry auth-2xx-error-code-divergent): x/oauth2 already refuses one on the three grants,
-// so Introspect (introspectionRefusal) and the admin login (readLoginBody, adminbody.go) are the lanes that ask here.
+// so Introspect (introspectionRefusal) and the admin login (readLoginBody, adminbody.go) are the lanes that ask here —
+// and the same two read the code of an error-status body here (withOAuthError · loginBody.refuse).
 func oauthErrorMember(body []byte) (string, bool) {
 	var members map[string]json.RawMessage
 	if json.Unmarshal(body, &members) != nil {

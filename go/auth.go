@@ -196,7 +196,9 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	}
 	body, status, err := a.postForm(ctx, a.ep.introspection, form, statusIs2xx)
 	if err != nil {
-		return nil, err
+		// A refused status carries the code its body names, as the grants' does (tokencap.go withOAuthError — registry
+		// oauth-error-code-surface-divergent).
+		return nil, withOAuthError(err, body, a.cfg.ClientSecret, token)
 	}
 	// encoding/json turns a sequence that is not UTF-8, or an unpaired surrogate escape, into U+FFFD without an error — the
 	// claims would be ones the IdP never sent — and a body that carries an OAuth `error` is that error, an `active` beside
@@ -270,7 +272,8 @@ func (a *AuthClient) Close() error {
 	return nil
 }
 
-// postForm returns the body of a response whose status ok takes as success, and that status.
+// postForm returns the body of a response whose status ok takes as success, and that status — and for a status ok
+// refuses, its refusal with the body it came with (Introspect reads the OAuth code there; Logout reads nothing).
 func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Values, ok func(int) bool) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -296,7 +299,7 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 	// and the SDK deliberately does not follow redirects (noFollowRedirect surfaces the 3xx here), so that path was
 	// reachable: Logout returned nil while the session was still alive, and Introspect parsed an empty body.
 	if !ok(resp.StatusCode) {
-		return nil, 0, statusRefused(endpoint, resp.StatusCode)
+		return body, resp.StatusCode, statusRefused(endpoint, resp.StatusCode)
 	}
 	return body, resp.StatusCode, nil
 }

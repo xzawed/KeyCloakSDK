@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -36,10 +37,12 @@ func withoutBody(ctx context.Context) context.Context {
 type loginBodyKey int
 
 // loginBody is the record of the admin login's last response: what readLoginBody found when it was a 2xx whose body carries
-// an OAuth `error` (oauthErrorMember, tokencap.go), and nil otherwise. It follows the last request, as belowHTTPSlot does —
+// an OAuth `error` (oauthErrorMember, tokencap.go), and nil otherwise — and, when it was an error status (3xx and up), the
+// `error` member its body names (refused, recorded by refuse). It follows the last request, as belowHTTPSlot does —
 // RoundTrip clears it before each.
 type loginBody struct {
-	found atomic.Pointer[loginErrorBody]
+	found   atomic.Pointer[loginErrorBody]
+	refused atomic.Pointer[string]
 }
 
 // loginErrorBody is such a 2xx: its status, the `error` member's value, and the message gocloak builds for a status that
@@ -60,7 +63,31 @@ func withLoginBody(ctx context.Context) (context.Context, *loginBody) {
 func (k *loginBody) clear() {
 	if k != nil {
 		k.found.Store(nil)
+		k.refused.Store(nil)
 	}
+}
+
+// refuse records the `error` member of the admin login's error-status body b (oauthErrorMember) — the code a refusal of the
+// login carries in OAuthError (carried, cause.go — registry oauth-error-code-surface-divergent); a request that is not the
+// login's has no record (nil), and a body that names none leaves it empty.
+func (k *loginBody) refuse(b []byte) {
+	if k == nil {
+		return
+	}
+	if value, ok := oauthErrorMember(b); ok {
+		k.refused.Store(&value)
+	}
+}
+
+// carried is refusal with the code the login's error-status body named (refuse) in OAuthError, when oauthErrorCode lets it
+// through against sent — as the grants carry it at any status. A refusal that is not *AuthError (no response, over the
+// cap) carries none, and neither does one whose body named no `error`. Its message is unchanged.
+func (k *loginBody) carried(refusal error, sent ...string) error {
+	var ae *AuthError
+	if value := k.refused.Load(); value != nil && errors.As(refusal, &ae) {
+		ae.OAuthError = oauthErrorCode(*value, sent...)
+	}
+	return refusal
 }
 
 // readLoginBody reads the admin login's 2xx body here, as boundError reads an error body — at most one byte past the token
@@ -112,7 +139,7 @@ func (t adminBodyTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	keepCreated(req, resp) // a facade create reads its id from the 2xx's Location and this URL (admincreate.go)
 	switch {
 	case resp.StatusCode >= 300:
-		boundError(resp)
+		kept.refuse(boundError(resp)) // the login's error body names its OAuth code (oauth-error-code-surface-divergent)
 	case req.Context().Value(adminNoBodyKey(0)) != nil:
 		resp.Body = endedBody{resp.Body}
 	case kept != nil:
@@ -127,19 +154,20 @@ func (t adminBodyTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // the status — measured, a 404 whose 2 MiB JSON body was cut came back as a *TransportError, so ErrNotFound stopped
 // matching. Without a media type resty parses nothing and the answer keeps its status. A read error (the token cap's
 // refusal, a timeout) becomes the error of the body resty reads. The bytes counted are decoded ones — a gzip body net/http
-// left encoded was decoded below this transport (decodedGzip).
-func boundError(resp *http.Response) {
+// left encoded was decoded below this transport (decodedGzip). It returns the bytes resty is handed, nil after a read error.
+func boundError(resp *http.Response) []byte {
 	b, err := io.ReadAll(io.LimitReader(resp.Body, adminErrorBodyMaxBytes+1))
 	_ = resp.Body.Close()
 	if err != nil {
 		resp.Body = io.NopCloser(failedRead{err})
-		return
+		return nil
 	}
 	if len(b) > adminErrorBodyMaxBytes {
 		b = b[:adminErrorBodyMaxBytes]
 		resp.Header.Del("Content-Type")
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(b))
+	return b
 }
 
 // failedRead is a body whose every Read fails with err.
