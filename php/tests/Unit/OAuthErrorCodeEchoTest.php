@@ -439,12 +439,14 @@ final class OAuthErrorCodeEchoTest extends TestCase
 
     /**
      * Introspects `TOKEN` against a mock answer at `$status` whose `error` is `$error(what the request sent)` — the client secret
-     * from Basic (each part percent-encoded) and the form's `token`, recorded in `$seen`.
+     * from Basic (each part percent-encoded) and the form's `token`, recorded in `$seen`. ⚠️ `$secret` and `$seen` are
+     * `#[\SensitiveParameter]` — the error's trace keeps this frame's arguments (`zend.exception_ignore_args=0`), so without it
+     * every dump of the error shows the very value the rows assert is withheld.
      *
      * @param \Closure(array<string, string>): string $error
      * @param array<string, string> $seen
      */
-    private static function introspectionFailure(string $secret, int $status, \Closure $error, array &$seen): KeycloakException
+    private static function introspectionFailure(#[\SensitiveParameter] string $secret, int $status, \Closure $error, #[\SensitiveParameter] array &$seen): KeycloakException
     {
         $mock = new MockHandler([static function (RequestInterface $request) use ($status, $error, &$seen): Response {
             parse_str((string) $request->getBody(), $fields);
