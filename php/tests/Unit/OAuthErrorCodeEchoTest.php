@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace Xzawed\Keycloak\Tests\Unit;
 
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\HttpFactory;
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\RequestInterface;
+use Xzawed\Keycloak\AuthClient;
 use Xzawed\Keycloak\ClientCredentialsTokenProvider;
 use Xzawed\Keycloak\Exception\KeycloakAuthError;
 use Xzawed\Keycloak\Exception\KeycloakException;
+use Xzawed\Keycloak\Jwks\JwksStore;
+use Xzawed\Keycloak\JwtValidator;
 use Xzawed\Keycloak\KeycloakClient;
 use Xzawed\Keycloak\KeycloakConfig;
 use Xzawed\Keycloak\OidcEndpoints;
@@ -32,6 +40,8 @@ final class OAuthErrorCodeEchoTest extends TestCase
     private const REFRESH = 'yakrefreshvq';
     private const CODE = 'vulturecodeby';
     private const VERIFIER = 'ocelotverifierocelotverifierocelotverifierxx';
+    /** The token introspection asks about. */
+    private const TOKEN = 'walrustokenpx';
     /** Every piece and every padding, so each direction of the overlap is pinned. */
     private const FORMS = ['whole', 'prefix', 'suffix', 'middle', 'extended', 'prefixed', 'wrapped'];
 
@@ -386,5 +396,75 @@ final class OAuthErrorCodeEchoTest extends TestCase
             self::assertInstanceOf(KeycloakAuthError::class, $e, $surface);
             self::assertNull($e->oauthError, $surface);
         }
+    }
+
+    // --- introspection at an error status -----------------------------------------------------------------------------
+    // Its error status carries the code in `oauthError` now (registry `oauth-error-code-surface-divergent` — before, never), so
+    // the overlap is what keeps an echo of what it sent — the client secret (Basic) and the token asked about — out of it. The
+    // mock answer echoes what THIS request sent (`introspect()` takes the client's Guzzle, so there is a handler to inject).
+
+    /** @return array<string, array{int, string, string}> [status, the sent value echoed, its form] */
+    public static function introspectionEchoes(): array
+    {
+        $rows = [];
+        foreach ([400, 401] as $status) {
+            foreach (['client_secret', 'token'] as $param) {
+                foreach (self::FORMS as $form) {
+                    $rows["$status · $param · $form"] = [$status, $param, $form];
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    #[DataProvider('introspectionEchoes')]
+    public function testIntrospectionWithholdsAnEchoAtAnErrorStatus(int $status, string $param, string $form): void
+    {
+        $seen = [];
+        $e = self::introspectionFailure(self::SECRET, $status, static fn (array $sent): string => self::shape($sent[$param] ?? '', $form), $seen);
+
+        self::assertSame(['client_secret' => self::SECRET, 'token' => self::TOKEN], $seen, 'the request did not send both');
+        self::assertWithheld($e, self::shape($param === 'token' ? self::TOKEN : self::SECRET, $form));
+    }
+
+    public function testIntrospectionWithholdsALowercasedEchoOfTheClientSecretAtAnErrorStatus(): void
+    {
+        $seen = [];
+        $e = self::introspectionFailure('EchoMixedCase', 400, static fn (array $sent): string => strtolower($sent['client_secret'] ?? ''), $seen);
+
+        self::assertSame('EchoMixedCase', $seen['client_secret'] ?? null, 'the secret went out');
+        self::assertWithheld($e, 'echomixedcase');
+    }
+
+    /**
+     * Introspects `TOKEN` against a mock answer at `$status` whose `error` is `$error(what the request sent)` — the client secret
+     * from Basic (each part percent-encoded) and the form's `token`, recorded in `$seen`. ⚠️ `$secret` and `$seen` are
+     * `#[\SensitiveParameter]` — the error's trace keeps this frame's arguments (`zend.exception_ignore_args=0`), so without it
+     * every dump of the error shows the very value the rows assert is withheld.
+     *
+     * @param \Closure(array<string, string>): string $error
+     * @param array<string, string> $seen
+     */
+    private static function introspectionFailure(#[\SensitiveParameter] string $secret, int $status, \Closure $error, #[\SensitiveParameter] array &$seen): KeycloakException
+    {
+        $mock = new MockHandler([static function (RequestInterface $request) use ($status, $error, &$seen): Response {
+            parse_str((string) $request->getBody(), $fields);
+            $pair = explode(':', (string) base64_decode(substr($request->getHeaderLine('Authorization'), 6), true), 2);
+            $token = $fields['token'] ?? null;
+            $seen = ['client_secret' => rawurldecode($pair[1] ?? ''), 'token' => \is_string($token) ? $token : ''];
+
+            return new Response($status, ['Content-Type' => 'application/json'], json_encode(['error' => $error($seen)], JSON_THROW_ON_ERROR));
+        }]);
+        $cfg = new KeycloakConfig(serverUrl: 'http://kc.test', realm: 'r', clientId: 'c', clientSecret: $secret);
+        $guzzle = new \GuzzleHttp\Client(['handler' => HandlerStack::create($mock)]);
+        $endpoints = new OidcEndpoints($cfg);
+        $auth = new AuthClient($cfg, $endpoints, new JwtValidator($cfg, $endpoints, new JwksStore($endpoints->jwks(), $guzzle, new HttpFactory())), $guzzle);
+        try {
+            $auth->introspect(self::TOKEN);
+        } catch (KeycloakException $e) {
+            return $e;
+        }
+        self::fail('introspection did not fail');
     }
 }

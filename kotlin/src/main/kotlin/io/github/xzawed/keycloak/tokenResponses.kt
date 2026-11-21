@@ -10,6 +10,8 @@ import com.nimbusds.oauth2.sdk.TokenIntrospectionResponse
 import com.nimbusds.oauth2.sdk.TokenResponse
 import com.nimbusds.oauth2.sdk.http.HTTPResponse
 import com.nimbusds.openid.connect.sdk.OIDCTokenResponseParser
+import jakarta.ws.rs.core.Response
+import org.jboss.resteasy.client.jaxrs.internal.ClientResponse
 import java.io.IOException
 import java.util.Base64
 
@@ -108,12 +110,28 @@ internal fun adminSentValues(
     return values.filter { it.isNotEmpty() }
 }
 
+// admin 그랜트의 오류 상태 본문이 실은 OAuth 코드 — [oauthErrorValue] 의 error 가운데 그 그랜트가 보낸 비밀(sent — [adminSentValues])과
+// 겹치지 않는 코드 모양의 값([OAuthErrorCode]), 아니면 null(등록부 oauth-error-code-surface-divergent — 예전에는 그 상태에서 싣지 않았다).
+// 가드가 오류 상태를 넘기기 전에 판정해 그 교환의 속성([GRANT_CODE])에 달고, [judgedGrantCode] 가 실패의 응답에서 읽는다(Java
+// `TokenResponseGuard.codeOf` 동형).
+internal fun errorStatusCode(
+    body: ByteArray,
+    sent: List<String>,
+): String? = OAuthErrorCode.carried(oauthErrorValue(body), sent)
+
+// 가드가 오류 상태의 토큰 응답에 달아 둔 코드([errorStatusCode]) — 그 응답이 가드가 판정한 것이 아니면(손으로 지은 Response) null.
+// RESTEasy 는 응답의 속성을 그 교환의 요청 속성과 같은 맵으로 잇는다(ClientInvocation.filterResponse — 가드의 JUDGE_ENTITY 가
+// ReaderInterceptor 에 닿는 길과 같다).
+internal fun judgedGrantCode(response: Response?): String? = (response as? ClientResponse)?.properties?.get(GRANT_CODE) as? String
+
+// [errorStatusCode] 의 판정을 다는 요청 속성.
+internal const val GRANT_CODE = "io.github.xzawed.keycloak.admin.TokenResponseGuard.grantCode"
+
 /**
  * admin 그랜트의 성공 상태 본문이 OAuth 오류 응답이다([oauthErrorValue]) — 그 상태와, 그 error 가운데 [OAuthErrorCode] 가 허락한 코드(아니면
  * null)를 싣는다(Java `TokenResponseGuard.OAuthErrorResponse` 동형). [io.github.xzawed.keycloak.admin.grantFailure] 가 같은 본문의 4xx 와
  * 같은 꼴(「Admin token request failed: HTTP <상태>」)로 바꾸고 코드는 [KeycloakAuthException.oauthError] 에 싣는다 — 아홉 언어의 규칙(등록부
- * auth-2xx-error-code-divergent). ⚠️ 그 레인의 4xx 는 코드를 싣지 않는다 — 상태의 수용 범위 밖이라 이 변경은 그것을 건드리지 않는다.
- * 메시지는 상수다(응답을 인용하지 않는다).
+ * auth-2xx-error-code-divergent). 그 레인의 4xx 도 같은 코드를 싣는다([errorStatusCode]). 메시지는 상수다(응답을 인용하지 않는다).
  */
 internal class OAuthErrorTokenResponse(
     val status: Int,

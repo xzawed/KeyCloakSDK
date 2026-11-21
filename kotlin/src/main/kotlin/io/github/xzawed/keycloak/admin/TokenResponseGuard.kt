@@ -2,9 +2,11 @@ package io.github.xzawed.keycloak.admin
 
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonToken
+import io.github.xzawed.keycloak.GRANT_CODE
 import io.github.xzawed.keycloak.ResponseTooLargeException
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
 import io.github.xzawed.keycloak.adminSentValues
+import io.github.xzawed.keycloak.errorStatusCode
 import io.github.xzawed.keycloak.judgedTokenBody
 import io.github.xzawed.keycloak.readWithinCap
 import io.github.xzawed.keycloak.unbound
@@ -81,9 +83,12 @@ internal class TokenResponseGuard :
         val token = request.uri.rawPath.endsWith(TOKEN_PATH_SUFFIX)
         val exchange = request.getProperty(AdminEngine.EXCHANGE)
         if (response.statusInfo.family != Response.Status.Family.SUCCESSFUL) {
-            // 오류·리다이렉트는 판정하지 않는다(TokenManager 의 몫) — RESTEasy 가 통째로 버퍼에 읽는 그 본문을 상한까지만 넘긴다.
+            // 오류·리다이렉트는 판정하지 않는다(TokenManager 의 몫) — RESTEasy 가 통째로 버퍼에 읽는 그 본문을 상한까지만 넘긴다. 토큰 응답이면
+            // 그 OAuth 코드를 보낸 비밀에 대어 판정해 교환에 달아 둔다([errorStatusCode] — 등록부 oauth-error-code-surface-divergent).
             val raw = response.entityStream ?: return // 엔티티가 없으면 그대로 — 빈 스트림을 지어내면 hasEntity 가 바뀐다
-            response.entityStream = withinCapOrReject(raw, if (token) "token response" else "logout response", exchange)
+            val body = withinCapOrReject(raw, if (token) "token response" else "logout response", exchange)
+            if (token) errorStatusCode(body, sentBy(request))?.let { request.setProperty(GRANT_CODE, it) }
+            response.entityStream = ByteArrayInputStream(body)
             return
         }
         if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
@@ -178,18 +183,18 @@ internal class TokenResponseGuard :
                 release(input, exchange)
             }
 
-        // 오류 본문 — 판정하지 않고 상한까지만 읽어 바이트 그대로 넘긴다. 넘치면 연결을 끊고 상한을 말하는 예외로 거부한다.
+        // 오류 본문 — 판정하지 않고 상한까지만 읽어 바이트 그대로 돌려준다. 넘치면 연결을 끊고 상한을 말하는 예외로 거부한다.
         private fun withinCapOrReject(
             input: InputStream,
             what: String,
             exchange: Any?,
-        ): ByteArrayInputStream {
+        ): ByteArray {
             val body = capPlusOne(input)
             if (body == null) {
                 release(input, exchange)
                 throw ResponseTooLargeException(what)
             }
-            return ByteArrayInputStream(body)
+            return body
         }
 
         // [readWithinCap] — 다만 길이 0 의 읽기는 스트림에 넘기지 않는다([NoEmptyReads]).

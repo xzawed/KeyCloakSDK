@@ -595,7 +595,7 @@ class TokenResponseClassTest {
   /**
    * 성공 상태(200)의 본문이 비어 있지 않은 문자열 {@code error} 를 실으면 그것은 그 레인의 OAuth 오류 응답이다 — 같은 본문을 실은 400 과
    * 같은 타입 · 같은 메시지 꼴(설명 「d」, 없으면 상태) · OAuth 코드(아홉 언어의 규칙). 400 행이 그 기준이다(바뀌지 않는다) — admin 의
-   * 자기 그랜트는 400 에서 코드를 싣지 않고({@code OAuthErrorCodeEchoTest}) 그대로 둔다(상태의 수용 범위 밖), 200 은 싣는다. 수정 전에는
+   * 자기 그랜트도 400 에서 같은 코드를 싣는다(등록부 oauth-error-code-surface-divergent — 그 전에는 null). 수정 전에는
    * B1 이 코드 없는 「… request error」 · 「(unusable token response)」 였고 B2 는 성공이었다 — 토큰을 돌려주고, admin 요청을 보내고,
    * introspection 을 활성으로 읽었다.
    */
@@ -628,7 +628,7 @@ class TokenResponseClassTest {
         Outcome admin = call(ADMIN);
         String label = "S5 " + status + (body.equals(B1) ? " B1" : " B2");
         expect(label, admin, KeycloakAuthException.class, "admin token request failed: HTTP " + status, wrong);
-        expectCode(label, admin, status == 200 ? "invalid_grant" : null, wrong);
+        expectCode(label, admin, "invalid_grant", wrong);
         if (adminHits() != 0) wrong.add(label + ": admin 요청이 나갔다 — " + adminHits());
       }
     }

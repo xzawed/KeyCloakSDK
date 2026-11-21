@@ -212,7 +212,8 @@ module TokenResponseClassSpec
       "r11 200 charset=utf-16 over a UTF-8 body" => [:ok, [true, "svc"]],
       "r12 200 charset=utf-16 over a UTF-16 body" => [AUTH, "introspection response is not valid JSON", nil],
       "r13 200 charset=utf-32 over a UTF-8 body" => [:ok, [true, "svc"]],
-      "r14 401 charset=utf-16 over a UTF-8 error" => [AUTH, "introspection failed: HTTP 401", nil],
+      # 오류 상태의 코드도 다른 레인처럼 싣는다(등록부 oauth-error-code-surface-divergent — 수정 전에는 nil).
+      "r14 401 charset=utf-16 over a UTF-8 error" => [AUTH, "introspection failed: HTTP 401", "invalid_client"],
       "cap one byte past 1 MiB" => [TRANSPORT, "introspection response exceeds #{CAP} bytes", nil],
       "truncated mid-body" => [TRANSPORT, /\Aintrospection transport error: Net::ReadTimeout/, nil],
       "closed mid-body" => [TRANSPORT, CUT, nil],

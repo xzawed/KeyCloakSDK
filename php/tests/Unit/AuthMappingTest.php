@@ -115,6 +115,32 @@ final class AuthMappingTest extends TestCase
     }
 
     /**
+     * An introspection answer at an error status carries its OAuth `error` in `oauthError` too, as every other lane does at
+     * any status (registry `oauth-error-code-surface-divergent`) — A is 400 `invalid_grant`, B is 401 `invalid_client`, the
+     * two cells the nine languages were measured with. The message stays `introspection failed`. Before: `oauthError` was
+     * null for both, while the same `error` at 200 (above) was carried.
+     *
+     * @return array<string, array{int, string}>
+     */
+    public static function errorStatusOAuthErrorIntrospectionRows(): array
+    {
+        return ['A' => [400, 'invalid_grant'], 'B' => [401, 'invalid_client']];
+    }
+
+    #[DataProvider('errorStatusOAuthErrorIntrospectionRows')]
+    public function testErrorStatusOAuthErrorIsCarriedByIntrospection(int $status, string $code): void
+    {
+        $mock = new MockHandler([new Response($status, ['Content-Type' => 'application/json'], '{"error":"' . $code . '"}')]);
+        $auth = self::client($mock);
+        $e = self::thrown(static fn (): mixed => $auth->introspect('am-introspected-token'));
+
+        self::assertSame(0, $mock->count(), 'the introspection request went out');
+        self::assertInstanceOf(KeycloakAuthError::class, $e, "$status: " . self::describe($e));
+        self::assertSame('introspection failed', $e->getMessage());
+        self::assertSame($code, $e->oauthError);
+    }
+
+    /**
      * Only a non-empty string `error` counts — an empty string, null, a number or false beside a usable answer is ignored as
      * before (the control for the rows above). One league grant stands for the three: they share `checkResponse`.
      *

@@ -47,7 +47,8 @@ import org.junit.jupiter.api.Test;
  * 6749 grammar Nimbus accepts, a Keycloak-style secret and a JWT included (measured on main a7d0fdf3). One rule now
  * ({@code OAuthErrorCode}): {@code [a-z_]{1,64}} and overlapping no non-empty secret the request sent — neither contains
  * the other, so a truncated or extended echo is withheld too. The price is pinned below: a secret that is a piece of a
- * registered code ({@code client}) withholds that code. The admin facade's own grant never carried a code — unchanged.
+ * registered code ({@code client}) withholds that code. The admin facade's own grant takes the same rule — at an error
+ * status it carried no code at all before (registry {@code oauth-error-code-surface-divergent}).
  */
 class OAuthErrorCodeEchoTest {
   private static final String REALM = "r";
@@ -125,6 +126,7 @@ class OAuthErrorCodeEchoTest {
     SURFACES.put("exchangeCode", Map.entry(List.of("code", "code_verifier"),
         kc -> kc.auth().exchangeCode(CODE, java.net.URI.create("https://app.example/cb"), VERIFIER)));
     SURFACES.put("introspect", Map.entry(List.of("token"), kc -> kc.auth().introspect(TOKEN)));
+    SURFACES.put("admin", Map.entry(List.of(), kc -> kc.admin().users().get("u1")));
   }
 
   private KeycloakAuthException failing(String surface, String secret) {
@@ -270,8 +272,27 @@ class OAuthErrorCodeEchoTest {
 
   @Test void thePriceASecretThatIsAPieceOfTheCodeWithholdsIt() {
     errorJson = s -> quoted("invalid_client");
-    for (String surface : List.of("clientCredentialsToken", "provider")) {
+    for (String surface : List.of("clientCredentialsToken", "provider", "admin")) {
       assertNull(failing(surface, "client").getError(), surface);
     }
+  }
+
+  /**
+   * The two error statuses the nine languages were measured with (registry {@code oauth-error-code-surface-divergent}): A is
+   * 400 {@code {"error":"invalid_grant"}}, B is 401 {@code {"error":"invalid_client"}}. Every surface carries the code in
+   * {@code getError()}, as every one does at 200 (#1184). Before: the admin facade's own grant left it null for both.
+   */
+  @Test void anErrorStatusCarriesTheCodeOnEverySurface() {
+    List<String> wrong = new ArrayList<>();
+    for (Object[] cell : new Object[][] {{"A", 400, "invalid_grant"}, {"B", 401, "invalid_client"}}) {
+      status = (Integer) cell[1];
+      String code = (String) cell[2];
+      errorJson = s -> quoted(code);
+      for (String surface : SURFACES.keySet()) {
+        String got = failing(surface, SECRET).getError();
+        if (!code.equals(got)) wrong.add(cell[0] + " · " + surface + ": getError() " + got + " (want " + code + ")");
+      }
+    }
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
   }
 }

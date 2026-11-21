@@ -211,7 +211,8 @@ final class AuthClient
             if (TokenResponseCap::overflowed($sink)) {
                 throw self::introspectionTooLarge();   // curl 이 짧은 쓰기에 끊은 전송(CURLE_WRITE_ERROR) — 오류 상태의 본문 포함
             }
-            throw ResponseFailure::of($e, 'introspection');   // 서버가 준 답이면 auth, 응답이 없으면(TLS · 깨진 머리) transport
+            // 서버가 준 답이면 auth(그 본문의 OAuth 코드를 보낸 비밀에 대어 싣는다 — 등록부 oauth-error-code-surface-divergent), 응답이 없으면(TLS · 깨진 머리) transport
+            throw ResponseFailure::of($e, 'introspection', sent: [$this->config->clientSecret, $token]);
         } catch (KeycloakException $e) {
             throw $e;
         } catch (\Throwable $e) {

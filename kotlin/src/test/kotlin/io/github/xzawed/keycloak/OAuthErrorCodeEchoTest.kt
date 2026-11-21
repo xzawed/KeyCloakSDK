@@ -27,7 +27,8 @@ import kotlin.test.fail
  * accepts, a Keycloak-style secret and a JWT included (measured on main a7d0fdf3). One rule now ([OAuthErrorCode]):
  * `[a-z_]{1,64}` and overlapping no non-empty secret the request sent — neither contains the other, so a truncated or
  * extended echo is withheld too. The price is pinned below: a secret that is a piece of a registered code (`client`)
- * withholds that code. The admin facade's own grant never carried a code — unchanged.
+ * withholds that code. The admin facade's own grant takes the same rule — at an error status it carried no code at all
+ * before (registry `oauth-error-code-surface-divergent`).
  */
 class OAuthErrorCodeEchoTest {
     private lateinit var server: HttpServer
@@ -91,6 +92,7 @@ class OAuthErrorCodeEchoTest {
             "exchangeCode" to
                 (listOf("code", "code_verifier") to { kc -> kc.auth.exchangeCode(CODE, VERIFIER, "https://app.example/cb") }),
             "introspect" to (listOf("token") to { kc -> kc.auth.introspect(TOKEN) }),
+            "admin" to (emptyList<String>() to { kc -> kc.admin.users().get("u1") }),
         )
 
     private fun failing(
@@ -256,9 +258,29 @@ class OAuthErrorCodeEchoTest {
     @Test
     fun thePriceASecretThatIsAPieceOfTheCodeWithholdsIt() {
         errorJson = { quoted("invalid_client") }
-        for (surface in listOf("clientCredentialsToken", "provider")) {
+        for (surface in listOf("clientCredentialsToken", "provider", "admin")) {
             assertNull(failing(surface, secret = "client").oauthError, surface)
         }
+    }
+
+    /**
+     * The two error statuses the nine languages were measured with (registry `oauth-error-code-surface-divergent`): A is 400
+     * `{"error":"invalid_grant"}`, B is 401 `{"error":"invalid_client"}`. Every surface carries the code in `oauthError`, as
+     * every one does at 200 (#1184). Before: the admin facade's own grant left it null for both.
+     */
+    @Test
+    fun anErrorStatusCarriesTheCodeOnEverySurface() {
+        val wrong = mutableListOf<String>()
+        for ((cell, statusAndCode) in mapOf("A" to (400 to "invalid_grant"), "B" to (401 to "invalid_client"))) {
+            val (cellStatus, code) = statusAndCode
+            status = cellStatus
+            errorJson = { quoted(code) }
+            for (surface in surfaces.keys) {
+                val got = failing(surface).oauthError
+                if (got != code) wrong += "$cell · $surface: oauthError $got (want $code)"
+            }
+        }
+        assertTrue(wrong.isEmpty(), "${wrong.size} cells:\n" + wrong.joinToString("\n"))
     }
 
     private companion object {

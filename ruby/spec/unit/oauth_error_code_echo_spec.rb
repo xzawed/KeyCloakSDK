@@ -16,6 +16,7 @@ module OAuthErrorCodeEchoSpec
   # Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must
   # be withheld by comparing against THAT value, not a sibling's prefix.
   REFRESH_TOKEN = "yakrefreshvq"
+  TOKEN = "walrustokenpx" # the token introspection asks about
   CODE = "vulturecodeby"
   VERIFIER = "#{'ocelotverifier' * 3}xx".freeze
   # Every piece and every padding, so each direction of the overlap is pinned.
@@ -291,6 +292,47 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
       answer_with { "invalid_client" }
       expect(failure("client_credentials").oauth_error).to be_nil
       expect(failure("provider").oauth_error).to be_nil
+    end
+  end
+
+  # introspection 의 오류 상태(등록부 oauth-error-code-surface-divergent) — 코드는 다른 레인처럼 `oauth_error` 에 실린다: A 는 400
+  # `invalid_grant`, B 는 401 `invalid_client`(아홉 언어를 잰 두 칸). 수정 전에는 둘 다 nil 이었다(200 의 같은 `error` 는 이미 실렸다).
+  # 보낸 비밀(클라이언트 시크릿 · 물은 토큰)의 되울림은 그대로 뺀다. 메시지는 그대로다.
+  describe "introspect at an error status" do
+    def answer_introspection(status:, &error)
+      stub_request(:post, OAuthErrorCodeEchoSpec::INTROSPECT_URL).to_return do |request|
+        { status: status, body: { error: error.call(sent(request)) }.to_json,
+          headers: { "Content-Type" => "application/json" } }
+      end
+    end
+
+    def introspection_failure
+      client.auth.introspect(OAuthErrorCodeEchoSpec::TOKEN)
+      raise "no error"
+    rescue KeycloakSdk::AuthError => e
+      e
+    end
+
+    { "A" => [400, "invalid_grant"], "B" => [401, "invalid_client"] }.each do |cell, (status, code)|
+      it "carries #{code} on HTTP #{status} (cell #{cell})" do
+        answer_introspection(status: status) { code }
+        err = introspection_failure
+        expect(err.message).to eq("introspection failed: HTTP #{status}")
+        expect(err.oauth_error).to eq(code)
+      end
+    end
+
+    [400, 401].product(%w[client_secret token], echo_forms.to_a).each do |status, param, (form, shape)|
+      it "withholds an echoed #{param} (#{form}) on HTTP #{status}" do
+        seen = nil
+        answer_introspection(status: status) do |s|
+          seen = s.fetch(param)
+          shape.call(seen)
+        end
+        err = introspection_failure
+        expect(seen).to eq(param == "token" ? OAuthErrorCodeEchoSpec::TOKEN : secret)
+        expect_withheld(err, shape.call(seen))
+      end
     end
   end
 end

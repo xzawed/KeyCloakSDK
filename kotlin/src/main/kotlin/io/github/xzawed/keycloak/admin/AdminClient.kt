@@ -12,6 +12,7 @@ import io.github.xzawed.keycloak.RESPONSE_MAX_LINE_LENGTH
 import io.github.xzawed.keycloak.RedactedCause
 import io.github.xzawed.keycloak.TOKEN_RESPONSE_MAX_BYTES
 import io.github.xzawed.keycloak.TokenCodingGuard
+import io.github.xzawed.keycloak.judgedGrantCode
 import io.github.xzawed.keycloak.onIo
 import jakarta.ws.rs.Priorities
 import jakarta.ws.rs.ProcessingException
@@ -607,14 +608,16 @@ internal fun grantFailure(e: ProcessingException): String? {
 // 그랜트가 끝까지 온 응답으로 실패했다는 메시지의 머리 — 상태만 싣는다(본문은 그 요청의 시크릿을 되울릴 수 있다).
 private const val GRANT_FAILED = "Admin token request failed: HTTP"
 
-// [grantFailure] 의 실패가 성공 상태의 OAuth 오류 응답이면 그 코드([OAuthErrorTokenResponse.code] — 보낸 비밀과 겹치지 않는 코드 모양의
-// 값만), 아니면 null. 오류 상태는 지금처럼 코드를 싣지 않는다(응답 하나는 셋 중 하나만 낳는다). Java `AdminExceptions.grantCode` 동형.
-internal fun grantCode(e: ProcessingException): String? =
-    generateSequence(e.cause) { it.cause }
-        .take(GRANT_CAUSE_DEPTH)
-        .filterIsInstance<OAuthErrorTokenResponse>()
-        .firstOrNull()
-        ?.code
+// [grantFailure] 의 실패가 실은 OAuth 코드 — 보낸 비밀과 겹치지 않는 코드 모양의 값만, 아니면 null. 성공 상태의 OAuth 오류 응답이면 그
+// 코드([OAuthErrorTokenResponse.code]), 오류 상태면 가드가 그 응답에 달아 둔 코드다([judgedGrantCode] — 등록부
+// oauth-error-code-surface-divergent: 그 전에는 null). 응답 하나는 셋 중 하나만 낳는다. Java `AdminExceptions.grantCode` 동형.
+internal fun grantCode(e: ProcessingException): String? {
+    for (t in generateSequence(e.cause) { it.cause }.take(GRANT_CAUSE_DEPTH)) {
+        if (t is OAuthErrorTokenResponse) return t.code
+        if (t is WebApplicationException) return judgedGrantCode(t.response)
+    }
+    return null
+}
 
 // ⚠️ [ResponseProcessingException] 은 응답을 **받았으나** 읽지 못했다는 JAX-RS 의 표시다 — 그 아래 Jackson 예외가
 // 본문을 인용한다(「Unrecognized token '<본문>'」·JSON 문자열 값·expires_in 값). admin 자원 응답의 결합 실패가 여기로 온다

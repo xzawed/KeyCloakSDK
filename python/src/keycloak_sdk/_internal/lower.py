@@ -154,7 +154,8 @@ def auth_failure(
     같은 자리다(`unusable_answer` — 그 응답이 2xx 가 아니었으면 그 상태로 판정한다). 응답 본문이
     상한을 넘은 것은 다 읽지 않은 응답이라 전송 쪽이다(`refused_body`).
     OAuth 코드는 `carried_code` 가 허락한 것만 메시지와 `error` 에 함께 싣는다 — `sent` 는 그
-    요청이 보낸 비밀 값이다. `carry_code` 가 거짓이면 싣지 않는다(`grant_failure`)."""
+    요청이 보낸 비밀 값이다. `carry_code` 가 거짓이면 둘 다 싣지 않는다(`grant_failure` 는 `error`
+    만 따로 채운다)."""
     refused = refused_body(exc)
     if refused is not None:
         return refused
@@ -174,7 +175,7 @@ def oauth_failure(
     HTTP <상태> (<코드>)`, 코드는 `carried_code` 가 허락한 것만(아니면 상태만). 오류 상태의 응답
     (`auth_failure`)과 성공 상태인데 `error` 를 실은 응답(`error_in_success`)이 함께 쓴다.
 
-    `value` 가 `None` 이면 코드를 싣지 않는다(admin 자체 그랜트 — `grant_failure`). 상태가 없으면
+    `value` 가 `None` 이면 코드를 싣지 않는다(admin 자체 그랜트의 메시지). 상태가 없으면
     (목처럼 세션을 지나지 않은 응답 — 상태는 세션이 적는다, `token_cap.Answered`) 상태를 지어내지
     않고 뺀다."""
     code = carried_code(value, sent)
@@ -229,17 +230,22 @@ def unusable_response(exc: BaseException) -> KeycloakAuthError:
     return KeycloakAuthError(f"Keycloak returned an unusable response ({type(exc).__name__})")
 
 
-def grant_failure(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError:
+def grant_failure(
+    exc: BaseException, code: str | None
+) -> KeycloakAuthError | KeycloakTransportError:
     """admin **자체** 토큰 그랜트의 실패 — auth 레인과 같은 판정이다(`auth_failure` · 등록부
     token-response-class-divergent D4). 끝까지 온 응답이면 상태가 무엇이든
     `KeycloakAuthError` 다 — 예전에는 그 상태로 admin 형을 골라 토큰 엔드포인트의 404 가
     `KeycloakNotFoundError` 였고, 토큰을 받지 못한 `users.delete` 가 admin 요청 0 번에
     「이미 없음」으로 읽혔다(실측 2026-11-10 · go #952 와 같은 위험).
 
-    ⚠️ 하나만 다르다 — 오류 본문의 OAuth 코드를 싣지 않는다. 그랜트의 폼에는 `client_secret`
-    (갱신이면 refresh token 도)이 실려 있고 IdP 는 그것을 오류 본문의 `error` 자리에도 되울릴 수
-    있다 — 코드 모양 검사로는 막지 못한다(소문자뿐인 비밀은 코드 모양이다 — `mysecret` 을
-    되울린 400 이 메시지 · `args` · `error` 에 실렸다, 독립 레그 실측). admin 은 `vars(e)` 까지
-    깨끗해야 하고(등록부 secret-echo-form-encoded-rescan · `tests/unit/test_admin_grant_echo.py`),
-    1.0.7 까지도 그랜트 실패에 본문을 싣지 않았다."""
-    return auth_failure(exc, carry_code=False)
+    OAuth 코드는 `error` 에 auth 레인처럼 싣는다 — `code` 는 그 그랜트가 보낸 비밀(`client_secret`
+    · 갱신이면 refresh token)에 대어 `carried_code` 가 허락한 것이다(`admin_grant._failed` — 경계는
+    비밀을 모른다 · 등록부 oauth-error-code-surface-divergent: 예전에는 오류 상태에서 싣지 않았다).
+    IdP 는 그 비밀을 `error` 자리에 되울릴 수 있고 소문자뿐인 비밀은 코드 모양이라 겹침이 막는다
+    (`tests/unit/test_admin_grant_echo.py` · `test_oauth_error_code_echo.py`). 메시지는 예전대로
+    상태뿐이다."""
+    failure = auth_failure(exc, carry_code=False)
+    if isinstance(failure, KeycloakAuthError):
+        failure.error = code
+    return failure

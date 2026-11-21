@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.zip.ZipException;
+import org.jboss.resteasy.client.jaxrs.internal.ClientResponse;
 
 /**
  * admin 레인의 토큰 응답 검사 — 토큰 엔드포인트의 성공 응답이 <b>그대로 보낼 수 있는 bearer 인 JSON 문자열</b>
@@ -95,6 +96,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   static final String STATUS = TokenResponseGuard.class.getName() + ".status";
   /** {@link #JUDGE_ENTITY} 와 함께 다는 그 요청이 보낸 비밀({@code String[]} — {@link #sentValues}) — ReaderInterceptor 는 요청을 모른다. */
   static final String SENT = TokenResponseGuard.class.getName() + ".sent";
+  /** 오류 상태의 토큰 응답이 실은 OAuth 코드 — {@link #filter} 가 그 교환에 달고 {@link #codeOf} 가 실패의 응답에서 읽는다. */
+  static final String CODE = TokenResponseGuard.class.getName() + ".code";
   /** 폼에 실려 나가는 비밀 매개변수 — auth 레인 {@code AuthClient.SECRET_PARAMS} 와 같은 집합이다. */
   private static final Set<String> SECRET_PARAMS =
       Set.of("code", "code_verifier", "refresh_token", "token", "client_secret", "client_assertion", "password");
@@ -127,9 +130,15 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     }
     Object exchange = request.getProperty(AdminEngine.EXCHANGE);
     if (response.getStatusInfo().getFamily() != Response.Status.Family.SUCCESSFUL) {
-      // 오류 상태 — 상한 안이면 같은 바이트를 그대로 넘기고(TokenManager 의 복구 경로), 넘치면 거부한다.
+      // 오류 상태 — 상한 안이면 같은 바이트를 그대로 넘기고(TokenManager 의 복구 경로), 넘치면 거부한다. 그 본문의 OAuth 코드는 이 요청이
+      // 보낸 비밀에 대어 지금 판정해 교환에 단다 — 실패가 auth 레인처럼 싣는다(codeOf · 등록부 oauth-error-code-surface-divergent).
       InputStream in = response.getEntityStream();
-      if (in != null) response.setEntityStream(withinCapOrReject(in, exchange));
+      if (in != null) {
+        byte[] body = withinCapOrReject(in, exchange);
+        String code = OAuthErrorCode.carried(oauthError(body), sentValues(request));
+        if (code != null) request.setProperty(CODE, code);
+        response.setEntityStream(new ByteArrayInputStream(body));
+      }
       return;
     }
     int status = response.getStatus();
@@ -377,14 +386,24 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     return value;
   }
 
-  /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 넘긴다(판정은 하지 않는다). */
-  private static ByteArrayInputStream withinCapOrReject(InputStream in, Object exchange) throws IOException {
+  /** 오류 상태의 본문 — 상한+1 바이트까지만 읽어 넘치면 거부, 아니면 읽은 바이트를 그대로 돌려준다(판정은 하지 않는다). */
+  private static byte[] withinCapOrReject(InputStream in, Object exchange) throws IOException {
     byte[] body = capPlusOne(in);
     if (body.length > ResponseLimits.MAX_TOKEN_RESPONSE_BYTES) {
       release(in, exchange);
       throw new IOException(TOO_LARGE);
     }
-    return new ByteArrayInputStream(body);
+    return body;
+  }
+
+  /**
+   * 오류 상태의 토큰 응답에 {@link #filter} 가 달아 둔 코드 — 그 실패가 이 가드가 판정한 응답의 것이 아니거나(손으로 지은 {@link Response})
+   * 그 본문이 코드를 싣지 않았으면 null. RESTEasy 는 응답의 속성을 그 교환의 요청 속성과 같은 맵으로 잇는다
+   * ({@code ClientInvocation.filterResponse} — {@link #JUDGE_ENTITY} 가 ReaderInterceptor 에 닿는 길과 같다).
+   */
+  static String codeOf(Response response) {
+    if (!(response instanceof ClientResponse judged) || judged.getProperties() == null) return null;
+    return judged.getProperties().get(CODE) instanceof String code ? code : null;
   }
 
   /**
@@ -488,8 +507,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   /**
    * 성공 상태의 본문이 OAuth 오류 응답이다({@link #oauthError}) — 그 상태와, 그 {@code error} 가운데 {@link OAuthErrorCode#carried} 가
    * 허락한 코드(아니면 null)를 싣는다. {@link AdminExceptions} 가 같은 본문의 4xx 와 같은 꼴(「admin token request failed: HTTP
-   * &lt;상태&gt;」)로 바꾸고 코드는 {@code getError()} 에 싣는다 — 아홉 언어의 규칙(등록부 auth-2xx-error-code-divergent). ⚠️ 그 레인의
-   * 4xx 는 코드를 싣지 않는다 — 상태의 수용 범위 밖이라 이 변경은 그것을 건드리지 않는다. 메시지는 상수다(응답을 인용하지 않는다).
+   * &lt;상태&gt;」)로 바꾸고 코드는 {@code getError()} 에 싣는다 — 아홉 언어의 규칙(등록부 auth-2xx-error-code-divergent). 그 레인의
+   * 4xx 도 같은 코드를 싣는다({@link #codeOf}). 메시지는 상수다(응답을 인용하지 않는다).
    */
   static final class OAuthErrorResponse extends IOException {
     private static final long serialVersionUID = 1L;

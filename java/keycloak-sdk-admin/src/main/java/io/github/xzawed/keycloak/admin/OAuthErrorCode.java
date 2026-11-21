@@ -10,8 +10,9 @@ import java.util.List;
  * 둘을 고정한다({@code OAuthErrorCodeTest} 둘).
  *
  * <p>⚠️ {@code error} 도 응답 본문이다 — 보낸 것을 되울리는 IdP(나 그 앞의 프록시)는 Basic 자격의 client secret · refresh token 을
- * 거기 싣는다. 쓰는 자리는 성공 상태로 온 OAuth 오류 응답 하나다({@link TokenResponseGuard.OAuthErrorResponse} — 등록부
- * auth-2xx-error-code-divergent). 빈 비밀은 비교하지 않는다 — 빈 문자열은 모든 코드의 조각이다.
+ * 거기 싣는다. 쓰는 자리는 둘이다 — 성공 상태로 온 OAuth 오류 응답({@link TokenResponseGuard.OAuthErrorResponse} — 등록부
+ * auth-2xx-error-code-divergent)과 오류 상태의 응답({@link TokenResponseGuard#codeOf} — 등록부 oauth-error-code-surface-divergent).
+ * 빈 비밀은 비교하지 않는다 — 빈 문자열은 모든 코드의 조각이다.
  */
 final class OAuthErrorCode {
   private OAuthErrorCode() {}

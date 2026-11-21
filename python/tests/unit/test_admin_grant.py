@@ -372,8 +372,8 @@ _SUCCESS_STATUS_OAUTH_ERROR: dict[str, dict[str, object]] = {
     },
 }
 #: auth 레인과 같은 판정(`lower.oauth_failure`) — 상태와, 그랜트가 보낸 비밀(client secret · 그랜트
-#: 인자)과 겹치지 않는 코드(아홉 언어의 규칙). 4xx 의 그랜트 실패는 지금처럼 코드를 싣지 않는다
-#: (`lower.grant_failure` · test_admin_grant_echo — 상태의 수용 범위 밖이라 바꾸지 않았다).
+#: 인자)과 겹치지 않는 코드(아홉 언어의 규칙). 4xx 의 그랜트 실패도 그 코드를 `error` 에 싣는다(아래
+#: 오류 상태 칸 — 메시지는 상태뿐 그대로다).
 _NAMED_ERROR = (KeycloakAuthError, "Keycloak request failed: HTTP 200 (invalid_grant)")
 
 
@@ -454,6 +454,33 @@ async def test_success_status_oauth_error_withholds_a_lowercased_echo_of_the_cli
         assert str(err) == f"Keycloak request failed: HTTP 200{shown}", error
         assert "echoedsecret" not in (str(err) + repr(vars(err))).lower(), error
         assert idp.admin_requests() == [], error
+
+
+#: 오류 상태에 실린 OAuth `error` — 아홉 언어를 잰 두 칸(등록부 oauth-error-code-surface-divergent):
+#: A 는 400 `invalid_grant`, B 는 401 `invalid_client`. 코드는 auth 레인처럼 `error` 에 실린다(보낸
+#: 비밀과 겹치지 않을 때만 — 그 칸은 test_oauth_error_code_echo) — 메시지는 상태뿐 그대로다. 수정
+#: 전에는 sync · aio 모두 `error` 가 `None` 이었다(200 에 실린 같은 `error` 는 이미 실렸다).
+_ERROR_STATUS_OAUTH_ERROR: dict[str, tuple[int, str]] = {
+    "A": (400, "invalid_grant"),
+    "B": (401, "invalid_client"),
+}
+
+
+@pytest.mark.parametrize("cell", list(_ERROR_STATUS_OAUTH_ERROR))
+@pytest.mark.parametrize("lane", LANES)
+async def test_error_status_oauth_error_in_the_first_grant_is_carried(lane: str, cell: str) -> None:
+    status, code = _ERROR_STATUS_OAUTH_ERROR[cell]
+    with _fake_idp() as idp:
+        idp.grants["client_credentials"] = [(status, {"error": code})]
+        async with _client(lane, idp) as client:
+            result, err = await _attempt(lane, client, _admin_get)
+
+    assert result is None
+    assert type(err) is KeycloakAuthError
+    assert str(err) == f"Keycloak request failed: HTTP {status}"
+    assert err.error == code
+    assert idp.grant_types() == ["client_credentials"]
+    assert idp.admin_requests() == []
 
 
 # --- 설치 — 주입된 admin 도 같고, 이음매가 없으면 만들지 않는다 ----------------------------------

@@ -19,7 +19,7 @@ from urllib.parse import urljoin, urlsplit
 from keycloak.exceptions import KeycloakError
 
 from .._internal.admin_body import Answer, RedirectionStatus, facade, no_body
-from .._internal.admin_grant import is_grant_failure
+from .._internal.admin_grant import grant_code, is_grant_failure
 from .._internal.lower import grant_failure, is_lower_failure, refused_body, summarize
 from ..exceptions import (
     KeycloakAdminError,
@@ -134,7 +134,7 @@ def admin_failure(
     (`raw_*` 가 감싼 원인)를 그 상태의 오류로 새로 만든다(`by_status` — 4xx 와 같은 판정).
     """
     if is_grant_failure(exc):
-        return grant_failure(exc)
+        return grant_failure(exc, grant_code(exc))
     refused = refused_body(exc)
     if refused is not None:
         return refused

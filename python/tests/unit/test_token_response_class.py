@@ -449,14 +449,14 @@ _GRANT_SUCCESS = (200, 201, 204)
 
 
 def _as_admin_grant(err: BaseException | None, status: int) -> _Verdict:
-    """S1 의 판정을 admin 그랜트가 낼 모양으로 — 같은 형·같은 메시지이되 오류 상태에서는 OAuth
-    코드를 싣지 않는다(그랜트의 오류 본문은 폼의 `client_secret` 을 `error` 자리에 되울릴 수
-    있다 — `lower.grant_failure`). 그랜트가 성공으로 받은 상태에 OAuth `error` 를 실은 응답은
-    S1 처럼 코드를 싣는다 — 아홉 언어의 규칙(등록부 auth-2xx-error-code-divergent · 보낸 비밀과의
-    겹침은 `admin_grant._sent`)."""
-    withheld = status not in _GRANT_SUCCESS
-    if isinstance(err, KeycloakAuthError) and err.error is not None and withheld:
-        return _auth(str(err).removesuffix(f" ({err.error})"))
+    """S1 의 판정을 admin 그랜트가 낼 모양으로 — 같은 형 · 같은 코드(`error`)이되 오류 상태의
+    메시지는 상태뿐이다(`lower.grant_failure` — 코드는 `error` 에만, 보낸 비밀과의 겹침은
+    `admin_grant._sent` · 등록부 oauth-error-code-surface-divergent). 그랜트가 성공으로 받은
+    상태에 OAuth `error` 를 실은 응답은 S1 처럼 메시지에도 코드를 싣는다(등록부
+    auth-2xx-error-code-divergent)."""
+    in_message = status in _GRANT_SUCCESS
+    if isinstance(err, KeycloakAuthError) and err.error is not None and not in_message:
+        return _auth(str(err).removesuffix(f" ({err.error})"), err.error)
     return _verdict(err)
 
 
@@ -687,7 +687,7 @@ _CODE_SHAPED_SECRET = "echoed_code_shaped_secret"
 async def test_a_code_shaped_secret_echoed_as_the_grant_error_is_not_carried(lane: str) -> None:
     """소문자뿐인 client secret 은 OAuth 코드 모양이다 — 그랜트가 그것을 `error` 자리에 되울리면
     코드 모양 검사로는 거르지 못한다(독립 레그 실측: 메시지 · `args` · `error` 에 실렸다). 그랜트
-    실패는 OAuth 코드를 싣지 않는다."""
+    실패의 코드는 보낸 비밀과 겹치면 싣지 않는다(`carried_code`)."""
     answer: _Answer = (400, _JSON, b'{"error":"' + _CODE_SHAPED_SECRET.encode() + b'"}')
     with _fake_idp(answer) as idp:
         cfg = KeycloakConfig(
