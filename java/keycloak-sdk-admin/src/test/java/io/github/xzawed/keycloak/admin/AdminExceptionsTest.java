@@ -108,7 +108,7 @@ class AdminExceptionsTest {
     KeycloakAuthException t = assertThrows(KeycloakAuthException.class,
         () -> AdminExceptions.call(() -> { throw new ProcessingException(tokenError); }));
     assertEquals("admin token request failed: HTTP 401", t.getMessage());
-    assertNull(t.getError(), "OAuth 오류 코드는 본문에서 읽지 않는다 — 그 본문은 시크릿을 되울릴 수 있다");
+    assertNull(t.getError(), "코드는 가드가 판정한 응답의 것이다(보낸 비밀에 대어) — 손으로 지은 예외의 본문에서는 읽지 않는다");
     for (Throwable c = t.getCause(); c != null; c = c.getCause()) {
       assertFalse(c instanceof WebApplicationException, "Response 를 쥔 원인이 남았다: " + c.getClass());
     }

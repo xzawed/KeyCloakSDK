@@ -30,24 +30,27 @@ const (
 	echoRefresh  = "yakrefreshvq"
 	echoCode     = "vulturecodeby"
 	echoVerifier = "ocelotverifierocelotverifierocelotverifierxx"
+	echoToken    = "walrustokenpx" // the token Introspect asks about
 )
 
-// echoIdP answers every token POST with status (400 unless set) {"error": …} — error is fixed, or built by echo from
-// what the request sent (the form, with the client secret from Basic when it came that way).
+// echoIdP answers every token and introspection POST with status (400 unless set) {"error": …} — error is fixed, or
+// built by echo from what the request sent (the form, with the client secret from Basic when it came that way).
 type echoIdP struct {
-	srv    *httptest.Server
-	mu     sync.Mutex
-	fixed  any
-	echo   func(sent map[string]string) any
-	status int
-	sent   []map[string]string
+	srv      *httptest.Server
+	mu       sync.Mutex
+	fixed    any
+	echo     func(sent map[string]string) any
+	status   int
+	location string // a Location header on the answer, when set
+	sent     []map[string]string
 }
 
 func newEchoIdP(t *testing.T) *echoIdP {
 	t.Helper()
 	p := &echoIdP{}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") {
+		if !strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") &&
+			!strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token/introspect") {
 			http.NotFound(w, r)
 			return
 		}
@@ -65,10 +68,13 @@ func newEchoIdP(t *testing.T) *echoIdP {
 		if p.echo != nil {
 			value = p.echo(sent)
 		}
-		status := p.status
+		status, location := p.status, p.location
 		p.mu.Unlock()
 		body, _ := json.Marshal(map[string]any{"error": value})
 		w.Header().Set("Content-Type", "application/json")
+		if location != "" {
+			w.Header().Set("Location", location)
+		}
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}))
@@ -83,7 +89,15 @@ func (p *echoIdP) answer(fixed any, echo func(map[string]string) any) {
 func (p *echoIdP) answerWith(status int, fixed any, echo func(map[string]string) any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.status, p.fixed, p.echo, p.sent = status, fixed, echo, nil
+	p.status, p.fixed, p.echo, p.sent, p.location = status, fixed, echo, nil, ""
+}
+
+// redirectWith answers as answerWith does, with a Location header — a redirect net/http would follow.
+func (p *echoIdP) redirectWith(status int, fixed any, location string) {
+	p.answerWith(status, fixed, nil)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.location = location
 }
 
 func (p *echoIdP) firstSent(t *testing.T) map[string]string {
@@ -123,6 +137,10 @@ var echoSurfaces = []struct {
 			return err
 		}
 		_, err = a.Users.Get(ctx, "u1")
+		return err
+	}},
+	{"Introspect", []string{"token"}, func(ctx context.Context, c *Client) error {
+		_, err := c.Auth.Introspect(ctx, echoToken)
 		return err
 	}},
 }
@@ -330,7 +348,8 @@ func TestAValueThatIsNotACodeIsNeverCarried(t *testing.T) {
 	}
 }
 
-// OAuthError is set by the grants and the provider; the admin login keeps the code in Msg only (loginError).
+// OAuthError is set on every surface — the admin login (gocloak's LoginClient) and Introspect too, which left it empty at
+// an error status (registry oauth-error-code-surface-divergent). The admin login's Msg still ends in the code (loginError).
 func TestACodeThatOverlapsNothingSentIsCarried(t *testing.T) {
 	p := newEchoIdP(t)
 	for _, s := range echoSurfaces {
@@ -338,11 +357,8 @@ func TestACodeThatOverlapsNothingSentIsCarried(t *testing.T) {
 			p.answer(code, nil)
 			err := s.run(context.Background(), echoClient(t, p, echoSecret))
 			ae := authErrorOf(t, s.name+" · "+code, err)
-			if s.name == "admin" {
-				if !strings.HasSuffix(ae.Msg, ": "+code) {
-					t.Errorf("admin · %s: Msg = %q, want it to end in the code", code, ae.Msg)
-				}
-				continue
+			if s.name == "admin" && !strings.HasSuffix(ae.Msg, ": "+code) {
+				t.Errorf("admin · %s: Msg = %q, want it to end in the code", code, ae.Msg)
 			}
 			if ae.OAuthError != code {
 				t.Errorf("%s · %s: OAuthError = %q", s.name, code, ae.OAuthError)
@@ -351,10 +367,51 @@ func TestACodeThatOverlapsNothingSentIsCarried(t *testing.T) {
 	}
 }
 
+// The two error statuses the nine languages were measured with (registry oauth-error-code-surface-divergent): A is 400
+// {"error":"invalid_grant"}, B is 401 {"error":"invalid_client"}. Every surface carries the code in OAuthError, as every one
+// does at 200 (#1184). Before: the admin login (Client.Admin) and Introspect left it empty for both.
+func TestAnErrorStatusCarriesTheCodeOnEverySurface(t *testing.T) {
+	p := newEchoIdP(t)
+	for _, cell := range []struct {
+		name   string
+		status int
+		code   string
+	}{{"A", http.StatusBadRequest, "invalid_grant"}, {"B", http.StatusUnauthorized, "invalid_client"}} {
+		for _, s := range echoSurfaces {
+			p.answerWith(cell.status, cell.code, nil)
+			err := s.run(context.Background(), echoClient(t, p, echoSecret))
+			label := cell.name + " · " + s.name
+			if ae := authErrorOf(t, label, err); ae.OAuthError != cell.code {
+				t.Errorf("%s: OAuthError = %q, want %q — %v", label, ae.OAuthError, cell.code, err)
+			}
+		}
+	}
+}
+
+// A 3xx is an error status too: one net/http does not follow (302 without a Location) and one this SDK refuses to follow
+// (307 with one — the admin lane's errOnRedirect, the auth lane's noFollowRedirect) carry the code as a 4xx does.
+func TestARedirectStatusCarriesTheCodeOnEverySurface(t *testing.T) {
+	p := newEchoIdP(t)
+	for _, cell := range []struct {
+		name     string
+		status   int
+		location string
+	}{{"302 without a Location", http.StatusFound, ""}, {"307 with a Location", http.StatusTemporaryRedirect, "/elsewhere"}} {
+		for _, s := range echoSurfaces {
+			p.redirectWith(cell.status, "invalid_grant", cell.location)
+			err := s.run(context.Background(), echoClient(t, p, echoSecret))
+			label := cell.name + " · " + s.name
+			if ae := authErrorOf(t, label, err); ae.OAuthError != "invalid_grant" {
+				t.Errorf("%s: OAuthError = %q, want invalid_grant — %v", label, ae.OAuthError, err)
+			}
+		}
+	}
+}
+
 func TestThePriceASecretThatIsAPieceOfTheCodeWithholdsIt(t *testing.T) {
 	p := newEchoIdP(t)
 	p.answer("invalid_client", nil)
-	for _, s := range []int{0, 3} {
+	for _, s := range []int{0, 3, 4, 5} {
 		err := echoSurfaces[s].run(context.Background(), echoClient(t, p, "client"))
 		if ae := authErrorOf(t, echoSurfaces[s].name, err); ae.OAuthError != "" {
 			t.Errorf("%s: OAuthError = %q, want none", echoSurfaces[s].name, ae.OAuthError)

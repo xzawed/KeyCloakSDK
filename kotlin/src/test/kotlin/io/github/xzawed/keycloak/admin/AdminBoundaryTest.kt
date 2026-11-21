@@ -162,7 +162,7 @@ internal class AdminBoundaryTest {
             val tokenError = WebApplicationException("LEAKBODY bad client", 401)
             val auth = assertFailsWith<KeycloakAuthException> { adminCall<Unit> { throw ProcessingException(tokenError) } }
             assertEquals("Admin token request failed: HTTP 401", auth.message)
-            assertEquals(null, auth.oauthError, "OAuth 오류 코드는 본문에서 읽지 않는다 — 그 본문은 시크릿을 되울릴 수 있다")
+            assertEquals(null, auth.oauthError, "코드는 가드가 판정한 응답의 것이다(보낸 비밀에 대어) — 손으로 지은 예외에서는 읽지 않는다")
             val printed = auth.stackTraceToString()
             assertFalse("LEAKBODY" in printed, printed)
             assertTrue("Caused by: jakarta.ws.rs.WebApplicationException (message withheld)" in printed, printed)

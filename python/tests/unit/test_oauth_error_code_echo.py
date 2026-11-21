@@ -13,7 +13,8 @@ not overlap a non-empty secret that request sent — neither contains the other,
 extended echo is withheld too. The price is fixed below: a secret that is a piece of a registered
 code (`client`) withholds that code — the status stays in the message, nothing leaks.
 
-The admin self-grant never carries a code (`test_admin_grant_echo.py`) — unchanged.
+The admin self-grant takes the same rule for `error` at an error status (registry
+`oauth-error-code-surface-divergent`) — its message stays the status alone (the section at the end).
 """
 
 from __future__ import annotations
@@ -331,3 +332,35 @@ async def test_the_price_a_secret_that_is_a_piece_of_the_code_withholds_it(lane:
     with _echo_idp(fixed="invalid_client") as idp:
         err = await _fail(lane, idp.url, SURFACES["client_credentials"][0], secret="client")
     _withheld(err, "invalid_client")
+
+
+# --- the admin self-grant ----------------------------------------------------------------------
+# Its error status carries the code in `error` too (registry oauth-error-code-surface-divergent —
+# before, never), so the overlap is what keeps an echo of the grant's client secret out of it. Its
+# message is the status alone, as before — `_withheld` fits it as it is.
+
+
+def _admin_get(client: Any) -> Any:
+    return client.admin.users.get("u1")
+
+
+@pytest.mark.parametrize("status", [400, 401])
+@pytest.mark.parametrize("form", list(ECHO_FORMS))
+@pytest.mark.parametrize("lane", LANES)
+async def test_the_admin_grant_never_carries_an_echoed_client_secret(
+    lane: str, form: str, status: int
+) -> None:
+    with _echo_idp(echo=lambda sent: ECHO_FORMS[form](sent["client_secret"]), status=status) as idp:
+        err = await _fail(lane, idp.url, _admin_get)
+    assert idp.seen and idp.seen[0]["client_secret"] == SECRET
+    _withheld(err, ECHO_FORMS[form](SECRET), status)
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_the_admin_grant_never_carries_a_lowercased_echo_of_the_client_secret(
+    lane: str,
+) -> None:
+    with _echo_idp(echo=lambda sent: sent["client_secret"].lower()) as idp:
+        err = await _fail(lane, idp.url, _admin_get, secret="EchoMixedCase")
+    assert idp.seen and idp.seen[0]["client_secret"] == "EchoMixedCase"
+    _withheld(err, "echomixedcase")

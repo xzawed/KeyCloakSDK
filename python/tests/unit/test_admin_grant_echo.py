@@ -16,8 +16,9 @@ userinfo) — 각각 통째와 앞 10 자 — 그리고 응답 본문 자체의 
 리소스가 다시 401 인 것)는 `keycloak_error` 에 본문을 예전 그대로 싣는다 — 그 표면은 따로 등록된
 판단이다(`error-message-surface-unspecified`). 그랜트 실패는 auth 레인과 같은 판정의
 `KeycloakAuthError` 다(등록부 token-response-class-divergent D4 — 그 전에는 상태별 admin
-형이었다). 상태는 메시지에 있고 OAuth 코드는 싣지 않는다 — 되울린 비밀이 코드 모양일 수 있다
-(`error 코드 자리` 칸 · test_token_response_class 의 코드 모양 비밀 칸).
+형이었다). 상태는 메시지에 있고 OAuth 코드는 `error` 에만 실린다 — 그랜트가 보낸 비밀과 겹치지
+않는 코드일 때만(등록부 oauth-error-code-surface-divergent — 되울린 비밀이 코드 모양일 수 있다:
+`error 코드 자리` 칸 · test_token_response_class 의 코드 모양 비밀 칸).
 """
 
 from __future__ import annotations
@@ -330,6 +331,14 @@ _FIRST: dict[str, _Script] = {
     "비JSON 본문·raw": _not_json,
 }
 
+#: 칸 → 그 거부가 `error` 에 싣는 코드 — `invalid_client` 은 보낸 비밀과 겹치지 않아 실리고, 코드
+#: 자리에 되울린 시크릿(선 위 모양 — 코드 모양이 아니다)과 JSON 이 아닌 본문은 코드가 없다.
+_FIRST_CODE: dict[str, str | None] = {
+    **dict.fromkeys(_FIRST, "invalid_client"),
+    "error 코드 자리·wire": None,
+    "비JSON 본문·raw": None,
+}
+
 
 @pytest.mark.parametrize("shape", list(_FIRST))
 @pytest.mark.parametrize("lane", LANES)
@@ -344,11 +353,12 @@ async def test_a_refused_first_grant_carries_no_echo_of_the_secret(lane: str, sh
     assert idp.grant_types() == ["client_credentials"]
     assert idp.admin_requests() == 0
     assert result is None
-    # auth 레인과 같은 판정이다 — 상태는 메시지에 있고, OAuth 코드는 싣지 않는다(되울린 비밀이
-    # 코드 모양일 수 있다 — test_token_response_class 의 코드 모양 비밀 칸).
+    # auth 레인과 같은 판정이다 — 상태는 메시지에 있고, OAuth 코드는 보낸 비밀과 겹치지 않을 때만
+    # `error` 에 실린다(되울린 비밀이 코드 모양일 수 있다 — test_token_response_class 의 코드 모양
+    # 비밀 칸).
     assert type(err) is KeycloakAuthError
     assert str(err) == "Keycloak request failed: HTTP 401"
-    assert err.error is None
+    assert err.error == _FIRST_CODE[shape]
     # 응답 본문은 어디에도 없다 — 보낸 값의 어떤 모양도, 본문 표지도.
     assert _leaks(err, idp, ("client_secret",)) == []
 
@@ -378,7 +388,7 @@ async def test_a_refused_first_grant_is_an_auth_error_whatever_the_status(
     assert result is None
     assert type(err) is KeycloakAuthError
     assert str(err) == f"Keycloak request failed: HTTP {status}"
-    assert err.error is None
+    assert err.error == "invalid_request"
     assert _leaks(err, idp, ("client_secret",)) == []
 
 
@@ -447,10 +457,10 @@ async def test_a_refused_later_grant_carries_no_echo_of_the_refresh_token(
     assert idp.grant_types() == grants, f"{path} 경로에 닿지 않았다 — 공허하다"
     assert idp.sent("refresh_token")[0] == [REFRESH], "refresh token 이 실리지 않았다 — 공허하다"
     assert result is None
-    # 폴백의 마지막 실패는 client_credentials 의 401 이다. OAuth 코드는 싣지 않는다.
+    # 폴백의 마지막 실패는 client_credentials 의 401 이다. OAuth 코드는 그 실패의 것이다.
     assert type(err) is KeycloakAuthError
     assert str(err) == f"Keycloak request failed: HTTP {status}"
-    assert err.error is None
+    assert err.error == ("invalid_client" if status == 401 else "invalid_grant")
     assert _leaks(err, idp, ("client_secret", "refresh_token")) == []
 
 

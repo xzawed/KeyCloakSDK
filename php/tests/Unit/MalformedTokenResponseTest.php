@@ -183,7 +183,8 @@ final class MalformedTokenResponseTest extends TestCase
         'e7 400 error array|provider.getToken' => ['client-credentials failed', null, null],
         'e9 400 error empty array|clientCredentialsToken' => ['token request rejected', null,
             'League\OAuth2\Client\Provider\Exception\IdentityProviderException: OAuth error response (body withheld)'],
-        'f3 401 error_description echo|introspect' => ['introspection failed', null,
+        // The code rides at an error status too (registry `oauth-error-code-surface-divergent`) — `invalid_client` overlaps nothing sent.
+        'f3 401 error_description echo|introspect' => ['introspection failed', 'invalid_client',
             'GuzzleHttp\Exception\ClientException: HTTP 401 from POST https://kc.test/realms/r/protocol/openid-connect/token/introspect (response body withheld)'],
         // logout 의 실패는 상태를 싣는다 — 204 가 아닌 답 · 오류 상태 · 풀 수 없는 본문의 답(등록부 logout-2xx-html-false-success).
         'g 400 error_description echo|logout' => ['logout failed (HTTP 400)', null,

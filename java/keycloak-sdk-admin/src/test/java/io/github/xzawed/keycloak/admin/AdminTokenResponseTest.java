@@ -205,8 +205,8 @@ class AdminTokenResponseTest {
   /**
    * 성공 상태의 OAuth error — 200 본문이 비어 있지 않은 문자열 {@code error} 를 실으면 그 그랜트는 OAuth 오류 응답이다: 같은 본문의 400 과
    * 같은 「admin token request failed: HTTP &lt;상태&gt;」 · admin 요청 0 건 · 토큰 요청 1 건, 그리고 {@code getError()} 는 코드다(아홉
-   * 언어의 규칙 — 400 행은 이 레인 그대로 코드가 없다, 상태의 수용 범위 밖이라 바꾸지 않는다). 토큰이 함께 실려도(B2) 쓰지 않는다.
-   * 수정 전에는 B1 이 코드 없는 「(unusable token response)」 였고 B2 는 그 토큰으로 admin 요청을 보냈다(등록부
+   * 언어의 규칙 — 400 행도 같은 코드를 싣는다, 등록부 oauth-error-code-surface-divergent: 그 전에는 null). 토큰이 함께 실려도(B2) 쓰지
+   * 않는다. 수정 전에는 B1 이 코드 없는 「(unusable token response)」 였고 B2 는 그 토큰으로 admin 요청을 보냈다(등록부
    * auth-2xx-error-code-divergent).
    */
   @Test void successStatusOAuthError_sendsNoAdminRequest_andFailsAsTheErrorStatus() {
@@ -221,7 +221,7 @@ class AdminTokenResponseTest {
         reset(new Reply(status, body.getValue()));
         table.add(callExpectingRejection(status + " " + body.getKey(), wrong,
             new Expected(KeycloakAuthException.class, "admin token request failed: HTTP " + status)));
-        String want = status == 200 ? "invalid_grant" : null;
+        String want = "invalid_grant";
         String code = lastRejection instanceof KeycloakAuthException auth ? auth.getError() : "(no KeycloakAuthException)";
         if (!Objects.equals(want, code)) wrong.add(status + " " + body.getKey() + ": getError() " + code + " (기대 " + want + ")");
       }
