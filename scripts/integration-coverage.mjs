@@ -80,24 +80,27 @@
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
 // 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
-// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java · ruby, 등록부 coverage-exclusion-hides-untested-branches ·
+// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java · ruby · go, 등록부 coverage-exclusion-hides-untested-branches ·
 // coverage-omit-hides-security-paths) ──
 // 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
 // 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
 // 함수마다 단위 시험이 닿지 않는 코드를 센다 — kotlin · java 는 JaCoCo 메서드 계수기의 놓친 줄 · 놓친 가지, php 는 PHPUnit XML 의 놓친
 // 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지, ruby 는 VM `Coverage` 의 메서드마다 0 회인 줄(한 줄 메서드는
-// 호출 횟수) · 0 회인 가지 갈래. 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport · dotnetReport · rubyReport)가 낸다: kotlin 의
+// 호출 횟수) · 0 회인 가지 갈래, go 는 커버 프로필에서 함수마다 0 회인 블록의 문장(통합 리포트의 지표와 같다 — 프로필에는 줄 · 가지가
+// 없다). 이름 · 접기 · 무결성은 위의 같은 리더(jvmReport · phpReport · dotnetReport · rubyReport · goReport)가 낸다: kotlin 의
 // 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역 클래스는 javaFold 가, dotnet 의 상태
 // 기계 · 람다 · 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다 —
 // java 의 이름 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). ruby 의 블록 · 람다는 이름을 접을 것이 없다 — 감싼 메서드의
-// 줄 범위 안이라 그 메서드의 줄 · 가지다(메서드 밖 블록의 안 돈 줄 · 안 탄 갈래는 리더가 FAIL 로 낸다). 정적 초기화는 kotlin · java
-// `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines, branches(kotlin ·
-// dotnet · java · ruby), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나 **열린** 등록부 id 다(위
-// 소유자와 같은 판정).
+// 줄 범위 안이라 그 메서드의 줄 · 가지다(메서드 밖 블록의 안 돈 줄 · 안 탄 갈래는 리더가 FAIL 로 낸다). go 의 함수 리터럴도 같다 — 감싼
+// 함수 선언의 줄 범위 안이라 그 함수의 문장이다(goFuncs — 패키지 수준 함수 리터럴의 안 돈 문장은 리더가 FAIL 로 낸다). 정적 초기화는
+// kotlin · java `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines(go 는
+// statements), branches(kotlin · dotnet · java · ruby), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는 까닭이거나
+// **열린** 등록부 id 다(위 소유자와 같은 판정).
 // run 은 위 run 의 것 그대로다(php 는 생성한 설정의 `--testsuite unit`, kotlin 은 같은 초기화 스크립트로 `test` 태스크, dotnet 은 같은
 // 생성 설정 · 같은 대상 하나로 `--filter "Category!=Integration"`, java 는 같은 리액터 · 같은 exec 자리로 레인의 단위 골 `test
 // -DskipITs=true` — failsafe 는 그 뒤 단계라 안 돈다, ruby 는 같은 부트 파일 · 같은 순서로 레인의 단위 명령 `bundle exec rspec` — 태그
-// 없이 그 기본 경로 `spec` 을, `RUN_INTEGRATION` 을 지운 환경이라 spec_helper 가 `:integration` 을 거르고 SimpleCov 게이트를 건다) —
+// 없이 그 기본 경로 `spec` 을, `RUN_INTEGRATION` 을 지운 환경이라 spec_helper 가 `:integration` 을 거르고 SimpleCov 게이트를 건다, go 는
+// 같은 프로필 자리로 레인의 단위 명령 `go test -count=1 ./...` — 태그가 없어 `//go:build integration` 뒤의 통합 시험은 컴파일되지 않는다) —
 // kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL(`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그
 // 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
 // ⚠️ java 의 jacoco.skip 모듈(예제 — 파생이 forced 로 넣는다)에는 에이전트가 안 붙고 단위 시험도 없다: 그 파일은 데이터에 줄 · 가지 전부를
@@ -112,6 +115,12 @@
 // `||` · `&&` · `or` · `and` 는 VM 이 가지로 싣지 않는다 — `x || raise …` 의 실패 갈래는 행복 경로가 도는 줄에 있으면 안 보인다(실측
 // 2026-11-21 — 픽스처의 fallback). 한 줄 메서드(`def x = …` · `def x; …; end`)의 줄은 적재 때 돌므로 호출 횟수로 센다 — 안 불렸으면 1 줄이다.
 // 몸통에 줄이 없는 메서드(`def x` 다음 줄이 `end`)는 안 불려도 0 줄이다(통합 리포트는 호출 횟수로 그것을 empty body 로 낸다).
+// ⚠️ go 는 문장을 센다 — 커버 프로필은 블록마다 문장 수와 횟수뿐이다. if · else · switch · select 의 갈래는 제 블록이라 안 돈 실패 갈래는
+// 그 블록의 문장으로 보인다. 못 보는 것: `&&` · `||` 의 피연산자(블록이 아니다 — 조건 커버리지는 gobco 를 손으로 돌린다,
+// .claude/rules/go.md) · else 없는 if 의 거짓 쪽(제 블록이 없다) · 문장 없는 블록. 패키지 수준 함수 리터럴(어느 함수 선언에도 안 든다)의 안
+// 돈 문장은 어느 함수에도 못 붙여 FAIL 이다 — 경계가 한 문장도 안 돈 실행이면 그 측정 실패가 먼저다. 커버 프로필에는 소스 해시도 시험
+// 결과도 없어 run 이 기록에 종료코드 · 프로필의 sha1 · 경계 파일의 sha1(실행 앞뒤가 같을 때만 — dotnet 과 같다)을 싣는다. 통합 run 은
+// 기록을 쓰지 않는다(그 판정은 그대로다).
 // ⚠️ dotnet 도 가지를 센다 — coverlet(10.1.0)은 컴파일러가 만든 갈래 대부분을 싣지 않는다: 상태 기계의 분기 · finally 의 가드 · using 의
 // null 검사 · 람다 · 메서드 그룹 캐시, 그리고 Task · ValueTask(ConfigureAwait 여부와 무관)를 await 할 때의 IsCompleted 검사(실측 2026-11-19,
 // 실제 트리 · net8.0 Release: 경계의 상태 기계 31 개에 await 40 개 — 그중 18 개는 실린 가지가 0 개다 · AdminAsync 의 IL 조건 점프 10 개 중
@@ -159,10 +168,10 @@
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자 · 단위 장부(데이터·Docker 불필요)
-//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java|ruby> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께
-//                                                                                                        돌리고 단위 미도달 장부와 대조한다
-//                                                                                                        (Docker 불필요 — 레인 게이트)
-//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java|ruby> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
+//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java|ruby|go> [ROOT] [--out DIR]   단위 스위트를 경계 계측과 함께
+//                                                                                                           돌리고 단위 미도달 장부와 대조한다
+//                                                                                                           (Docker 불필요 — 레인 게이트)
+//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java|ruby|go> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
@@ -201,10 +210,14 @@ const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
 const JVM_LANGS = new Set(['java', 'kotlin'])
 // 단위 미도달 장부(머리 주석) — 재는 언어와 why 의 까닭 머리. 등록부 id 가 아닌 why 는 이 셋 중 하나로 시작해야 한다.
 const UNIT = 'scripts/unit-unreached.json'
-const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java', 'ruby']
+const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java', 'ruby', 'go']
 const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
-// 놓친 가지도 세는 언어 — php 의 데이터에는 가지가 없다(머리 주석).
+// 놓친 가지도 세는 언어 — php 의 데이터 · go 의 커버 프로필에는 가지가 없다(머리 주석).
 const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java', 'ruby'])
+// 줄이 아니라 문장을 세는 언어 — go 의 커버 프로필은 블록마다 문장 수와 횟수뿐이다(머리 주석 · 통합 리포트의 지표와 같다). 장부 항목의
+// 키도 그 이름이다(`statements` — 줄로 적으면 꼴이 틀린 것이다).
+const UNIT_STATEMENTS = new Set(['go'])
+const unitKey = (l) => (UNIT_STATEMENTS.has(l) ? 'statements' : 'lines')
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -688,10 +701,15 @@ function goFuncs(file) {
   }
   return funcs
 }
+// 커버 프로필 — 통합(`run go`)은 `go.cover`, 단위 미도달 장부(`unit go`)는 `.unit` 이 붙은 이름과 그 실행의 기록이다(SUITE). 통합 run 은
+// 기록을 쓰지 않는다(머리 주석).
+const GO_DATA = () => join(out, `go${TAG}.cover`)
+const GO_RUN = () => join(out, `go${TAG}.run.json`)
 function goReport(d) {
-  const path = join(out, 'go.cover')
+  const path = GO_DATA()
+  const shown = path.replace(/\\/g, '/')
   if (!existsSync(path)) {
-    fail('go', `no coverage data at ${path.replace(/\\/g, '/')} — run the integration suite first (node scripts/integration-coverage.mjs run go)`)
+    fail('go', `no coverage data at ${shown} — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} go)`)
     return null
   }
   const modFile = join(root, d.dir, 'go.mod')
@@ -700,9 +718,11 @@ function goReport(d) {
     fail('go', `${d.dir}/go.mod has no module line — profile paths cannot be mapped to files`)
     return null
   }
-  const lines = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').split('\n').filter(Boolean)
-  if (!/^mode: (set|count|atomic)$/.test(lines[0] ?? '')) {
-    fail('go', `${path.replace(/\\/g, '/')} is not a Go cover profile (first line: ${lines[0] ?? 'empty'})`)
+  const bytes = readFileSync(path)
+  const lines = bytes.toString('utf8').replace(/\r\n/g, '\n').split('\n').filter(Boolean)
+  const mode = /^mode: (set|count|atomic)$/.exec(lines[0] ?? '')?.[1]
+  if (!mode) {
+    fail('go', `${shown} is not a Go cover profile (first line: ${lines[0] ?? 'empty'})`)
     return null
   }
   // 같은 블록이 여러 번 나올 수 있다(여러 테스트 바이너리의 프로필을 합친 꼴) — 문장은 한 번, 덮임은 어느 쪽이든.
@@ -727,6 +747,8 @@ function goReport(d) {
   }
   const files = []
   const never = []
+  // 함수마다 안 돈 문장 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다).
+  const units = []
   for (const f of sortU(d.files)) {
     const bs = [...blocks.values()].filter((b) => b.file === f)
     if (!bs.length) {
@@ -751,8 +773,47 @@ function goReport(d) {
     }
     files.push({ file: f, stmts, covered, outside })
     for (const fn of funcs) if (fn.stmts > 0 && fn.covered === 0) never.push({ file: f, line: fn.start, name: fn.name, stmts: fn.stmts })
+    for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.stmts - fn.covered })
   }
-  return { path, files, never }
+  if (SUITE !== 'unit') return { path, files, never }
+  // ── 여기부터 단위 미도달 장부만 ──
+  // 패키지 수준 함수 리터럴의 안 돈 문장은 어느 함수 선언에도 못 붙인다 — FAIL 이다(ruby 의 메서드 밖 갈래와 같은 판정 · 통합 리포트는 그
+  // 문장을 파일 표의 package-level 로 보인다). 경계가 한 문장도 안 돈 실행이면 그 판정(ranNothing — 측정 실패)이 먼저다.
+  if (files.some((x) => x.covered > 0)) {
+    for (const x of files) if (x.outside.covered < x.outside.stmts) fail('go', `${x.file}: ${x.outside.stmts - x.outside.covered} of ${x.outside.stmts} package-level statements (a function literal outside every function declaration) never ran — no function can be credited with them`)
+  }
+  // run 기록 — php · ruby 와 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 프로필). 커버 프로필에는 소스 해시가 없어(블록은
+  // 줄 · 열뿐이다) 경계 파일의 바이트도 기록과 대조한다(dotnet 과 같다). 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
+  const runRec = GO_RUN()
+  let rec = null
+  try {
+    rec = JSON.parse(readFileSync(runRec, 'utf8'))
+  } catch {
+    rec = null
+  }
+  const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
+  const sha = (b) => createHash('sha1').update(b).digest('hex')
+  if (!isObj(rec) || rec.run !== 'go' || (rec.suite ?? 'integration') !== SUITE) {
+    fail('go', `no record that \`${RUN_CMD} go\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} go) so the report can tell a complete, successful run`)
+    return null
+  }
+  if (rec.exit !== 0) {
+    fail('go', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+    return null
+  }
+  if (rec.profile_sha1 !== sha(bytes)) {
+    fail('go', `${shown} is not the data \`${RUN_CMD} go\` recorded (sha1 ${String(rec.profile_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    return null
+  }
+  if (!isObj(rec.files)) {
+    fail('go', 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
+    return null
+  }
+  for (const f of d.files) {
+    const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
+    if (rec.files[f] !== now) fail('go', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+  }
+  return { path, note: `mode ${mode}`, files, never, units }
 }
 
 // ── python: coverage.py JSON(format 3 — 함수 영역) ────────────────────────────────────────
@@ -3513,8 +3574,9 @@ function unitLedgerFor(l) {
     fail(l, `${UNIT} has no ${l} object — an empty ledger is {}, not a missing one`)
     return null
   }
-  // kotlin · dotnet · java · ruby 는 놓친 줄 · 놓친 가지, php 는 놓친 줄만 센다(머리 주석 — php 의 XML 에는 가지가 없다).
-  const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : ['lines', 'why']
+  // kotlin · dotnet · java · ruby 는 놓친 줄 · 놓친 가지, php 는 놓친 줄만, go 는 놓친 문장만 센다(머리 주석 — php 의 XML · go 의 커버
+  // 프로필에는 가지가 없다).
+  const want = UNIT_BRANCHES.has(l) ? ['branches', 'lines', 'why'] : [unitKey(l), 'why']
   for (const [k, v] of Object.entries(e)) {
     const ok = v !== null && typeof v === 'object' && !Array.isArray(v) && sortU(Object.keys(v)).join() === want.join() && want.every((x) => (x === 'why' ? typeof v.why === 'string' && v.why !== '' : isCount(v[x])))
     if (!ok) {
@@ -3531,17 +3593,23 @@ function whyProblem(reg, key, why) {
   if (head) return why.slice(head.length).trim() ? null : `${key}: why "${why}" names a kind but not the reason — say why after "${head}"`
   return reg && !reg.open.has(why) ? `${key}: why "${why}" is neither ${UNIT_WHY.join(' · ')} with a reason nor an open item of ${REGISTRY}` : null
 }
-const unitCounts = (l, x) => (UNIT_BRANCHES.has(l) ? `${x.lines} line${x.lines === 1 ? '' : 's'} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : `${x.lines} line${x.lines === 1 ? '' : 's'}`)
-const unitMissed = (u) => u.lines > 0 || (u.branches ?? 0) > 0
+const unitCounts = (l, x) => {
+  const k = unitKey(l)
+  const head = `${x[k]} ${k === 'statements' ? 'statement' : 'line'}${x[k] === 1 ? '' : 's'}`
+  return UNIT_BRANCHES.has(l) ? `${head} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : head
+}
+const unitMissed = (u) => (u.lines ?? 0) > 0 || (u.statements ?? 0) > 0 || (u.branches ?? 0) > 0
 // `unit` · `unit-report` — 측정(단위 실행의 데이터)과 장부를 함수마다 대조한다. 종료코드는 머리 주석의 단위 표다.
 function unitReport(l) {
   const d = derivedFor(l)
   const pin = pinFor(l)
   const reg = loadRegistry()
   const led = unitLedgerFor(l)
+  // 놓친 줄(go 는 문장)의 키 — 장부 항목과 측정이 같은 이름을 쓴다.
+  const k = unitKey(l)
   // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x), ruby: rubyReport }[l]
+  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x), ruby: rubyReport, go: goReport }[l]
   const data = fails(l) ? null : reader(d)
   const rows = []
   if (data && !fails(l)) {
@@ -3555,8 +3623,8 @@ function unitReport(l) {
         const e = led[key]
         rows.push({ ...u, key, why: e ? e.why : 'NONE' })
         if (!e) drift(l, `unrecorded unreached code ${key} — the unit suite never reaches ${unitCounts(l, u)} of it: test that code, or record why in ${UNIT}`)
-        else if (e.lines !== u.lines || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
-          drift(l, `${key}: the unit run leaves ${unitCounts(l, u)} unreached, ${UNIT} records ${unitCounts(l, e)} — ${u.lines > e.lines || (u.branches ?? 0) > (e.branches ?? 0) ? 'test what the unit suite does not reach, or record why and correct the counts' : 'the unit suite reaches more of it now: lower the counts and check the why'}`)
+        else if (e[k] !== u[k] || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
+          drift(l, `${key}: the unit run leaves ${unitCounts(l, u)} unreached, ${UNIT} records ${unitCounts(l, e)} — ${u[k] > e[k] || (u.branches ?? 0) > (e.branches ?? 0) ? 'test what the unit suite does not reach, or record why and correct the counts' : 'the unit suite reaches more of it now: lower the counts and check the why'}`)
       }
       for (const [key, e] of Object.entries(led)) {
         const at = key.indexOf(':')
@@ -3578,7 +3646,7 @@ function unitReport(l) {
     console.log(`unit-unreached [${l}]: FAIL — ${nf} integrity failure${nf > 1 ? 's' : ''}; the ledger is not compared against a run that failed one`)
     return 2
   }
-  const sum = rows.reduce((a, r) => ({ lines: a.lines + r.lines, branches: a.branches + (r.branches ?? 0) }), { lines: 0, branches: 0 })
+  const sum = rows.reduce((a, r) => ({ [k]: a[k] + r[k], branches: a.branches + (r.branches ?? 0) }), { [k]: 0, branches: 0 })
   const head = `${rows.length} function${rows.length === 1 ? '' : 's'} with code the unit suite never reaches (${unitCounts(l, sum)})`
   if (nd) {
     console.log(`unit-unreached [${l}]: DRIFT — ${head} · ${nd} ledger problem${nd > 1 ? 's' : ''} (the lane fails on it — each DRIFT line says what to change: a test, or ${UNIT}, whose why is ${UNIT_WHY.join(' · ')} with the reason or an open item of ${REGISTRY})`)
@@ -3600,7 +3668,9 @@ function printUnit(l, d, data, rows) {
           ? '  (counts = coverlet per method — lines and branch arms no unit test ran — summed over what folds into each source member: state machines, lambdas, local functions; a decision inside a catch filter is not a branch, and in an async method an arm that flows into the other arm\'s target counts as run)'
           : l === 'ruby'
             ? '  (counts = Ruby Coverage per method — lines inside it and branch arms (if, unless, case, while, until, ternary, &.) the unit run never executed; a block\'s lines and arms are its method\'s, a one-line method\'s line counts by its calls; || and && are not branches to Ruby, so a failure arm behind them on a line that ran is not seen)'
-            : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
+            : l === 'go'
+              ? '  (counts = Go cover profile per function — statements in blocks the unit run never executed; a function literal\'s blocks are its enclosing function\'s; the profile has no branches, so a path with no block of its own — an operand of && or ||, the false side of an if without else — is not seen)'
+              : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
   )
   const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
   for (const r of sorted) console.log(`  UNREACHED ${r.file}:${r.line} ${r.name} · ${unitCounts(l, r)} · ${r.why}`)
@@ -3736,9 +3806,26 @@ function run(l) {
   mkdirSync(out, { recursive: true })
   const cwd = join(root, d.dir)
   if (l === 'go') {
-    const prof = join(out, 'go.cover')
+    // 옛 프로필(단위는 그 기록도)을 먼저 지운다(php 와 같은 이유 — 일찍 멈춘 run 뒤에 지난 실행의 것이 남지 않게). 통합은 레인의 E2E
+    // (`-tags=integration -run TestE2E`)다. 단위 미도달 장부(`unit go`)는 레인의 단위 명령 `go test -count=1 ./...` 에 같은 프로필 자리를
+    // 더한다 — 태그가 없어 `//go:build integration` 뒤의 통합 시험은 컴파일되지 않는다. 이름은 `.unit` 이 붙는다(SUITE).
+    const prof = GO_DATA()
     rmSync(prof, { force: true })
-    return spawnStep('go', ['test', '-tags=integration', '-run', 'TestE2E', '-count=1', `-coverprofile=${prof}`, './...'], cwd)
+    if (SUITE !== 'unit') return spawnStep('go', ['test', '-tags=integration', '-run', 'TestE2E', '-count=1', `-coverprofile=${prof}`, './...'], cwd)
+    rmSync(GO_RUN(), { force: true })
+    // 경계 파일의 바이트 — 커버 프로필에는 소스 해시가 없다. 실행 앞뒤로 재서 같을 때만 기록에 싣는다(dotnet 과 같다 — 빌드가 그 바이트를
+    // 컴파일했다). unit-report 가 그것을 트리의 바이트와 대조한다.
+    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    const before = shas()
+    const rc = spawnStep('go', ['test', '-count=1', `-coverprofile=${prof}`, './...'], cwd)
+    const after = shas()
+    // 이 실행의 기록 — 종료코드 · 프로필의 sha1 · 경계 파일의 sha1(통합 run 은 기록을 쓰지 않는다 — 단위 실행의 기록만 `suite` 를 갖는다).
+    if (existsSync(prof)) {
+      const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+      const sha = createHash('sha1').update(readFileSync(prof)).digest('hex')
+      writeFileSync(GO_RUN(), `${JSON.stringify({ run: 'go', suite: 'unit', exit: rc, profile_sha1: sha, files: same ? before : null })}\n`)
+    }
+    return rc
   }
   if (l === 'rust') {
     const lcov = join(out, 'rust.lcov')

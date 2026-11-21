@@ -22,7 +22,8 @@
 #       루트에 tree 사본, 번들은 실제 레인의 것(`BUNDLE_GEMFILE=ruby/Gemfile`). 덤프의 root 와 파일 키는 절대 경로다 — 생성 루트만 `@ROOT@` 로
 #       바꿨다(되돌린 바이트가 원본과 같다)
 #   fixtures/unit-unreached/data/go.unit.cover   `unit go` 가 도는 명령 `go test -count=1 -coverprofile=… ./...`(go1.26.4 · 태그 없음) —
-#       임시 루트에 tree/go 사본. 프로필의 경로는 모듈 경로(example.com/fixture/go/…)라 치환이 없다
+#       임시 루트에 tree/go 사본. 프로필의 경로는 모듈 경로(example.com/fixture/go/…)라 치환이 없다. 도구의 `unit go`(임시 루트에 tree 사본)로
+#       다시 내도 바이트가 같았다
 # 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test · tree/ruby/spec/unit)은
 # 빈 code · null · 빈 user · 빈 문자열 · 빈 값 · nil 을 안 보내고 unused · logoutUrl · LogoutUrl · logout_url · Describe() · describe ·
 # token(String, int) 를 안 부른다. dotnet 의 Guarded 는 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은
