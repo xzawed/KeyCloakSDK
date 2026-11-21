@@ -13,11 +13,22 @@ module KeycloakSdk
       end
 
       def on_request(env)
-        token = sendable!(bearer_text(@token_provider.access_token))
+        token = sendable!(bearer_text(provided_token))
         env.request_headers["Authorization"] = "Bearer #{token}"
       end
 
       private
+
+      # 공급자는 admin 요청을 보내기 전에 돈다 — 그 `Faraday::ParsingError` 가 실은 응답 상태는 admin 응답의 것이 아니다(등록부
+      # ruby-provider-parsing-error-admin-status · `Call#request` 는 그 상태로 AdminError 를 만든다). 그 오류만 전송 오류로
+      # 바꾸고 SDK 오류와 그 밖의 공급자 오류는 그대로 올린다.
+      def provided_token
+        @token_provider.access_token
+      rescue Error
+        raise
+      rescue Faraday::ParsingError => e
+        raise TransportError, "admin transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+      end
 
       # ⚠️ **검사는 헤더에 실릴 글에 건다 — String 이 아닌 값도.** 덕 계약은 String 이지만 주입한 provider 는 무엇이든
       # 돌려줄 수 있고 헤더에 실리던 것은 그 값의 글이다 — String 일 때만 검사하던 때 CR 든 Symbol 은 `raw` 에서 Bearer 를

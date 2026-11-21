@@ -164,8 +164,9 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
   # 부른다 — 그 공급자가 낸 `Faraday::ParsingError` 가 상태를 실어도(응답 객체든, faraday 2.15.1 이
   # `RaiseError(include_request: false)` 아래에서 그것을 바꾼 Hash 든 — error.rb `omit_request_data`) admin 요청은 나가지
   # 않았다. 그 상태가 클래스를 정하던 때는 409 가 admin 요청 없이 「이미 있다」(ConflictError), 404 가 「없다」(NotFoundError)로
-  # 읽혔다. 공급자의 SDK 밖 오류는 상태와 무관하게 전송 오류이고, 원인은 `RedactedCause` 다(해석기의 메시지는 본문 앞부분을
-  # 인용한다). 대조군 — admin 응답 자신의 못 읽는 오류 본문은 여전히 상태가 클래스를 정한다(404 · 409 · 403 — 위
+  # 읽혔다. 이제 그 오류는 상태와 무관하게 파사드에서도 `raw` 에서도 전송 오류이고, 원인은 `RedactedCause` 다(해석기의 메시지는
+  # 본문 앞부분을 인용한다). 바꾸는 것은 그 오류 하나다 — 그 밖의 공급자 오류는 예전 그대로다(`raw` 에서는 그 예외 자체).
+  # 대조군 — admin 응답 자신의 못 읽는 오류 본문은 여전히 상태가 클래스를 정한다(404 · 409 · 403 — 위
   # 「an error status whose body claims JSON but is not」).
   describe "a Faraday::ParsingError the token provider raises" do
     let(:unparsable) { JSON::ParserError.new("unexpected token at 'PROVIDER-CANARY'") }
@@ -175,9 +176,9 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
       described_class.new(config: config, token_provider: provider)
     end
 
-    def expect_transport_error(failure)
+    def expect_transport_error(failure, call: ->(a) { a.users.get("x") })
       user = stub_request(:get, "#{users_url}/x")
-      expect { raising(failure).users.get("x") }
+      expect { call.call(raising(failure)) }
         .to raise_error(KeycloakSdk::TransportError, "admin transport error: Faraday::ParsingError") do |e|
           expect(e.full_message(highlight: false)).not_to include("PROVIDER-CANARY")
         end
@@ -196,6 +197,20 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
 
     it "reports one that carries no response as a transport error" do
       expect_transport_error(Faraday::ParsingError.new(unparsable))
+    end
+
+    it "is a transport error on raw too, and the admin request is not sent" do
+      expect_transport_error(Faraday::ParsingError.new(unparsable, { status: 409 }),
+                             call: ->(a) { a.raw.get("admin/realms/demo/users/x") })
+    end
+
+    it "leaves any other provider error as it was: raw raises the provider's own exception" do
+      user = stub_request(:get, "#{users_url}/x")
+      failure = RuntimeError.new("provider-boom")
+      expect { raising(failure).raw.get("admin/realms/demo/users/x") }.to raise_error(RuntimeError) do |e|
+        expect(e).to be(failure)
+      end
+      expect(user).not_to have_been_requested
     end
   end
 
