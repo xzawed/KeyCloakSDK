@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=7167 -->
+<!-- doc-budget: max-bytes=7374 -->
+<!-- 7167 → 7374 (2026-11-21): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 「OAuth error code」 줄에 더한
+     문장(모든 레인이 어느 상태에서든 코드를 코드 칸에 싣고, 실린 것이 없으면 비운다 — .NET 의 reason phrase 밖)은 여섯 언어의 칸
+     시험이 잰다 — 이름이 `error.?status.?(oauth|carries)` 에 맞는 것(A 400 invalid_grant · B 401 invalid_client, 수정 전 42d8858b 에서
+     열여섯 칸 RED — 등록부 oauth-error-code-surface-divergent). **교환** — 이 변경으로 거짓이 된 문장은 이 파일에 없어, 머리 문장이 이미
+     말하는 「Change either one in all nine at once」 를 덜었다(#1184 가 「Move all nine at once」 둘을 덜어 낸 것과 같은 부류). -->
 <!-- 7062 → 7167 (2026-11-20): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 「OAuth error code」 줄에 더한
      문장(성공 상태의 토큰 · introspection 응답이 비어 있지 않은 문자열 `error` 를 실으면 400 처럼 실패하고 그 안의 것은 쓰지
      않는다)은 아홉 언어 레인 시험이 잰다 — 이름이 `success.?status.?oauth.?error` 에 맞는 것, 200 의 B1 · B2 와 겹침 벡터, 수정 전
@@ -102,7 +107,7 @@ Only what the nine must move **together** lives here — changing one language a
 
 **`clockSkew` (the `exp`/`nbf` tolerance on a JWT) is the same invariant and is likewise 30 seconds** — if it grows in one language, expired tokens live longer in that language alone.
 
-Change either one **in all nine at once**. The guard is `scripts/test/test-security-defaults.sh`, which inspects the code, the docs and the secondary definition sites.
+The guard is `scripts/test/test-security-defaults.sh`, which inspects the code, the docs and the secondary definition sites.
 
 ## JWKS key-set lifetime
 
@@ -126,7 +131,7 @@ Change either one **in all nine at once**. The guard is `scripts/test/test-secur
 
 ## OAuth error code
 
-⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A success-status token or introspection response whose `error` is a non-empty string fails like a 400 carrying it; nothing in it is used.** Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error`.
+⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A success-status token or introspection response whose `error` is a non-empty string fails like a 400 carrying it; nothing in it is used.** Every lane (grants, introspection, token provider, admin self-grant) puts it in the code field at any status, empty when none was sent — except .NET's reason phrase (registry `dotnet-oauth-error-reason-phrase`). Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error` · `error.?status.?(oauth|carries)`.
 
 ## Token kind
 
