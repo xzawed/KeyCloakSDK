@@ -1,5 +1,6 @@
 package io.github.xzawed.keycloak.admin
 
+import io.github.xzawed.keycloak.GRANT_CODE
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.TokenCodingGuard
 import io.github.xzawed.keycloak.holdsUnpairedSurrogate
@@ -346,7 +347,8 @@ internal class TokenResponseGuardTest {
 
     // 토큰·logout 경로의 오류 상태(3xx·4xx·5xx)는 판정하지 않는다(TokenManager 의 몫 — 갱신 400 의 복구) — 다만 RESTEasy 가 그
     // 본문을 예외에 담으려고 통째로 버퍼에 읽으므로(extractResult · void 추출기의 bufferEntity) 여기서 상한까지만 읽어 바이트
-    // 그대로 넘긴다. 미디어 타입과 무관하다(버퍼링은 원시 엔티티를 읽는다) — 표시도 달지 않는다.
+    // 그대로 넘긴다. 미디어 타입과 무관하다(버퍼링은 원시 엔티티를 읽는다) — 판정 표시는 달지 않는다. 토큰 응답이면 그 OAuth 코드만
+    // 단다(GRANT_CODE — 등록부 oauth-error-code-surface-divergent), logout 의 본문에는 아무것도 달지 않는다.
     @Test
     fun `error status bodies are read within the cap and handed on byte for byte`() {
         val body = """{"error":"invalid_grant","error_description":"Stale token"}"""
@@ -359,7 +361,9 @@ internal class TokenResponseGuardTest {
                     every { res.entityStream = capture(handed) } just runs
                     TokenResponseGuard().filter(req, res)
                     assertEquals(body, handed.captured.readAllBytes().decodeToString(), "$uri $status $mediaType")
-                    verify(exactly = 0) { req.setProperty(any(), any()) }
+                    verify(exactly = 0) { req.setProperty(TokenResponseGuard.JUDGE_ENTITY, any()) }
+                    verify(exactly = if (uri == TRG_TOKEN) 1 else 0) { req.setProperty(GRANT_CODE, "invalid_grant") }
+                    verify(exactly = if (uri == TRG_TOKEN) 1 else 0) { req.setProperty(any(), any()) }
                 }
             }
             // 엔티티가 없는 오류는 그대로 둔다 — 빈 스트림을 지어내면 hasEntity 가 바뀐다
