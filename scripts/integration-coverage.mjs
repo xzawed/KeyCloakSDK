@@ -2493,7 +2493,7 @@ const JVM_JAVAP = (l) => join(out, `${l}${TAG}.javap.txt`)
 const JVM_RUN = (l) => join(out, `${l}${TAG}.run.json`)
 const JVM_EXEC = (l) => join(out, `${l}${TAG}.exec`)
 // `javap -l -p -v <클래스 파일…>` 의 출력 → { 내부 이름: { source, enclosing: { class, method, desc } | null, methods: [{ name, desc,
-// lines, calls, news, lambdas }] } }. `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class ·
+// lines, calls, news, lambdas, tail }] } }. `this_class` 는 상수 풀보다 앞이라 그 주석(내부 이름)을 읽고, EnclosingMethod 는 상수 풀(Class ·
 // NameAndType)로 푼다. 코드에서는 부르는 메서드(`invoke*` 의 주석 — `owner.name:desc`) · 만드는 클래스(`new`) · 만드는 람다 몸통
 // (`invokedynamic` → BootstrapMethods 의 LambdaMetafactory 구현 핸들)을 읽는다 — kotlin 의 접기가 쓴다(ktFold).
 function javapFacts(text) {
@@ -2597,13 +2597,13 @@ function javapFacts(text) {
       inLnt = false
       inLvt = false
       meth = null
-      if (h === 'static {};') meth = { name: '<clinit>', desc: '()V', lines: [], calls: [], news: [], indy: [] }
+      if (h === 'static {};') meth = { name: '<clinit>', desc: '()V', lines: [], calls: [], news: [], indy: [], lnt: [], code: [] }
       else {
         const p = h.indexOf('(')
         if (p > 0 && h.endsWith(';')) {
           // 이름에는 `-` 도 든다 — kotlin 의 값 클래스 매개변수 맹글(`f-imocxh4` — 실측, 독립 레그).
           const id = /([\w$.<>-]+)$/.exec(h.slice(0, p))?.[1] ?? ''
-          meth = { name: id.includes('.') ? '<init>' : id, desc: null, lines: [], calls: [], news: [], indy: [] }
+          meth = { name: id.includes('.') ? '<init>' : id, desc: null, lines: [], calls: [], news: [], indy: [], lnt: [], code: [] }
         }
       }
       if (meth) cur.methods.push(meth)
@@ -2619,6 +2619,12 @@ function javapFacts(text) {
       meth.static = /\bACC_STATIC\b/.test(m[1])
       meth.private = /\bACC_PRIVATE\b/.test(m[1])
       continue
+    }
+    // 명령 — 메서드마다 끝 일곱만 둔다(ktTail 이 꼬리 호출의 닫는 줄을 가른다). op 는 소문자로 시작한다 — tableswitch 의 갈래 줄
+    // (`0: 28` · `default: 37`)은 명령이 아니다. 같은 줄을 아래 호출 · 생성 판정도 읽는다(여기서 continue 하지 않는다).
+    if (meth && (m = /^\s+(\d+): ([a-z]\w*)(?:\s+(.*?))?\s*$/.exec(raw))) {
+      meth.code.push({ at: Number(m[1]), op: m[2], arg: m[3] ?? '' })
+      if (meth.code.length > 7) meth.code.shift()
     }
     // 코드 — `N: invoke… #K // Method owner.name:desc` · `N: new #K // class X` · `N: invokedynamic #K, 0 // InvokeDynamic #B:…` ·
     // `N: getstatic #K // Field X.INSTANCE:…`(싱글턴 클래스는 제 정적 초기화에서 만들고 쓰는 쪽은 INSTANCE 를 읽는다 — 그 자리가
@@ -2641,8 +2647,9 @@ function javapFacts(text) {
       inLnt = true
       continue
     }
-    if (inLnt && (m = /^        line (\d+): \d+\s*$/.exec(raw))) {
+    if (inLnt && (m = /^        line (\d+): (\d+)\s*$/.exec(raw))) {
       meth.lines.push(Number(m[1]))
+      meth.lnt.push({ line: Number(m[1]), at: Number(m[2]) })
       continue
     }
     // 지역 변수표 — 기본 인자 다리의 대상을 가른다(ktFold): 인라인 함수의 다리만 표를 가지고, 처음부터 사는 변수가 대상의 매개변수다
@@ -2669,9 +2676,27 @@ function javapFacts(text) {
       // 중괄호의 return 이고, 필드 초기화의 줄은 그 사이 바이트코드에 끼어도 몸통 밖이다(jvmReport).
       x.ends = x.lines.length ? [x.lines[0], x.lines[x.lines.length - 1]] : null
       x.lines = [...new Set(x.lines)].sort((a, b) => a - b)
+      // 꼬리 호출의 닫는 줄(ktTail — 없으면 null). 빼는 것은 jvmReport 다(kotlin 만).
+      x.tail = ktTail(x)
     }
   }
   return facts
+}
+// kotlin 꼬리 호출의 닫는 줄(등록부 kotlin-tail-call-return-line-flips) — Unit 을 돌려주는 suspend 함수의 마지막 문장이 Unit 을 돌려주는
+// suspend 호출이면 kotlinc 는 그것을 꼬리 호출로 낸다: 호출 뒤 `dup · getCOROUTINE_SUSPENDED · if_acmpne X · areturn · X: pop ·
+// getstatic Unit.INSTANCE · areturn` 이고, 닫는 중괄호 줄에는 마지막 areturn 하나만 매긴다(실측 javap: RealmsResource.update
+// `line 37: 28`). 그 줄은 호출이 멈추지 않고 돌아왔을 때만 돈다 — 코드가 아니라 스케줄링의 경주다(onIo 가 호출자보다 먼저 끝난 실행 —
+// 같은 트리의 단위 장부가 실행마다 갈렸다). JaCoCo 0.8.16 은 멈춤 검사는 거르지만(가지 0) 그 줄은 안 거른다. 끝 일곱 명령이 정확히 이
+// 꼴이고, 그 areturn 에서 시작하는 줄표 항목이 하나이며 그 뒤에 시작하는 항목이 없을 때만 그 항목의 줄을 낸다(아니면 null).
+const KT_TAIL_SUSPENDED = /^#\d+\s+\/\/ Method kotlin\/coroutines\/intrinsics\/IntrinsicsKt\.getCOROUTINE_SUSPENDED:\(\)Ljava\/lang\/Object;$/
+const KT_TAIL_UNIT = /^#\d+\s+\/\/ Field kotlin\/Unit\.INSTANCE:Lkotlin\/Unit;$/
+function ktTail(x) {
+  const c = x.code
+  if (c.length !== 7 || c.map((i) => i.op).join(' ') !== 'dup invokestatic if_acmpne areturn pop getstatic areturn') return null
+  if (!KT_TAIL_SUSPENDED.test(c[1].arg) || c[2].arg !== String(c[4].at) || !KT_TAIL_UNIT.test(c[5].arg)) return null
+  const end = c[6].at
+  const at = x.lnt.filter((e) => e.at === end)
+  return at.length === 1 && !x.lnt.some((e) => e.at > end) ? at[0].line : null
 }
 // 서술자의 매개변수 → 읽을 수 있는 목록(`(Ljava/lang/String;I[B)V` → `String, int, byte[]`). 오버로드 이름에만 쓴다.
 function javaParams(desc) {
@@ -3049,6 +3074,21 @@ function jvmReport(l, d) {
           fail(l, `${f}: ${c.name}.${x.name}${x.desc} — the data and the class facts disagree (first line ${x.line ?? 'none'} vs ${fx?.lines[0] ?? 'no method'}) — ${RUN_CMD} ${l} writes both from one build`)
           broken = true
           break
+        }
+        // 꼬리 호출의 닫는 줄은 재지 않는다 — kotlin 만이고, 통합 · 단위가 함께 지나는 자리다(등록부 kotlin-tail-call-return-line-flips).
+        // 그 줄은 마지막 areturn 하나라 호출이 멈추지 않고 돌아온 실행에서만 돌고, JaCoCo 는 멈춤 검사만 거른다(ktTail · 실측
+        // RealmsResource.update `line 37: 28`). 데이터의 그 줄이 그 명령 하나뿐이면(mi + ci = 1) 줄 데이터에서 지우고 이 메서드의 줄
+        // 계수기를 하나 내린다(놓쳤으면 missed, 돌았으면 covered) — 아래의 부분 · 합계 · 몸통 · 미실행 · 장부가 그 값을 읽기 전이다. 그 밖이면
+        // (명령이 더 있다 · 그 줄이 없다 · 내릴 계수기가 0 이다) 아무것도 안 바꾼다 — 실패가 아니다.
+        if (kt && fx.tail !== null) {
+          const v = lines.get(String(fx.tail))
+          const mi = xmlCount(v?.mi)
+          const ci = xmlCount(v?.ci)
+          if (mi + ci === 1 && (mi === 1 ? x.missed : x.covered) > 0) {
+            lines.delete(String(fx.tail))
+            if (mi === 1) x.missed -= 1
+            else x.covered -= 1
+          }
         }
         const fo = kt ? ktFold(c.name, x.name, x.desc, facts, kt) : javaFold(c.name, x.name, x.desc, facts)
         if (!fo || fo === KT_CYCLE) {
