@@ -1,4 +1,5 @@
-// Node fetch(undici)/TLS/DNS 전송 실패에서 관측되는 시스템 오류 코드(직접 또는 `cause`에).
+// System error codes seen on Node fetch (undici)/TLS/DNS transport failures — on the error itself, or on a `cause`
+// that is an `Error`.
 const TRANSPORT_CODES = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -20,9 +21,15 @@ const TRANSPORT_CODES = new Set([
 
 /**
  * Whether this is a transport-layer failure (connection refused/DNS/TLS/timeout). Node fetch (undici) throws a
- * network failure as a `TypeError` (message "fetch failed", the system error in `cause`), and a timeout
- * (AbortController) as `AbortError`/`TimeoutError`. A bare `TypeError` with no cause (a programming bug) is not a
- * transport error.
+ * network failure as a `TypeError` (message "fetch failed", the system error — an `Error` — in `cause`), and a timeout
+ * (AbortController) as `AbortError`/`TimeoutError`. A `TypeError` whose cause is not an `Error` (a programming bug
+ * has none) is not a transport error.
+ *
+ * ⚠️ **A `cause` speaks for the transport only when it is an `Error`** — one that is not is data. oauth4webapi's
+ * `ResponseBodyError` holds the JSON-parsed OAuth error body as its `cause`, so a body member `"code":"ECONNRESET"`
+ * read as `cause.code` turned an IdP's `invalid_grant` into a transport failure (registry
+ * `node-body-code-member-transport` — `test/unit/auth-body-member-transport.test.ts`). The value given is judged
+ * by its own `name` and `code` as before.
  *
  * A pure classification helper shared by the two network boundaries, auth (discovery) and admin (calls) — it
  * removes per-boundary duplication and keeps the transport/auth (or status) classification consistent.
@@ -37,9 +44,9 @@ export function isTransportError(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
   const e = err as { name?: unknown; code?: unknown; cause?: unknown }
   if (e.name === 'AbortError' || e.name === 'TimeoutError') return true
-  if (err instanceof TypeError && e.cause !== undefined && e.cause !== null) return true
+  const cause = e.cause instanceof Error ? (e.cause as Error & { code?: unknown }) : undefined
+  if (err instanceof TypeError && cause !== undefined) return true
   const direct = typeof e.code === 'string' ? e.code : undefined
-  const cause = e.cause as { code?: unknown } | null | undefined
   const causeCode = typeof cause?.code === 'string' ? cause.code : undefined
   return (
     (direct !== undefined && TRANSPORT_CODES.has(direct)) ||
@@ -51,12 +58,17 @@ export function isTransportError(err: unknown): boolean {
  * {@link isTransportError} anywhere in the cause chain (at most 8 links, like `responseTooLarge`) — a library may wrap
  * fetch's error in its own. The auth lane uses it to tell a response that never fully arrived (transport) from one
  * that arrived but is unusable (auth).
+ *
+ * ⚠️ Past the value given, it follows a `cause` only while that is an `Error`. A cause that is not one is data — the
+ * OAuth error body a `ResponseBodyError` holds — and the walk ends there, so a body member (`name`
+ * `"TimeoutError"`, `code`, a nested `cause`) is never read as a link of the chain.
  */
 export function transportInChain(err: unknown): boolean {
   let link: unknown = err
   for (let depth = 0; depth < 8 && typeof link === 'object' && link !== null; depth += 1) {
     if (isTransportError(link)) return true
-    link = (link as { cause?: unknown }).cause
+    const cause = (link as { cause?: unknown }).cause
+    link = cause instanceof Error ? cause : undefined
   }
   return false
 }
