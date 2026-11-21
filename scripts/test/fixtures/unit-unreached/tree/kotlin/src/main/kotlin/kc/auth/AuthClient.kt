@@ -32,3 +32,21 @@ class AuthClient(
 }
 
 fun <T> later(f: () -> T): T = f()
+
+/** 실제 레인의 adminCall 꼴(제네릭 suspend 함수) — 이 사본에는 멈출 자리가 없어 늘 멈추지 않고 돌아온다. */
+suspend fun <T> adminCall(block: () -> T): T = block()
+
+/**
+ * 꼬리 호출(등록부 kotlin-tail-call-return-line-flips) — Unit 을 돌려주는 suspend 함수의 마지막 문장이 Unit 을 돌려주는 suspend 호출이면
+ * kotlinc 는 그것을 꼬리 호출로 내고, 닫는 중괄호 줄에는 마지막 areturn 하나만 남는다: 호출이 멈추지 않고 돌아왔을 때만 돈다(호출이
+ * 값을 돌려주면 상태 기계다 — 실측). 구동은 멈추지 않는 adminCall 로 불러 그 줄까지 돈 데이터다(멈춘 실행의 데이터는 자가테스트가 그
+ * 자리만 바꿔 만든다).
+ */
+class AuthClientTail(
+    private val names: MutableList<String>,
+) {
+    suspend fun update(name: String) {
+        names.add(name)
+        adminCall { names.clear() }
+    }
+}
