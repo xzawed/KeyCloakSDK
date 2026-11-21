@@ -29,5 +29,11 @@
       "ruby/lib/kc/auth_client.rb"
     ],
     "owners": {}
+  },
+  "go": {
+    "pinned": [
+      "go/auth_client.go"
+    ],
+    "owners": {}
   }
 }

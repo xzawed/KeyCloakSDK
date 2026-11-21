@@ -1777,7 +1777,7 @@ SITE:void 0 // PROBE-REC unrecorded
 ### unit-ledger-count
 FILE:scripts/integration-coverage.mjs
 TEST:scripts/test/test-unit-unreached.sh
-OLD:        else if (e.lines !== u.lines || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
+OLD:        else if (e[k] !== u[k] || (UNIT_BRANCHES.has(l) && e.branches !== u.branches))
 NEW:        else if (false) // PROBE-REC count
 SITE:else if (false) // PROBE-REC count
 
@@ -1889,3 +1889,47 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:  if (!rec || rec.run !== 'ruby' || (rec.suite ?? 'integration') !== SUITE) {
 NEW:  if (!rec || rec.run !== 'ruby') { // PROBE-REC ruby-record
 SITE:// PROBE-REC ruby-record
+
+# ── 같은 장부의 go 판정(coverage-omit-hides-security-paths, 2026-11-21)
+
+### unit-ledger-go-statements
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.stmts - fn.covered })
+NEW:    for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.covered ? 0 : fn.stmts }) // PROBE-REC go-statements
+SITE:// PROBE-REC go-statements
+
+### unit-ledger-go-key
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:const unitKey = (l) => (UNIT_STATEMENTS.has(l) ? 'statements' : 'lines')
+NEW:const unitKey = () => 'lines' // PROBE-REC go-key
+SITE:// PROBE-REC go-key
+
+### unit-ledger-go-stray
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (files.some((x) => x.covered > 0)) {
+NEW:  if (false) { // PROBE-REC go-stray
+SITE:// PROBE-REC go-stray
+
+### unit-ledger-go-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (!isObj(rec) || rec.run !== 'go' || (rec.suite ?? 'integration') !== SUITE) {
+NEW:  if (!isObj(rec) || rec.run !== 'go') { // PROBE-REC go-record
+SITE:// PROBE-REC go-record
+
+### unit-ledger-go-exit
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    fail('go', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+NEW:    void 0 // PROBE-REC go-exit
+SITE:void 0 // PROBE-REC go-exit
+
+### unit-ledger-go-profile-sha
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (rec.profile_sha1 !== sha(bytes)) {
+NEW:  if (false) { // PROBE-REC go-profile-sha
+SITE:// PROBE-REC go-profile-sha

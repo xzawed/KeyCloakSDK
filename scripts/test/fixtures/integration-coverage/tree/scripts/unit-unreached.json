@@ -32,5 +32,11 @@
       "branches": 1,
       "why": "open-masking"
     }
+  },
+  "go": {
+    "go/admin.go:AdminClient.Close": {
+      "statements": 2,
+      "why": "open-masking"
+    }
   }
 }

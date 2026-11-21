@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby, 등록부
+# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby · go, 등록부
 # coverage-exclusion-hides-untested-branches · coverage-omit-hides-security-paths) 자가테스트 — **종료코드**를 단언한다(0 측정 = 장부 ·
 # 1 DRIFT · 2 FAIL — 뜻은 그 도구 머리가 소유한다). 문구는 무엇을 잡았는지 가리는 데만 쓴다.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby 가 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
-# 실제 도구가 낸 것이다(php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby · kotlin 2026-11-21):
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby · Go 가 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
+# 실제 도구가 낸 것이다(php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby · kotlin · go 2026-11-21):
 #   fixtures/unit-unreached/data/kotlin.unit.xml · kotlin.unit.javap.txt   도구의 `unit kotlin`(JDK 21.0.8 · kotlin 2.4.21 · Kover 0.9.11 ·
 #       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼(JaCoCo 판은 tree 의 java/pom.xml 에서 읽는다). 세션 id 를
 #       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다(치환마다 되돌린 바이트가
@@ -21,6 +21,9 @@
 #   fixtures/unit-unreached/data/ruby.unit.json   도구의 `unit ruby`(ruby 3.4.10 · SimpleCov 1.2.0 · 덤프 형식 /2 — 가지 포함) — 임시
 #       루트에 tree 사본, 번들은 실제 레인의 것(`BUNDLE_GEMFILE=ruby/Gemfile`). 덤프의 root 와 파일 키는 절대 경로다 — 생성 루트만 `@ROOT@` 로
 #       바꿨다(되돌린 바이트가 원본과 같다)
+#   fixtures/unit-unreached/data/go.unit.cover   `unit go` 가 도는 명령 `go test -count=1 -coverprofile=… ./...`(go1.26.4 · 태그 없음) —
+#       임시 루트에 tree/go 사본. 프로필의 경로는 모듈 경로(example.com/fixture/go/…)라 치환이 없다. 도구의 `unit go`(임시 루트에 tree 사본)로
+#       다시 내도 바이트가 같았다
 # 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test · tree/ruby/spec/unit)은
 # 빈 code · null · 빈 user · 빈 문자열 · 빈 값 · nil 을 안 보내고 unused · logoutUrl · LogoutUrl · logout_url · Describe() · describe ·
 # token(String, int) 를 안 부른다. dotnet 의 Guarded 는 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은
@@ -28,9 +31,12 @@
 # jacoco.skip 모듈(단위 시험이 없다)의 것이다. ruby 의 구동은 없는 키 · 거짓 fallback · nil claims 를 안 보내고 apply 를 빈 배열로만 불러
 # 블록 몸통이 안 돌며(token 은 삼항 두 쪽을 다 탄다), 통합 스펙(spec/integration · `:integration`)은 단위 실행의 spec_helper 필터가 거른다.
 # kotlin 의 구동은 꼬리 호출 AuthClientTail.update 를 멈추지 않는 adminCall 로 불러 닫는 중괄호 줄까지 돈다(아래 (5)).
+# go 의 구동(tree/go/drive_test.go)은 빈 code 를 안 보내고 Pick 에 늘 찾는 값만 주며 Valid 의 && 두 쪽을 다 참으로 지나고 String ·
+# LogoutURL 을 안 부른다 — LogoutURL 을 부르는 통합 시험(drive_integration_test.go)은 `//go:build integration` 뒤라 태그 없는 단위
+# 실행이 컴파일하지 않는다. 패키지 수준 함수 리터럴 hook 은 구동이 부른다.
 # 숫자를 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
 # `check` 의 장부 판정(데이터 없이 — 꼴 · 경계 · why)은 통합 커버리지 픽스처 트리(`ic-fixture.sh` 의 fresh)에서 잰다 — check 는 아홉
-# 언어를 다 보므로 kotlin · php · dotnet · java · ruby 뿐인 이 트리로는 못 잰다.
+# 언어를 다 보므로 kotlin · php · dotnet · java · ruby · go 뿐인 이 트리로는 못 잰다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -48,6 +54,7 @@ N=dotnet/src/Kc/AuthClient.cs
 J=java/kc-auth/src/main/java/kc/auth/AuthClient.java
 Q=java/kc-examples/src/main/java/kc/examples/QuickStart.java
 R=ruby/lib/kc/auth_client.rb
+G=go/auth_client.go
 L="$T/scripts/unit-unreached.json"
 
 # 단위 픽스처 트리 + 그 트리의 파생 도구 + 데이터와 그 기록(run 이 쓰는 꼴).
@@ -67,11 +74,14 @@ ufresh() {
   cp "$UFIX/data/java.unit.xml" "$UFIX/data/java.unit.javap.txt" "$D/"
   # ruby 덤프의 root 와 파일 키도 절대 경로다(통합 픽스처의 ruby_data 와 같은 치환).
   sed "s#@ROOT@#$_r#g" "$UFIX/data/ruby.unit.json" > "$D/ruby.unit.json"
+  # go 의 커버 프로필에는 절대 경로가 없다(모듈 경로다).
+  cp "$UFIX/data/go.unit.cover" "$D/"
   kmark 0
   pmark 0
   dmark 0
   jmark 0
   rmark 0
+  gmark 0
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -101,6 +111,11 @@ jmark() { # exit [completed] [failures] [integration]
 # `unit ruby` 의 기록 — 종료코드 · 지금 덤프의 sha1(경계 파일의 sha1 은 덤프 안에 있다 — 통합 픽스처의 ruby_mark 와 같은 꼴에 suite).
 rmark() { # exit
   printf '{"run":"ruby","suite":"unit","exit":%s,"dump_sha1":"%s"}\n' "$1" "$(sha1sum "$D/ruby.unit.json" | cut -d' ' -f1)" > "$D/ruby.unit.run.json"
+}
+# `unit go` 의 기록 — 종료코드 · 지금 프로필의 sha1 · 경계 파일의 지금 sha1(커버 프로필에는 소스 해시가 없다 — dmark 와 같은 꼴).
+gmark() { # exit
+  printf '{"run":"go","suite":"unit","exit":%s,"profile_sha1":"%s","files":{"%s":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/go.unit.cover" | cut -d' ' -f1)" "$G" "$(sha1sum "$T/$G" | cut -d' ' -f1)" > "$D/go.unit.run.json"
 }
 
 # ── (1) 양성 — 측정 = 장부 → 0 ───────────────────────────────────────────────────────────────────
@@ -184,6 +199,20 @@ assert_not_contains "$OUT" "AuthClient#token ·" "[ruby] 삼항 두 쪽을 다 �
 assert_not_contains "$OUT" "Config" "[ruby] 경계 밖 파일은 목록에 없다"
 assert_line "$OUT" "unit-unreached [ruby]: OK — 7 functions with code the unit suite never reaches (5 lines · 6 branches), each recorded in scripts/unit-unreached.json" "[ruby] 요약"
 
+run unit-report go "$T" --out "$D"
+assert_eq 0 "$RC" "[go] 측정이 장부와 같으면 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "/go.unit.cover (mode set)" "[go] 프로필 · 모드를 찍는다"
+assert_line "$OUT" "  UNREACHED $G:15 AuthClient.Exchange · 1 statement · defensive: the drive never sends an empty code" "[go] 제 블록의 실패 갈래 — 안 돈 문장(줄 · 가지가 아니다)"
+assert_line "$OUT" "  UNREACHED $G:23 AuthClient.Pick · 1 statement · unreachable: the miss sits in Pick's function literal — the key is the declared function" "[go] 함수 리터럴의 안 돈 문장은 감싼 함수의 수다"
+assert_line "$OUT" "  UNREACHED $G:41 AuthClient.String · 1 statement · open-gap" "[go] 안 부른 값 수신자 한 줄 함수 · why 가 열린 항목 id"
+assert_line "$OUT" "  UNREACHED $G:44 AuthClient.LogoutURL · 2 statements · integration: the drive never calls it — the integration test does, outside the unit run" "[go] 통합 시험만 부르는 함수 — 태그 없는 단위 실행은 그 시험을 컴파일하지 않는다"
+# ⚠️ 알려진 틈을 고정한다 — 커버 프로필에는 가지가 없다: `&&` · `||` 의 피연산자는 블록이 아니라 실패 쪽을 안 탄 실행도 문장이 다 돈다(도구
+# 머리 주석). 이 단언이 깨지면 리더가 조건을 보게 된 것이다 — 머리 주석과 장부를 함께 고칠 때다.
+assert_not_contains "$OUT" "AuthClient.Valid" "[go] && 의 실패 쪽은 블록이 아니다 — 알려진 틈"
+assert_not_contains "$OUT" "AuthClient.Realm" "[go] 다 닿는 함수는 목록에 없다"
+assert_not_contains "$OUT" "Config" "[go] 경계 밖 파일은 목록에 없다"
+assert_line "$OUT" "unit-unreached [go]: OK — 4 functions with code the unit suite never reaches (5 statements), each recorded in scripts/unit-unreached.json" "[go] 요약 — 문장으로 센다"
+
 # ── (2) 음성 — 장부와 다르면 DRIFT(1) ────────────────────────────────────────────────────────────
 # 새로 생긴 미도달 — 데이터에서 다 닿던 realm 을 안 닿게 바꾼다(장부에 없다).
 ufresh
@@ -251,6 +280,22 @@ assert_contains "$(cat "$D/ruby.unit.json")" '"name":"realm","start":[11,4],"end
 run unit-report ruby "$T" --out "$D"
 assert_eq 1 "$RC" "[ruby] 안 불린 한 줄 메서드는 그 줄이 돌았어도 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [ruby] unrecorded unreached code $R:AuthClient#realm — the unit suite never reaches 1 line · 0 branches of it" "[ruby] 한 줄 메서드 — 호출 횟수"
+# go — 다 닿던 Realm 의 블록을 0 회로(장부에 없다).
+ufresh
+sed -i 's#^example\.com/fixture/go/auth_client\.go:12\.37,12\.55 1 1$#example.com/fixture/go/auth_client.go:12.37,12.55 1 0#' "$D/go.unit.cover"
+gmark 0
+assert_contains "$(cat "$D/go.unit.cover")" 'example.com/fixture/go/auth_client.go:12.37,12.55 1 0' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 1 "$RC" "[go] 장부에 없는 미도달 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [go] unrecorded unreached code $G:AuthClient.Realm — the unit suite never reaches 1 statement of it: test that code, or record why in scripts/unit-unreached.json" "[go] 새 미도달"
+# 이미 적힌 함수 안에서 블록 하나가 더 안 돈다 — Exchange 의 행복 경로 블록을 0 회로(함수는 그대로 목록에 있고 수가 바뀐다).
+ufresh
+sed -i 's#^example\.com/fixture/go/auth_client\.go:19\.2,19\.27 1 1$#example.com/fixture/go/auth_client.go:19.2,19.27 1 0#' "$D/go.unit.cover"
+gmark 0
+assert_contains "$(cat "$D/go.unit.cover")" 'example.com/fixture/go/auth_client.go:19.2,19.27 1 0' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 1 "$RC" "[go] 적힌 함수의 블록 하나가 더 안 돌면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [go] $G:AuthClient.Exchange: the unit run leaves 2 statements unreached, scripts/unit-unreached.json records 1 statement — test what the unit suite does not reach, or record why and correct the counts" "[go] 더 놓친 문장 수"
 
 # 람다 안의 놓친 가지 — 장부에서 pick 을 지우면 소스 함수 이름으로 DRIFT 다(합성 메서드로 새지 않는다 — 브리프 보정 1).
 ufresh
@@ -289,6 +334,13 @@ sed -i '/AuthClient#pick"/,/},/d' "$L"
 run unit-report ruby "$T" --out "$D"
 assert_eq 1 "$RC" "[ruby] 돈 줄 위의 안 탄 갈래가 장부에 없으면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [ruby] unrecorded unreached code $R:AuthClient#pick — the unit suite never reaches 0 lines · 1 branch of it" "[ruby] 후치 unless 의 갈래"
+# go — 함수 리터럴 안의 안 돈 문장(Pick 의 find 의 `return ""`)도 장부에서 지우면 감싼 함수 이름으로 DRIFT 다.
+ufresh
+sed -i '/auth_client\.go:AuthClient\.Pick"/,/},/d' "$L"
+assert_not_contains "$(cat "$L")" "auth_client.go:AuthClient.Pick" "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 1 "$RC" "[go] 함수 리터럴 안의 안 돈 문장이 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [go] unrecorded unreached code $G:AuthClient.Pick — the unit suite never reaches 1 statement of it" "[go] 함수 리터럴의 문장 — 감싼 함수 키"
 
 # 수가 바뀌었다 — 장부의 수와 측정이 다르다(가지 하나가 새로 생긴 꼴).
 ufresh
@@ -327,6 +379,12 @@ sed -i '/AuthClient#apply"/,/}/ s#"branches": 2,#"branches": 1,#' "$L"
 run unit-report ruby "$T" --out "$D"
 assert_eq 1 "$RC" "[ruby] 가지 수만 달라도 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [ruby] $R:AuthClient#apply: the unit run leaves 1 line · 2 branches unreached, scripts/unit-unreached.json records 1 line · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[ruby] 바뀐 가지 수"
+ufresh
+sed -i '/auth_client\.go:AuthClient\.LogoutURL"/,/}/ s#"statements": 2,#"statements": 3,#' "$L"
+assert_contains "$(grep -A1 'auth_client.go:AuthClient.LogoutURL"' "$L")" '"statements": 3,' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 1 "$RC" "[go] 수가 다르면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [go] $G:AuthClient.LogoutURL: the unit run leaves 2 statements unreached, scripts/unit-unreached.json records 3 statements — the unit suite reaches more of it now: lower the counts" "[go] 바뀐 문장 수 — 장부보다 덜 놓쳤다"
 
 # 낡은 항목 — 다 닿는 함수 · 데이터에 없는 함수 · 경계 밖 파일을 가리킨다.
 ufresh
@@ -370,6 +428,14 @@ assert_eq 1 "$RC" "[ruby] 낡은 항목은 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [ruby] stale entry $R:AuthClient#token — the unit run reaches all of it now; drop the entry" "[ruby] 다 닿는 메서드의 항목"
 assert_contains "$OUT" "DRIFT [ruby] stale entry $R:AuthClient#gone — the data of $R has no such function (renamed or removed?)" "[ruby] 없는 메서드의 항목"
 assert_contains "$OUT" "DRIFT [ruby] scripts/unit-unreached.json: entry ruby/lib/kc/config.rb:Config#valid? names a file outside the boundary derived from ruby/spec/spec_helper.rb:9" "[ruby] 경계 밖 파일의 항목"
+ufresh
+sed -i "s#\"go\": {#\"go\": {\n    \"$G:AuthClient.Realm\": { \"statements\": 1, \"why\": \"integration: stale\" },\n    \"$G:AuthClient.Gone\": { \"statements\": 1, \"why\": \"integration: renamed\" },\n    \"go/config.go:Config.Valid\": { \"statements\": 1, \"why\": \"integration: outside\" },#" "$L"
+assert_contains "$(cat "$L")" "\"$G:AuthClient.Gone\": { \"statements\": 1," "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 1 "$RC" "[go] 낡은 항목은 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [go] stale entry $G:AuthClient.Realm — the unit run reaches all of it now; drop the entry" "[go] 다 닿는 함수의 항목"
+assert_contains "$OUT" "DRIFT [go] stale entry $G:AuthClient.Gone — the data of $G has no such function (renamed or removed?)" "[go] 없는 함수의 항목"
+assert_contains "$OUT" "DRIFT [go] scripts/unit-unreached.json: entry go/config.go:Config.Valid names a file outside the boundary derived from .github/workflows/go-ci.yml:10" "[go] 경계 밖 파일의 항목"
 
 # why — 닫힌 항목 · 들여쓴 하위 불릿(항목이 아니다) · 모르는 id · 까닭 머리만 있고 말이 없다.
 ufresh
@@ -389,6 +455,9 @@ assert_contains "$OUT" "DRIFT [java] $J:AuthClient.pick: why \"closed-gap\"" "[j
 run unit-report ruby "$T" --out "$D"
 assert_eq 1 "$RC" "[ruby] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
 assert_contains "$OUT" "DRIFT [ruby] $R:AuthClient#pick: why \"closed-gap\"" "[ruby] 닫힌 id"
+run unit-report go "$T" --out "$D"
+assert_eq 1 "$RC" "[go] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
+assert_contains "$OUT" "DRIFT [go] $G:AuthClient.String: why \"closed-gap\"" "[go] 닫힌 id"
 ufresh
 sed -i 's#"why": "open-gap"#"why": "nested-open"#' "$L"
 run unit-report kotlin "$T" --out "$D"
@@ -742,10 +811,92 @@ sed -i '/AuthClient#exchange"/,/}/ { /"branches": 1,/d }' "$L"
 run unit-report ruby "$T" --out "$D"
 assert_eq 2 "$RC" "[ledger] ruby 항목에 branches 가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [ruby] scripts/unit-unreached.json: ruby[\"$R:AuthClient#exchange\"] must be { branches, lines, why }" "[ledger] ruby 꼴"
+# go — 같은 무결성 판정(데이터 · 다른 바이트 · 단위 기록 · 기록 없음 · 기록 뒤 바뀐 프로필 · 경계 해시 없는 기록 · 실패한 실행 · 데이터에 없는
+# 경계 파일 · 공허한 실행 · 어느 함수에도 못 붙이는 안 돈 문장)과 장부의 꼴(문장 — 줄 · 가지가 아니다).
 ufresh
+rm "$D/go.unit.cover"
 run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [go] no coverage data at" "[go] 데이터 없음"
+assert_contains "$OUT" "run the unit suite first (node scripts/integration-coverage.mjs unit go)" "[go] 다시 돌릴 명령"
+ufresh
+printf '\n// changed after the run\n' >> "$T/$G"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 다른 바이트의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [go] $G: the data was taken from other bytes" "[go] 다른 바이트"
+ufresh
+sed -i 's#"suite":"unit",##' "$D/go.unit.run.json"
+assert_not_contains "$(cat "$D/go.unit.run.json")" '"suite"' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 단위 실행의 것이 아닌 기록(suite 없음)은 exit 2"
+assert_contains "$OUT" "FAIL [go] no record that \`unit go\` wrote this data" "[go] 단위 기록 아님"
+ufresh
+rm "$D/go.unit.run.json"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 기록이 없는 프로필(손으로 돌린 go test)은 exit 2"
+assert_contains "$OUT" "FAIL [go] no record that \`unit go\` wrote this data" "[go] 기록 없음"
+ufresh
+printf 'example.com/fixture/go/auth_client.go:12.37,12.55 1 1\n' >> "$D/go.unit.cover"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 기록 뒤 바뀐 프로필은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/go.unit.cover is not the data \`unit go\` recorded" "[go] 프로필의 sha1"
+ufresh
+sed -i 's#"files":{[^}]*}#"files":null#' "$D/go.unit.run.json"
+assert_contains "$(cat "$D/go.unit.run.json")" '"files":null' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 경계 해시가 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [go] the record has no boundary hashes" "[go] 실행 중에 바뀐 경계 파일"
+ufresh
+gmark 1
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 실패한 실행의 데이터는 exit 2"
+assert_contains "$OUT" "FAIL [go] the run that wrote this data exited 1 — the data of a failed run is partial" "[go] 실패한 실행"
+ufresh
+sed -i '/\/auth_client\.go:/d' "$D/go.unit.cover"
+gmark 0
+assert_not_contains "$(cat "$D/go.unit.cover")" "auth_client.go" "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 경계 파일이 데이터에 없으면 exit 2"
+assert_contains "$OUT" "FAIL [go] $G is not in the coverage data" "[go] 데이터에 없는 경계 파일"
+ufresh
+sed -i '/\/auth_client\.go:/ s# 1$# 0#' "$D/go.unit.cover"
+gmark 0
+assert_eq 0 "$(grep -c '/auth_client\.go:.* 1$' "$D/go.unit.cover" || true)" "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 경계 문장을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [go] the run executed 0 of 15 boundary statements — a measurement failure, not a low number (did the unit tests run against this tree?)" "[go] 공허한 실행 — 패키지 수준 판정보다 먼저다"
+assert_not_contains "$OUT" "package-level" "[go] 공허한 실행은 패키지 수준의 안 돈 문장으로 읽지 않는다"
+# 패키지 수준 함수 리터럴(hook)의 안 돈 문장 — 어느 함수 선언에도 안 든다(통합 리포트는 그것을 파일 표의 package-level 로 보인다).
+ufresh
+sed -i 's#^example\.com/fixture/go/auth_client\.go:50\.23,52\.2 1 1$#example.com/fixture/go/auth_client.go:50.23,52.2 1 0#' "$D/go.unit.cover"
+gmark 0
+assert_contains "$(cat "$D/go.unit.cover")" 'example.com/fixture/go/auth_client.go:50.23,52.2 1 0' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[go] 어느 함수에도 못 붙이는 안 돈 문장은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [go] $G: 1 of 1 package-level statements (a function literal outside every function declaration) never ran — no function can be credited with them" "[go] 패키지 수준 함수 리터럴"
+# 장부의 꼴 — go 항목은 { statements, why } 다: 줄로 적거나 가지를 더하면 exit 2 이고, 줄을 세는 언어의 항목이 문장으로 적어도 exit 2 다.
+ufresh
+sed -i '/auth_client\.go:AuthClient\.Exchange"/,/}/ s#"statements": 1,#"lines": 1,#' "$L"
+assert_contains "$(grep -A1 'auth_client.go:AuthClient.Exchange"' "$L")" '"lines": 1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] go 항목을 줄로 적으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [go] scripts/unit-unreached.json: go[\"$G:AuthClient.Exchange\"] must be { statements, why } — whole-number counts and a non-empty why" "[ledger] go 꼴 — 문장"
+ufresh
+sed -i '/auth_client\.go:AuthClient\.Exchange"/,/}/ s#"statements": 1,#"statements": 1, "branches": 0,#' "$L"
+assert_contains "$(grep -A1 'auth_client.go:AuthClient.Exchange"' "$L")" '"statements": 1, "branches": 0,' "(변이가 착지했는지 먼저 본다)"
+run unit-report go "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] go 항목에 branches 가 있으면 exit 2(커버 프로필에는 가지가 없다)"
+assert_contains "$OUT" "FAIL [go] scripts/unit-unreached.json: go[\"$G:AuthClient.Exchange\"] must be { statements, why }" "[ledger] go 꼴 — 가지 없음"
+ufresh
+sed -i '/AuthClient::exchange"/,/}/ s#"lines": 1,#"statements": 1,#' "$L"
+assert_contains "$(grep -A1 'AuthClient::exchange"' "$L")" '"statements": 1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report php "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] php 항목을 문장으로 적으면 exit 2(문장은 go 의 것이다)"
+assert_contains "$OUT" "FAIL [php] scripts/unit-unreached.json: php[\"$P:AuthClient::exchange\"] must be { lines, why }" "[ledger] php 꼴 — 줄"
+ufresh
+run unit-report python "$T" --out "$D"
 assert_eq 2 "$RC" "[cli] 재지 않는 언어는 usage(exit 2)"
-assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby — got go" "[cli] usage 문구"
+assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby · go — got python" "[cli] usage 문구"
 
 # ── (4) check — 데이터 없이 꼴 · 경계 · why(통합 픽스처 트리 — 아홉 언어) ──────────────────────────────
 fresh
@@ -756,6 +907,13 @@ assert_line "$OUT" "[php] unit-unreached: 1 entry (open-admin 1)" "[check] php �
 assert_line "$OUT" "[dotnet] unit-unreached: 1 entry (defensive 1)" "[check] dotnet 장부"
 assert_line "$OUT" "[java] unit-unreached: 1 entry (unreachable 1)" "[check] java 장부"
 assert_line "$OUT" "[ruby] unit-unreached: 1 entry (open-masking 1)" "[check] ruby 장부"
+assert_line "$OUT" "[go] unit-unreached: 1 entry (open-masking 1)" "[check] go 장부"
+fresh
+sed -i 's#"statements": 2,#"lines": 2,#' "$T/scripts/unit-unreached.json"
+assert_contains "$(grep -A1 'go/admin.go:AdminClient.Close"' "$T/scripts/unit-unreached.json")" '"lines": 2,' "(변이가 착지했는지 먼저 본다)"
+run check "$T"
+assert_eq 2 "$RC" "[check] go 항목을 줄로 적으면 데이터 없이도 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [go] scripts/unit-unreached.json: go[\"go/admin.go:AdminClient.Close\"] must be { statements, why }" "[check] go 꼴"
 fresh
 sed -i 's#"why": "open-admin"#"why": "closed-item"#' "$T/scripts/unit-unreached.json"
 run check "$T"
