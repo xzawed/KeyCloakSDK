@@ -48,6 +48,7 @@
 
 ### Fixed
 - **(Node)** 200 토큰 응답의 id_token 헤더나 페이로드가 base64url 이 아니면 `KeycloakTransportError` 였습니다 — 이제 JSON 이 아닐 때와 같은 `KeycloakAuthError` 입니다.
+- **(Ruby)** 주입한 토큰 공급자가 낸 `Faraday::ParsingError` 는 이제 상태와 무관하게 파사드 · `raw` 모두 `TransportError` 입니다(예전에는 409 면 admin 요청 없이 `ConflictError`).
 - **(Node)** 토큰 · introspection 의 OAuth 오류 본문에 `code` · `name` · `cause` 멤버(`"code":"ECONNRESET"` 등)가 있으면 `KeycloakTransportError` 였습니다 — 이제 그 멤버가 없을 때와 같은 `KeycloakAuthError`(`oauthError` 포함)입니다.
 - **(Java · Kotlin · Node · Go · Python · .NET · Rust · Ruby)** admin users · clients · groups create 의 id 를 201 의 `Location` 을 요청 URL 에 대해 푼(RFC 9110 §10.2.2) 경로에서 읽습니다 — 마지막 조각이 id 이고 그 앞 조각은 보낸 컬렉션이어야 합니다. 상대 `Location` 도 읽고(.NET 은 서버가 만든 뒤 500 이었습니다), 쿼리 · 조각은 id 가 아니며, 끝 `/` 는 빈 id 가 아니고, 퍼센트 인코딩은 풀지 않습니다. 다른 컬렉션이나 아무것도 이름하지 않는 `Location` 은 `Location` 이 없을 때의 그 답입니다(.NET · Node · Python 은 오류, Java `null` · Go `""` · Rust `None` · Ruby `nil`) — Kotlin 은 날 `NullPointerException` 대신 `KeycloakAdminException.Other(500)`, Python `groups.create` 는 `None` 대신 오류입니다. 이름으로 주소를 잡는 roles · realms 의 create 는 그대로입니다.
 - **(Python)** `raw` 의 `upload_certificate` · `a_upload_certificate` 가 admin 연결의 헤더를 갈아 끼우지 않습니다 — python-keycloak 7.1.1 은 연결의 헤더를 multipart 사본으로 바꾼 채 보내, 업로드가 진행되는 동안 같은 클라이언트의 다른 요청(다른 스레드 · 업로드가 토큰을 기다리는 동안의 다른 태스크)이 multipart 로 나갔고, 그 사이 새로 받은 토큰은 업로드가 끝나면 헤더에서 사라졌습니다. 이제 업로드는 그 요청 하나의 헤더로 보내고, python-keycloak 이 bearer 를 URL 에 실어 거부되던 aio 업로드도 동작합니다. 401 뒤의 재시도도 본문을 다 보냅니다(sync 는 본문 없이 보냈습니다). 하위 클래스가 `super()` 로 부르는 python-keycloak 의 업로드는 그대로입니다(실패 뒤는 아래 항목).
