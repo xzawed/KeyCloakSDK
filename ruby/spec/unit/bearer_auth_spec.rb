@@ -53,6 +53,19 @@ RSpec.describe KeycloakSdk::Admin::BearerAuth do
       .with { |r| r.headers["Authorization"].bytesize == Net::HTTPHeader::MAX_FIELD_LENGTH }).to have_been_made.once
   end
 
+  # 상한이 없는 net-http 판(`Net::HTTPHeader::MAX_FIELD_LENGTH` 가 없다)이면 SDK 도 길이로 막지 않는다 — 위에서 거부한 한 바이트
+  # 넘친 토큰이 그대로 나간다(`field_limit` 의 nil). ⚠️ 상수를 숨기기만 하면 net-http 0.10 의 제 검사가 NameError 다 — 그것은
+  # 그 상수를 `module Net::HTTPHeader` 안에서 어휘로 읽는다(header.rb:197). 그 탐색이 닿는 최상위에 상한 없는 대역(무한)을
+  # 세운다 — SDK 가 묻는 이름 `Net::HTTPHeader::MAX_FIELD_LENGTH` 는 최상위로 내려가지 않아 정의되지 않은 채다.
+  it "sends a bearer one byte past 65,536 bytes when net-http has no MAX_FIELD_LENGTH to enforce" do
+    limit = Net::HTTPHeader::MAX_FIELD_LENGTH - "Bearer ".bytesize
+    stub_const("MAX_FIELD_LENGTH", Float::INFINITY)
+    hide_const("Net::HTTPHeader::MAX_FIELD_LENGTH")
+    expect(admin("A" * (limit + 1)).users.list).to eq([])
+    expect(a_request(:get, UnsendableTokenSpec::USERS)
+      .with { |r| r.headers["Authorization"].bytesize == "Bearer ".bytesize + limit + 1 }).to have_been_made.once
+  end
+
   # 앞뒤의 공백·탭은 SDK 가 다듬어 보낸다. 예전에는 거부했다 — net-http 의 `initialize_http_header` 가 헤더 값을 `strip` 해
   # (0.9.1 header.rb:195) 끝의 것은 말없이 지운 채 나갔고, 앞의 것은 받는 쪽이 `Bearer` 뒤의 공백으로 접는다(RFC 9110 §11.4
   # `1*SP`). 다듬기는 이제 SDK 의 것이라 어느 net-http 로도 같은 토큰이 나간다.
