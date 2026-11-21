@@ -165,5 +165,23 @@
       "branches": 1,
       "why": "defensive: the drive never sends nil — a singleton method keys with a dot"
     }
+  },
+  "go": {
+    "go/auth_client.go:AuthClient.Exchange": {
+      "statements": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "go/auth_client.go:AuthClient.Pick": {
+      "statements": 1,
+      "why": "unreachable: the miss sits in Pick's function literal — the key is the declared function"
+    },
+    "go/auth_client.go:AuthClient.String": {
+      "statements": 1,
+      "why": "open-gap"
+    },
+    "go/auth_client.go:AuthClient.LogoutURL": {
+      "statements": 2,
+      "why": "integration: the drive never calls it — the integration test does, outside the unit run"
+    }
   }
 }
