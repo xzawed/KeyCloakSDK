@@ -68,7 +68,10 @@ describe('isTransportError — 전송 실패 분류기', () => {
 // auth 레인의 계급 판정 — 라이브러리가 fetch 의 오류를 제 오류로 감싸도 사슬 어딘가의 전송 오류를 본다
 // (`auth.ts` 의 `failure` · `auth-incomplete-response.test.ts`).
 describe('transportInChain — 원인 사슬의 전송 실패', () => {
-  const fetchFailed = new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } })
+  // undici 의 모양 — cause 는 Error 다(아래 「a cause that is not an Error」: 평범한 객체 cause 는 데이터다).
+  const fetchFailed = new TypeError('fetch failed', {
+    cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+  })
 
   it('맨 앞이 전송 실패면 참', () => {
     expect(transportInChain(fetchFailed)).toBe(true)
@@ -97,4 +100,85 @@ describe('transportInChain — 원인 사슬의 전송 실패', () => {
   it.each([null, undefined, 'fetch failed', 42])('객체가 아니면 아니다: %s', (v) => {
     expect(transportInChain(v)).toBe(false)
   })
+})
+
+// A response body is data, not an error: oauth4webapi's `ResponseBodyError` holds the JSON-parsed OAuth error body as
+// its `cause` (registry `node-body-code-member-transport` — the public-API rows are `auth-body-member-transport.test.ts`).
+// Only a cause that is an `Error` speaks for the transport.
+describe('a cause that is not an Error is data, not a transport failure', () => {
+  // One of each family — socket, DNS, timeout, undici, TLS — from the exhaustive table above.
+  const sampleCodes = ['ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'UND_ERR_SOCKET', 'CERT_HAS_EXPIRED']
+
+  it.each(sampleCodes)(
+    'isTransportError — a plain-object cause with code=%s is not one',
+    (code) => {
+      expect(isTransportError(new Error('outer', { cause: { code } }))).toBe(false)
+    },
+  )
+
+  it.each([{ code: 'ECONNRESET' }, { name: 'TimeoutError' }, {}, 'ECONNRESET', 42])(
+    'isTransportError — a TypeError whose cause is not an Error is not one: %o',
+    (cause) => {
+      expect(isTransportError(new TypeError('x', { cause }))).toBe(false)
+    },
+  )
+
+  const responseBodyError = (body: Record<string, unknown>): Error =>
+    Object.assign(
+      new Error('server responded with an error in the response body', { cause: body }),
+      {
+        code: 'OAUTH_RESPONSE_BODY_ERROR',
+      },
+    )
+  it.each([
+    ['code ECONNRESET', { code: 'ECONNRESET' }],
+    ['name TimeoutError', { name: 'TimeoutError' }],
+    ['name AbortError', { name: 'AbortError' }],
+    ['cause.code ECONNRESET', { cause: { code: 'ECONNRESET' } }],
+  ])('an OAuth error body as the cause, with a member %s, is not one', (_label, member) => {
+    const err = responseBodyError({ error: 'invalid_grant', ...member })
+    expect(isTransportError(err)).toBe(false)
+    expect(transportInChain(err)).toBe(false)
+  })
+
+  it('transportInChain — a link that is not an Error ends the walk, whatever lies past it', () => {
+    const past = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+    })
+    expect(transportInChain(new Error('outer', { cause: { cause: past } }))).toBe(false)
+  })
+
+  it('the value given is judged by its own fields as before — a plain object with a transport code is one', () => {
+    expect(isTransportError({ code: 'ECONNRESET' })).toBe(true)
+    expect(transportInChain({ name: 'TimeoutError' })).toBe(true)
+  })
+})
+
+// What Node 22 throws for a transport failure is an Error at every link — the walk reaches it.
+describe('the transport failures Node 22 throws', () => {
+  it('the undici shape — TypeError("fetch failed") whose cause is an Error with a code', () => {
+    const err = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('x'), { code: 'ECONNRESET' }),
+    })
+    expect(isTransportError(err)).toBe(true)
+    expect(transportInChain(err)).toBe(true)
+  })
+
+  it.each(['AbortError', 'TimeoutError'])('a DOMException %s', (name) => {
+    const err = new DOMException('the operation was aborted', name)
+    expect(err).toBeInstanceOf(Error)
+    expect(isTransportError(err)).toBe(true)
+    expect(transportInChain(err)).toBe(true)
+  })
+
+  it.each(['AbortError', 'TimeoutError'])(
+    "a DOMException %s under openid-client's ClientError (code OAUTH_TIMEOUT · OAUTH_ABORT)",
+    (name) => {
+      const err = Object.assign(
+        new Error('operation timed out', { cause: new DOMException('t', name) }),
+        { code: name === 'TimeoutError' ? 'OAUTH_TIMEOUT' : 'OAUTH_ABORT' },
+      )
+      expect(transportInChain(err)).toBe(true)
+    },
+  )
 })
