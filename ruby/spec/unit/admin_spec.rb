@@ -160,6 +160,35 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     end
   end
 
+  # 경계가 받는 `Faraday::ParsingError` 의 `response` 는 응답 객체만이 아니다 — 상태 · 머리 · 본문의 Hash 일 수도(faraday 2.15.1
+  # 은 커넥션에 `RaiseError(include_request: false)` 가 있으면 json 미들웨어의 응답 객체를 그 Hash 로 바꾼다 — error.rb
+  # `omit_request_data`), 없을 수도 있다. Hash 면 그 `:status` 가 클래스를 정하고, 상태를 못 읽으면 전송 오류다. admin 커넥션에는
+  # RaiseError 가 없어 그 json 미들웨어는 늘 응답 객체를 싣는다 — 공개 API 로 다른 꼴이 이 경계에 닿는 자리는 주입한 토큰
+  # 공급자다(`BearerAuth` 가 요청 안에서 부른다). 그때 admin 요청은 나가지 않는다.
+  describe "a Faraday::ParsingError whose response is not a response object" do
+    def raising(error)
+      provider = Class.new { define_method(:access_token) { raise error } }.new
+      described_class.new(config: config, token_provider: provider)
+    end
+
+    it "takes the status of a response Hash: an error status decides the class" do
+      user = stub_request(:get, "#{users_url}/x")
+      failure = Faraday::ParsingError.new(JSON::ParserError.new("unexpected token"), { status: 409 })
+      expect { raising(failure).users.get("x") }.to raise_error(KeycloakSdk::ConflictError) do |e|
+        expect([e.message, e.status]).to eq(["admin request failed: HTTP 409", 409])
+      end
+      expect(user).not_to have_been_requested
+    end
+
+    it "reports one that carries no response as a transport error" do
+      user = stub_request(:get, "#{users_url}/x")
+      failure = Faraday::ParsingError.new(JSON::ParserError.new("unexpected token"))
+      expect { raising(failure).users.get("x") }
+        .to raise_error(KeycloakSdk::TransportError, "admin transport error: Faraday::ParsingError")
+      expect(user).not_to have_been_requested
+    end
+  end
+
   # ⚠️ rename은 PUT /roles/{현재 이름} + body의 **새** 이름이다. 경로를 representation에서
   # 만들면 rename을 표현할 수 없다 — 자매 Go(#275)·PHP(#279) SDK에서 실제로 그랬고, 둘 다
   # 이 테스트가 없어서 오래 살아남았다. 여기 구현은 처음부터 옳지만 그것을 붙잡는 것이 없었다.

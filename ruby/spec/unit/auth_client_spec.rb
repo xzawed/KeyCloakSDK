@@ -271,6 +271,61 @@ RSpec.describe KeycloakSdk::AuthClient do
       expect(stub).to have_been_requested
       expect(ts.access_token).to eq("AT")
     end
+
+    # rack-oauth2 의 응답 규칙(`oauth_token`)은 token_type 이 bearer(대소문자 무시)인 응답만 토큰으로 받는다 — token_type 이
+    # 없거나(nil 의 `&.`) 다른 종류면 쓸 수 없는 응답이고, 실린 토큰은 돌려주지 않는다.
+    { "no token_type" => { access_token: "AT", expires_in: 300 },
+      "token_type mac" => { access_token: "AT", token_type: "mac", expires_in: 300 } }.each do |name, body|
+      it "fails on a token response with #{name}, returning no token" do
+        stub = stub_request(:post, token_url).to_return(status: 200, body: body.to_json,
+                                                        headers: { "Content-Type" => "application/json" })
+        expect { auth.client_credentials_token }.to raise_error(KeycloakSdk::AuthError) do |e|
+          expect([e.message, e.oauth_error])
+            .to eq(["client-credentials failed: unusable token response (RuntimeError)", nil])
+        end
+        expect(stub).to have_been_requested.once
+      end
+    end
+
+    # `expires_in` 이 없으면 만료를 모르는 토큰이다 — `expires_at` 도 nil 이고, 모르는 만료는 만료다(`TokenSet#expired?`).
+    it "returns a token set with no expiry when the response has no expires_in" do
+      body = { access_token: "AT", token_type: "Bearer" }.to_json
+      stub = stub_request(:post, token_url).to_return(status: 200, body: body,
+                                                      headers: { "Content-Type" => "application/json" })
+      ts = auth.client_credentials_token
+      expect([ts.access_token, ts.expires_in, ts.expires_at, ts.expired?]).to eq(["AT", nil, nil, true])
+      expect(stub).to have_been_requested.once
+    end
+  end
+
+  # 그랜트의 필수 값(`code` · `refresh_token`)이 비면 보내지 않는다 — rack-oauth2 의 `attr_required` 와 같은 「비었다」: nil 이거나
+  # 빈 값이다(`empty?` 가 없는 값은 nil 일 때만 · 공백뿐인 문자열은 비지 않았다). rack-oauth2 의 그랜트가 그 검사를 하던 때는
+  # 이 경계 밖에서 raw `AttrRequired::AttrMissing` 으로 샜다.
+  describe "a grant whose required value is missing" do
+    {
+      "refresh" => ["refresh failed: refresh_token is required", ->(a, v) { a.refresh(refresh_token: v) }],
+      "exchange_code" => ["authorization_code exchange failed: code is required", lambda { |a, v|
+        a.exchange_code(code: v, code_verifier: "v", redirect_uri: "https://app/cb")
+      }]
+    }.each do |lane, (message, call)|
+      { "nil" => nil, "an empty String" => "" }.each do |name, value|
+        it "refuses #{lane} with #{name} for its required value, without sending it" do
+          stub = stub_request(:post, token_url)
+          expect { call.call(auth, value) }.to raise_error(KeycloakSdk::AuthError, message)
+          expect(stub).not_to have_been_requested
+        end
+      end
+    end
+
+    # 대조군 — `empty?` 가 없는 값은 nil 이 아니면 비지 않았다: 그 글로 보낸다.
+    it "sends a refresh_token that has no empty? (an Integer) as its text" do
+      stub = stub_request(:post, token_url).with(body: hash_including("refresh_token" => "12345"))
+                                           .to_return(status: 200, headers: { "Content-Type" => "application/json" },
+                                                      body: { access_token: "AT", token_type: "Bearer",
+                                                              expires_in: 300 }.to_json)
+      expect(auth.refresh(refresh_token: 12_345).access_token).to eq("AT")
+      expect(stub).to have_been_requested.once
+    end
   end
 
   # 성공 상태가 OAuth `error` 를 실은 응답(등록부 auth-2xx-error-code-divergent · 아홉 언어 같은 규칙) — 레인이 성공으로 받는
