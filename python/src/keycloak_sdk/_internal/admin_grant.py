@@ -72,8 +72,8 @@ from .token_cap import Answered, answering
 _SYNC_GRANTS = ("token", "refresh_token")
 _ASYNC_GRANTS = ("a_token", "a_refresh_token")
 
-#: 그랜트 래퍼를 빠져나간 python-keycloak 실패 → 그 오류 본문의 OAuth 코드(그 그랜트가 보낸 비밀에 대어
-#: `carried_code` 가 허락한 것, 아니면 `None`) — 정체로 대조하고, 붙잡아 두지 않는다. 비밀은 담지 않는다.
+#: 그랜트 래퍼를 빠져나간 python-keycloak 실패 → 그 오류 본문의 OAuth 코드(보낸 비밀에 대어
+#: `carried_code` 가 허락한 것, 아니면 `None`) — 정체로 대조하고 붙잡아 두지 않는다(비밀은 없다).
 _FAILED_GRANTS: weakref.WeakKeyDictionary[KeycloakError, str | None] = weakref.WeakKeyDictionary()
 
 _Grant = Callable[..., dict[str, Any]]

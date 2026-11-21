@@ -175,7 +175,7 @@ def oauth_failure(
     HTTP <상태> (<코드>)`, 코드는 `carried_code` 가 허락한 것만(아니면 상태만). 오류 상태의 응답
     (`auth_failure`)과 성공 상태인데 `error` 를 실은 응답(`error_in_success`)이 함께 쓴다.
 
-    `value` 가 `None` 이면 코드를 싣지 않는다(admin 자체 그랜트의 메시지 — `grant_failure`). 상태가 없으면
+    `value` 가 `None` 이면 코드를 싣지 않는다(admin 자체 그랜트의 메시지). 상태가 없으면
     (목처럼 세션을 지나지 않은 응답 — 상태는 세션이 적는다, `token_cap.Answered`) 상태를 지어내지
     않고 뺀다."""
     code = carried_code(value, sent)
