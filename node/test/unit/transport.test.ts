@@ -181,4 +181,113 @@ describe('the transport failures Node 22 throws', () => {
       expect(transportInChain(err)).toBe(true)
     },
   )
+
+  // What fetch rejected with for each local failure (measured Node 22.18.0 · undici 6.21.2): a TypeError with no own
+  // `code` — its own properties are cause, message and stack — whose cause is an Error. The TLS row's code is not in
+  // TRANSPORT_CODES, so only the TypeError rule makes it transport: that row fails if the rule is dropped, not narrowed.
+  const system = (message: string, code: string, syscall: string): Error =>
+    Object.assign(new Error(message), { code, syscall })
+  const undici = (name: string, message: string, code: string): Error =>
+    Object.assign(new Error(message), { name, code })
+  it.each([
+    [
+      'connection refused',
+      'fetch failed',
+      system('connect ECONNREFUSED 127.0.0.1:55803', 'ECONNREFUSED', 'connect'),
+    ],
+    [
+      'connection refused on both families (localhost)',
+      'fetch failed',
+      Object.assign(
+        new AggregateError(
+          [
+            system('connect ECONNREFUSED ::1:55803', 'ECONNREFUSED', 'connect'),
+            system('connect ECONNREFUSED 127.0.0.1:55803', 'ECONNREFUSED', 'connect'),
+          ],
+          '',
+        ),
+        { code: 'ECONNREFUSED' },
+      ),
+    ],
+    [
+      'a host that does not resolve',
+      'fetch failed',
+      undici(
+        'ConnectTimeoutError',
+        'Connect Timeout Error (attempted address: kcsdk-probe.invalid:80, timeout: 10000ms)',
+        'UND_ERR_CONNECT_TIMEOUT',
+      ),
+    ],
+    ['a reset on accept', 'fetch failed', system('read ECONNRESET', 'ECONNRESET', 'read')],
+    [
+      'a body cut short',
+      'terminated',
+      undici('SocketError', 'other side closed', 'UND_ERR_SOCKET'),
+    ],
+    [
+      'TLS to a server that does not speak it',
+      'fetch failed',
+      Object.assign(new Error('SSL routines:ssl3_get_record:wrong version number'), {
+        code: 'ERR_SSL_WRONG_VERSION_NUMBER',
+      }),
+    ],
+  ])('undici — %s: TypeError(%j) with the cause measured', (_label, message, cause) => {
+    const err = new TypeError(message, { cause })
+    expect(Object.hasOwn(err, 'code')).toBe(false)
+    expect(isTransportError(err)).toBe(true)
+    expect(transportInChain(err)).toBe(true)
+  })
+})
+
+// A library's parse error is a TypeError too. oauth4webapi's `CodedTypeError(message, code, cause)` always sets its own
+// `code` (`ERR_INVALID_ARG_VALUE` · `ERR_INVALID_ARG_TYPE`), and for a part of a JWT that is not base64url it holds the
+// decoder's error as its cause — Node 22.18.0 has no `Uint8Array.fromBase64`, so that is atob's InvalidCharacterError
+// (registry `node-typeerror-cause-parse-as-transport` — the public-API rows are `auth-id-token-parse-transport.test.ts`).
+describe("a TypeError with its own code is a library's error, not undici's fetch failure", () => {
+  /** oauth4webapi's `CodedTypeError` (`node_modules/oauth4webapi/build/index.js`). */
+  const coded = (code: string, cause: Error): TypeError =>
+    Object.assign(new TypeError('The input to be decoded is not correctly encoded.', { cause }), {
+      code,
+    })
+  const invalidCharacter = (): Error =>
+    new DOMException('Invalid character', 'InvalidCharacterError')
+
+  it.each(
+    ['ERR_INVALID_ARG_VALUE', 'ERR_INVALID_ARG_TYPE'].flatMap((code) => [
+      [code, "atob's InvalidCharacterError", invalidCharacter()] as const,
+      [code, 'an Error', new Error('x')] as const,
+    ]),
+  )(
+    'code %s with a cause %s — neither isTransportError nor transportInChain',
+    (code, _label, cause) => {
+      const err = coded(code, cause)
+      expect(isTransportError(err)).toBe(false)
+      expect(transportInChain(err)).toBe(false)
+    },
+  )
+
+  it('the chain openid-client throws for an id_token header that is not base64url is not one', () => {
+    // ClientError[OAUTH_PARSE_ERROR] > OperationProcessingError[OAUTH_PARSE_ERROR] > TypeError[ERR_INVALID_ARG_VALUE]
+    // > InvalidCharacterError — measured on Node 22.18.0 through `refresh`.
+    const processing = Object.assign(
+      new Error('failed to parse JWT Header body as base64url encoded JSON', {
+        cause: coded('ERR_INVALID_ARG_VALUE', invalidCharacter()),
+      }),
+      { name: 'OperationProcessingError', code: 'OAUTH_PARSE_ERROR' },
+    )
+    const client = Object.assign(new Error('parsing error occured', { cause: processing }), {
+      name: 'ClientError',
+      code: 'OAUTH_PARSE_ERROR',
+    })
+    expect(transportInChain(client)).toBe(false)
+  })
+
+  it('a cause with a transport code still makes it one — only the TypeError rule narrows', () => {
+    const err = coded(
+      'ERR_INVALID_ARG_VALUE',
+      Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+    )
+    expect(isTransportError(err)).toBe(true)
+    expect(transportInChain(err)).toBe(true)
+  })
 })
