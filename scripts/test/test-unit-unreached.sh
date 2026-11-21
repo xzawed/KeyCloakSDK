@@ -4,10 +4,12 @@
 # 1 DRIFT · 2 FAIL — 뜻은 그 도구 머리가 소유한다). 문구는 무엇을 잡았는지 가리는 데만 쓴다.
 #
 # ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby 가 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
-# 실제 도구가 낸 것이다(kotlin · php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby 2026-11-21):
+# 실제 도구가 낸 것이다(php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby · kotlin 2026-11-21):
 #   fixtures/unit-unreached/data/kotlin.unit.xml · kotlin.unit.javap.txt   도구의 `unit kotlin`(JDK 21.0.8 · kotlin 2.4.21 · Kover 0.9.11 ·
-#       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼 + java/pom.xml(JaCoCo 판을 거기서 읽는다). 세션 id 를
-#       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다
+#       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼(JaCoCo 판은 tree 의 java/pom.xml 에서 읽는다). 세션 id 를
+#       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다(치환마다 되돌린 바이트가
+#       원본과 같다). 2026-11-21 에 꼬리 호출 AuthClientTail(파일 끝)을 더해 다시 냈다 — AuthClient · Config 의 메서드와 34 줄까지의 줄
+#       데이터는 바이트째 같았다
 #   fixtures/unit-unreached/data/php.unit/   도구의 `unit php`(PHP 8.3.36 · PHPUnit 12.5.33 · php-code-coverage 12.5.7 · Xdebug 3.5.3) —
 #       임시 루트에 tree 사본 + 실제 php/vendor 사본. index.xml 의 `<project source>` 생성 루트만 `@ROOT@` 로 바꿨다
 #   fixtures/unit-unreached/data/dotnet.unit.json · dotnet.unit.trx   도구의 `unit dotnet`(.NET SDK 10.0.102 → net8.0 · coverlet.collector
@@ -25,6 +27,7 @@
 # 단위 실행의 필터(Category!=Integration)가 거른다. java 의 DriveIT 는 failsafe 의 것이라 단위 실행(test 단계)이 안 돌고, QuickStart 는
 # jacoco.skip 모듈(단위 시험이 없다)의 것이다. ruby 의 구동은 없는 키 · 거짓 fallback · nil claims 를 안 보내고 apply 를 빈 배열로만 불러
 # 블록 몸통이 안 돌며(token 은 삼항 두 쪽을 다 탄다), 통합 스펙(spec/integration · `:integration`)은 단위 실행의 spec_helper 필터가 거른다.
+# kotlin 의 구동은 꼬리 호출 AuthClientTail.update 를 멈추지 않는 adminCall 로 불러 닫는 중괄호 줄까지 돈다(아래 (5)).
 # 숫자를 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
 # `check` 의 장부 판정(데이터 없이 — 꼴 · 경계 · why)은 통합 커버리지 픽스처 트리(`ic-fixture.sh` 의 fresh)에서 잰다 — check 는 아홉
 # 언어를 다 보므로 kotlin · php · dotnet · java · ruby 뿐인 이 트리로는 못 잰다.
@@ -772,5 +775,107 @@ rm "$T/scripts/unit-unreached.json"
 run check "$T"
 assert_eq 2 "$RC" "[check] 장부가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [-] scripts/unit-unreached.json is missing or not JSON" "[check] 장부 없음"
+
+# ── (5) kotlin 꼬리 호출의 닫는 줄(등록부 kotlin-tail-call-return-line-flips) ─────────────────────────────────
+# Unit 을 돌려주는 suspend 함수의 마지막 문장이 Unit 을 돌려주는 suspend 호출이면 kotlinc 는 꼬리 호출로 내고, 닫는 중괄호 줄에는 마지막
+# areturn 하나만 매긴다 — 그 줄은 호출이 멈추지 않고 돌아왔을 때만 돈다(같은 트리의 CI 실행이 「stale entry」 DRIFT 와 OK 로 갈렸다).
+# 리더는 그 줄을 재지 않는다(단위 · 통합이 같은 리더다). 픽스처의 AuthClientTail.update 는 49 · 꼬리 호출 50 · 닫는 줄 51(`line 51: 33`
+# — 마지막 areturn)이고, 구동의 adminCall 이 멈추지 않아 51 이 돈 데이터다. 멈춘 실행의 데이터는 그 자리만 바꿔 만든다 — 멈춘 실행의
+# 실측(RealmsResource.update: 꼬리 호출 줄 mi 1 · 닫는 줄 mi 1 · 메서드의 줄 1 놓침)과 같은 꼴로, 50 의 getstatic Unit 하나와 51 의
+# areturn 하나가 안 돌았다.
+tail_suspended() {
+  sed -i 's#<method name="update" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="49"><counter type="INSTRUCTION" missed="0" covered="11"/><counter type="LINE" missed="0" covered="3"/>#<method name="update" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="49"><counter type="INSTRUCTION" missed="2" covered="9"/><counter type="LINE" missed="1" covered="2"/>#; s#<line nr="50" mi="0" ci="10" #<line nr="50" mi="1" ci="9" #; s#<line nr="51" mi="0" ci="1" #<line nr="51" mi="1" ci="0" #' "$D/kotlin.unit.xml"
+  kmark 0
+  assert_contains "$(cat "$D/kotlin.unit.xml")" '<method name="update" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="49"><counter type="INSTRUCTION" missed="2" covered="9"/><counter type="LINE" missed="1" covered="2"/>' "(변이가 착지했는지 먼저 본다 — 메서드 계수기)"
+  assert_contains "$(cat "$D/kotlin.unit.xml")" '<line nr="50" mi="1" ci="9" ' "(변이가 착지했는지 먼저 본다 — 꼬리 호출 줄)"
+  assert_contains "$(cat "$D/kotlin.unit.xml")" '<line nr="51" mi="1" ci="0" ' "(변이가 착지했는지 먼저 본다 — 닫는 줄)"
+}
+# 통합 모드 — 같은 리더(jvmReport)다: 단위 데이터를 통합 실행의 이름으로 `$D/it` 에 두고 통합 기록(suite 없음 · unit 0)을 쓴다.
+tail_it() {
+  rm -rf "$D/it"
+  mkdir -p "$D/it"
+  cp "$D/kotlin.unit.xml" "$D/it/kotlin.xml"
+  cp "$D/kotlin.unit.javap.txt" "$D/it/kotlin.javap.txt"
+  printf '{"run":"kotlin","exit":0,"jacoco":"0.8.16","module":"kc-unit","data_sha1":"%s","javap_sha1":"%s","exec_sha1":"0","tests":{"completed":1,"failures":0,"errors":0,"skipped":0},"unit":0,"files":{"%s":"%s"}}\n' \
+    "$(sha1sum "$D/it/kotlin.xml" | cut -d' ' -f1)" "$(sha1sum "$D/it/kotlin.javap.txt" | cut -d' ' -f1)" "$K" "$(sha1sum "$T/$K" | cut -d' ' -f1)" > "$D/it/kotlin.run.json"
+}
+# 통합 리포트는 안 돈 함수마다 열린 소유자를 요구한다 — 안 돈 unused 에 단다(이 대조가 재는 것이 아니다). ufresh 마다 한 번.
+tail_owner() {
+  sed -i "/\"kotlin\": {/,/\"owners\": {}/ s#\"owners\": {}#\"owners\": { \"$K:AuthClient.unused\": \"open-gap\" }#" "$T/scripts/integration-coverage.json"
+  assert_contains "$(cat "$T/scripts/integration-coverage.json")" "\"owners\": { \"$K:AuthClient.unused\": \"open-gap\" }" "(소유자가 착지했는지 먼저 본다)"
+}
+# (가) 닫는 줄이 돌았든 안 돌았든 단위 장부의 출력 · 종료코드가 같다 — 다른 줄이 다 돈 꼬리 호출 함수는 목록에 없다.
+ufresh
+run unit-report kotlin "$T" --out "$D"
+ran_rc="$RC"
+ran_out="$OUT"
+assert_eq 0 "$ran_rc" "[tail] 닫는 줄까지 돈 실행은 exit 0 — 출력: $ran_out"
+assert_not_contains "$ran_out" "AuthClientTail" "[tail] 닫는 줄까지 돈 꼬리 호출 함수는 목록에 없다"
+tail_suspended
+run unit-report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[tail] 닫는 줄만 안 돈 실행(멈춘 호출)도 exit 0 — 그 줄은 재지 않는다 — 출력: $OUT"
+assert_not_contains "$OUT" "AuthClientTail" "[tail] 다른 줄이 다 돈 꼬리 호출 함수는 닫는 줄이 안 돌아도 목록에 없다"
+assert_eq "$ran_rc" "$RC" "[tail] 단위 장부의 종료코드는 닫는 줄이 돌았든 안 돌았든 같다"
+assert_eq "$ran_out" "$OUT" "[tail] 단위 장부의 출력은 닫는 줄이 돌았든 안 돌았든 같다"
+# 통합 합계도 같다 — 닫는 줄은 분모에서도 빠진다(돈 줄이어도 센 줄이 아니다).
+ufresh
+tail_owner
+tail_it
+run report kotlin "$T" --out "$D/it"
+ran_rc="$RC"
+ran_out="$OUT"
+assert_eq 0 "$ran_rc" "[tail] 통합 — 닫는 줄까지 돈 실행은 exit 0 — 출력: $ran_out"
+assert_line "$ran_out" "  total lines 15/17 88.2% · bodies 15/17 88.2%" "[tail] 통합 합계 — 돈 닫는 줄도 분모에 없다"
+tail_suspended
+tail_it
+run report kotlin "$T" --out "$D/it"
+assert_eq 0 "$RC" "[tail] 통합 — 닫는 줄만 안 돈 실행도 exit 0 — 출력: $OUT"
+assert_line "$OUT" "  total lines 15/17 88.2% · bodies 15/17 88.2%" "[tail] 통합 합계 — 안 돈 닫는 줄도 분모에 없다"
+assert_eq "$ran_rc" "$RC" "[tail] 통합 리포트의 종료코드는 닫는 줄이 돌았든 안 돌았든 같다"
+assert_eq "$ran_out" "$OUT" "[tail] 통합 리포트(파일 · 합계 · 미실행)는 닫는 줄이 돌았든 안 돌았든 같다"
+# (나) 대조군 — 데이터의 닫는 줄에 명령이 둘이면(mi + ci = 2) 그 areturn 하나뿐인 줄이 아니다: 그 줄을 센다(1 줄로 목록에 든다).
+ufresh
+tail_suspended
+sed -i 's#<line nr="51" mi="1" ci="0" #<line nr="51" mi="2" ci="0" #' "$D/kotlin.unit.xml"
+kmark 0
+assert_contains "$(cat "$D/kotlin.unit.xml")" '<line nr="51" mi="2" ci="0" ' "(변이가 착지했는지 먼저 본다)"
+run unit-report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[tail] 대조군 — 명령이 둘인 닫는 줄은 센다: exit 1 — 출력: $OUT"
+assert_line "$OUT" "  UNREACHED $K:49 AuthClientTail.update · 1 line · 0 branches · NONE" "[tail] 대조군 — 명령이 둘인 닫는 줄은 1 줄로 든다"
+assert_contains "$OUT" "DRIFT [kotlin] unrecorded unreached code $K:AuthClientTail.update — the unit suite never reaches 1 line · 0 branches of it" "[tail] 대조군 — 장부에 없는 미도달"
+# 통합 분모에도 남는다 — 단위 장부만으로는 이 판정을 못 가른다(「mi + ci ≥ 1」로 느슨해져도 그 줄을 지우며 covered 를 내려 1 줄로 남는다).
+tail_owner
+tail_it
+run report kotlin "$T" --out "$D/it"
+assert_eq 0 "$RC" "[tail] 대조군 — 통합 리포트는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "  total lines 15/18 83.3% · bodies 15/18 83.3%" "[tail] 대조군 — 명령이 둘인 닫는 줄은 통합 분모에 남는다"
+# (다) 대조군 — 끝 명령 하나가 다르면 꼬리 호출의 꼴이 아니다: 그 줄을 센다. 마지막 getstatic 이 Unit.INSTANCE 가 아니다 · 닫는 줄의
+# 줄표 항목이 마지막 areturn 앞(getstatic)에서 시작한다.
+ufresh
+tail_suspended
+sed -i '/^  public final java.lang.Object update(java.lang.String, kotlin.coroutines.Continuation/,/^      LineNumberTable:$/ s#// Field kotlin/Unit.INSTANCE:Lkotlin/Unit;$#// Field kotlin/Unit.OTHER:Lkotlin/Unit;#' "$D/kotlin.unit.javap.txt"
+kmark 0
+assert_contains "$(sed -n '/^  public final java.lang.Object update(java.lang.String, kotlin.coroutines.Continuation/,/^      LineNumberTable:$/p' "$D/kotlin.unit.javap.txt")" '30: getstatic     #71                 // Field kotlin/Unit.OTHER:Lkotlin/Unit;' "(변이가 착지했는지 먼저 본다)"
+run unit-report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[tail] 대조군 — 마지막 getstatic 이 Unit.INSTANCE 가 아니면 그 줄을 센다: exit 1 — 출력: $OUT"
+assert_line "$OUT" "  UNREACHED $K:49 AuthClientTail.update · 1 line · 0 branches · NONE" "[tail] 대조군 — 다른 필드의 getstatic"
+ufresh
+tail_suspended
+sed -i '/^  public final java.lang.Object update(java.lang.String, kotlin.coroutines.Continuation/,/^      LocalVariableTable:$/ s#^        line 51: 33$#        line 51: 30#' "$D/kotlin.unit.javap.txt"
+kmark 0
+assert_contains "$(sed -n '/^  public final java.lang.Object update(java.lang.String, kotlin.coroutines.Continuation/,/^      LocalVariableTable:$/p' "$D/kotlin.unit.javap.txt")" '        line 51: 30' "(변이가 착지했는지 먼저 본다)"
+run unit-report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[tail] 대조군 — 닫는 줄의 줄표 항목이 마지막 areturn 앞에서 시작하면 그 줄을 센다: exit 1 — 출력: $OUT"
+assert_line "$OUT" "  UNREACHED $K:49 AuthClientTail.update · 1 line · 0 branches · NONE" "[tail] 대조군 — 마지막 줄표 항목이 areturn 앞"
+# (라) 대조군 — 닫는 줄이 돌았으면 그 줄을 빼며 내리는 것은 covered 다: 같은 메서드의 다른 놓친 줄은 그대로 센다(missed 를 내리면 그
+# 줄이 장부에서 사라진다). 49 만 안 돈 데이터다 — 실행 차례로는 없는 꼴이고, 줄 데이터와 메서드 계수기의 대조만 잰다.
+ufresh
+sed -i 's#<method name="update" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="49"><counter type="INSTRUCTION" missed="0" covered="11"/><counter type="LINE" missed="0" covered="3"/>#<method name="update" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="49"><counter type="INSTRUCTION" missed="5" covered="6"/><counter type="LINE" missed="1" covered="2"/>#; s#<line nr="49" mi="0" ci="5" #<line nr="49" mi="5" ci="0" #' "$D/kotlin.unit.xml"
+kmark 0
+assert_contains "$(cat "$D/kotlin.unit.xml")" '<method name="update" desc="(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;" line="49"><counter type="INSTRUCTION" missed="5" covered="6"/><counter type="LINE" missed="1" covered="2"/>' "(변이가 착지했는지 먼저 본다 — 메서드 계수기)"
+assert_contains "$(cat "$D/kotlin.unit.xml")" '<line nr="49" mi="5" ci="0" ' "(변이가 착지했는지 먼저 본다 — 49)"
+run unit-report kotlin "$T" --out "$D"
+assert_eq 1 "$RC" "[tail] 대조군 — 닫는 줄이 돌았어도 다른 놓친 줄은 센다: exit 1 — 출력: $OUT"
+assert_line "$OUT" "  UNREACHED $K:49 AuthClientTail.update · 1 line · 0 branches · NONE" "[tail] 대조군 — 돈 닫는 줄을 빼며 내리는 것은 covered 다"
 
 assert_report
