@@ -160,32 +160,42 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     end
   end
 
-  # 경계가 받는 `Faraday::ParsingError` 의 `response` 는 응답 객체만이 아니다 — 상태 · 머리 · 본문의 Hash 일 수도(faraday 2.15.1
-  # 은 커넥션에 `RaiseError(include_request: false)` 가 있으면 json 미들웨어의 응답 객체를 그 Hash 로 바꾼다 — error.rb
-  # `omit_request_data`), 없을 수도 있다. Hash 면 그 `:status` 가 클래스를 정하고, 상태를 못 읽으면 전송 오류다. admin 커넥션에는
-  # RaiseError 가 없어 그 json 미들웨어는 늘 응답 객체를 싣는다 — 공개 API 로 다른 꼴이 이 경계에 닿는 자리는 주입한 토큰
-  # 공급자다(`BearerAuth` 가 요청 안에서 부른다). 그때 admin 요청은 나가지 않는다.
-  describe "a Faraday::ParsingError whose response is not a response object" do
+  # ⚠️ **토큰 공급자가 낸 오류의 상태는 admin 응답의 상태가 아니다.** `BearerAuth` 는 admin 요청을 보내기 전에 주입한 공급자를
+  # 부른다 — 그 공급자가 낸 `Faraday::ParsingError` 가 상태를 실어도(응답 객체든, faraday 2.15.1 이
+  # `RaiseError(include_request: false)` 아래에서 그것을 바꾼 Hash 든 — error.rb `omit_request_data`) admin 요청은 나가지
+  # 않았다. 그 상태가 클래스를 정하던 때는 409 가 admin 요청 없이 「이미 있다」(ConflictError), 404 가 「없다」(NotFoundError)로
+  # 읽혔다. 공급자의 SDK 밖 오류는 상태와 무관하게 전송 오류이고, 원인은 `RedactedCause` 다(해석기의 메시지는 본문 앞부분을
+  # 인용한다). 대조군 — admin 응답 자신의 못 읽는 오류 본문은 여전히 상태가 클래스를 정한다(404 · 409 · 403 — 위
+  # 「an error status whose body claims JSON but is not」).
+  describe "a Faraday::ParsingError the token provider raises" do
+    let(:unparsable) { JSON::ParserError.new("unexpected token at 'PROVIDER-CANARY'") }
+
     def raising(error)
       provider = Class.new { define_method(:access_token) { raise error } }.new
       described_class.new(config: config, token_provider: provider)
     end
 
-    it "takes the status of a response Hash: an error status decides the class" do
+    def expect_transport_error(failure)
       user = stub_request(:get, "#{users_url}/x")
-      failure = Faraday::ParsingError.new(JSON::ParserError.new("unexpected token"), { status: 409 })
-      expect { raising(failure).users.get("x") }.to raise_error(KeycloakSdk::ConflictError) do |e|
-        expect([e.message, e.status]).to eq(["admin request failed: HTTP 409", 409])
-      end
+      expect { raising(failure).users.get("x") }
+        .to raise_error(KeycloakSdk::TransportError, "admin transport error: Faraday::ParsingError") do |e|
+          expect(e.full_message(highlight: false)).not_to include("PROVIDER-CANARY")
+        end
       expect(user).not_to have_been_requested
     end
 
+    it "is a transport error even when its response Hash carries an error status" do
+      expect_transport_error(Faraday::ParsingError.new(unparsable, { status: 409 }))
+    end
+
+    it "is a transport error, not NotFoundError, when it carries a response object with an error status" do
+      env = Faraday::Env.from(status: 404, body: "<html>NOT-JSON</html>",
+                              response_headers: Faraday::Utils::Headers.new("Content-Type" => "application/json"))
+      expect_transport_error(Faraday::ParsingError.new(unparsable, Faraday::Response.new(env)))
+    end
+
     it "reports one that carries no response as a transport error" do
-      user = stub_request(:get, "#{users_url}/x")
-      failure = Faraday::ParsingError.new(JSON::ParserError.new("unexpected token"))
-      expect { raising(failure).users.get("x") }
-        .to raise_error(KeycloakSdk::TransportError, "admin transport error: Faraday::ParsingError")
-      expect(user).not_to have_been_requested
+      expect_transport_error(Faraday::ParsingError.new(unparsable))
     end
   end
 
