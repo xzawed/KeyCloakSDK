@@ -657,6 +657,70 @@ func TestAdminLeaderCancellationDoesNotFailWaiter(t *testing.T) {
 	})
 }
 
+// TestAdminDoubleCheckReturnsTheClientCachedDuringTheGap pins the check inside
+// Client.Admin's single-flight closure. ctx.Err sits between the outer cache
+// read and DoChan, so a caller paused there has already seen a nil cache and
+// has not started a flight. Another caller then creates the client and that
+// flight ends — singleflight forgets the key — before the paused caller
+// resumes. The resumed caller starts a new flight, and the closure returns the
+// client already cached. The token endpoint is hit once. The pause is that
+// ctx.Err hook: the two calls are ordered by channels, with no sleep and no
+// retry. If ctx.Err moves ahead of the cache read, this only observes the
+// outer hit and the inner branch does not run.
+func TestAdminDoubleCheckReturnsTheClientCachedDuringTheGap(t *testing.T) {
+	p := newFlightIdP(t)
+	c := p.client(t)
+	pc := &pauseCtx{Context: context.Background(), paused: make(chan struct{}), resume: make(chan struct{})}
+	var resumeOnce sync.Once
+	resume := func() { resumeOnce.Do(func() { close(pc.resume) }) }
+	t.Cleanup(resume)
+
+	type got struct {
+		a   *AdminClient
+		err error
+	}
+	late := make(chan got, 1)
+	go func() {
+		a, err := c.Admin(pc)
+		late <- got{a, err}
+	}()
+	select {
+	case <-pc.paused:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Admin never stopped at ctx.Err between the cache check and the flight")
+	}
+	if n := p.tokens.Load(); n != 0 {
+		t.Fatalf("the paused caller started a login: token requests = %d", n)
+	}
+	c.mu.Lock()
+	cached := c.admin
+	c.mu.Unlock()
+	if cached != nil {
+		t.Fatal("the cache was filled before the other caller ran")
+	}
+
+	first, err := c.Admin(context.Background())
+	if err != nil {
+		t.Fatalf("the caller that creates the client: %v", err)
+	}
+	resume()
+	var second got
+	select {
+	case second = <-late:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the paused Admin call did not return")
+	}
+	if second.err != nil {
+		t.Fatalf("the caller that resumed after the cache was filled: %v", second.err)
+	}
+	if second.a != first {
+		t.Fatalf("double-check returned %p, want the cached client %p", second.a, first)
+	}
+	if n := p.tokens.Load(); n != 1 {
+		t.Fatalf("token requests = %d, want 1", n)
+	}
+}
+
 // stepClock 은 시험이 한 걸음씩 옮기는 게이트 시계다(창·백오프 판정만 이것을 읽는다 — 토큰의 exp 는 벽시계다).
 type stepClock struct {
 	mu sync.Mutex

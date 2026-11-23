@@ -42,3 +42,37 @@ func TestCloseWithoutAdmin(t *testing.T) {
 		t.Fatalf("Close without admin must be a no-op, got %v", err)
 	}
 }
+
+// TestAdminReturnsTheCachedClient pins the cache hit in Client.Admin: after a
+// successful creation, a second call returns the same *AdminClient and does not
+// ask the token endpoint again. The third call, with a context already cancelled,
+// still returns that client and a nil error: the outer hit runs before ctx.Err
+// is checked, so a cancelled caller is not abandoned and starts no new token request.
+func TestAdminReturnsTheCachedClient(t *testing.T) {
+	p := newFlightIdP(t)
+	c := p.client(t)
+	ctx := context.Background()
+	first, err := c.Admin(ctx)
+	if err != nil {
+		t.Fatalf("first Admin: %v", err)
+	}
+	second, err := c.Admin(ctx)
+	if err != nil {
+		t.Fatalf("second Admin: %v", err)
+	}
+	if first != second {
+		t.Fatalf("second Admin = %p, want the cached client %p", second, first)
+	}
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	third, err := c.Admin(cancelledCtx)
+	if err != nil {
+		t.Fatalf("cancelled Admin: %v", err)
+	}
+	if first != third {
+		t.Fatalf("cancelled Admin = %p, want the cached client %p", third, first)
+	}
+	if n := p.tokens.Load(); n != 1 {
+		t.Fatalf("token requests = %d, want 1", n)
+	}
+}

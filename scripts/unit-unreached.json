@@ -194,14 +194,5 @@
       "why": "defensive: 블록 안 `h.close if h.respond_to?(:close)` 의 거짓 쪽 — @form_http · @jwks_http 는 initialize 가 Http.build(Faraday.new)로 지은 Faraday::Connection 뿐이고 바꿔 넣을 공개 API 가 없다. 이 번들의 faraday 2.15.1 Connection 은 close 를 갖는다(connection.rb) — close 가 없는 연결에 대비한 방어선이다(목 없이는 못 닿는다)"
     }
   },
-  "go": {
-    "go/auth.go:AuthClient.scope": {
-      "statements": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "go/client.go:Client.Admin": {
-      "statements": 2,
-      "why": "coverage-omit-hides-security-paths"
-    }
-  }
+  "go": {}
 }
