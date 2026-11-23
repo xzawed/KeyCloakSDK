@@ -10,6 +10,11 @@ lc_bearer_canary() {
     none) ;;
   esac
 }
+lc_status200_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}
 lc_extra_canary () {
   case "$1" in
     none) ;;

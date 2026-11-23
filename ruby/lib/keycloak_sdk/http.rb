@@ -444,7 +444,7 @@ module KeycloakSdk
     # JSON::ParserError — the same shape json 3 raises for an unpaired surrogate escape). It is not rewritten — such
     # a value turns into a raw exception as it passes through the SDK.
     # `check_utf8: false` leaves only the middleware's verdict — for `TokenResponse`, which judges the strings itself,
-    # so that a 2xx it cannot read is an AuthError, not this ParsingError. (Logout parses nothing: its status decides.)
+    # so that a 200 it cannot read is an AuthError, not this ParsingError. (Logout parses nothing: its status decides.)
     def decode_json(resp, check_utf8: true)
       JSON_RESPONSE.on_complete(resp.env)
       return resp if !check_utf8 || utf8?(resp.body)
@@ -479,11 +479,11 @@ module KeycloakSdk
   # `read_capped` 가 돌려준 응답은 **끝까지 왔다** — 다 오지 않은 응답(네트워크 실패 · 타임아웃 · 1 MiB 상한 초과 · 깨진 틀 ·
   # `Content-Length` 보다 짧게 끊긴 본문 — 그것은 `BOUND_CONNECTION` 의 `ignore_eof = false` 덕이다)은 거기서 이미
   # TransportError 다. 그러니 여기서 못 읽는 것은 IdP 가 낸 쓸 수 없는 답이다:
-  #   · 2xx 본문이 JSON 규칙(`Http.decode_json` — JSON 콘텐츠 타입만)으로 해석되지 않거나 해석한 문자열이 UTF-8 이
+  #   · 200 본문이 JSON 규칙(`Http.decode_json` — JSON 콘텐츠 타입만)으로 해석되지 않거나 해석한 문자열이 UTF-8 이
   #     아니면(RFC 8259 §8.1 — `Http.utf8?` 의 까닭) `AuthError`(`… response is not valid JSON` · `… is not valid UTF-8`).
   #     전에는 `Faraday::ParsingError` 가 경계에서 TransportError 였다.
-  #   · 오류 상태의 본문이 그러면 날 바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의
-  #     OAuth 코드는 쓰지 않는다).
+  #   · 그 밖의 상태(201–299 도 — 성공은 200 하나다, 등록부 token-success-status-range-divergent)의 본문이 그러면 날
+  #     바이트로 되돌린다 — 판정은 상태가 한다(JSON 이 아닌 오류 본문과 같다 · 못 읽는 본문의 OAuth 코드는 쓰지 않는다).
   #   · 성공 상태라도 읽힌 본문이 OAuth `error` 를 실었으면(`oauth_error`) 레인은 그 오류 상태처럼 실패한다.
   # 이 판정은 선언된 charset 을 보지 않는다(RFC 8259 §11 — application/json 에는 효과가 없다). 커넥션의 json 미들웨어가
   # utf-16 · utf-32 같은 charset 에서 스트리밍 본문의 자리표시를 파싱하다 낸 실패는 `Http.read_capped` 가 받아낸다(2026-11-11 —
@@ -513,7 +513,7 @@ module KeycloakSdk
       reason, lower = unreadable(resp)
       return resp unless reason
 
-      unless resp.success?
+      unless resp.status == 200
         resp.env.body = raw
         return resp
       end
@@ -532,10 +532,12 @@ module KeycloakSdk
       error if error.is_a?(String) && !error.empty?
     end
 
-    # The grants' success rule — rack-oauth2's 200 · 201 (`AuthClient#oauth_token`) — less a body that carries an
-    # OAuth `error`.
+    # The grants' success rule — HTTP 200 alone (RFC 6749 §5.1; rack-oauth2 takes 201 too) — less a body that carries an
+    # OAuth `error`. The provider and introspection check the same status themselves: success is 200 in all nine
+    # (registry token-success-status-range-divergent — any other status, another 2xx included, fails as an error status
+    # does: no token returned or cached, no admin request, never active).
     def granted?(resp)
-      (200..201).cover?(resp.status) && !oauth_error(resp.body)
+      resp.status == 200 && !oauth_error(resp.body)
     end
 
     # 못 읽는 까닭 — nil(읽힌다) · ["JSON", 해석 실패] · ["UTF-8", nil].

@@ -5,7 +5,11 @@ paths:
   - "harness/install/consume/ruby*"
   - ".github/workflows/ruby-*.yml"
 ---
-<!-- doc-budget: max-bytes=6835 -->
+<!-- doc-budget: max-bytes=6887 -->
+<!-- 6835 → 6887 (2026-11-23 · 성공 상태 200 — 등록부 token-success-status-range-divergent): 래칫 조건 (1), 교환이다. 거짓이 된
+     문장을 고쳤다 — 「reuses rack-oauth2's response rule」 은 이제 상태 규칙이 다르다(rack-oauth2 는 201 도 받고, SDK 는 200
+     하나다 — `TokenResponse.granted?`). 더한 것은 그 주장을 다시 재는 시험 경로다(`token_response_class_spec.rb` 의
+     「non-200 success status fails as the lanes error response」 — 수정 전 base c4b5096a 에서 21 칸 RED). -->
 <!-- 6603 → 6835 (2026-10-22 · 틀 상한 훅의 net-protocol 0.3.0+ `limit:`): 래칫 조건 (1), 교환이다. 거짓 지시 하나를 지웠다 —
      「A single test: `bundle exec rspec spec/unit/<path>_spec.rb -e …`」 는 부분 실행이라 커버리지 게이트로 exit 2 다
      (실측: `bundle exec rspec spec/unit/http_framing_pins_spec.rb` → 27 examples · 0 failures 인데 exit=2,
@@ -46,7 +50,7 @@ cd ruby && gem build keycloak-sdk.gemspec       # release build check
 ## auth · admin
 
 - ⚠️ **PKCE is by hand** (rack-oauth2 only passes params through): S256 from `SecureRandom` + SHA256 + base64url; omit `code_verifier` and you get invalid_grant.
-- ⚠️ **Grants never call `access_token!`** (it reads whole bodies on rack-oauth2's own connection) — `token_request` posts via `Http.read_capped` and reuses rack-oauth2's response rule (`spec/unit/token_response_cap_spec.rb`).
+- ⚠️ **Grants never call `access_token!`** (it reads whole bodies on rack-oauth2's own connection) — `token_request` posts via `Http.read_capped` and reuses rack-oauth2's response rule, success only at 200 (`spec/unit/token_response_cap_spec.rb` · `token_response_class_spec.rb`).
 - ⚠️ Capped reads send `Accept-Encoding: identity` (net-http's inflater finishes the in-flight read after `on_data` raises, ~16 MiB); WebMock buffers whole bodies, so measure on a real socket (`spec/support/body_server.rb`).
 - `create_authorization_request` **always** generates `nonce:` alongside `state:` and puts it in the URL. `exchange_code(expected_nonce:)` is optional (omit it and id_token validation is skipped).
 - ⚠️ **admin has no mature gem, so the Admin REST API is wrapped directly with `faraday`** (`looorent/keycloak-admin` has no seam for injecting a TokenProvider, which makes it §4-incompatible). **The base_url is `"{server_url}/"` plus a full path per resource** — assembling relative paths onto `"{server_url}/admin/realms/"` diverges from a real server over the trailing slash. The `create` family takes the id out of the 201's `Location` header.

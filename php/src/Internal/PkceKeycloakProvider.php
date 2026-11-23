@@ -65,7 +65,9 @@ final class PkceKeycloakProvider extends Keycloak
      * `error` is an error response (`OAuthErrorCode::isErrorResponse`). A form-encoded body is no JSON object, so it keeps
      * upstream's reading. And the status decides first: a 3xx · 4xx · 5xx that carried an
      * `access_token` and no `error` went on to `createAccessToken` and the three grants succeeded with it (review leg, on
-     * `origin/main` too — the provider and the admin grant already refused it).
+     * `origin/main` too — the provider and the admin grant already refused it) — and so did any other 2xx: 200 is a token
+     * response's only success (RFC 6749 §5.1), so a 201–299 fails as the 400 with the same body does (registry
+     * `token-success-status-range-divergent`).
      *
      * @param mixed $data
      */
@@ -75,7 +77,7 @@ final class PkceKeycloakProvider extends Keycloak
         // `$data` is a decoded JSON body, a form-encoded one (league `parse_str`) or upstream's `['jwt' => …]` — of those, only the
         // form can carry an `error` without being a JSON object.
         $json = !str_contains($this->getContentType($response), 'urlencoded');
-        if ($response->getStatusCode() >= 300 || \is_array($error) || (bool) $error || ($json && OAuthErrorCode::isErrorResponse($data))) {
+        if ($response->getStatusCode() > 200 || \is_array($error) || (bool) $error || ($json && OAuthErrorCode::isErrorResponse($data))) {
             throw new IdentityProviderException('OAuth error response', $response->getStatusCode(), $data);
         }
         parent::checkResponse($response, $data);

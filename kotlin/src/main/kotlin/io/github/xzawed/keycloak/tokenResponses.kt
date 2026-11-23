@@ -13,6 +13,7 @@ import com.nimbusds.openid.connect.sdk.OIDCTokenResponseParser
 import jakarta.ws.rs.core.Response
 import org.jboss.resteasy.client.jaxrs.internal.ClientResponse
 import java.io.IOException
+import java.io.InputStream
 import java.util.Base64
 
 // tokenResponses.kt — 성공 상태의 OAuth error(등록부 auth-2xx-error-code-divergent · Java `TokenResponses` ·
@@ -20,8 +21,8 @@ import java.util.Base64
 // **오류 응답**이다 — 400 이 같은 본문을 실었을 때와 같은 길로 보낸다(같은 타입 · 같은 메시지 꼴 · 같은 코드 판정 [OAuthErrorCode]).
 // 수정 전에는 그 본문의 나머지를 썼다 — access_token 이 있으면 토큰을 돌려주고(공급자는 캐시했다) admin 요청을 보냈고, active 가 참이면
 // 활성으로 읽었다(실측 — `TokenResponseClassTest`). error 가 문자열이 아니거나(숫자 · 객체 · 배열 · 불리언 · null) 비었으면 지금처럼
-// 나머지가 판정한다. ⚠️ auth.kt · admin/ 에 두지 않는 까닭: 그 파일들은 통합 실행으로 재는 경계 파일이고(scripts/integration-coverage.json)
-// 이 갈래는 실 Keycloak 이 닿지 않는다 — 여기 두면 단위 게이트(Kover)가 잰다.
+// 나머지가 판정한다. admin 가드의 200 이 아닌 2xx([refuseUnlessOk])도 여기 있다. ⚠️ auth.kt · admin/ 에 두지 않는 까닭: 그 파일들은 통합
+// 실행으로 재는 경계 파일이고(scripts/integration-coverage.json) 이 갈래는 실 Keycloak 이 닿지 않는다 — 여기 두면 단위 게이트(Kover)가 잰다.
 
 // client_credentials · refresh · 코드 교환(oidc — id_token 을 보존하는 파서)의 응답. 성공 상태의 OAuth error 는 오류 응답이다.
 internal fun tokenResponse(
@@ -128,12 +129,43 @@ internal fun judgedGrantCode(response: Response?): String? = (response as? Clien
 internal const val GRANT_CODE = "io.github.xzawed.keycloak.admin.TokenResponseGuard.grantCode"
 
 /**
- * admin 그랜트의 성공 상태 본문이 OAuth 오류 응답이다([oauthErrorValue]) — 그 상태와, 그 error 가운데 [OAuthErrorCode] 가 허락한 코드(아니면
+ * admin 가드([io.github.xzawed.keycloak.admin.TokenResponseGuard])의 200 이 아닌 2xx 토큰 응답 판정 — 토큰 응답의 성공은 200 뿐이다(RFC 6749
+ * §5.1, 아홉 언어의 규칙). [status] 가 200 이면 아무것도 하지 않는다(엔티티도 묻지 않는다). 아니면 본문이 쓸 수 있는 토큰이어도 그 상태의
+ * 오류 응답처럼 실패한다: 오류 상태와 같이 [read] 로 상한까지만 읽고(넘치면 null — 같은 전송 실패) [release] 로 교환을 놓은 뒤, 그 OAuth
+ * 코드를 보낸 비밀([sent])에 대어 판정해 싣는다 — 「Admin token request failed: HTTP <상태>」([OAuthErrorTokenResponse]). 본문은 판정하지
+ * 않는다(auth 레인의 Nimbus 도 200 밖은 오류 응답으로 읽는다). [entity] 가 없으면(204) 빈 본문이다. 수정 전에는 201 · 202 · 203 · 206 ·
+ * 299 의 토큰을 캐시해 admin 요청을 보냈고 204 는 「(unusable token response)」 였다(실측 — `TokenResponseClassTest`, Java 동형). ⚠️ 가드의
+ * 파일이 아니라 여기 있는 까닭은 [judgedTokenBody] 와 같다 — 실 Keycloak 의 토큰 응답은 200 이라 이 갈래에 닿지 않는다.
+ */
+internal fun refuseUnlessOk(
+    status: Int,
+    entity: () -> InputStream?,
+    read: (InputStream) -> ByteArray?,
+    sent: () -> List<String>,
+    release: (InputStream?) -> Unit,
+) {
+    if (status == HTTPResponse.SC_OK) return
+    val input = entity()
+    val body = if (input == null) ByteArray(0) else read(input)
+    release(input)
+    if (body == null) throw ResponseTooLargeException("token response")
+    throw OAuthErrorTokenResponse(status, errorStatusCode(body, sent()))
+}
+
+/**
+ * 오류 상태처럼 실패하는 admin 그랜트의 2xx 토큰 응답 — 200 의 본문이 OAuth 오류 응답이거나([oauthErrorValue] — 등록부
+ * auth-2xx-error-code-divergent) 상태가 200 이 아닌 2xx 다([refuseUnlessOk]). 그 상태와, 그 error 가운데 [OAuthErrorCode] 가 허락한 코드(아니면
  * null)를 싣는다(Java `TokenResponseGuard.OAuthErrorResponse` 동형). [io.github.xzawed.keycloak.admin.grantFailure] 가 같은 본문의 4xx 와
- * 같은 꼴(「Admin token request failed: HTTP <상태>」)로 바꾸고 코드는 [KeycloakAuthException.oauthError] 에 싣는다 — 아홉 언어의 규칙(등록부
- * auth-2xx-error-code-divergent). 그 레인의 4xx 도 같은 코드를 싣는다([errorStatusCode]). 메시지는 상수다(응답을 인용하지 않는다).
+ * 같은 꼴(「Admin token request failed: HTTP <상태>」)로 바꾸고 코드는 [KeycloakAuthException.oauthError] 에 싣는다 — 아홉 언어의 규칙. 그
+ * 레인의 4xx 도 같은 코드를 싣는다([errorStatusCode]). 메시지는 상태로만 고른 상수다(응답을 인용하지 않는다).
  */
 internal class OAuthErrorTokenResponse(
     val status: Int,
     val code: String?,
-) : IOException("token endpoint answered a success status with an OAuth error")
+) : IOException(
+        if (status == HTTPResponse.SC_OK) {
+            "token endpoint answered a success status with an OAuth error"
+        } else {
+            "token endpoint answered a status other than 200"
+        },
+    )

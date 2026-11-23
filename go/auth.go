@@ -126,7 +126,7 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 		TokenURL: a.ep.token, Scopes: a.cfg.Scopes, AuthStyle: oauth2.AuthStyleInParams,
 	}
 	octx, capped, refused, below := a.oauthCtx(ctx)
-	tok, err := cc.Token(octx)
+	tok, err := below.at200(cc.Token(octx)) // x/oauth2 takes any 2xx as success; only 200 is one (cause.go at200)
 	if err != nil {
 		return nil, grantFailed("client credentials grant failed", err, capped, refused, below, a.cfg.ClientSecret)
 	}
@@ -146,7 +146,7 @@ func (a *AuthClient) ClientCredentialsToken(ctx context.Context) (*TokenSet, err
 // (custom no-nonce flows).
 func (a *AuthClient) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier, expectedNonce string) (*TokenSet, error) {
 	octx, capped, refused, below := a.oauthCtx(ctx)
-	tok, err := a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier))
+	tok, err := below.at200(a.codeConfig(redirectURI).Exchange(octx, code, oauth2.VerifierOption(codeVerifier)))
 	if err != nil {
 		return nil, grantFailed("authorization code exchange failed", err, capped, refused, below,
 			a.cfg.ClientSecret, code, codeVerifier)
@@ -181,7 +181,7 @@ func (a *AuthClient) verifyNonce(ctx context.Context, idToken, expectedNonce str
 func (a *AuthClient) Refresh(ctx context.Context, refreshToken string) (*TokenSet, error) {
 	octx, capped, refused, below := a.oauthCtx(ctx)
 	src := a.codeConfig("").TokenSource(octx, &oauth2.Token{RefreshToken: refreshToken})
-	tok, err := src.Token()
+	tok, err := below.at200(src.Token())
 	if err != nil {
 		return nil, grantFailed("token refresh failed", err, capped, refused, below, a.cfg.ClientSecret, refreshToken)
 	}
@@ -194,7 +194,7 @@ func (a *AuthClient) Introspect(ctx context.Context, token string) (*Introspecti
 	if a.cfg.ClientSecret != "" {
 		form.Set("client_secret", a.cfg.ClientSecret)
 	}
-	body, status, err := a.postForm(ctx, a.ep.introspection, form, statusIs2xx)
+	body, status, err := a.postForm(ctx, a.ep.introspection, form, statusIs200)
 	if err != nil {
 		// A refused status carries the code its body names, as the grants' does (tokencap.go withOAuthError — registry
 		// oauth-error-code-surface-divergent).
@@ -295,7 +295,7 @@ func (a *AuthClient) postForm(ctx context.Context, endpoint string, form url.Val
 		return nil, 0, &TransportError{Msg: fmt.Sprintf("response from %s exceeds %d bytes", endpoint, tokenResponseMaxBytes),
 			Cause: errTokenResponseTooLarge}
 	}
-	// Success is the caller's (`ok` — statusIs2xx · statusIs204 in tokencap.go). `>= 400` alone read a 3xx as success,
+	// Success is the caller's (`ok` — statusIs200 · statusIs204 in tokencap.go). `>= 400` alone read a 3xx as success,
 	// and the SDK deliberately does not follow redirects (noFollowRedirect surfaces the 3xx here), so that path was
 	// reachable: Logout returned nil while the session was still alive, and Introspect parsed an empty body.
 	if !ok(resp.StatusCode) {

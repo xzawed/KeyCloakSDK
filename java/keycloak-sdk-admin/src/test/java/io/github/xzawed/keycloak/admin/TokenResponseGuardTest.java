@@ -134,6 +134,7 @@ class TokenResponseGuardTest {
   private static ClientResponseContext response(Response.Status status, InputStream body) {
     ClientResponseContext res = mock(ClientResponseContext.class);
     when(res.getStatusInfo()).thenReturn(status);
+    when(res.getStatus()).thenReturn(status.getStatusCode()); // 가드는 200 만 판정한다 — 목의 기본값 0 은 200 이 아니다
     when(res.getEntityStream()).thenReturn(body);
     return res;
   }
@@ -244,35 +245,43 @@ class TokenResponseGuardTest {
   }
 
   /**
-   * 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 미디어 타입이 붙어도 결합이 읽지 않는다 — 표시만 달면 아무도 판정하지
-   * 않아 TokenManager 가 null 로 NPE 를 내 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 응답 필터가 판정한다.
+   * 200 이 아닌 2xx 는 판정하지 않고 그 상태의 오류 응답으로 거부한다 — 토큰 응답의 성공은 200 뿐이다(RFC 6749 §5.1, 아홉 언어의 규칙).
+   * 쓸 수 있는 토큰 · 빈 본문 · 엔티티 없음 모두 같고(본문이 없는 204 · 205 는 결합이 읽지 않는 자리이기도 하다 — 전에는 표시만 달면
+   * TokenManager 가 null 로 NPE 를 냈다), 미디어 타입과 무관하다. 오류 상태처럼 그 본문의 OAuth 코드는 보낸 비밀에 대어 싣는다. 결합에
+   * 표시를 달지 않고(판정할 엔티티가 없다) 거부 전에 스트림을 닫는다.
    */
-  @Test void noContentTokenResponseWithAMediaType_isJudgedByTheFilter() {
-    for (Response.Status status : List.of(Response.Status.NO_CONTENT, Response.Status.RESET_CONTENT)) {
-      for (InputStream body : new InputStream[] {null, bytes("")}) {
-        ClientRequestContext req = request("POST", TOKEN);
-        ClientResponseContext res = response(status, body);
-        when(res.getMediaType()).thenReturn(MediaType.APPLICATION_JSON_TYPE);
-        when(res.getStatus()).thenReturn(status.getStatusCode());
-        TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
-            () -> new TokenResponseGuard().filter(req, res));
-        assertEquals(TokenResponseGuard.REJECTED, e.getMessage());
-        assertEquals(status.getStatusCode(), e.status());
-        assertNull(e.getCause());
-        verify(req, never()).setProperty(any(), any());
+  @Test void non200SuccessTokenResponse_failsAsItsStatus() throws IOException {
+    for (Response.Status status : List.of(Response.Status.CREATED, Response.Status.ACCEPTED, Response.Status.NO_CONTENT,
+        Response.Status.RESET_CONTENT, Response.Status.PARTIAL_CONTENT)) {
+      for (MediaType type : new MediaType[] {MediaType.APPLICATION_JSON_TYPE, null}) {
+        for (String body : new String[] {null, "", USABLE, "{\"error\":\"invalid_grant\",\"access_token\":\"AT\"}"}) {
+          ClientRequestContext req = request("POST", TOKEN);
+          InputStream in = body == null ? null : spy(bytes(body));
+          ClientResponseContext res = response(status, in);
+          when(res.getMediaType()).thenReturn(type);
+          TokenResponseGuard.OAuthErrorResponse e = assertThrows(TokenResponseGuard.OAuthErrorResponse.class,
+              () -> new TokenResponseGuard().filter(req, res));
+          String label = status + " " + type + " " + body;
+          assertEquals(status.getStatusCode(), e.status(), label);
+          assertEquals(body != null && body.contains("invalid_grant") ? "invalid_grant" : null, e.code(), label);
+          assertEquals("token endpoint answered a status other than 200", e.getMessage(), label);
+          assertNull(e.getCause(), label);
+          verify(req, never()).setProperty(any(), any());
+          verify(res, never()).setEntityStream(any());
+          if (in != null) verify(in).close();
+        }
       }
     }
   }
 
   @Test void unusableTokenResponse_isRejectedWithoutQuotingIt() {
     for (InputStream body : new InputStream[] {bytes(NUMBER), bytes("{\"access_token\":\"\"}"), null}) {
-      ClientResponseContext res = response(Response.Status.CREATED, body);
-      when(res.getStatus()).thenReturn(201);
+      ClientResponseContext res = response(Response.Status.OK, body);
       // 끝까지 온 응답을 쓸 수 없다 — 그 타입(Unusable)이 계급을 정하고 상태를 싣는다(AdminExceptions 가 인증 오류로 바꾼다)
       TokenResponseGuard.Unusable e = assertThrows(TokenResponseGuard.Unusable.class,
           () -> new TokenResponseGuard().filter(request("POST", TOKEN), res));
       assertEquals("token endpoint response carries no usable access_token", e.getMessage());
-      assertEquals(201, e.status());
+      assertEquals(200, e.status());
       assertNull(e.getCause());
       verify(res, never()).setEntityStream(any());
     }

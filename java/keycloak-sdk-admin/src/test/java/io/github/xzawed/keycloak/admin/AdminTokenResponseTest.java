@@ -288,6 +288,11 @@ class AdminTokenResponseTest {
       return new Expected(KeycloakAuthException.class,
           "admin token request failed: HTTP " + status + " (unusable token response)");
     }
+
+    /** 200 이 아닌 2xx — 본문을 판정하지 않고 그 상태의 오류 응답처럼 실패한다(토큰 응답의 성공은 200 뿐이다). */
+    static Expected notOk(int status) {
+      return new Expected(KeycloakAuthException.class, "admin token request failed: HTTP " + status);
+    }
   }
 
   /**
@@ -676,18 +681,18 @@ class AdminTokenResponseTest {
     }
     table.add("br(평문) \"good\" → admin " + adminHits());
     if (!adminHits().equals(List.of("GET /admin/realms/r/users/x · Bearer good"))) wrong.add("br(평문) \"good\": " + adminHits());
-    // Content-Type 이 없는 2xx — 결합이 아예 읽지 않는다(RESTEasy extractResult 는 200 이면 스스로 ResponseProcessingException
-    // 을 던지고, 그 밖의 2xx 면 null 을 돌려줘 TokenManager 가 NPE 로 멈춘다). 판정은 응답 필터가 원시 바이트로 한다 — 그
-    // 자리가 빠지면 201 행의 원인 사슬에 ProcessingException 이 그대로 달린다(§4, 200 행은 RESTEasy 가 대신 막아 가려진다).
-    for (int status : new int[] {200, 201}) {
-      reset(new Reply(status, tokenBody("12345", canary).getBytes(StandardCharsets.UTF_8), null, false));
-      table.add(callExpectingRejection("Content-Type 없음 " + status + " 12345", wrong, Expected.unusable(status)));
-    }
+    // Content-Type 이 없는 200 — 결합이 아예 읽지 않는다(RESTEasy extractResult 가 스스로 ResponseProcessingException 을 던진다).
+    // 판정은 응답 필터가 원시 바이트로 한다. 200 이 아닌 2xx(201)는 판정 없이 그 상태의 오류 응답이다 — 그 자리에서도 원인 사슬에
+    // ProcessingException 이 그대로 달리지 않는다(§4 — 전에는 이 행이 판정이 빠진 응답 필터를 잡았다).
+    reset(new Reply(200, tokenBody("12345", canary).getBytes(StandardCharsets.UTF_8), null, false));
+    table.add(callExpectingRejection("Content-Type 없음 200 12345", wrong, Expected.unusable(200)));
+    reset(new Reply(201, tokenBody("12345", canary).getBytes(StandardCharsets.UTF_8), null, false));
+    table.add(callExpectingRejection("Content-Type 없음 201 12345", wrong, Expected.notOk(201)));
     // 본문이 없는 2xx(204 · 205)는 미디어 타입이 붙어도 결합이 읽지 않는다 — TokenManager 가 null 로 NPE 를 내 전송 실패로
-    // 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 판정은 응답 필터가 한다.
+    // 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 이제 200 이 아닌 2xx 라 그 상태의 오류 응답이다.
     for (int status : new int[] {204, 205}) {
       reset(new Reply(status, new byte[0], null, true));
-      table.add(callExpectingRejection("본문 없음 " + status + " (JSON)", wrong, Expected.unusable(status)));
+      table.add(callExpectingRejection("본문 없음 " + status + " (JSON)", wrong, Expected.notOk(status)));
     }
     System.out.println("[AdminTokenResponseTest 내용 코딩]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));

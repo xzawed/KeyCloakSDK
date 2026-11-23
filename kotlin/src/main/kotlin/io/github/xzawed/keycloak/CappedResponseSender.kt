@@ -116,7 +116,8 @@ internal fun holdsUnpairedSurrogate(json: ByteArray): Boolean {
 }
 
 /**
- * admin 가드([io.github.xzawed.keycloak.admin.TokenResponseGuard])의 2xx 토큰 본문 판정 — 통과한 바이트를 돌려주고, 아니면 [release] 로
+ * admin 가드([io.github.xzawed.keycloak.admin.TokenResponseGuard])의 200 토큰 본문 판정(200 이 아닌 2xx 는 [refuseUnlessOk] 가 먼저
+ * 거부한다) — 통과한 바이트를 돌려주고, 아니면 [release] 로
  * 교환을 끊은 뒤 거부한다. [read] 는 상한+1 바이트까지 읽는다(넘치면 null — 다 읽지 않은 응답이라 전송 실패). 끝까지 온 응답을 쓸 수
  * 없는 자리는 [io.github.xzawed.keycloak.admin.UnusableTokenResponse] 다: 해제기(resteasy.allowGzip)가 풀지 못한 content-coding(잘린
  * gzip 의 EOFException 은 끊긴 연결과 가를 수 없어 그대로 전송 실패 — 등록부 판정 Q1) · 엄격한 UTF-8 아님 · 짝 없는 서로게이트 이스케이프
@@ -197,7 +198,7 @@ internal class TokenCodingGuard : ReaderInterceptor {
     }
 }
 
-/** 판정을 통과한 미디어 타입 없는 2xx 의 거부 — 결합이 읽지 않는다([TokenResponseGuard.UNBOUND]). [judged] 는 판정을 마친 본문이다. */
+/** 판정을 통과한 미디어 타입 없는 200 의 거부 — 결합이 읽지 않는다([TokenResponseGuard.UNBOUND]). [judged] 는 판정을 마친 본문이다. */
 internal fun unbound(
     status: Int,
     @Suppress("UNUSED_PARAMETER") judged: ByteArrayInputStream,

@@ -137,7 +137,7 @@ class FacadeDumpTest {
           + " 예외의 사슬에만 산다 — §4(b) 탈출구). 상태는 HTTP 상태 · 상수 메시지 · 결합 예외 원인뿐이고 문자열 표현은 클래스 이름과"
           + " 상수다(TokenResponseGuardTest.unusableTokenResponse_isRejectedWithoutQuotingIt)",
       "io.github.xzawed.keycloak.admin.TokenResponseGuard$OAuthErrorResponse",
-      "admin 자기 그랜트의 성공 상태 OAuth 오류 응답(등록부 auth-2xx-error-code-divergent) — Unusable 과 같은 길로 RESTEasy 가 감싸고"
+      "admin 자기 그랜트의 오류 상태처럼 실패하는 2xx(200 의 OAuth 오류 응답 · 200 이 아닌 2xx) — Unusable 과 같은 길로 RESTEasy 가 감싸고"
           + " 파사드의 SDK 예외 원인 사슬은 WithheldCauses 사본이라 SDK 뿌리에서 닿지 않는다(raw() 하위 예외의 사슬에만 산다). 상태는 HTTP"
           + " 상태 · 상수 메시지 · OAuthErrorCode.carried 가 허락한 코드(보낸 비밀과 겹치지 않는 [a-z_]{1,64} 이거나 null)뿐이다"
           + "(AdminTokenResponseTest.successStatusOAuthError_withholdsALowercasedEchoOfTheClientSecret)");

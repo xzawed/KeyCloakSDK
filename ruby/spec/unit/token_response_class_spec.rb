@@ -324,6 +324,94 @@ module TokenResponseClassSpec
     end
     names
   end
+
+  # 성공은 200 하나다(등록부 token-success-status-range-divergent) — 200 이 아닌 2xx 여섯, 그 기준인 400, 대조군 200, 그리고
+  # OAuth `error` 를 실은 400 · 201(B1). 204 에는 본문이 없다(RFC 9110 §15.3.5) — 빈 본문으로 답한다. 표가 길어 중첩 모듈에 둔다.
+  module Statuses
+    NON_200 = [201, 202, 203, 204, 206, 299].freeze
+    ROWS = ([200, 400, *NON_200].map { |s| [s, "good"] } + [[400, "B1"], [201, "B1"]]).freeze
+    GOOD = [200, { "Content-Type" => Cells::JSON_TYPE }, Cells::OK_TOKEN, 0].freeze
+    OPERATION = { "client_credentials_token" => "client-credentials", "refresh" => "refresh",
+                  "exchange_code" => "authorization_code exchange" }.freeze
+    OK = Hash.new("AT-ok-token").merge("admin" => Verdicts::ADMIN_OK.last, "introspect" => [true, "svc"]).freeze
+    CACHING = %w[provider admin].freeze
+
+    module_function
+
+    # 그 레인이 같은 본문의 오류 상태에 내는 판정 — 상태만 바뀐다. B1 은 그 코드를 싣는다(토큰 엔드포인트 `invalid_grant`,
+    # introspection `invalid_token`). 200 의 좋은 본문만 성공이다.
+    def verdict(name, status, body)
+      return [:ok, OK[name]] if status == 200 && body == "good"
+
+      code = { "B1" => name == "introspect" ? "invalid_token" : "invalid_grant" }[body]
+      [KeycloakSdk::AuthError, message(name, status, code), code]
+    end
+
+    # 좋은 본문에는 `error` 가 없다 — 그랜트는 「no OAuth error code」 다(auth-error-message-misnames · #1205: 「non-standard」 는
+    # 보낸 코드를 뺀 경우뿐이다). 400 칸도 이 함수로 재므로 2xx 칸이 400 칸과 같은지가 곧 이 대조다.
+    def message(name, status, code)
+      case name
+      when "introspect" then "introspection failed: HTTP #{status}"
+      when *CACHING then "client-credentials token request failed: HTTP #{status}"
+      else "#{OPERATION.fetch(name)} failed: #{code || 'no OAuth error code'} (HTTP #{status})"
+      end
+    end
+
+    def answer(name, status, body)
+      intro = name == "introspect"
+      text = { "B1" => intro ? '{"error":"invalid_token"}' : Cells::B1_ERROR_TOKEN }
+             .fetch(body) { intro ? Cells::OK_INTROSPECTION : Cells::OK_TOKEN }
+      [status, { "Content-Type" => Cells::JSON_TYPE }, status == 204 ? "" : text, 0]
+    end
+
+    # 그 칸의 가짜 IdP — 그 레인의 엔드포인트가 `reply` 로 답한다(introspection 칸의 토큰 엔드포인트는 정상이다).
+    def serve(name, reply)
+      server = BodyServer.new(framing: :length)
+      server.route(name == "introspect" ? INTROSPECT : TOKEN) { reply }
+      server.route(TOKEN) { GOOD } if name == "introspect"
+      server.route(USER) { |r| [200, {}, { id: "u1", authorization: r.headers["authorization"] }.to_json, 0] }
+      server
+    end
+
+    # 칸 하나 — 첫 호출, 그것이 실패한 provider · admin 이면 토큰 엔드포인트를 200 으로 바꾼 같은 객체의 다음 호출, 받은 경로들.
+    def cell(name, status, body, call)
+      server = serve(name, answer(name, status, body))
+      cfg = TokenResponseClassSpec.config(server.url)
+      kc = KeycloakSdk::KeycloakClient.new(cfg)
+      prov = TokenResponseClassSpec.provider(cfg)
+      first = TokenResponseClassSpec.attempt(server) { call.call(kc, prov) }
+      server.route(TOKEN) { GOOD }
+      again = TokenResponseClassSpec.attempt(server) { call.call(kc, prov) } if first.error && CACHING.include?(name)
+      [first, again, TokenResponseClassSpec.paths(server)]
+    ensure
+      server&.close
+    end
+
+    def wrongs(calls)
+      ROWS.product(calls.to_a).filter_map { |(status, body), (name, call)| wrong(name, status, body, call) }
+    end
+
+    # 어긋남 하나(없으면 nil) — 판정, 그리고 거부한 토큰을 캐시하지 않고(같은 객체의 다음 호출이 다시 묻는다) admin 요청을
+    # 보내지 않았는지.
+    def wrong(name, status, body, call)
+      first, again, seen = cell(name, status, body, call)
+      label = "#{status} #{body} #{name}"
+      want = verdict(name, status, body)
+      return "#{label}: #{first.verdict.inspect} ≠ #{want.inspect}" unless first.verdict == want
+
+      admin = first.paths.count(USER)
+      return "#{label}: admin 요청 #{admin}" unless admin == admin_sent(name, first)
+      return if recovered?(name, again, seen)
+
+      "#{label}: 다음 호출 #{again.verdict.inspect} · 토큰 요청 #{seen.count(TOKEN)}"
+    end
+
+    # 그 칸이 보냈어야 할 admin 요청 수 — 성공한 admin 칸만 하나다.
+    def admin_sent(name, first) = name == "admin" && first.error.nil? ? 1 : 0
+
+    # 거부 뒤 같은 객체의 다음 호출이 토큰 엔드포인트에 다시 물어 200 의 토큰을 썼다(캐시하지 않았다) — 다시 부르지 않은 칸은 참.
+    def recovered?(name, again, seen) = again.nil? || (again.verdict == [:ok, OK[name]] && seen.count(TOKEN) == 2)
+  end
 end
 
 RSpec.describe KeycloakSdk::KeycloakClient do
@@ -379,6 +467,28 @@ RSpec.describe KeycloakSdk::KeycloakClient do
         "#{lane} #{cell}: #{admin} admin request(s) · token shown #{shown}" unless admin.zero? && !shown
       end
       expect(used).to eq([])
+    end
+
+    # 성공은 200 하나다(토큰은 RFC 6749 §5.1, introspection 은 SDK 의 규칙 — RFC 7662 §2.2 는 상태를 정하지 않고 그 예와
+    # Keycloak 이 200 이다 · 아홉 언어, 등록부 token-success-status-range-divergent). 200 이
+    # 아닌 2xx 는 그 레인이 같은 본문의 400 에 내는 판정이다 — 같은 클래스 · 같은 메시지 꼴(상태만 바뀐다), 코드는 본문의
+    # `error` 를 400 처럼 싣는다(B1). 토큰도 introspection 결과도 돌려주지 않고, provider 와 admin 은 그 토큰을 캐시하지 않으며
+    # (같은 객체의 다음 호출이 토큰 엔드포인트에 다시 묻는다) admin 요청은 나가지 않는다. 400 행이 기준, 200 행이 대조군이다.
+    # 수정 전(실측 2026-11-23): 세 그랜트는 201 을 받아들였고, provider · admin(그 토큰으로 요청을 보냈다) · introspection 은
+    # 204 밖의 2xx 를 다 받아들였다 — 204 는 빈 본문의 「JSON 객체가 아니다」였다.
+    it "non-200 success status fails as the lanes error response" do
+      calls = {
+        "client_credentials_token" => ->(kc, _) { kc.auth.client_credentials_token.access_token },
+        "refresh" => ->(kc, _) { kc.auth.refresh(refresh_token: "rt-1").access_token },
+        "exchange_code" => lambda { |kc, _|
+          kc.auth.exchange_code(code: "code-1", code_verifier: "v" * 43, redirect_uri: "http://localhost/cb")
+            .access_token
+        },
+        "provider" => ->(_, provider) { provider.access_token },
+        "admin" => ->(kc, _) { kc.admin.users.get("u1") },
+        "introspect" => ->(kc, _) { kc.auth.introspect("opaque-1").then { |r| [r.active, r.username] } }
+      }
+      expect(spec::Statuses.wrongs(calls)).to eq([])
     end
 
     # 토큰 엔드포인트의 404 는 리소스가 없다는 말이 아니다 — NotFoundError 를 「이미 지워졌다」로 처리하는 소비자에게 그것은

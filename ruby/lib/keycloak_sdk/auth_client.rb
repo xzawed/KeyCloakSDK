@@ -77,10 +77,13 @@ module KeycloakSdk
       client_credentials_token.access_token
     end
 
-    # A response that arrived but cannot be read is an AuthError — a 2xx is judged by `TokenResponse`, an error status
-    # by the status check below. A 2xx whose body carries an OAuth `error` fails like an error status, before `active`
-    # is read. Either carries the code unless it overlaps the client secret or the token sent — an error status too, as
-    # the grants and the provider do (registry oauth-error-code-surface-divergent: it was nil there).
+    # A response that arrived but cannot be read is an AuthError — a 200 is judged by `TokenResponse`, any other status
+    # by the status check below: success is HTTP 200 alone (the SDK's rule — RFC 7662 §2.2 names no status, its examples
+    # and Keycloak answer 200 — another 2xx is an error status too, registry
+    # token-success-status-range-divergent; it was `success?`, any 2xx). A 200 whose body carries an OAuth `error`
+    # fails like an error status, before `active` is read. Either carries the code unless it overlaps the client secret
+    # or the token sent — an error status too, as the grants and the provider do (registry
+    # oauth-error-code-surface-divergent: it was nil there).
     def introspect(token)
       form = form!("introspection", token: token, client_id: @config.client_id, client_secret: @config.client_secret)
       resp = TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.introspection,
@@ -88,7 +91,7 @@ module KeycloakSdk
                                                    what: "introspection"), what: "introspection")
       error = TokenResponse.oauth_error(resp.body)
       code = error && OAuthErrorCode.carried(error, [@config.client_secret, token])
-      raise AuthError.new("introspection failed: HTTP #{resp.status}", oauth_error: code) if error || !resp.success?
+      raise AuthError.new("introspection failed: HTTP #{resp.status}", oauth_error: code) if error || resp.status != 200
 
       IntrospectionResult.from_response(resp.body)
     rescue Error
@@ -184,8 +187,8 @@ module KeycloakSdk
 
     # 그랜트를 SDK 커넥션으로 보낸다 — 클라이언트 인증은 rack-oauth2 의 기본(`:basic`)과 같은 모양(id·secret 을
     # 각각 form-url-encode 한 뒤 base64)이고, 빈 값은 rack-oauth2 의 `Util.compact_hash` 처럼 보내지 않는다.
-    # 본문은 `TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다. 못 읽는 2xx 는 `TokenResponse` 의 AuthError 이고(`rescue Error`
-    # 가 그대로 올린다), 못 읽는 오류 본문은 날 바이트로 남아 `oauth_token` 이 상태로 판정한다.
+    # 본문은 `TOKEN_RESPONSE_MAX_BYTES` 까지만 읽는다. 못 읽는 200 은 `TokenResponse` 의 AuthError 이고(`rescue Error`
+    # 가 그대로 올린다), 그 밖의 상태(201–299 도)의 못 읽는 본문은 날 바이트로 남아 `oauth_token` 이 상태로 판정한다.
     def post_grant(operation, params)
       form = form!(operation, **params).reject { |_, v| v.nil? || v.to_s.match?(/\A[[:space:]]*\z/) }
       pair = [@config.client_id, @config.client_secret].map { |v| URI.encode_www_form_component(v) }.join(":")
@@ -195,12 +198,13 @@ module KeycloakSdk
     end
 
     # rack-oauth2 의 응답 규칙(`Client#handle_response` — 2.3.0 client.rb:205-240)을 SDK 가 읽은 본문에 그대로 건다:
-    # 200·201 은 token_type 이 bearer 인 `AccessToken::Bearer`, 그 밖은 `Client::Error`.
+    # 성공은 token_type 이 bearer 인 `AccessToken::Bearer`, 그 밖은 `Client::Error`.
     # 그 메서드는 private 이라 규칙만 옮겼다 — 결과·오류는 rack-oauth2 의 공개 타입이라 위 오류 대응이 그대로다.
     # 객체가 아닌 200 본문은 rack-oauth2 처럼 NoMethodError 로 떨어져 `token_request` 가 AuthError 로 바꾼다.
-    # ⚠️ 둘은 rack-oauth2 와 다르다: 200·201 이라도 OAuth `error` 를 실은 본문은 `Client::Error` 다(`TokenResponse.granted?`)
-    # — 오류 상태와 같은 메시지 · 코드이고 실린 토큰은 쓰지 않는다(등록부 auth-2xx-error-code-divergent). 그리고 객체가 아닌
-    # 오류 본문은 빈 오류다 — rack-oauth2 의 'Unknown' 은 서버가 보낸 코드가 아니고(auth-error-message-misnames), 그것이
+    # ⚠️ 셋은 rack-oauth2 와 다르다(`TokenResponse.granted?`): 성공은 200 하나다 — rack-oauth2 는 201 도 받는다(등록부
+    # token-success-status-range-divergent) — 그리고 200 이라도 OAuth `error` 를 실은 본문은 `Client::Error` 다(등록부
+    # auth-2xx-error-code-divergent). 어느 쪽이든 오류 상태와 같은 메시지 · 코드이고 실린 토큰은 쓰지 않는다. 그리고 객체가
+    # 아닌 오류 본문은 빈 오류다 — rack-oauth2 의 'Unknown' 은 서버가 보낸 코드가 아니고(auth-error-message-misnames), 그것이
     # 함께 싣던 본문은 아무도 읽지 않는다(`token_request` 가 읽는 것은 `error` 뿐이고 원인은 `RedactedCause` 다).
     def oauth_token(resp)
       body = resp.body

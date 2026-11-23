@@ -69,19 +69,21 @@ final class BearerToken
 
     /**
      * Admin handler-stack middleware — a response below 400 to a request picked by `$isTokenGrant` (fschmtt's token grant)
-     * must be a 2xx (`GRANT_STATUS`) and a usable token response: strict UTF-8 JSON (`GRANT_NOT_JSON`), an object with a string
-     * `access_token` (`GRANT_NO_TOKEN`), that token a b64token that needs no trimming (`GRANT_REFUSED`), and both tokens
-     * fschmtt parses readable by its parser (`GRANT_ACCESS_NOT_JWT` · `GRANT_REFRESH_NOT_JWT`). Otherwise it rejects the grant
+     * must be a 200 (a 1xx · 3xx is `GRANT_STATUS`, another 2xx below) and a usable token response: strict UTF-8 JSON
+     * (`GRANT_NOT_JSON`), an object with a string `access_token` (`GRANT_NO_TOKEN`), that token a b64token that needs no
+     * trimming (`GRANT_REFUSED`), and both tokens fschmtt parses readable by its parser (`GRANT_ACCESS_NOT_JWT` ·
+     * `GRANT_REFRESH_NOT_JWT`). Otherwise it rejects the grant
      * with a Guzzle `RequestException` (that message · no response or cause) — before fschmtt stores it, so nothing is cached
      * (the next call asks again) and no admin REST request goes out. `Admin\ErrorTranslation` turns the rejection into
      * `KeycloakAuthError`: the response arrived and is unusable (registry `token-response-class-divergent`). Why it is
      * Guzzle's: the same as `TokenResponseCap::middleware` — it reaches a `raw()` consumer as is.
      *
-     * ⚠️ One rejection carries a response: a JSON body that is an OAuth error response at a 2xx (`GRANT_OAUTH_ERROR` — checked
-     * before `access_token`) goes out as a `BadResponseException`, so `ErrorTranslation::grantFailed` — the builder of the error
-     * status carrying the same body — makes its type, message and code (registry `auth-2xx-error-code-divergent`: B1 failed
-     * without its code, B2's token was stored and sent). That response carries only the `error` member — never the token
-     * beside it.
+     * ⚠️ Two rejections carry a response, so `ErrorTranslation::grantFailed` — the builder of the error status carrying the
+     * same body — makes their type, message and code: a 2xx other than 200 (RFC 6749 §5.1 — registry
+     * `token-success-status-range-divergent`: a 201–299 token was stored and sent) and a JSON body that is an OAuth error
+     * response at 200 (`GRANT_OAUTH_ERROR` — checked before `access_token`; registry `auth-2xx-error-code-divergent`: B1 failed
+     * without its code, B2's token was stored and sent). Each goes out as a `BadResponseException` whose response carries only
+     * the body's `error` member — never the token beside it.
      *
      * ⚠️ The JSON is decoded strictly. Read leniently (`JSON_INVALID_UTF8_SUBSTITUTE`), a byte that is not UTF-8 outside the
      * token passed here and then failed in fschmtt's own `json_decode` as an unclassified error — and the auth lanes of five
@@ -119,6 +121,12 @@ final class BearerToken
                     throw new RequestException(sprintf(self::GRANT_STATUS, $status), $request, null, null, [self::REJECTION => true]);
                 }
                 $raw = (string) $response->getBody();
+                if ($status !== 200) {
+                    // 성공은 200 뿐이다(RFC 6749 §5.1) — 다른 2xx 는 같은 본문의 오류 상태처럼 실패한다(이 메서드의 docblock).
+                    $error = json_decode($raw, true);
+                    $error = \is_array($error) && \array_key_exists('error', $error) ? json_encode(['error' => $error['error']], JSON_THROW_ON_ERROR) : '';
+                    throw new BadResponseException(sprintf(self::GRANT_STATUS, $status), $request, $response->withBody(Utils::streamFor($error)), null, [self::REJECTION => true]);
+                }
                 try {
                     $json = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);   // 엄격하다 — 잘못된 UTF-8 도 여기서 거부된다
                 } catch (\JsonException) {

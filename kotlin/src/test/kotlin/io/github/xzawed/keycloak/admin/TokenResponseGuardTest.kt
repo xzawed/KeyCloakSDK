@@ -2,6 +2,7 @@ package io.github.xzawed.keycloak.admin
 
 import io.github.xzawed.keycloak.GRANT_CODE
 import io.github.xzawed.keycloak.KeycloakConfig
+import io.github.xzawed.keycloak.OAuthErrorTokenResponse
 import io.github.xzawed.keycloak.TokenCodingGuard
 import io.github.xzawed.keycloak.holdsUnpairedSurrogate
 import io.mockk.every
@@ -245,6 +246,7 @@ internal class TokenResponseGuardTest {
     ): ClientResponseContext {
         val res = mockk<ClientResponseContext>(relaxed = true)
         every { res.statusInfo } returns status
+        every { res.status } returns status.statusCode // 가드는 200 만 판정한다 — relaxed 목의 기본값 0 은 200 이 아니다
         every { res.entityStream } returns body
         every { res.mediaType } returns mediaType
         return res
@@ -311,20 +313,44 @@ internal class TokenResponseGuardTest {
         verify(exactly = 0) { res.entityStream = any() }
     }
 
-    // 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 미디어 타입이 붙어도 결합이 읽지 않는다 — 표시만 달면 아무도 판정하지
-    // 않아 TokenManager 가 null 로 NPE 를 내 전송 실패로 나갔다(JVM 실행 레그 실측 2026-11-11, main 부터). 응답 필터가 판정한다. Java 동형.
+    // 200 이 아닌 2xx 는 판정하지 않고 그 상태의 오류 응답으로 거부한다 — 토큰 응답의 성공은 200 뿐이다(RFC 6749 §5.1, 아홉 언어의 규칙).
+    // 쓸 수 있는 토큰 · 빈 본문 · 엔티티 없음 모두 같고(본문이 없는 204 · 205 는 결합이 읽지 않는 자리이기도 하다 — 전에는 표시만 달면
+    // TokenManager 가 null 로 NPE 를 냈다), 미디어 타입과 무관하다. 오류 상태처럼 그 본문의 OAuth 코드는 보낸 비밀에 대어 싣는다. 결합에
+    // 표시를 달지 않고(판정할 엔티티가 없다) 거부 전에 스트림을 닫는다. Java 동형.
     @Test
-    fun `no-content token response with a media type is judged by the filter`() {
-        for (status in listOf(Response.Status.NO_CONTENT, Response.Status.RESET_CONTENT)) {
-            for (body in listOf(null, bytes(""))) {
-                val req = request("POST", TRG_TOKEN)
-                val res = response(status, body, MediaType.APPLICATION_JSON_TYPE)
-                every { res.status } returns status.statusCode
-                val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().filter(req, res) }
-                assertEquals(TokenResponseGuard.REJECTED, e.message)
-                assertEquals(status.statusCode, e.status)
-                assertNull(e.cause)
-                verify(exactly = 0) { req.setProperty(any(), any()) }
+    fun `non-200 success token response fails as its status`() {
+        val statuses =
+            listOf(
+                Response.Status.CREATED,
+                Response.Status.ACCEPTED,
+                Response.Status.NO_CONTENT,
+                Response.Status.RESET_CONTENT,
+                Response.Status.PARTIAL_CONTENT,
+            )
+        for (status in statuses) {
+            for (type in listOf(MediaType.APPLICATION_JSON_TYPE, null)) {
+                for (body in listOf(null, "", TRG_USABLE, """{"error":"invalid_grant","access_token":"AT"}""")) {
+                    val req = request("POST", TRG_TOKEN)
+                    var closes = 0
+                    val input =
+                        body?.let {
+                            object : ByteArrayInputStream(it.toByteArray()) {
+                                override fun close() {
+                                    closes++
+                                }
+                            }
+                        }
+                    val res = response(status, input, type)
+                    val e = assertFailsWith<OAuthErrorTokenResponse> { TokenResponseGuard().filter(req, res) }
+                    val label = "$status $type $body"
+                    assertEquals(status.statusCode, e.status, label)
+                    assertEquals(if (body?.contains("invalid_grant") == true) "invalid_grant" else null, e.code, label)
+                    assertEquals("token endpoint answered a status other than 200", e.message, label)
+                    assertNull(e.cause, label)
+                    verify(exactly = 0) { req.setProperty(any(), any()) }
+                    verify(exactly = 0) { res.entityStream = any() }
+                    if (input != null) assertEquals(1, closes, "$label: 거부 전에 스트림을 한 번 닫아야 한다")
+                }
             }
         }
     }
@@ -332,12 +358,11 @@ internal class TokenResponseGuardTest {
     @Test
     fun `unusable token response is rejected without quoting it`() {
         for (body in listOf(bytes(TRG_NUMBER), bytes("""{"access_token":""}"""), null)) {
-            val res = response(Response.Status.CREATED, body)
-            every { res.status } returns 201
+            val res = response(Response.Status.OK, body)
             // 끝까지 온 응답을 쓸 수 없다 — 그 타입(UnusableTokenResponse)이 계급을 정하고 상태를 싣는다(adminCall 이 인증 오류로 바꾼다)
             val e = assertFailsWith<UnusableTokenResponse> { TokenResponseGuard().filter(request("POST", TRG_TOKEN), res) }
             assertEquals("token endpoint response carries no usable access_token", e.message)
-            assertEquals(201, e.status)
+            assertEquals(200, e.status)
             assertNull(e.cause)
             verify(exactly = 0) { res.entityStream = any() }
         }

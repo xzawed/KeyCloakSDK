@@ -21,7 +21,8 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// 옮겼다. r9 문자열 안의 잘못된 UTF-8 은 세 그랜트 · INTRO 에서 <b>성공</b>이었다(Duende 의 <c>ReadAsStringAsync</c> 가 U+FFFD 로
 /// 바꿨다 — IdP 가 내지 않은 토큰 · 클레임; S2 · S5 는 b64token 검사가 우연히 막았다). r10 모르는 charset 은 여섯 면 모두
 /// Transport 였다(.NET 이 charset 을 지켜 본문 읽기가 실패했다). INTRO r4 의 <c>active</c> 없음은 「비활성」 성공이었다.</para>
-/// <para>판정 — D1: 2xx 본문은 UTF-8 이다(RFC 8259 §8.1). 원시 바이트로, 끝까지 온 뒤에만 본다(상한 초과 · 끊긴 본문은 그대로
+/// <para>판정 — D1: 200 본문은 UTF-8 이다(RFC 8259 §8.1 — 200 밖의 2xx 는 400 처럼 그 상태가 판정한다, 등록부
+/// token-success-status-range-divergent). 원시 바이트로, 끝까지 온 뒤에만 본다(상한 초과 · 끊긴 본문은 그대로
 /// Transport). D2: <c>application/json</c> 의 charset 은 효과가 없다(§11). D3: <c>active</c> 는 REQUIRED boolean 이다(RFC 7662
 /// §2.2). D4: admin 의 토큰 실패는 끝까지 온 응답이면 상태와 무관하게 auth 레인과 같은 판정이다 — .NET 에서 admin ↔ auth 의
 /// 접착제는 <c>ITokenProvider</c> 뿐이라(CLAUDE.md §4), admin 호출은 provider 의 오류를 그대로 낸다. 그래서 S5 의 기대는 손으로
@@ -97,7 +98,8 @@ public sealed class TokenResponseClassTests
             Bytes("""{"access_token":"AT-""", 0xFF, 0xFE, Canary, "\",\"token_type\":\"Bearer\",\"expires_in\":300}")),
         ["r9o 200 invalid UTF-8 outside the token"] = A(200, Json,
             Bytes("""{"access_token":"AT-ok-token","token_type":"Bearer","expires_in":300,"scope":"s""", 0xFF, Canary, "\"}")),
-        // D1 holds on every 2xx, not on 200 alone (the review leg's surviving mutation: IsSuccessStatusCode → StatusCode == OK).
+        // A 2xx other than 200 is judged by its status, as a 400 is — D1 checks a 200 body only (registry
+        // token-success-status-range-divergent; D1 used to hold on every 2xx, and this cell pinned that).
         ["r9s 203 invalid UTF-8 (a 2xx other than 200)"] = A(203, Json,
             Bytes("""{"access_token":"AT-""", 0xFF, 0xFE, Canary, "\",\"token_type\":\"Bearer\",\"expires_in\":300}")),
         ["r10 200 unknown charset"] = A(200, Json + "; charset=x-no-such-charset", GoodToken),
@@ -183,8 +185,9 @@ public sealed class TokenResponseClassTests
             "r4 200 JSON without access_token" => Auth("token response missing access_token"),
             "r8 400 HTML" or "r8j 400 HTML typed as JSON" or "r10w 400 UTF-16 error body labelled utf-16" => Auth($"{p}: {NotJson} (HTTP 400)"),
             "r8u 400 invalid UTF-8 in the error body" => Auth($"{p}: invalid_grant", "invalid_grant"),
-            "r9 200 invalid UTF-8 inside the token" or "r9o 200 invalid UTF-8 outside the token"
-                or "r9s 203 invalid UTF-8 (a 2xx other than 200)" => Auth($"{p}: response is not valid UTF-8"),
+            "r9 200 invalid UTF-8 inside the token" or "r9o 200 invalid UTF-8 outside the token" => Auth($"{p}: response is not valid UTF-8"),
+            // What a 400 with the same body gives (its status decides — Duende reads the bytes as U+FFFD, and no code is there).
+            "r9s 203 invalid UTF-8 (a 2xx other than 200)" => Auth($"{p}: error is missing"),
             "401 invalid_client" => Coded("Unauthorized", "invalid_client"),
             "403 access_denied" => Coded("Forbidden", "access_denied"),
             // Keycloak's prose is no code ([a-z_]{1,64} only — OAuthErrorCodeEchoTests), so OAuthError is the reason.
@@ -285,7 +288,9 @@ public sealed class TokenResponseClassTests
             => Auth($"{IntroPrefix}: response has no boolean active"),
         "r8 400 HTML" or "r8j 400 HTML typed as JSON" => Auth($"{IntroPrefix}: {NotJson} (HTTP 400)"),
         "r8u 400 invalid UTF-8 in the error body" => Auth($"{IntroPrefix}: invalid_grant", "invalid_grant"),
-        "r9 200 invalid UTF-8 inside a string" or "r9s 201 invalid UTF-8 (a 2xx other than 200)" => Auth($"{IntroPrefix}: response is not valid UTF-8"),
+        "r9 200 invalid UTF-8 inside a string" => Auth($"{IntroPrefix}: response is not valid UTF-8"),
+        // A 2xx other than 200 is judged by its status, as a 400 is (registry token-success-status-range-divergent).
+        "r9s 201 invalid UTF-8 (a 2xx other than 200)" => Auth($"{IntroPrefix}: error is missing"),
         "x1 200 exp a word" or "x2 200 exp a fraction" or "x3 200 iat past Int64" or "x4 200 nbf past 9999-12-31"
             or "x5 200 JWT whose payload is not base64url" or "x6 200 JWT whose payload is not JSON" => Auth($"{IntroPrefix}: {NotConvertible} (HTTP 200)"),
         "x7 200 JWT without token_introspection" => Auth($"{IntroPrefix}: response body is not a decodable JSON object"),
@@ -380,7 +385,7 @@ public sealed class TokenResponseClassTests
 
     // ── D1: what is UTF-8 — the edges of the check ──────────────────────────────────────────────────────────────────
 
-    /// <summary>Bytes placed inside a JSON string of a 2xx body (or, for the last two, after the JSON value).</summary>
+    /// <summary>Bytes placed inside a JSON string of a 200 body (or, for the last two, after the JSON value).</summary>
     private static readonly Dictionary<string, (byte[] Bytes, bool Valid)> Utf8Cases = new(StringComparer.Ordinal)
     {
         ["two-, three- and four-byte sequences"] = (Encoding.UTF8.GetBytes("é한😀"), true),
@@ -395,7 +400,7 @@ public sealed class TokenResponseClassTests
 
     [Theory]
     [MemberData(nameof(Utf8CaseNames))]
-    public async Task A_2xx_body_is_checked_as_UTF8_on_its_raw_bytes(string name)
+    public async Task A_200_body_is_checked_as_UTF8_on_its_raw_bytes(string name)
     {
         var (bad, valid) = Utf8Cases[name];
         var atEnd = name.Contains("end of the body", StringComparison.Ordinal);
@@ -457,6 +462,151 @@ public sealed class TokenResponseClassTests
         Check(wrong, "S5 refetch", s5, S5Verdict(s2));
         Assert.True(wrong.Count == 0, $"[{cell}]\n" + string.Join("\n", wrong));
         Assert.Equal(sent, idp.AdminRequests().Count);
+    }
+
+    // ── the success status is 200 and no other (registry token-success-status-range-divergent) ──────────────────────
+
+    /// <summary>The statuses HTTP calls a success and the SDK does not: a token response succeeds only with 200 (RFC 6749
+    /// §5.1), an introspection response only with 200 by the SDK's rule (RFC 7662 §2.2 names no status — its examples and
+    /// Keycloak answer 200).</summary>
+    private static readonly int[] Non200SuccessStatuses = { 201, 202, 203, 204, 206, 299 };
+
+    private const string AgainToken = """{"access_token":"AT-again-token","token_type":"Bearer","expires_in":300,"refresh_token":"RT-ok"}""";
+    private const string ErrorToken = """{"error":"invalid_grant","error_description":"d"}""";
+    private const string ErrorIntrospection = """{"error":"invalid_token"}""";
+
+    /// <summary>What the token and introspection endpoints answer now — set between the asks, read by the IdP's route.</summary>
+    private sealed class StatusAnswers
+    {
+        private volatile Answer _token = A(200, Json, GoodToken);
+        private volatile Answer _introspection = A(200, Json, GoodIntrospection);
+
+        public Answer Token => _token;
+
+        public Answer Introspection => _introspection;
+
+        public void Set(int status, string token, string introspection)
+        {
+            _token = A(status, Json, token);
+            _introspection = A(status, Json, introspection);
+        }
+    }
+
+    /// <summary>Every lane that reads a token or introspection response, each on a client of its own. A lane is asked at a
+    /// cell's answer and again once the IdP answers 200, keeping what it holds in between (S2 its provider, S5 its admin
+    /// facade) — a lane that kept anything of the first answer hands it out the second time.</summary>
+    private static List<(string Name, Func<Task<string>> Run)> StatusLanes(string url, List<IDisposable> owned)
+    {
+        KeycloakClient Client()
+        {
+            var kc = Facade(url);
+            owned.Add(kc);
+            return kc;
+        }
+        var s1 = Client();
+        var refresh = Client();
+        var exchange = Client();
+        var introspect = Client();
+        var provider = new ClientCredentialsTokenProvider(Client().Auth);
+        var s5 = Client();
+        return new()
+        {
+            ("S1 ClientCredentialsTokenAsync", async () => (await s1.Auth.ClientCredentialsTokenAsync()).AccessToken),
+            ("RefreshAsync", async () => (await refresh.Auth.RefreshAsync("rt-sent")).AccessToken),
+            ("ExchangeCodeAsync", async () => (await exchange.Auth.ExchangeCodeAsync("code", "https://app/cb", new string('v', 43))).AccessToken),
+            ("IntrospectAsync", async () =>
+            {
+                var r = await introspect.Auth.IntrospectAsync("tok-sent");
+                return $"active={r.Active} username={r.Username ?? "null"}";
+            }),
+            ("S2 ClientCredentialsTokenProvider", () => provider.GetAccessTokenAsync()),
+            ("S5 AdminAsync", async () => (await (await s5.AdminAsync()).Users.GetAsync("u1")).Id ?? "null"),
+        };
+    }
+
+    /// <summary>A 2xx other than 200 fails every lane exactly as a 400 with the same content does — the same type, message
+    /// (the status named where the 400's names it) and <c>OAuthError</c>, the same requests, nothing handed out — and nothing
+    /// of it is kept: once the IdP answers 200, the same lanes fetch again. A 204 has no content (.NET reads none), so its 400
+    /// has none either. The control: 200 is every lane's success, and S5 sends its one admin request. Before (main c4b5096a):
+    /// Duende takes every 2xx as a success, and every lane handed out, cached and sent the token of a 201 · 202 · 203 · 206 ·
+    /// 299 and read its introspection as active.</summary>
+    [Fact]
+    public async Task Non200_success_status_fails_as_the_lanes_error_response()
+    {
+        var now = new StatusAnswers();
+        using var idp = new ScriptedIdp((_, path) => path switch
+        {
+            $"{Oidc}/token" => now.Token,
+            $"{Oidc}/token/introspect" => now.Introspection,
+            UserPath => A(200, Json, """{"id":"u1","username":"u"}"""),
+            _ => A(404, Json, "{}"),
+        });
+        var owned = new List<IDisposable>();
+        var wrong = new List<string>();
+        var log = new List<string>();
+        int IdpRequests() => idp.Requests().Count(r => r.Contains($"{Oidc}/token", StringComparison.Ordinal));
+        async Task<List<string>> AskAsync(List<(string Name, Func<Task<string>> Run)> lanes, int status, string token, string introspection)
+        {
+            now.Set(status, token, introspection);
+            var verdicts = new List<string>();
+            foreach (var (_, run) in lanes)
+            {
+                var (idpBefore, adminBefore) = (IdpRequests(), idp.AdminRequests().Count);
+                var outcome = await AttemptAsync(run);
+                verdicts.Add($"{Verdict(outcome)} | idp requests {IdpRequests() - idpBefore} | admin requests {idp.AdminRequests().Count - adminBefore}");
+            }
+            return verdicts;
+        }
+        void Compare(string label, List<(string Name, Func<Task<string>> Run)> lanes, List<string> got, List<string> want)
+        {
+            for (var i = 0; i < lanes.Count; i++)
+            {
+                log.Add($"{label} × {lanes[i].Name} → {got[i]}");
+                if (got[i] != want[i])
+                    wrong.Add($"{label} × {lanes[i].Name}: {got[i]}\n      want {want[i]}");
+            }
+        }
+        // What every lane hands out from a 200 carrying token.
+        static List<string> AllOk(string token)
+        {
+            var handed = $"{Ok(token)} | idp requests 1 | admin requests 0";
+            return new() { handed, handed, handed, $"{Ok("active=True username=svc")} | idp requests 1 | admin requests 0", handed, $"{Ok("u1")} | idp requests 1 | admin requests 1" };
+        }
+        try
+        {
+            var control = StatusLanes(idp.Url, owned);
+            Compare("200 usable", control, await AskAsync(control, 200, GoodToken, GoodIntrospection), AllOk("AT-ok-token"));
+            foreach (var status in Non200SuccessStatuses)
+            {
+                var bodies = new List<(string Name, string Token, string Introspection)> { ("usable", GoodToken, GoodIntrospection) };
+                if (status == 201)
+                    bodies.Add(("B1", ErrorToken, ErrorIntrospection));
+                foreach (var (name, token, introspection) in bodies)
+                {
+                    var (t, i) = status == 204 ? ("", "") : (token, introspection);
+                    var want = (await AskAsync(StatusLanes(idp.Url, owned), 400, t, i))
+                        .Select(v => v.Replace("HTTP 400", $"HTTP {status}", StringComparison.Ordinal)).ToList();
+                    var lanes = StatusLanes(idp.Url, owned);
+                    // The one cell whose words differ from its 400's: Duende reads the claims of every 2xx introspection
+                    // response before the SDK sees the status, and a 204 has no body to read — Duende throws as on an empty
+                    // 200 (IntrospectAsync's not-decodable catch). The same type, no result and no code as the 400 ("error is
+                    // missing"); reaching those words would take reading the body before Duende does.
+                    if (status == 204)
+                        want[lanes.FindIndex(l => l.Name == "IntrospectAsync")] =
+                            $"{Auth($"{IntroPrefix}: response body is not a decodable JSON object")} | idp requests 1 | admin requests 0";
+                    var label = $"{status} {name}";
+                    Compare(label, lanes, await AskAsync(lanes, status, t, i), want);
+                    Compare($"{label}, then 200", lanes, await AskAsync(lanes, 200, AgainToken, GoodIntrospection), AllOk("AT-again-token"));
+                }
+            }
+        }
+        finally
+        {
+            foreach (var d in owned)
+                d.Dispose();
+        }
+        Assert.True(wrong.Count == 0, $"{wrong.Count} cells end otherwise than a 400 with the same content:\n" + string.Join("\n", wrong)
+            + "\n— every cell:\n" + string.Join("\n", log));
     }
 
     // ── the wrapper is invisible to System.Net.Http's telemetry ─────────────────────────────────────────────────────

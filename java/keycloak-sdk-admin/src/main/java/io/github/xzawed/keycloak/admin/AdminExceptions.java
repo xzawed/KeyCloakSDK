@@ -76,8 +76,8 @@ final class AdminExceptions {
    * (연결 거부 · 타임아웃 · 상한 초과 {@link TokenResponseGuard#TOO_LARGE} · 깨진 틀)은 null — 전송 실패 그대로다. ⚠️ 메시지는 상태만
    * 싣는다 — 토큰 엔드포인트의 오류 본문은 그 요청의 클라이언트 시크릿을 되울릴 수 있다({@code AdminTokenEchoTest}). 분류는 타입으로만
    * 한다(메시지 문자열을 보지 않는다). 갱신 400 의 복구(TokenManager 가 {@code BadRequestException} 을 잡아 다시 부여한다)는 여기 오지
-   * 않는다 — 다시 부여도 실패해야 온다. (3) {@link TokenResponseGuard.OAuthErrorResponse} 는 성공 상태로 온 OAuth 오류 응답이다 — 4xx 와
-   * 같은 꼴이고, 그 코드는 {@link #grantCode} 가 싣는다(등록부 auth-2xx-error-code-divergent).
+   * 않는다 — 다시 부여도 실패해야 온다. (3) {@link TokenResponseGuard.OAuthErrorResponse} 는 오류 상태처럼 실패하는 2xx 다(200 의 OAuth
+   * 오류 응답 · 200 이 아닌 2xx) — 4xx 와 같은 꼴이고, 그 코드는 {@link #grantCode} 가 싣는다.
    */
   static String grantFailure(ProcessingException e) {
     Throwable t = e.getCause();
@@ -99,8 +99,8 @@ final class AdminExceptions {
   }
 
   /**
-   * {@link #grantFailure} 의 실패가 실은 OAuth 코드 — 보낸 비밀과 겹치지 않는 코드 모양의 값만, 아니면 null. 성공 상태의 OAuth 오류
-   * 응답이면 그 코드({@link TokenResponseGuard.OAuthErrorResponse#code}), 오류 상태면 가드가 그 응답에 달아 둔 코드다
+   * {@link #grantFailure} 의 실패가 실은 OAuth 코드 — 보낸 비밀과 겹치지 않는 코드 모양의 값만, 아니면 null. 오류 상태처럼 실패한
+   * 2xx 면 그 코드({@link TokenResponseGuard.OAuthErrorResponse#code}), 오류 상태면 가드가 그 응답에 달아 둔 코드다
    * ({@link TokenResponseGuard#codeOf} — 등록부 oauth-error-code-surface-divergent: 그 전에는 null). 응답 하나는 셋 중 하나만 낳는다.
    */
   static String grantCode(ProcessingException e) {

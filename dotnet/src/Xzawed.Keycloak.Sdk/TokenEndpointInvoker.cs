@@ -18,10 +18,11 @@ namespace Xzawed.Keycloak;
 /// the close-delimited cell). Keycloak always declares the length.</para>
 /// <para>That a response arrived is also recorded on the request (<see cref="ResponseArrival"/>), for the failures Duende
 /// raises only after this send returned.</para>
-/// <para><b>D1 — a 2xx body is UTF-8</b> (RFC 8259 §8.1), checked on its raw bytes. Duende reads the body with
+/// <para><b>D1 — a 200 body is UTF-8</b> (RFC 8259 §8.1), checked on its raw bytes. Duende reads the body with
 /// <see cref="HttpContent.ReadAsStringAsync()"/>, which turns a sequence that is not UTF-8 into U+FFFD without an error: the
-/// grants returned an access token, and introspection claims, the IdP never sent (measured 2026-11-10). An error status is
-/// judged by its status, so its body is not checked.</para>
+/// grants returned an access token, and introspection claims, the IdP never sent (measured 2026-11-10). Any other status —
+/// a 2xx other than 200 included: only 200 is a token or introspection response's success (registry
+/// <c>token-success-status-range-divergent</c>) — is judged by its status, so its body is not checked.</para>
 /// <para><b>D2 — the body is read as UTF-8 whatever <c>charset</c> the <c>Content-Type</c> names</b>: these responses are JSON
 /// (RFC 6749 §5.1, RFC 7662 §2.2), and a charset parameter has no effect on JSON (RFC 8259 §11). .NET honoured it — an unknown
 /// name failed the read, and a usable token labelled <c>charset=x-no-such-charset</c> was a
@@ -43,7 +44,7 @@ internal sealed class TokenEndpointInvoker : HttpMessageInvoker
         ResponseArrival.Record(request, response);
         try
         {
-            if (response.IsSuccessStatusCode
+            if (response.StatusCode == System.Net.HttpStatusCode.OK
                 && !Utf8.IsValid(await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false)))
             {
                 throw new TokenResponseNotUtf8Exception();
@@ -100,7 +101,7 @@ internal sealed class ResponseArrival
     }
 }
 
-/// <summary>Thrown inside Duende's send for a 2xx token or introspection body that is not UTF-8. Duende keeps it as the
+/// <summary>Thrown inside Duende's send for a 200 token or introspection body that is not UTF-8. Duende keeps it as the
 /// response's <see cref="ProtocolResponse.Exception"/>, and <see cref="TokenResponseVerdict.Unread"/> turns it into a
 /// <see cref="KeycloakAuthException"/>. It carries nothing from the body.</summary>
 internal sealed class TokenResponseNotUtf8Exception : Exception

@@ -18,7 +18,7 @@
  * ⚠️ **It is not applied to admin REST responses** — user lists are legitimately large. The JWKS applies its own
  * cap (51,200, `JWKS_MAX_BYTES` in `jwt.ts`) separately.
  *
- * The same place turns a 200 token or introspection body that carries an OAuth `error` into the error a 4xx carrying
+ * The same place turns a 2xx token or introspection body that carries an OAuth `error` into the error a 4xx carrying
  * it produces ({@link fetchTokenEndpointBounded}).
  */
 import { ResponseBodyError } from 'openid-client'
@@ -160,8 +160,8 @@ function hex4(json: Uint8Array, at: number): number {
 }
 
 /**
- * Whose body is judged — the token and introspection responses: a 2xx body must be UTF-8 without an unpaired surrogate
- * escape, a 200 body must not carry an OAuth `error`, and no body's content coding may fail to decode. Discovery and
+ * Whose body is judged — the token and introspection responses: a 2xx body must be UTF-8, hold no unpaired surrogate
+ * escape and carry no OAuth `error`, and no body's content coding may fail to decode. Discovery and
  * logout keep what they had: an error status is judged by its status, and logout only drains its body
  * ({@link drainCapped}).
  */
@@ -354,13 +354,14 @@ export async function drainCapped(body: ReadableStream<Uint8Array> | null): Prom
  * passes 600 and 999 through as is), and oauth4webapi reads only the bodies of 200 and 400–499, so that body is
  * never read — the same as now.
  *
- * ⚠️ **A 200 token or introspection body carrying an OAuth `error` throws** the {@link ResponseBodyError} a 4xx
+ * ⚠️ **A 2xx token or introspection body carrying an OAuth `error` throws** the {@link ResponseBodyError} a 4xx
  * carrying it gets (openid-client passes that error through as is), before oauth4webapi reads the body — so the SDK
  * error, its message and its `oauthError` are the 4xx ones, and nothing else in the body is used: no token returned or
- * cached, no admin request, no `active` (registry `auth-2xx-error-code-divergent`). oauth4webapi took such a body as an
- * answer: one beside a token was a success and one without was "invalid response encountered", with no code (measured
- * 2026-11-20). 200 is the only status the grants and introspection take as success (`checkOAuthBodyError`); another 2xx
- * stays rejected by its status, as before.
+ * cached, no admin request, no `active` (registry `auth-2xx-error-code-divergent`). oauth4webapi took such a body at 200
+ * as an answer: one beside a token was a success and one without was "invalid response encountered", with no code
+ * (measured 2026-11-20). 200 is the only status the grants and introspection take as success (`checkOAuthBodyError`), so
+ * another 2xx without `error` stays rejected by its status as a 400 without one is; with `error` it was rejected the same
+ * way, its code dropped — oauth4webapi reads an error body at 4xx only (registry `token-success-status-range-divergent`).
  */
 export async function fetchTokenEndpointBounded(
   url: string,
@@ -380,7 +381,7 @@ export async function fetchTokenEndpointBounded(
     statusText: response.statusText,
     headers: response.headers,
   })
-  const error = kind !== undefined && response.status === 200 ? oauthErrorBody(body) : undefined
+  const error = kind !== undefined && response.status < 300 ? oauthErrorBody(body) : undefined
   if (error !== undefined)
     throw new ResponseBodyError(BODY_ERROR, { cause: error, response: bounded })
   return bounded

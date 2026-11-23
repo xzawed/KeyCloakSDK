@@ -29,7 +29,13 @@ from .._internal.jwks_cache import JwksKeyCache
 from .._internal.jwks_fetch import afetch_jwks
 from .._internal.jwks_keys import import_usable_keys
 from .._internal.jwt import JwtValidator, TokenKind, check_token_size, refuse_hs_algorithm
-from .._internal.lower import auth_failure, error_in_success, is_lower_failure, summarize
+from .._internal.lower import (
+    auth_failure,
+    error_in_success,
+    is_lower_failure,
+    non_200_success,
+    summarize,
+)
 from .._internal.redirect_uri import checked_redirect_uri
 from .._internal.redirects import harden_openid
 from .._internal.retries import forbid_retries
@@ -104,7 +110,7 @@ class AsyncAuthClient:
         # 실패한 fetch 의 백오프 — 위 30초와 **다른 축**이다(콜드 캐시 + IdP 장애).
         self._jwks_backoff = JwksFailureBackoff()
 
-    async def _awrap(self, awaitable: Awaitable[T], *sent: str) -> T:
+    async def _awrap(self, awaitable: Awaitable[T], *sent: str, token_response: bool = True) -> T:
         """python-keycloak `a_*` 호출을 await하고 그 실패를 SDK 예외로 변환한다.
 
         sync `AuthClient._wrap`과 동일한 규칙(같은 `_internal/lower.py` 를 쓴다): `response_code`가
@@ -112,7 +118,8 @@ class AsyncAuthClient:
         변환한다. ⚠️ 상류 메시지도 원본 예외도 옮기지 않는다 — 응답 본문을 싣는다. `sent` 는 그
         요청이 client secret 말고 보낸 비밀 값이다(되울림은 싣지 않는다, `carried_code`).
         성공으로 받은 응답(2xx)이 OAuth `error` 를 실었으면 같은 판정으로 실패한다 — sync 동형
-        (`error_in_success`).
+        (`error_in_success`). 토큰 · introspection 응답은 200 만 성공이다 — 201 · 204 도 오류 상태의
+        판정이다(`non_200_success` · logout 은 `token_response=False` — sync 동형).
         """
         answered = Answered()  # 그 호출이 받은 마지막 응답의 상태(`token_cap.py`)
         sent_secrets = (self._config.client_secret, *sent)
@@ -127,7 +134,9 @@ class AsyncAuthClient:
             error = auth_failure(exc, sent=sent_secrets, answered=answered)
             cause = summarize(exc)
         else:
-            named = error_in_success(answer, answered, sent=sent_secrets)
+            named = (
+                non_200_success(answer, answered, sent=sent_secrets) if token_response else None
+            ) or error_in_success(answer, answered, sent=sent_secrets)
             if named is None:
                 return answer
             error = named
@@ -234,7 +243,7 @@ class AsyncAuthClient:
     @ascrub_frames
     async def logout(self, refresh_token: str) -> None:
         """Invalidates the session (refresh token revoke)."""
-        await self._awrap(self._openid.a_logout(refresh_token), refresh_token)
+        await self._awrap(self._openid.a_logout(refresh_token), refresh_token, token_response=False)
 
     @ascrub_frames
     async def introspect(self, token: str) -> IntrospectionResult:
