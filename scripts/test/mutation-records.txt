@@ -1933,3 +1933,75 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:  if (rec.profile_sha1 !== sha(bytes)) {
 NEW:  if (false) { // PROBE-REC go-profile-sha
 SITE:// PROBE-REC go-profile-sha
+
+# ── 같은 장부의 python 판정(coverage-omit-hides-security-paths, 2026-11-23)
+
+### unit-ledger-python-branches
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      if (SUITE === 'unit') mine.push({ file: f, line: r.start_line, name: q, lines: s.missing_lines, branches: s.missing_branches })
+NEW:      if (SUITE === 'unit') mine.push({ file: f, line: r.start_line, name: q, lines: s.missing_lines, branches: 0 }) // PROBE-REC python-branches
+SITE:// PROBE-REC python-branches
+
+### unit-ledger-python-lines
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      if (SUITE === 'unit') mine.push({ file: f, line: r.start_line, name: q, lines: s.missing_lines, branches: s.missing_branches })
+NEW:      if (SUITE === 'unit') mine.push({ file: f, line: r.start_line, name: q, lines: s.covered_lines ? 0 : s.num_statements, branches: s.missing_branches }) // PROBE-REC python-lines
+SITE:// PROBE-REC python-lines
+
+### unit-ledger-python-counts
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      if (SUITE === 'unit' && !(s !== null && typeof s === 'object' && PY_COUNTS.every((k) => isCount(s[k])))) {
+NEW:      if (false) { // PROBE-REC python-counts
+SITE:// PROBE-REC python-counts
+
+### unit-ledger-python-branch-data
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (SUITE === 'unit' && j.meta.branch_coverage !== true) {
+NEW:  if (false) { // PROBE-REC python-branch-data
+SITE:// PROBE-REC python-branch-data
+
+### unit-ledger-python-module
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (files.some((x) => x.bodies.covered > 0)) {
+NEW:  if (false) { // PROBE-REC python-module
+SITE:// PROBE-REC python-module
+
+### unit-ledger-python-module-first
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (files.some((x) => x.bodies.covered > 0)) {
+NEW:  if (true) { // PROBE-REC python-module-first
+SITE:// PROBE-REC python-module-first
+
+### unit-ledger-python-module-arcs
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      if (m.missing_branches > 0) fail('python', `${x.file}: ${m.missing_branches} of ${m.num_branches} module-level branch arcs (outside every function — module and class bodies) were never taken — no function can be credited with them`)
+NEW:      void 0 // PROBE-REC python-module-arcs
+SITE:void 0 // PROBE-REC python-module-arcs
+
+### unit-ledger-python-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (!isObj(rec) || rec.run !== 'python' || (rec.suite ?? 'integration') !== SUITE) {
+NEW:  if (!isObj(rec) || rec.run !== 'python') { // PROBE-REC python-record
+SITE:// PROBE-REC python-record
+
+### unit-ledger-python-exit
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    fail('python', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+NEW:    void 0 // PROBE-REC python-exit
+SITE:void 0 // PROBE-REC python-exit
+
+### unit-ledger-python-data-sha
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    fail('python', `${shown} is not the data \`${RUN_CMD} python\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+NEW:    void 0 // PROBE-REC python-data-sha
+SITE:void 0 // PROBE-REC python-data-sha

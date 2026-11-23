@@ -35,5 +35,11 @@
       "go/auth_client.go"
     ],
     "owners": {}
+  },
+  "python": {
+    "pinned": [
+      "python/src/keycloak_sdk/auth_client.py"
+    ],
+    "owners": {}
   }
 }

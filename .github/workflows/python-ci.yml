@@ -2,6 +2,7 @@ name: Python CI
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다).
+  # `scripts/unit-unreached.json` — unit-unreached 잡의 장부다(장부만 고친 PR 에서도 실제 단위 실행과 대조한다).
   push: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/unit-unreached.json','scripts/coverage-boundary.mjs', 'scripts/lib/dotnet-tfm.mjs', 'scripts/check-known-gaps.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh'] }
   pull_request: { branches: [main], paths: ['python/**', '.github/workflows/python-ci.yml', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/unit-unreached.json','scripts/coverage-boundary.mjs', 'scripts/lib/dotnet-tfm.mjs', 'scripts/check-known-gaps.mjs', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh'] }
   # 주간 레인 건강검진(환경 드리프트) — 근거는 .claude/rules/ci.md, 슬롯 표는 ci.yml 옆 주석.
@@ -93,6 +94,24 @@ jobs:
       - name: 통합 전용 경계 커버리지 — 하한 · 소유자(scripts/integration-coverage.json)
         working-directory: .
         run: node scripts/integration-coverage.mjs report python --out "$RUNNER_TEMP/integration-coverage"
+
+  # 단위 미도달 장부 — 위 test 의 커버리지 게이트가 pyproject `[tool.coverage.run] omit` 으로 빼는 경계 파일을 단위 스위트(레인의 `pytest -m
+  # "not integration"`)로 계측해, 함수마다 단위 시험이 안 닿는 줄 · 가지(branch = true 의 호)를 `scripts/unit-unreached.json` 과 대조한다(등록부
+  # coverage-omit-hides-security-paths — 통합 장부는 함수 단위라 이미 도는 함수 안의 새 실패 갈래를 못 본다). Docker 가 필요 없어 test 와
+  # 나란히 돈다(Python 은 test 행렬의 최신 3.14 — 의존은 test 잡과 같은 설치다). 명령(omit 없는 생성 설정 · 이 트리를 PYTHONPATH 맨 앞에 ·
+  # 기록)과 종료코드의 뜻(0 · 1 DRIFT · 2 FAIL)은 `scripts/integration-coverage.mjs` 머리가 소유한다 — 종료코드를 그대로 받는다(배선 고정:
+  # `scripts/test/test-integration-coverage-gate.sh`).
+  unit-unreached:
+    name: unit-unreached ledger (python — boundary code the unit suite never reaches)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: { python-version: '3.14' }
+      - run: 'python -m pip install --only-binary :all: -e ".[dev]"'
+        working-directory: python
+      - name: 단위 미도달 장부 — 경계의 놓친 줄 · 가지 ↔ scripts/unit-unreached.json
+        run: node scripts/integration-coverage.mjs unit python --out "$RUNNER_TEMP/unit-unreached"
 
   api-compat:
     name: griffe (공개 API 파괴적 변경)
