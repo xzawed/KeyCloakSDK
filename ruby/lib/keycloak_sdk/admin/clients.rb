@@ -10,6 +10,8 @@ module KeycloakSdk
         @realm = realm
       end
 
+      # Creates a client and returns its internal id (UUID) — the one the answer's Location names, resolved against the
+      # request URL (the last path segment, in the clients collection); nil when it names none.
       def create(representation)
         path = "admin/realms/#{esc(@realm)}/clients"
         id_from_location(request { @conn.post(path, representation, &SettleBody::MARK) })

@@ -9,6 +9,9 @@ public sealed class ClientsResource
     private readonly AdminClient _a;
     internal ClientsResource(AdminClient a) => _a = a;
 
+    /// <summary>Creates a client and returns its internal id (UUID) — the one the answer's <c>Location</c> names,
+    /// resolved against the request URL (the last path segment, in the clients collection). Throws
+    /// <see cref="KeycloakAdminException"/> (500) when it names none.</summary>
     public Task<string> CreateAsync(ClientRepresentation client, CancellationToken ct = default)
         => _a.CreateRawReturningIdAsync($"admin/realms/{_a.Realm}/clients", client, ct);
 

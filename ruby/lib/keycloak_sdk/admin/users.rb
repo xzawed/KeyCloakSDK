@@ -10,6 +10,8 @@ module KeycloakSdk
         @realm = realm
       end
 
+      # Creates a user and returns its id — the one the answer's Location names, resolved against the request URL
+      # (the last path segment, in the users collection); nil when it names none.
       def create(representation)
         id_from_location(request { @conn.post("admin/realms/#{esc(@realm)}/users", representation, &SettleBody::MARK) })
       end
