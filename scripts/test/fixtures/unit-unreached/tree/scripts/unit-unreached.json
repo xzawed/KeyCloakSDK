@@ -183,5 +183,37 @@
       "statements": 2,
       "why": "integration: the drive never calls it — the integration test does, outside the unit run"
     }
+  },
+  "python": {
+    "python/src/keycloak_sdk/auth_client.py:AuthClient.exchange": {
+      "lines": 1,
+      "branches": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "python/src/keycloak_sdk/auth_client.py:AuthClient.scope": {
+      "lines": 0,
+      "branches": 1,
+      "why": "open-gap"
+    },
+    "python/src/keycloak_sdk/auth_client.py:AuthClient.apply.one": {
+      "lines": 3,
+      "branches": 2,
+      "why": "unreachable: the lines and arms sit in apply's nested def — coverage.py keys it as its own region"
+    },
+    "python/src/keycloak_sdk/auth_client.py:AuthClient.token": {
+      "lines": 1,
+      "branches": 1,
+      "why": "integration: an async def is a function region like any other — the drive never sends an empty code"
+    },
+    "python/src/keycloak_sdk/auth_client.py:AuthClient.describe": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it"
+    },
+    "python/src/keycloak_sdk/auth_client.py:AuthClient.logout_url": {
+      "lines": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it — the integration test does, outside the unit run"
+    }
   }
 }

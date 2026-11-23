@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby · go, 등록부
+# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby · go · python, 등록부
 # coverage-exclusion-hides-untested-branches · coverage-omit-hides-security-paths) 자가테스트 — **종료코드**를 단언한다(0 측정 = 장부 ·
 # 1 DRIFT · 2 FAIL — 뜻은 그 도구 머리가 소유한다). 문구는 무엇을 잡았는지 가리는 데만 쓴다.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby · Go 가 필요 없다(`unit-report` 는 데이터를 읽기만 한다). 데이터는
-# 실제 도구가 낸 것이다(php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby · kotlin · go 2026-11-21):
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby · Go · Python 이 필요 없다(`unit-report` 는 데이터를 읽기만
+# 한다). 데이터는 실제 도구가 낸 것이다(php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby · kotlin · go 2026-11-21 · python 2026-11-23):
 #   fixtures/unit-unreached/data/kotlin.unit.xml · kotlin.unit.javap.txt   도구의 `unit kotlin`(JDK 21.0.8 · kotlin 2.4.21 · Kover 0.9.11 ·
 #       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼(JaCoCo 판은 tree 의 java/pom.xml 에서 읽는다). 세션 id 를
 #       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다(치환마다 되돌린 바이트가
@@ -24,6 +24,13 @@
 #   fixtures/unit-unreached/data/go.unit.cover   `unit go` 가 도는 명령 `go test -count=1 -coverprofile=… ./...`(go1.26.4 · 태그 없음) —
 #       임시 루트에 tree/go 사본. 프로필의 경로는 모듈 경로(example.com/fixture/go/…)라 치환이 없다. 도구의 `unit go`(임시 루트에 tree 사본)로
 #       다시 내도 바이트가 같았다
+#   fixtures/unit-unreached/data/python.unit.json   `unit python` 이 도는 명령 — 생성 설정(`[run] source = src/keycloak_sdk` · `branch = true` ·
+#       omit 없음)으로 `coverage run -m pytest -m "not integration"` 뒤 `coverage json`(coverage.py 7.15.0 · Python 3.13.11 — CTracer) — 임시
+#       루트에 tree 사본. 파일 키는 python/ 기준 상대 경로라(윈도의 `\\` 그대로) 치환이 없다. 도구의 `unit python`(임시 루트에 tree 사본)으로
+#       다시 내도 timestamp 말고 바이트가 같았고, Python 3.14.7 · coverage 7.17.4(SysMonitor — 레인 잡의 3.14 가 그날 받은 최신 판)로 같은 명령을
+#       돌린 것도 영역마다 안 돈 줄 · 안 탄 호가 같았다
+#   fixtures/unit-unreached/data/python-zero.unit.json   같은 명령, 구동이 경계 밖 Config 만 부르고 통합 구동 파일이 없다 — 경계 파일을 한 번도
+#       import 하지 않는다(모듈 수준 줄까지 전부 0)
 # 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test · tree/ruby/spec/unit)은
 # 빈 code · null · 빈 user · 빈 문자열 · 빈 값 · nil 을 안 보내고 unused · logoutUrl · LogoutUrl · logout_url · Describe() · describe ·
 # token(String, int) 를 안 부른다. dotnet 의 Guarded 는 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은
@@ -34,9 +41,12 @@
 # go 의 구동(tree/go/drive_test.go)은 빈 code 를 안 보내고 Pick 에 늘 찾는 값만 주며 Valid 의 && 두 쪽을 다 참으로 지나고 String ·
 # LogoutURL 을 안 부른다 — LogoutURL 을 부르는 통합 시험(drive_integration_test.go)은 `//go:build integration` 뒤라 태그 없는 단위
 # 실행이 컴파일하지 않는다. 패키지 수준 함수 리터럴 hook 은 구동이 부른다.
+# python 의 구동(tree/python/tests/test_drive.py)은 빈 code · 빈 scope · apply 의 항목을 안 보내고 fallback 의 한 줄 조건식을 첫 쪽으로만 타며
+# describe · logout_url 을 안 부른다 — logout_url 을 부르는 통합 구동(test_drive_integration.py)은 `integration` 표지라 레인의 단위 명령
+# (`-m "not integration"`)이 거른다(수집 때 import 는 돼 경계 모듈의 모듈 수준 줄은 돈다).
 # 숫자를 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
 # `check` 의 장부 판정(데이터 없이 — 꼴 · 경계 · why)은 통합 커버리지 픽스처 트리(`ic-fixture.sh` 의 fresh)에서 잰다 — check 는 아홉
-# 언어를 다 보므로 kotlin · php · dotnet · java · ruby · go 뿐인 이 트리로는 못 잰다.
+# 언어를 다 보므로 kotlin · php · dotnet · java · ruby · go · python 뿐인 이 트리로는 못 잰다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -55,6 +65,7 @@ J=java/kc-auth/src/main/java/kc/auth/AuthClient.java
 Q=java/kc-examples/src/main/java/kc/examples/QuickStart.java
 R=ruby/lib/kc/auth_client.rb
 G=go/auth_client.go
+Y=python/src/keycloak_sdk/auth_client.py
 L="$T/scripts/unit-unreached.json"
 
 # 단위 픽스처 트리 + 그 트리의 파생 도구 + 데이터와 그 기록(run 이 쓰는 꼴).
@@ -76,12 +87,15 @@ ufresh() {
   sed "s#@ROOT@#$_r#g" "$UFIX/data/ruby.unit.json" > "$D/ruby.unit.json"
   # go 의 커버 프로필에는 절대 경로가 없다(모듈 경로다).
   cp "$UFIX/data/go.unit.cover" "$D/"
+  # coverage.py 의 JSON 키도 절대 경로가 아니다(python/ 기준 상대 경로다).
+  cp "$UFIX/data/python.unit.json" "$D/"
   kmark 0
   pmark 0
   dmark 0
   jmark 0
   rmark 0
   gmark 0
+  ymark 0
   git -C "$T" init -q
   git -C "$T" config core.autocrlf false
   git -C "$T" add -A
@@ -116,6 +130,11 @@ rmark() { # exit
 gmark() { # exit
   printf '{"run":"go","suite":"unit","exit":%s,"profile_sha1":"%s","files":{"%s":"%s"}}\n' "$1" \
     "$(sha1sum "$D/go.unit.cover" | cut -d' ' -f1)" "$G" "$(sha1sum "$T/$G" | cut -d' ' -f1)" > "$D/go.unit.run.json"
+}
+# `unit python` 의 기록 — 종료코드 · 지금 JSON 의 sha1 · 경계 파일의 지금 sha1(coverage.py 의 JSON 에는 소스 해시가 없다 — gmark 와 같은 꼴).
+ymark() { # exit
+  printf '{"run":"python","suite":"unit","exit":%s,"data_sha1":"%s","files":{"%s":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/python.unit.json" | cut -d' ' -f1)" "$Y" "$(sha1sum "$T/$Y" | cut -d' ' -f1)" > "$D/python.unit.run.json"
 }
 
 # ── (1) 양성 — 측정 = 장부 → 0 ───────────────────────────────────────────────────────────────────
@@ -213,6 +232,23 @@ assert_not_contains "$OUT" "AuthClient.Realm" "[go] 다 닿는 함수는 목록�
 assert_not_contains "$OUT" "Config" "[go] 경계 밖 파일은 목록에 없다"
 assert_line "$OUT" "unit-unreached [go]: OK — 4 functions with code the unit suite never reaches (5 statements), each recorded in scripts/unit-unreached.json" "[go] 요약 — 문장으로 센다"
 
+run unit-report python "$T" --out "$D"
+assert_eq 0 "$RC" "[python] 측정이 장부와 같으면 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "/python.unit.json (coverage.py 7.15.0 · lines · branch arcs)" "[python] 데이터 · coverage.py 판 · 가지 측정을 찍는다"
+assert_line "$OUT" "  UNREACHED $Y:17 AuthClient.exchange · 1 line · 1 branch · defensive: the drive never sends an empty code" "[python] 제 줄의 실패 갈래 — 놓친 줄 · 놓친 가지"
+assert_line "$OUT" "  UNREACHED $Y:22 AuthClient.scope · 0 lines · 1 branch · open-gap" "[python] 줄이 다 돌아도 else 없는 if 의 안 탄 거짓 쪽은 가지로 센다 · why 가 열린 항목 id"
+assert_line "$OUT" "  UNREACHED $Y:31 AuthClient.apply.one · 3 lines · 2 branches · unreachable: the lines and arms sit in apply's nested def — coverage.py keys it as its own region" "[python] 중첩 def 는 제 영역이다(감싼 함수.제 이름)"
+assert_not_contains "$OUT" "AuthClient.apply ·" "[python] 중첩 def 의 줄 · 가지는 감싼 함수의 것이 아니다 — 제 줄이 다 돈 apply 는 목록에 없다"
+assert_line "$OUT" "  UNREACHED $Y:38 AuthClient.token · 1 line · 1 branch · integration: an async def is a function region like any other — the drive never sends an empty code" "[python] async def 도 같은 함수 영역이다"
+assert_line "$OUT" "  UNREACHED $Y:43 AuthClient.describe · 1 line · 0 branches · integration: the drive never calls it" "[python] 안 부른 메서드"
+assert_line "$OUT" "  UNREACHED $Y:46 AuthClient.logout_url · 1 line · 0 branches · integration: the drive never calls it — the integration test does, outside the unit run" "[python] 통합 구동만 부르는 메서드 — 레인의 단위 명령(-m \"not integration\")이 그 시험을 거른다"
+# ⚠️ 알려진 틈을 고정한다 — coverage.py 의 가지는 줄 사이의 호(arc)다: 한 줄 조건식(`a if c else b`) · `and` · `or` 의 안 탄 쪽은 호가 아니라
+# 줄로도 가지로도 안 보인다(도구 머리 주석). 이 단언이 깨지면 coverage.py 가 그것을 재게 된 것이다 — 머리 주석과 장부를 함께 고칠 때다.
+assert_not_contains "$OUT" "AuthClient.fallback" "[python] 한 줄 조건식의 안 탄 쪽은 가지가 아니다 — 알려진 틈"
+assert_not_contains "$OUT" "AuthClient.__init__" "[python] 다 닿는 메서드는 목록에 없다"
+assert_not_contains "$OUT" "Config" "[python] 경계 밖 파일은 목록에 없다"
+assert_line "$OUT" "unit-unreached [python]: OK — 6 functions with code the unit suite never reaches (7 lines · 5 branches), each recorded in scripts/unit-unreached.json" "[python] 요약"
+
 # ── (2) 음성 — 장부와 다르면 DRIFT(1) ────────────────────────────────────────────────────────────
 # 새로 생긴 미도달 — 데이터에서 다 닿던 realm 을 안 닿게 바꾼다(장부에 없다).
 ufresh
@@ -296,6 +332,22 @@ assert_contains "$(cat "$D/go.unit.cover")" 'example.com/fixture/go/auth_client.
 run unit-report go "$T" --out "$D"
 assert_eq 1 "$RC" "[go] 적힌 함수의 블록 하나가 더 안 돌면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [go] $G:AuthClient.Exchange: the unit run leaves 2 statements unreached, scripts/unit-unreached.json records 1 statement — test what the unit suite does not reach, or record why and correct the counts" "[go] 더 놓친 문장 수"
+# python — 다 닿던 __init__ 의 줄을 안 돈 것으로(장부에 없다).
+ufresh
+sed -i 's#"AuthClient.__init__": {"executed_lines": \[15\], "summary": {"covered_lines": 1, "num_statements": 1, "percent_covered": 100.0, "percent_covered_display": "100", "missing_lines": 0,#"AuthClient.__init__": {"executed_lines": [], "summary": {"covered_lines": 0, "num_statements": 1, "percent_covered": 0.0, "percent_covered_display": "0", "missing_lines": 1,#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(cat "$D/python.unit.json")" '"AuthClient.__init__": {"executed_lines": [], "summary": {"covered_lines": 0, "num_statements": 1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 장부에 없는 미도달 함수는 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] unrecorded unreached code $Y:AuthClient.__init__ — the unit suite never reaches 1 line · 0 branches of it: test that code, or record why in scripts/unit-unreached.json" "[python] 새 미도달"
+# 줄은 그대로인데 가지 하나가 새로 안 돈다 — exchange 의 탄 거짓 쪽(18 → 20)을 안 탄 것으로(줄만 세면 못 본다).
+ufresh
+sed -i 's#\("AuthClient.exchange": {[^}]*"covered_branches": \)1, "missing_branches": 1,#\10, "missing_branches": 2,#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(grep -o '"AuthClient.exchange": {[^}]*}' "$D/python.unit.json")" '"covered_branches": 0, "missing_branches": 2,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 줄 수가 같아도 놓친 가지가 늘면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] $Y:AuthClient.exchange: the unit run leaves 1 line · 2 branches unreached, scripts/unit-unreached.json records 1 line · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[python] 가지만 바뀐 수"
 
 # 람다 안의 놓친 가지 — 장부에서 pick 을 지우면 소스 함수 이름으로 DRIFT 다(합성 메서드로 새지 않는다 — 브리프 보정 1).
 ufresh
@@ -341,6 +393,20 @@ assert_not_contains "$(cat "$L")" "auth_client.go:AuthClient.Pick" "(변이가 �
 run unit-report go "$T" --out "$D"
 assert_eq 1 "$RC" "[go] 함수 리터럴 안의 안 돈 문장이 장부에 없으면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [go] unrecorded unreached code $G:AuthClient.Pick — the unit suite never reaches 1 statement of it" "[go] 함수 리터럴의 문장 — 감싼 함수 키"
+# python — 중첩 def 의 줄 · 가지는 제 영역의 수다: 장부에서 지우면 그 이름(감싼 함수.제 이름)으로 DRIFT 다(감싼 apply 로 새지 않는다).
+ufresh
+sed -i '/auth_client\.py:AuthClient\.apply\.one"/,/},/d' "$L"
+assert_not_contains "$(cat "$L")" "auth_client.py:AuthClient.apply.one" "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 중첩 def 의 놓친 줄 · 가지가 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] unrecorded unreached code $Y:AuthClient.apply.one — the unit suite never reaches 3 lines · 2 branches of it" "[python] 중첩 def — 제 영역의 키"
+# 줄이 다 도는 함수의 안 탄 갈래(else 없는 if 의 거짓 쪽)만 있는 함수 — 장부에서 지우면 DRIFT 다(줄만 세는 장부는 이것을 못 본다).
+ufresh
+sed -i '/auth_client\.py:AuthClient\.scope"/,/},/d' "$L"
+assert_not_contains "$(cat "$L")" "auth_client.py:AuthClient.scope" "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 다 도는 줄의 안 탄 갈래가 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] unrecorded unreached code $Y:AuthClient.scope — the unit suite never reaches 0 lines · 1 branch of it" "[python] 거짓 쪽의 호"
 
 # 수가 바뀌었다 — 장부의 수와 측정이 다르다(가지 하나가 새로 생긴 꼴).
 ufresh
@@ -385,6 +451,19 @@ assert_contains "$(grep -A1 'auth_client.go:AuthClient.LogoutURL"' "$L")" '"stat
 run unit-report go "$T" --out "$D"
 assert_eq 1 "$RC" "[go] 수가 다르면 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [go] $G:AuthClient.LogoutURL: the unit run leaves 2 statements unreached, scripts/unit-unreached.json records 3 statements — the unit suite reaches more of it now: lower the counts" "[go] 바뀐 문장 수 — 장부보다 덜 놓쳤다"
+# python — 줄 수와 가지 수를 따로 대조한다(장부의 줄 수만 · 가지 수만 바꾼다).
+ufresh
+sed -i '/auth_client\.py:AuthClient\.exchange"/,/}/ s#"lines": 1,#"lines": 2,#' "$L"
+assert_contains "$(grep -A1 'auth_client.py:AuthClient.exchange"' "$L")" '"lines": 2,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 줄 수가 다르면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] $Y:AuthClient.exchange: the unit run leaves 1 line · 1 branch unreached, scripts/unit-unreached.json records 2 lines · 1 branch — the unit suite reaches more of it now: lower the counts" "[python] 바뀐 줄 수 — 장부보다 덜 놓쳤다"
+ufresh
+sed -i '/auth_client\.py:AuthClient\.apply\.one"/,/}/ s#"branches": 2,#"branches": 1,#' "$L"
+assert_contains "$(grep -A2 'auth_client.py:AuthClient.apply.one"' "$L")" '"branches": 1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 가지 수만 달라도 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] $Y:AuthClient.apply.one: the unit run leaves 3 lines · 2 branches unreached, scripts/unit-unreached.json records 3 lines · 1 branch — test what the unit suite does not reach, or record why and correct the counts" "[python] 바뀐 가지 수 — 장부보다 더 놓쳤다"
 
 # 낡은 항목 — 다 닿는 함수 · 데이터에 없는 함수 · 경계 밖 파일을 가리킨다.
 ufresh
@@ -436,6 +515,16 @@ assert_eq 1 "$RC" "[go] 낡은 항목은 exit 1 — 출력: $OUT"
 assert_contains "$OUT" "DRIFT [go] stale entry $G:AuthClient.Realm — the unit run reaches all of it now; drop the entry" "[go] 다 닿는 함수의 항목"
 assert_contains "$OUT" "DRIFT [go] stale entry $G:AuthClient.Gone — the data of $G has no such function (renamed or removed?)" "[go] 없는 함수의 항목"
 assert_contains "$OUT" "DRIFT [go] scripts/unit-unreached.json: entry go/config.go:Config.Valid names a file outside the boundary derived from .github/workflows/go-ci.yml:10" "[go] 경계 밖 파일의 항목"
+# python — 모듈 수준 영역(이름 "")은 함수가 아니다: 그것을 가리키는 항목도 데이터에 없는 함수의 항목이다.
+ufresh
+sed -i "s#\"python\": {#\"python\": {\n    \"$Y:AuthClient.__init__\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: stale\" },\n    \"$Y:AuthClient.gone\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: renamed\" },\n    \"$Y:\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: module level\" },\n    \"python/src/keycloak_sdk/config.py:Config.valid\": { \"lines\": 1, \"branches\": 0, \"why\": \"integration: outside\" },#" "$L"
+assert_contains "$(cat "$L")" "\"$Y:AuthClient.gone\": { \"lines\": 1, \"branches\": 0," "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 낡은 항목은 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [python] stale entry $Y:AuthClient.__init__ — the unit run reaches all of it now; drop the entry" "[python] 다 닿는 메서드의 항목"
+assert_contains "$OUT" "DRIFT [python] stale entry $Y:AuthClient.gone — the data of $Y has no such function (renamed or removed?)" "[python] 없는 함수의 항목"
+assert_contains "$OUT" "DRIFT [python] stale entry $Y: — the data of $Y has no such function" "[python] 모듈 수준 영역은 함수가 아니다"
+assert_contains "$OUT" "DRIFT [python] scripts/unit-unreached.json: entry python/src/keycloak_sdk/config.py:Config.valid names a file outside the boundary derived from python/pyproject.toml:12" "[python] 경계 밖 파일의 항목"
 
 # why — 닫힌 항목 · 들여쓴 하위 불릿(항목이 아니다) · 모르는 id · 까닭 머리만 있고 말이 없다.
 ufresh
@@ -458,6 +547,9 @@ assert_contains "$OUT" "DRIFT [ruby] $R:AuthClient#pick: why \"closed-gap\"" "[r
 run unit-report go "$T" --out "$D"
 assert_eq 1 "$RC" "[go] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
 assert_contains "$OUT" "DRIFT [go] $G:AuthClient.String: why \"closed-gap\"" "[go] 닫힌 id"
+run unit-report python "$T" --out "$D"
+assert_eq 1 "$RC" "[python] 닫힌 등록부 항목은 why 가 아니다 — exit 1"
+assert_contains "$OUT" "DRIFT [python] $Y:AuthClient.scope: why \"closed-gap\"" "[python] 닫힌 id"
 ufresh
 sed -i 's#"why": "open-gap"#"why": "nested-open"#' "$L"
 run unit-report kotlin "$T" --out "$D"
@@ -893,10 +985,118 @@ assert_contains "$(grep -A1 'AuthClient::exchange"' "$L")" '"statements": 1,' "(
 run unit-report php "$T" --out "$D"
 assert_eq 2 "$RC" "[ledger] php 항목을 문장으로 적으면 exit 2(문장은 go 의 것이다)"
 assert_contains "$OUT" "FAIL [php] scripts/unit-unreached.json: php[\"$P:AuthClient::exchange\"] must be { lines, why }" "[ledger] php 꼴 — 줄"
+# python — 같은 무결성 판정(데이터 · 다른 바이트 · 단위 기록 · 기록 없음 · 기록 뒤 바뀐 데이터 · 경계 해시 없는 기록 · 실패한 실행 · 데이터에 없는
+# 경계 파일 · 가지 없는 데이터 · 못 읽는 수 · 같은 이름 영역의 덮어쓰기 · 어느 함수에도 못 붙이는 안 돈 줄 · 안 탄 호 · 공허한 실행)과 장부의 꼴.
 ufresh
+rm "$D/python.unit.json"
 run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [python] no coverage data at" "[python] 데이터 없음"
+assert_contains "$OUT" "run the unit suite first (node scripts/integration-coverage.mjs unit python)" "[python] 다시 돌릴 명령"
+ufresh
+printf '# changed after the run\n' >> "$T/$Y"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 다른 바이트의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] $Y: the data was taken from other bytes" "[python] 다른 바이트"
+ufresh
+sed -i 's#"suite":"unit",##' "$D/python.unit.run.json"
+assert_not_contains "$(cat "$D/python.unit.run.json")" '"suite"' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 단위 실행의 것이 아닌 기록(suite 없음)은 exit 2"
+assert_contains "$OUT" "FAIL [python] no record that \`unit python\` wrote this data" "[python] 단위 기록 아님"
+ufresh
+rm "$D/python.unit.run.json"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 기록이 없는 데이터(손으로 돌린 coverage)는 exit 2"
+assert_contains "$OUT" "FAIL [python] no record that \`unit python\` wrote this data" "[python] 기록 없음"
+ufresh
+printf ' ' >> "$D/python.unit.json"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/python.unit.json is not the data \`unit python\` recorded" "[python] 데이터의 sha1"
+ufresh
+sed -i 's#"files":{[^}]*}#"files":null#' "$D/python.unit.run.json"
+assert_contains "$(cat "$D/python.unit.run.json")" '"files":null' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 경계 해시가 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] the record has no boundary hashes" "[python] 실행 중에 바뀐 경계 파일"
+ufresh
+ymark 1
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 실패한 실행의 데이터는 exit 2"
+assert_contains "$OUT" "FAIL [python] the run that wrote this data exited 1 — the data of a failed run is partial" "[python] 실패한 실행"
+ufresh
+sed -i 's#"src\\\\keycloak_sdk\\\\auth_client\.py": {#"src\\\\keycloak_sdk\\\\gone.py": {#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(cat "$D/python.unit.json")" 'keycloak_sdk\\gone.py": {' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 경계 파일이 데이터에 없으면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] $Y is not in the coverage data" "[python] 데이터에 없는 경계 파일"
+# 가지 — 가지 없이 잰 데이터(branch = true 가 없는 실행)는 가지 0 개가 아니다 · 못 읽는 수는 0 으로 세지 않는다.
+ufresh
+sed -i 's#"branch_coverage": true#"branch_coverage": false#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(cat "$D/python.unit.json")" '"branch_coverage": false' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 가지 없이 잰 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/python.unit.json has no branch arcs (meta.branch_coverage is not true) — the run measured lines only" "[python] 가지 없는 데이터"
+ufresh
+sed -i 's#\("AuthClient.exchange": {[^}]*"covered_branches": 1, \)"missing_branches": 1,#\1"missing_branches": -1,#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(grep -o '"AuthClient.exchange": {[^}]*}' "$D/python.unit.json")" '"missing_branches": -1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 못 읽는 가지 수는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] $Y: cannot read the line and branch counts of AuthClient.exchange" "[python] 못 읽는 수"
+# 같은 이름의 영역 — coverage.py 는 영역을 이름으로 묶어 뒤의 것이 앞의 것을 덮는다(JSON 의 중복 키도 뒤의 것이 이긴다). describe 를
+# 뒤에 오는 logout_url 의 이름으로 바꾸면 describe 의 문장이 영역에서 사라진다.
+ufresh
+sed -i 's#"AuthClient.describe": {#"AuthClient.logout_url": {#' "$D/python.unit.json"
+ymark 0
+assert_not_contains "$(cat "$D/python.unit.json")" '"AuthClient.describe": {' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 같은 이름의 영역이 덮어쓰이면 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] $Y: function regions add up to 29 of 30 statements — coverage.py keys regions by name, so a same-named function overwrote another" "[python] 덮어써진 영역을 회계로 잡는다"
+# 모듈 수준(어느 함수에도 안 드는 영역 "" — 모듈 · 클래스 몸통)의 안 돈 줄 · 안 탄 호는 어느 함수에도 못 붙인다 — FAIL 이다(go 의 패키지
+# 수준 함수 리터럴 · ruby 의 메서드 밖 갈래와 같은 판정). import 때 도는 줄이다 — 경계 파일을 import 한 실행에서 안 돌았으면 조건이 있다.
+ufresh
+sed -i 's#"": {"executed_lines": \[3, 5, 10, 13, 14, 17, 22, 27, 30, 38, 43, 46\], "summary": {"covered_lines": 12, "num_statements": 12, "percent_covered": 100.0, "percent_covered_display": "100", "missing_lines": 0,#"": {"executed_lines": [3, 5, 13, 14, 17, 22, 27, 30, 38, 43, 46], "summary": {"covered_lines": 11, "num_statements": 12, "percent_covered": 91.66666666666667, "percent_covered_display": "92", "missing_lines": 1,#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(cat "$D/python.unit.json")" '"": {"executed_lines": [3, 5, 13, 14, 17, 22, 27, 30, 38, 43, 46], "summary": {"covered_lines": 11, "num_statements": 12,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 모듈 수준의 안 돈 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] $Y: 1 of 12 module-level statements (outside every function — module and class bodies) never ran — no function can be credited with them" "[python] 모듈 수준 줄"
+ufresh
+sed -i 's#\("": {"executed_lines": \[3, 5, 10, 13, 14, 17, 22, 27, 30, 38, 43, 46\], "summary": {[^}]*"num_branches": \)0, "num_partial_branches": 0, "covered_branches": 0, "missing_branches": 0#\12, "num_partial_branches": 1, "covered_branches": 1, "missing_branches": 1#' "$D/python.unit.json"
+ymark 0
+assert_contains "$(cat "$D/python.unit.json")" '"num_branches": 2, "num_partial_branches": 1, "covered_branches": 1, "missing_branches": 1, "percent_branches_covered": 100.0' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 모듈 수준의 안 탄 호는 줄이 다 돌았어도 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] $Y: 1 of 2 module-level branch arcs (outside every function — module and class bodies) were never taken — no function can be credited with them" "[python] 모듈 수준 호"
+# 경계 파일을 한 번도 import 하지 않은 실행 — 측정 실패가 모듈 수준 판정보다 먼저다(모듈 수준 줄이 전부 안 돈 것으로 읽지 않는다).
+ufresh
+cp "$UFIX/data/python-zero.unit.json" "$D/python.unit.json"
+ymark 0
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[python] 경계 함수의 몸통을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] the run executed 0 of 18 boundary statements inside functions — a measurement failure, not a low number (did the unit tests run against this tree?)" "[python] 공허한 실행 — 모듈 수준 판정보다 먼저다"
+assert_not_contains "$OUT" "module-level" "[python] 공허한 실행은 모듈 수준의 안 돈 줄로 읽지 않는다"
+# 장부의 꼴 — python 항목은 { branches, lines, why } 다: 가지를 빼거나 문장으로 적으면 exit 2.
+ufresh
+sed -i '/auth_client\.py:AuthClient\.exchange"/,/}/ { /"branches": 1,/d }' "$L"
+assert_not_contains "$(grep -A3 'auth_client.py:AuthClient.exchange"' "$L")" '"branches"' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] python 항목에 branches 가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [python] scripts/unit-unreached.json: python[\"$Y:AuthClient.exchange\"] must be { branches, lines, why }" "[ledger] python 꼴 — 가지"
+ufresh
+sed -i '/auth_client\.py:AuthClient\.exchange"/,/}/ s#"lines": 1,#"statements": 1,#' "$L"
+assert_contains "$(grep -A1 'auth_client.py:AuthClient.exchange"' "$L")" '"statements": 1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report python "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] python 항목을 문장으로 적으면 exit 2(문장은 go 의 것이다)"
+assert_contains "$OUT" "FAIL [python] scripts/unit-unreached.json: python[\"$Y:AuthClient.exchange\"] must be { branches, lines, why }" "[ledger] python 꼴 — 줄"
+ufresh
+run unit-report node "$T" --out "$D"
 assert_eq 2 "$RC" "[cli] 재지 않는 언어는 usage(exit 2)"
-assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby · go — got python" "[cli] usage 문구"
+assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby · go · python — got node" "[cli] usage 문구"
 
 # ── (4) check — 데이터 없이 꼴 · 경계 · why(통합 픽스처 트리 — 아홉 언어) ──────────────────────────────
 fresh
@@ -908,12 +1108,19 @@ assert_line "$OUT" "[dotnet] unit-unreached: 1 entry (defensive 1)" "[check] dot
 assert_line "$OUT" "[java] unit-unreached: 1 entry (unreachable 1)" "[check] java 장부"
 assert_line "$OUT" "[ruby] unit-unreached: 1 entry (open-masking 1)" "[check] ruby 장부"
 assert_line "$OUT" "[go] unit-unreached: 1 entry (open-masking 1)" "[check] go 장부"
+assert_line "$OUT" "[python] unit-unreached: 1 entry (open-masking 1)" "[check] python 장부"
 fresh
 sed -i 's#"statements": 2,#"lines": 2,#' "$T/scripts/unit-unreached.json"
 assert_contains "$(grep -A1 'go/admin.go:AdminClient.Close"' "$T/scripts/unit-unreached.json")" '"lines": 2,' "(변이가 착지했는지 먼저 본다)"
 run check "$T"
 assert_eq 2 "$RC" "[check] go 항목을 줄로 적으면 데이터 없이도 exit 2 — 출력: $OUT"
 assert_contains "$OUT" "FAIL [go] scripts/unit-unreached.json: go[\"go/admin.go:AdminClient.Close\"] must be { statements, why }" "[check] go 꼴"
+fresh
+sed -i '/auth\.py:AuthClient\.token"/,/}/ { /"branches": 1,/d }' "$T/scripts/unit-unreached.json"
+assert_not_contains "$(grep -A3 'auth.py:AuthClient.token"' "$T/scripts/unit-unreached.json")" '"branches"' "(변이가 착지했는지 먼저 본다)"
+run check "$T"
+assert_eq 2 "$RC" "[check] python 항목에 branches 가 없으면 데이터 없이도 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [python] scripts/unit-unreached.json: python[\"python/src/keycloak_sdk/auth.py:AuthClient.token\"] must be { branches, lines, why }" "[check] python 꼴"
 fresh
 sed -i 's#"why": "open-admin"#"why": "closed-item"#' "$T/scripts/unit-unreached.json"
 run check "$T"

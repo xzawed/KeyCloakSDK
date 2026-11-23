@@ -38,5 +38,12 @@
       "statements": 2,
       "why": "open-masking"
     }
+  },
+  "python": {
+    "python/src/keycloak_sdk/auth.py:AuthClient.token": {
+      "lines": 1,
+      "branches": 1,
+      "why": "open-masking"
+    }
   }
 }

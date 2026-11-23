@@ -1,0 +1,16 @@
+[project]
+name = "fixture"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a real Keycloak (fixture)"]
+
+[tool.coverage.run]
+branch = true
+source = ["keycloak_sdk"]
+omit = [
+  "*/auth_client.py",  # network boundary (fixture)
+]
+
+[tool.coverage.report]
+fail_under = 100
