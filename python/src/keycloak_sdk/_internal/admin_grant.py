@@ -65,7 +65,14 @@ from keycloak.exceptions import KeycloakError
 from ..exceptions import KeycloakAuthError
 from ..tokens import _usable_access_token
 from .bearer import GRANTED, sendable
-from .lower import carried_code, error_in_success, is_lower_failure, oauth_error, unusable_answer
+from .lower import (
+    carried_code,
+    error_in_success,
+    is_lower_failure,
+    non_200_success,
+    oauth_error,
+    unusable_answer,
+)
 from .token_cap import Answered, answering
 
 #: 중첩 `KeycloakOpenID` 의 그랜트 메서드 — 연결이 토큰을 받는 자리 전부다.
@@ -111,7 +118,15 @@ def _carried(
     스스로 부인한 것이다. 판정은 auth 레인과 같다(`lower.oauth_failure` — 상태와, 그 그랜트가
     보낸 비밀(`sent` — `_sent`)과 겹치지 않는 코드). 아홉 언어의 규칙이다 — 4xx 의 그랜트 실패도
     같은 코드를 `error` 에 싣는다(`_failed`). 예전에는 그 토큰을 세터에 넘겨 admin 요청이 그것을
-    싣고 나갔다(등록부 auth-2xx-error-code-divergent)."""
+    싣고 나갔다(등록부 auth-2xx-error-code-divergent).
+
+    ⚠️ 그보다도 먼저, 200 이 아닌 상태(python-keycloak 이 성공으로 받는 201 · 204)는 오류
+    상태의 그랜트 실패와 같은 판정으로 거부한다 — 메시지는 상태뿐이고 코드는 `error` 에만
+    싣는다(`lower.non_200_success` · 등록부 token-success-status-range-divergent). 예전에는
+    201 의 토큰으로 admin 요청이 나갔다."""
+    refused = non_200_success(response, answered, sent=sent, in_message=False)
+    if refused is not None:
+        raise refused
     named = error_in_success(response, answered, sent=sent)
     if named is not None:
         raise named

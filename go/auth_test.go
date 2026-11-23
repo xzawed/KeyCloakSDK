@@ -1062,9 +1062,11 @@ func TestPostFormRejectsNon2xx(t *testing.T) {
 	}
 }
 
-// TestIntrospectAcceptsAny2xx — introspection 의 성공은 그대로 2xx 다(statusIs2xx — RFC 7662 §2.2 는 200 으로 답한다).
-// logout 이 성공 술어를 받게 되면서 introspect 의 술어가 따로 섰다 — 실행 레그가 살린 편집 「200 만」을 201 칸이 잡는다.
-func TestIntrospectAcceptsAny2xx(t *testing.T) {
+// TestIntrospectSucceedsOn200Only — introspection 의 성공은 200 하나다(statusIs200 — SDK 의 규칙이다: RFC 7662 §2.2 는 상태를
+// 정하지 않고 그 예와 Keycloak 이 200 으로 답한다 · 등록부 token-success-status-range-divergent). 예전 술어는 2xx 전부였고 이 시험의 201 칸이 그것을 성공으로 고정했다 — 이제 201 은
+// 400 과 같이 상태를 실은 *AuthError 이고, 그 본문의 `"active":true` 는 읽히지 않는다(아홉 레인 칸은
+// TestNon200SuccessStatusFailsAsTheLanesErrorResponse).
+func TestIntrospectSucceedsOn200Only(t *testing.T) {
 	for _, code := range []int{http.StatusOK, http.StatusCreated} {
 		t.Run(http.StatusText(code), func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1075,8 +1077,15 @@ func TestIntrospectAcceptsAny2xx(t *testing.T) {
 			t.Cleanup(srv.Close)
 			cfg := Config{ServerURL: srv.URL, Realm: "test", ClientID: "app", ClientSecret: "x"}.withDefaults()
 			r, err := newAuthClient(cfg, nil).Introspect(context.Background(), "tok")
-			if err != nil || !r.Active || r.Username != "u" {
-				t.Fatalf("HTTP %d introspection must be read: %+v %v", code, r, err)
+			if code == http.StatusOK {
+				if err != nil || !r.Active || r.Username != "u" {
+					t.Fatalf("HTTP 200 introspection must be read: %+v %v", r, err)
+				}
+				return
+			}
+			var ae *AuthError
+			if r != nil || !errors.As(err, &ae) || !strings.Contains(err.Error(), "failed (HTTP "+strconv.Itoa(code)+")") {
+				t.Fatalf("HTTP %d introspection must be *AuthError naming the status, got %+v %T %v", code, r, err, err)
 			}
 		})
 	}

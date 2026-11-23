@@ -711,4 +711,109 @@ class TokenResponseClassTest {
     expect("S1 200 text/plain", call(CC), KeycloakAuthException.class, "Client credentials request error", wrong);
     assertNone(wrong);
   }
+
+  // ───────────── 200 이 아닌 성공 상태(등록부 token-success-status-range-divergent) ─────────────
+
+  /**
+   * 200 이 아닌 2xx — 토큰 응답(RFC 6749 §5.1)과 introspection 응답(SDK 의 규칙 — RFC 7662 §2.2 는 상태를 정하지 않고 그 예와
+   * Keycloak 이 200 이다)의 성공은 200 뿐이다.
+   */
+  private static final int[] NON_200_SUCCESS = {201, 202, 203, 204, 206, 299};
+
+  /**
+   * 200 이 아닌 성공 상태(201–299)의 토큰 · introspection 응답은 200 이면 쓰일 본문이어도 그 레인의 오류 응답이다 — 같은 본문을 실은 400 과
+   * 같은 타입 · 같은 메시지 꼴(상태) · 코드 없음이고, 토큰을 돌려주지도 캐시하지도 않으며 admin 요청을 보내지 않는다(아홉 언어의 규칙).
+   * 400 행이 그 기준이다(바뀌지 않는다). 204 는 본문 없이 온다(JDK 서버가 본문을 떼어 낸다) — 판정은 상태가 한다. 대조: 같은 본문의 200 은
+   * 모든 레인에서 쓰이고, 201 이 OAuth {@code error} 를 실으면 400 이 그것을 실었을 때처럼 코드를 싣는다.
+   */
+  @Test void non200SuccessStatus_failsAsTheLanesErrorResponse() {
+    List<String> wrong = new ArrayList<>();
+    List<String> table = new ArrayList<>();
+    String good = token("AT-good");
+    String active = "{\"active\":true,\"username\":\"svc\",\"client_id\":\"app\"}";
+    for (int status : new int[] {400, 201, 202, 203, 204, 206, 299}) {
+      for (Object[] row : new Object[][] {
+          {"S1", CC, "Client credentials failed: HTTP "},
+          {"S2", PROV, "Client credentials failed: HTTP "},
+          {"refresh", RF, "Token refresh failed: HTTP "},
+          {"code exchange", EX, "Authorization code exchange failed: HTTP "}}) {
+        tokens(json(status, good));
+        Outcome o = call((Call) row[1]);
+        String label = row[0] + " " + status;
+        table.add(label + " → " + o);
+        expect(label, o, KeycloakAuthException.class, row[2] + Integer.toString(status), wrong);
+        expectCode(label, o, null, wrong);
+      }
+      introspectReply = json(status, active);
+      Outcome in = call(IN);
+      table.add("IN " + status + " → " + in);
+      expect("IN " + status, in, KeycloakAuthException.class, "Introspection failed: HTTP " + status, wrong);
+      expectCode("IN " + status, in, null, wrong);
+      tokens(json(status, good));
+      Outcome admin = call(ADMIN);
+      table.add("S5 " + status + " → " + admin + " · admin " + adminHits());
+      expect("S5 " + status, admin, KeycloakAuthException.class, "admin token request failed: HTTP " + status, wrong);
+      expectCode("S5 " + status, admin, null, wrong);
+      if (adminHits() != 0) wrong.add("S5 " + status + ": admin 요청이 나갔다 — " + adminHits());
+    }
+    // 거부한 토큰은 캐시되지 않는다 — 같은 공급자 · 같은 admin 파사드의 다음 호출이 토큰 엔드포인트에 다시 가서 200 의 토큰을 쓴다
+    for (int status : NON_200_SUCCESS) {
+      tokens(json(status, good), json(200, token("AT-next")));
+      try (KeycloakClient kc = KeycloakClient.create(config())) {
+        ClientCredentialsTokenProvider provider =
+            new ClientCredentialsTokenProvider(kc.auth(), Clock.systemUTC(), Duration.ofSeconds(30));
+        Outcome first = outcomeOf(provider::getAccessToken);
+        Outcome second = outcomeOf(provider::getAccessToken);
+        if (!(first.thrown() instanceof KeycloakAuthException) || !"AT-next".equals(second.value()) || grants().size() != 2) {
+          wrong.add("S2 " + status + " 뒤: " + first + " · " + second + " · grants " + grants());
+        }
+      }
+      tokens(json(status, good), json(200, token("AT-next")));
+      try (KeycloakClient kc = KeycloakClient.create(config())) {
+        Outcome first = outcomeOf(() -> ADMIN.run(kc));
+        int hitsAfterFirst = adminHits();
+        Outcome second = outcomeOf(() -> ADMIN.run(kc));
+        if (!(first.thrown() instanceof KeycloakAuthException) || hitsAfterFirst != 0 || !"alice".equals(second.value())
+            || adminHits() != 1 || grants().size() != 2) {
+          wrong.add("S5 " + status + " 뒤: " + first + " · " + second + " · grants " + grants() + " · admin " + adminHits());
+        }
+      }
+    }
+    // 201 이 OAuth error 를 실으면 400 이 실었을 때와 같다 — 설명 「d」 · 코드 invalid_grant(introspection 은 상태 · invalid_token)
+    for (Object[] row : new Object[][] {
+        {"S1", CC, "Client credentials failed: d"},
+        {"S2", PROV, "Client credentials failed: d"},
+        {"refresh", RF, "Token refresh failed: d"},
+        {"code exchange", EX, "Authorization code exchange failed: d"}}) {
+      tokens(json(201, B1));
+      Outcome b1 = call((Call) row[1]);
+      expect(row[0] + " 201 B1", b1, KeycloakAuthException.class, (String) row[2], wrong);
+      expectCode(row[0] + " 201 B1", b1, "invalid_grant", wrong);
+    }
+    introspectReply = json(201, IN_B1);
+    Outcome inB1 = call(IN);
+    expect("IN 201 B1", inB1, KeycloakAuthException.class, "Introspection failed: HTTP 201", wrong);
+    expectCode("IN 201 B1", inB1, "invalid_token", wrong);
+    tokens(json(201, B1));
+    Outcome adminB1 = call(ADMIN);
+    expect("S5 201 B1", adminB1, KeycloakAuthException.class, "admin token request failed: HTTP 201", wrong);
+    expectCode("S5 201 B1", adminB1, "invalid_grant", wrong);
+    if (adminHits() != 0) wrong.add("S5 201 B1: admin 요청이 나갔다 — " + adminHits());
+    // 대조 — 같은 본문의 200 은 모든 레인에서 쓰인다(admin 요청 하나)
+    for (Object[] row : new Object[][] {{"S1", CC}, {"S2", PROV}, {"refresh", RF}, {"code exchange", EX}}) {
+      tokens(json(200, good));
+      Outcome ok = call((Call) row[1]);
+      if (!"AT-good".equals(ok.value())) wrong.add(row[0] + " 200: 토큰을 써야 한다 — " + ok);
+    }
+    introspectReply = json(200, active);
+    Outcome inOk = call(IN);
+    if (!"svc".equals(inOk.value())) wrong.add("IN 200: 활성으로 읽어야 한다 — " + inOk);
+    tokens(json(200, good));
+    Outcome sent = call(ADMIN);
+    if (!"alice".equals(sent.value()) || adminHits() != 1) {
+      wrong.add("S5 200: admin 요청 하나여야 한다 — " + sent + " · admin " + adminHits());
+    }
+    System.out.println("[TokenResponseClassTest non-200 success status]\n  " + String.join("\n  ", table));
+    assertNone(wrong);
+  }
 }

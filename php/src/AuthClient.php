@@ -229,6 +229,13 @@ final class AuthClient
             throw self::introspectionTooLarge();
         }
         $json = json_decode($body, true);
+        // 성공은 200 뿐이다(SDK 의 규칙 — RFC 7662 §2.2 는 상태를 정하지 않고 그 예와 Keycloak 이 200 이다) — 다른 2xx 는 오류 상태처럼
+        // 실패한다: 같은 문구 · 본문이 실은 코드, 본문의 나머지는 읽지
+        // 않는다(`ResponseFailure::of` — 등록부 token-success-status-range-divergent). 그 판정이 JSON 판독보다 앞이다(400 도 그렇다).
+        $status = $response->getStatusCode();
+        if ($status > 200 && $status < 300) {
+            throw new KeycloakAuthError('introspection failed', oauthError: OAuthErrorCode::carried(is_array($json) ? ($json['error'] ?? null) : null, $this->config->clientSecret, $token));
+        }
         if (!is_array($json)) {
             throw new KeycloakAuthError('introspection returned non-JSON');
         }

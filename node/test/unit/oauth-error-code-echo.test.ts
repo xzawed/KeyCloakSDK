@@ -481,7 +481,7 @@ describe('success-status OAuth error — a 200 carrying `error` fails as a 400 d
     for (const text of renderings(e)) expect(text.includes('EchoedSecret'), text).toBe(false)
   })
 
-  // Controls — they pass before and after: the rule reaches neither another `error` nor another status.
+  // Controls — they pass before and after: the rule reaches no other `error`.
   const IGNORED: Array<[string, (value: string) => string]> = [
     [
       'clientCredentialsToken',
@@ -534,14 +534,124 @@ describe('success-status OAuth error — a 200 carrying `error` fails as a 400 d
     },
   )
 
+  // Another 2xx is no success either (registry `token-success-status-range-divergent`) — carrying `error` it fails as the
+  // 4xx carrying it does, code included. Before (main c4b5096a) it was "unexpected HTTP response status code" without the
+  // code: oauth4webapi reads an error body at 4xx only.
   it.each(NAMES)(
-    '%s — success-status OAuth error control: a status the lane rejects (201) stays rejected as before',
+    '%s — success-status OAuth error at 201 fails as a 400 carrying it does, nothing used',
     async (name) => {
       status = 201
       bodies = B2
       const e = await authFailure(name)
-      expect(e.message).toBe(`${surface(name).prefix}: unexpected HTTP response status code`)
-      expect(e.oauthError).toBeUndefined()
+      expect(e.message).toBe(`${surface(name).prefix}: ${BODY_ERROR}`)
+      expect(e.oauthError).toBe(codeOf(name))
+      expect(adminHits()).toEqual([])
+      for (const text of renderings(e)) expect(text.includes(AT), text).toBe(false)
     },
   )
+})
+
+// A token or introspection response is a success only at HTTP 200 (RFC 6749 §5.1; for introspection the SDK's rule — RFC
+// 7662 §2.2 names no status, its examples and Keycloak answer 200), in all nine languages:
+// any other 2xx fails as a 400 with the same body does — the same error and message, no token, nothing cached, no admin
+// request, no `active` (registry `token-success-status-range-divergent`). oauth4webapi takes only 200 as success
+// (`checkOAuthBodyError`), so the plain bodies are a pin (they failed so on main c4b5096a); 201 carrying `error` was
+// "unexpected HTTP response status code" without the code there, until `fetchTokenEndpointBounded` read it at every 2xx.
+const NON_200_SUCCESS = [201, 202, 203, 204, 206, 299]
+const STATUS_ERROR = 'unexpected HTTP response status code'
+/** A lane's success at 200 with {@link GOOD} — the token, introspection's `active`, admin's user. */
+const SUCCESS: Readonly<Record<string, string>> = {
+  introspect: 'success(true)',
+  admin: 'success(alice)',
+}
+/** No body at the token and introspection endpoints. */
+const EMPTY = { token: '', introspect: '', admin: USER }
+type CellBody = 'good' | 'empty' | 'B1'
+
+/**
+ * A lane on one client, as a call that can be made again on the same provider or facade (the follow-up shows nothing was
+ * cached). The code exchange sends no nonce, so a 200 without an id_token is its success.
+ */
+function laneOn(name: string, kc: KeycloakClient): () => Promise<unknown> {
+  const provider = new ClientCredentialsTokenProvider(kc.auth)
+  switch (name) {
+    case 'clientCredentialsToken':
+      return async () => (await kc.auth.clientCredentialsToken()).accessToken
+    case 'provider':
+      return () => provider.getAccessToken()
+    case 'refresh':
+      return async () => (await kc.auth.refresh(REFRESH)).accessToken
+    case 'exchangeCode':
+      return async () =>
+        (await kc.auth.exchangeCode(CODE, 'https://app.example/cb', VERIFIER)).accessToken
+    case 'introspect':
+      return async () => (await kc.auth.introspect(TOKEN)).active
+    case 'admin':
+      return async () => (await (await kc.admin()).users.get('u1'))?.username
+    default:
+      throw new Error(`no lane ${name}`)
+  }
+}
+
+/** What a call came to, as one line: the value, or the error's class, message and `oauthError`. */
+async function outcomeOf(call: () => Promise<unknown>): Promise<string> {
+  try {
+    return `success(${String(await call())})`
+  } catch (e) {
+    if (!(e instanceof Error)) return `non-Error(${String(e)})`
+    return `${e.constructor.name}(${e.message}) code=${String((e as KeycloakAuthError).oauthError)}`
+  }
+}
+
+describe('non-200 success status — only 200 is a token or introspection success', () => {
+  it('non-200 success status fails as the lanes error response', async () => {
+    const wrong: string[] = []
+    const table: string[] = []
+    const tokenHits = (): number => paths.filter((p) => p.endsWith('/token')).length
+    for (const name of NAMES) {
+      const { prefix } = surface(name)
+      const success = SUCCESS[name] ?? 'success(freshtoken)'
+      // The same body at 400 — what any other status is held to (a 204 carries none, so the 400 without one) — then 200,
+      // the other 2xx, and 201 carrying `error`.
+      const cells: Array<[number, CellBody, string]> = [
+        [400, 'good', `KeycloakAuthError(${prefix}: ${STATUS_ERROR}) code=undefined`],
+        [400, 'empty', `KeycloakAuthError(${prefix}: ${STATUS_ERROR}) code=undefined`],
+        [200, 'good', success],
+        ...NON_200_SUCCESS.map((s): [number, CellBody, string] => [s, 'good', '']),
+        [400, 'B1', `KeycloakAuthError(${prefix}: ${BODY_ERROR}) code=${codeOf(name)}`],
+        [201, 'B1', ''],
+      ]
+      const at400 = new Map<string, string>()
+      for (const [s, kind, pinned] of cells) {
+        const label = `${s} ${kind} ${name}`
+        const kc = newClient()
+        try {
+          const call = laneOn(name, kc)
+          status = s
+          bodies = kind === 'B1' ? B1 : kind === 'empty' ? EMPTY : GOOD
+          paths.length = 0
+          const got = await outcomeOf(call)
+          table.push(`${label} → ${got}`)
+          const expected = pinned !== '' ? pinned : (at400.get(s === 204 ? 'empty' : kind) ?? '?')
+          if (got !== expected) wrong.push(`${label}: ${got} ≠ ${expected}`)
+          if (s === 400) at400.set(kind, got)
+          const admin = adminHits().length
+          const adminSent = s === 200 && name === 'admin' ? 1 : 0
+          if (admin !== adminSent) wrong.push(`${label}: ${admin} admin requests`)
+          // Nothing was cached — the same provider and the same facade ask the IdP again, and use what a 200 gives.
+          if (s !== 200 && (name === 'provider' || name === 'admin')) {
+            status = 200
+            bodies = GOOD
+            paths.length = 0
+            const again = await outcomeOf(call)
+            if (again !== success || tokenHits() !== 1)
+              wrong.push(`${label}: then 200 gave ${again} after ${tokenHits()} token requests`)
+          }
+        } finally {
+          await kc.close()
+        }
+      }
+    }
+    expect(wrong, table.join('\n')).toEqual([])
+  })
 })

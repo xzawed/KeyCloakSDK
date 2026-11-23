@@ -10,3 +10,8 @@ lc_bearer_canary() {
     node) printf '%s\n' 'node/test/unit/t.test.ts|it.each(ROWS)(`%s — ${route} 가 보낸다`' ;;
   esac
 }
+lc_status200_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}

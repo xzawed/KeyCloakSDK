@@ -53,7 +53,7 @@ assert_contains "$OUT" "go/masking_test.go:19 → TestSlogMasks — 1 통과" "[
 run --lang dotnet --report "$REP/dotnet/pass" --root "$REPO"
 expect ok-dotnet 0 "통과 2 · FAIL 0"
 run --lang php --report "$REP/php-pass.xml" --root "$REPO"
-expect ok-php 0 "통과 3 · FAIL 0"
+expect ok-php 0 "통과 4 · FAIL 0"
 assert_contains "$OUT" "testNonStringAccessTokenIsRejected — 2 통과" "[ok-php] 데이터 셋 둘 — 출력: $OUT"
 run --lang rust --report "$REP/rust-pass.txt" --root "$REPO"
 expect ok-rust 0 "통과 2 · FAIL 0"
@@ -194,7 +194,7 @@ assert_contains "$OUT" "dump       io.x.TokenTest#reachableObjectsDoNotRenderSec
 assert_contains "$OUT" "bearer     io.x.TokenTest#bearerCanonicalTable" "[axes] java bearer 정본 표 행(레인 표) — 출력: $OUT"
 # 레인 표 — 표 함수가 AXES 보다 많으면 · 표가 없으면 판정 불가다(그 표의 시험은 실행 여부를 아무도 안 본다).
 run --lang go --list --root "$FIX/repo-lane-extra"
-expect lane-extra 2 "\`lc_…_canary() {\` 표 함수가 3 인데 이 검사가 아는 레인 축은 2"
+expect lane-extra 2 "\`lc_…_canary() {\` 표 함수가 4 인데 이 검사가 아는 레인 축은 3"
 run --lang go --list --root "$FIX/repo-nolane"
 expect lane-missing 2 "레인 카나리아 표를 못 읽었다: scripts/test/test-lane-canaries.sh"
 # 템플릿 제목의 `${…}` 는 정의 때 값이 박힌다(`for` 안의 `it.each(…)(\`%s — ${route} …\`)`) — 리터럴로 읽으면 건강한
@@ -218,6 +218,7 @@ run --lang go --report "$REP/go-helper-nosub.txt" --root "$FIX/repo-gohelper"
 expect gohelper-nosub 1 "서브테스트가 하나도 보고되지 않았다"
 run --lang php --list --root "$REPO"
 assert_contains "$OUT" "empty      php/tests/Unit/TokenTest.php::testEmptyKeySetKeepsTheCache" "[axes] php 빈 키셋 행 — 출력: $OUT"
+assert_contains "$OUT" "status200  php/tests/Unit/TokenTest.php::testNon200SuccessStatusFailsAsTheLanesErrorResponse" "[axes] php 성공 상태 200 행(레인 표) — 출력: $OUT"
 # 서브테스트를 전부 뺀 필터(-skip 'TestX/.') — 부모의 PASS 만 남는다.
 run --lang go --report "$REP/go-subfiltered.txt" --root "$REPO"
 expect leg-go-subfiltered 1 "서브테스트가 하나도 보고되지 않았다"

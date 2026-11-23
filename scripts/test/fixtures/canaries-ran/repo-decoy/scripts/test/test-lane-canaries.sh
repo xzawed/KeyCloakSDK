@@ -10,3 +10,8 @@ lc_bearer_canary() {
     node) printf '%s\n' "node/test/unit/d.test.ts|it.each(ROWS)('%s — 생성 때 확보한다'" ;;
   esac
 }
+lc_status200_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}

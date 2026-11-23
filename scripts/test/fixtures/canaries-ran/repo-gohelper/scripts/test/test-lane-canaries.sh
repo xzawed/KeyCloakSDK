@@ -10,3 +10,8 @@ lc_bearer_canary() {
     go) printf '%s\n' 'go/h_test.go|func TestViaHelper(' ;;
   esac
 }
+lc_status200_canary() {
+  case "$1" in
+    none) ;;
+  esac
+}

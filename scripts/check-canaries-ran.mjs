@@ -11,7 +11,7 @@
 //  · 카나리아 목록은 가드의 표 함수(AXES)를 **그대로 실행**해 얻는다 — 함수 정의만 떼어 sh 로 부른다(사본을 두지 않는다).
 //    가드에서 `sd_canary_ok "$ROOT/…` 를 부르는 자리 수가 AXES 수와 다르면 판정 불가다 — 새 카나리아 축이 이 검사를
 //    조용히 비켜 가지 않게. 가드 **밖**의 레인 카나리아 표(`scripts/test/test-lane-canaries.sh` — 덤프 걷기 · bearer
-//    정본 표)도 같은 방식이고, 그 파일은 `lc_…_canary() {` 정의 수가 그 축 수와 같아야 한다.
+//    정본 표 · 성공 상태 200)도 같은 방식이고, 그 파일은 `lc_…_canary() {` 정의 수가 그 축 수와 같아야 한다.
 //  · 카나리아 줄 → 그 줄이 선언한 테스트(RESOLVE) → 보고서 항목. 선언 이름(node·ruby 는 제목 리터럴)이 **카나리아 문자열의
 //    자리와 겹쳐야** 한다 — 아니면 같은 줄의 다른 테스트를 카나리아로 읽는다. go 만 본문 줄(표 행 · 단언 호출)을 받고 그
 //    줄을 감싼 최상위 `func Test…` 로 간다. 항목은 정확히 맞춘다: 클래스(JVM·.NET·python) · describe 경로(node) · 모듈 경로
@@ -51,7 +51,7 @@ import { spawnSync } from 'node:child_process'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const GUARD = 'scripts/test/test-security-defaults.sh'
-// 가드 **밖**의 레인 카나리아 표(덤프 걷기 · bearer 정본 표) — 가드에 두면 아홉 행렬의 W1 이 그 행을 손 목록에 요구한다.
+// 가드 **밖**의 레인 카나리아 표(덤프 걷기 · bearer 정본 표 · 성공 상태 200) — 가드에 두면 아홉 행렬의 W1 이 그 행을 손 목록에 요구한다.
 // 그 파일 머리 주석이 까닭을 적는다. 축 수 대조는 호출 자리가 아니라 `lc_…_canary() {` 정의 수로 한다.
 export const LANE = 'scripts/test/test-lane-canaries.sh'
 
@@ -68,6 +68,7 @@ export const AXES = [
   { axis: 'empty', rows: 'sd_empty_canary', shape: 'file|canary' },
   { axis: 'dump', src: LANE, rows: 'lc_dump_canary', shape: 'file|canary' },
   { axis: 'bearer', src: LANE, rows: 'lc_bearer_canary', shape: 'file|canary' },
+  { axis: 'status200', src: LANE, rows: 'lc_status200_canary', shape: 'file|canary' },
 ]
 const CALL_SITE = /^[^#]*\bsd_canary_ok\s+"\$ROOT\//
 // 정의 수는 꼴을 너그럽게 센다(`이름 () {` · `function 이름 {`) — 정식 꼴만 세면 공백 하나로 새 표가 축 수 대조를 비켜 갔다

@@ -190,6 +190,10 @@ private fun trxExpectCode(
 
 private fun trxClosedPort(): Int = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }
 
+// 200 이 아닌 2xx — 토큰 응답(RFC 6749 §5.1)과 introspection 응답(SDK 의 규칙 — RFC 7662 §2.2 는 상태를 정하지 않고 그 예와
+// Keycloak 이 200 이다)의 성공은 200 뿐이다.
+private val TRX_NON_200_SUCCESS = listOf(201, 202, 203, 204, 206, 299)
+
 internal class TokenResponseClassTest {
     private lateinit var server: HttpServer
     private lateinit var handlers: ExecutorService
@@ -753,6 +757,107 @@ internal class TokenResponseClassTest {
             trxExpect("S1 200 배열 본문", call(block = cc), KeycloakAuthException::class.java, "Malformed auth response", wrong)
             tokens(TrxReply(200, "text/plain", TRX_B1.toByteArray()))
             trxExpect("S1 200 text/plain", call(block = cc), KeycloakAuthException::class.java, "Malformed auth response", wrong)
+            assertNone(wrong)
+        }
+
+    // ───────────── 200 이 아닌 성공 상태(등록부 token-success-status-range-divergent · Java 동형) ─────────────
+
+    // 200 이 아닌 성공 상태(201–299)의 토큰 · introspection 응답은 200 이면 쓰일 본문이어도 그 레인의 오류 응답이다 — 같은 본문을 실은 400 과
+    // 같은 타입 · 같은 메시지 꼴(상태) · 코드 없음이고, 토큰을 돌려주지도 캐시하지도 않으며 admin 요청을 보내지 않는다(아홉 언어의 규칙).
+    // 400 행이 그 기준이다(바뀌지 않는다). 204 는 본문 없이 온다(JDK 서버가 본문을 떼어 낸다) — 판정은 상태가 한다. 대조: 같은 본문의 200 은
+    // 모든 레인에서 쓰이고, 201 이 OAuth error 를 실으면 400 이 그것을 실었을 때처럼 코드를 싣는다.
+    @Test
+    fun `non-200 success status fails as the lanes error response`() =
+        runTest(timeout = 120.seconds) {
+            val wrong = mutableListOf<String>()
+            val table = mutableListOf<String>()
+            val good = trxToken("AT-good")
+            val active = """{"active":true,"username":"svc","client_id":"app"}"""
+            for (status in listOf(400) + TRX_NON_200_SUCCESS) {
+                for ((label, op, prefix) in listOf(
+                    Triple("S1", cc, "Client credentials failed: HTTP "),
+                    Triple("S2", prov, "Client credentials failed: HTTP "),
+                    Triple("refresh", rf, "Token refresh failed: HTTP "),
+                    Triple("code exchange", codeExchange, "Authorization code exchange failed: HTTP "),
+                )) {
+                    tokens(trxJson(status, good))
+                    val o = call(block = op)
+                    table += "$label $status → $o"
+                    trxExpect("$label $status", o, KeycloakAuthException::class.java, "$prefix$status", wrong)
+                    trxExpectCode("$label $status", o, null, wrong)
+                }
+                introspectReply = trxJson(status, active)
+                val inspected = call(block = introspect)
+                table += "IN $status → $inspected"
+                trxExpect("IN $status", inspected, KeycloakAuthException::class.java, "Introspection failed: HTTP $status", wrong)
+                trxExpectCode("IN $status", inspected, null, wrong)
+                tokens(trxJson(status, good))
+                val s5 = call(block = admin)
+                table += "S5 $status → $s5 · admin ${adminHits()}"
+                trxExpect("S5 $status", s5, KeycloakAuthException::class.java, "Admin token request failed: HTTP $status", wrong)
+                trxExpectCode("S5 $status", s5, null, wrong)
+                if (adminHits() != 0) wrong += "S5 $status: admin 요청이 나갔다 — ${adminHits()}"
+            }
+            // 거부한 토큰은 캐시되지 않는다 — 같은 공급자 · 같은 admin 파사드의 다음 호출이 토큰 엔드포인트에 다시 가서 200 의 토큰을 쓴다
+            for (status in TRX_NON_200_SUCCESS) {
+                tokens(trxJson(status, good), trxJson(200, trxToken("AT-next")))
+                KeycloakClient.create(config()).use { kc ->
+                    val provider = ClientCredentialsTokenProvider(fetch = { kc.auth.clientCredentialsToken() })
+                    val first = trxOutcome { provider.accessToken() }
+                    val second = trxOutcome { provider.accessToken() }
+                    if (first.thrown !is KeycloakAuthException || second.value != "AT-next" || grants().size != 2) {
+                        wrong += "S2 $status 뒤: $first · $second · grants ${grants()}"
+                    }
+                }
+                tokens(trxJson(status, good), trxJson(200, trxToken("AT-next")))
+                KeycloakClient.create(config()).use { kc ->
+                    val first = trxOutcome { admin(kc) }
+                    val hitsAfterFirst = adminHits()
+                    val second = trxOutcome { admin(kc) }
+                    if (first.thrown !is KeycloakAuthException ||
+                        hitsAfterFirst != 0 ||
+                        second.value != "alice" ||
+                        adminHits() != 1 ||
+                        grants().size != 2
+                    ) {
+                        wrong += "S5 $status 뒤: $first · $second · grants ${grants()} · admin ${adminHits()}"
+                    }
+                }
+            }
+            // 201 이 OAuth error 를 실으면 400 이 실었을 때와 같다 — 설명 「d」 · 코드 invalid_grant(introspection 은 상태 · invalid_token)
+            for ((label, op, message) in listOf(
+                Triple("S1", cc, "Client credentials failed: d"),
+                Triple("S2", prov, "Client credentials failed: d"),
+                Triple("refresh", rf, "Token refresh failed: d"),
+                Triple("code exchange", codeExchange, "Authorization code exchange failed: d"),
+            )) {
+                tokens(trxJson(201, TRX_B1))
+                val b1 = call(block = op)
+                trxExpect("$label 201 B1", b1, KeycloakAuthException::class.java, message, wrong)
+                trxExpectCode("$label 201 B1", b1, "invalid_grant", wrong)
+            }
+            introspectReply = trxJson(201, TRX_IN_B1)
+            val inB1 = call(block = introspect)
+            trxExpect("IN 201 B1", inB1, KeycloakAuthException::class.java, "Introspection failed: HTTP 201", wrong)
+            trxExpectCode("IN 201 B1", inB1, "invalid_token", wrong)
+            tokens(trxJson(201, TRX_B1))
+            val adminB1 = call(block = admin)
+            trxExpect("S5 201 B1", adminB1, KeycloakAuthException::class.java, "Admin token request failed: HTTP 201", wrong)
+            trxExpectCode("S5 201 B1", adminB1, "invalid_grant", wrong)
+            if (adminHits() != 0) wrong += "S5 201 B1: admin 요청이 나갔다 — ${adminHits()}"
+            // 대조 — 같은 본문의 200 은 모든 레인에서 쓰인다(admin 요청 하나)
+            for ((label, op) in listOf("S1" to cc, "S2" to prov, "refresh" to rf, "code exchange" to codeExchange)) {
+                tokens(trxJson(200, good))
+                val ok = call(block = op)
+                if (ok.value != "AT-good") wrong += "$label 200: 토큰을 써야 한다 — $ok"
+            }
+            introspectReply = trxJson(200, active)
+            val inOk = call(block = introspect)
+            if (inOk.value != "svc") wrong += "IN 200: 활성으로 읽어야 한다 — $inOk"
+            tokens(trxJson(200, good))
+            val sent = call(block = admin)
+            if (sent.value != "alice" || adminHits() != 1) wrong += "S5 200: admin 요청 하나여야 한다 — $sent · admin ${adminHits()}"
+            println("[TokenResponseClassTest non-200 success status]\n  " + table.joinToString("\n  "))
             assertNone(wrong)
         }
 }

@@ -467,4 +467,148 @@ final class OAuthErrorCodeEchoTest extends TestCase
         }
         self::fail('introspection did not fail');
     }
+
+    // --- only 200 is a success ---------------------------------------------------------------------------------------------
+    // A token or introspection response is a success only at HTTP 200 (RFC 6749 §5.1; for introspection the SDK's rule — RFC
+    // 7662 §2.2 names no status, its examples and Keycloak answer 200), in all nine languages:
+    // any other 2xx fails as a 400 with the same body does — the same type and message (its status in it), no token, nothing
+    // cached, no admin request, no `active` (registry `token-success-status-range-divergent`). Before (main c4b5096a) the three
+    // league grants, introspection and the admin grant took any 2xx as a success; the provider already took only 200.
+
+    /** JWT-shaped, so the admin grant's parser reads it (`BearerToken::grantMiddleware`, then fschmtt). */
+    private const GOOD_AT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl';
+    private const GOOD_TOKEN = '{"access_token":"' . self::GOOD_AT . '","token_type":"Bearer","expires_in":300}';
+    private const GOOD_INTROSPECT = '{"active":true,"username":"svc"}';
+    private const NON_200_SUCCESS = [201, 202, 203, 204, 206, 299];
+
+    /**
+     * Every lane against the same body at 400 (pinned — what any other status is held to), at 200 (its success), at each other
+     * 2xx, and at 201 carrying `error` (held to the 400 carrying it): the same type, message and code, the status in the message
+     * where the 400's has one. A 204 carries no body, so it is held to the 400 without one. No admin request goes out but at
+     * 200, and the same provider and facade then ask again at 200.
+     */
+    public function testNon200SuccessStatusFailsAsTheLanesErrorResponse(): void
+    {
+        // [the good body, no body, B1] at 400 — the type is KeycloakAuthError in each.
+        $at400 = [
+            'client_credentials' => ['token request rejected', 'token endpoint returned unexpected response', 'token request rejected: invalid_grant'],
+            'provider' => ['client-credentials failed', 'client-credentials failed', 'client-credentials failed'],
+            'refresh' => ['token request rejected', 'token endpoint returned unexpected response', 'token request rejected: invalid_grant'],
+            'exchange_code' => ['token request rejected', 'token endpoint returned unexpected response', 'token request rejected: invalid_grant'],
+            'introspect' => ['introspection failed', 'introspection failed', 'introspection failed'],
+            'admin' => ['admin token request failed: HTTP 400', 'admin token request failed: HTTP 400', 'admin token request failed: HTTP 400 (invalid_grant)'],
+        ];
+        $wrong = [];
+        $table = [];
+        foreach ($at400 as $lane => [$good, $empty, $carrying]) {
+            $code = $lane === 'introspect' ? 'invalid_token' : 'invalid_grant';
+            $success = match ($lane) {
+                'introspect' => 'success(true)',
+                'admin' => 'success(alice)',
+                default => 'success(' . self::GOOD_AT . ')',
+            };
+            $cells = [
+                [400, 'good', "KeycloakAuthError($good) code=null"],
+                [400, 'empty', "KeycloakAuthError($empty) code=null"],
+                [200, 'good', $success],
+            ];
+            foreach (self::NON_200_SUCCESS as $status) {
+                $cells[] = [$status, 'good', str_replace('HTTP 400', "HTTP $status", "KeycloakAuthError(" . ($status === 204 ? $empty : $good) . ') code=null')];
+            }
+            $cells[] = [400, 'B1', "KeycloakAuthError($carrying) code=$code"];
+            $cells[] = [201, 'B1', str_replace('HTTP 400', 'HTTP 201', "KeycloakAuthError($carrying) code=$code")];
+            foreach ($cells as [$status, $body, $expected]) {
+                $label = "$status $body $lane";
+                $call = self::laneCall($lane);
+                self::answer($status, $body);
+                $got = self::outcome($call);
+                $table[] = "$label → $got";
+                if ($got !== $expected) {
+                    $wrong[] = "$label: $got ≠ $expected";
+                }
+                $admin = \count(array_filter(self::requestPaths(), static fn (string $p): bool => str_starts_with($p, '/admin/')));
+                if ($admin !== ($status === 200 && $lane === 'admin' ? 2 : 0)) {
+                    $wrong[] = "$label: $admin admin requests";
+                }
+                // Nothing was cached — the same provider and the same facade ask the IdP again, and use what a 200 gives.
+                if ($status !== 200 && ($lane === 'provider' || $lane === 'admin')) {
+                    self::answer(200, 'good');
+                    $again = self::outcome($call);
+                    $grants = \count(array_filter(self::requestPaths(), static fn (string $p): bool => str_ends_with($p, '/token')));
+                    if ($again !== $success || $grants !== 1) {
+                        $wrong[] = "$label: then 200 gave $again after $grants token requests";
+                    }
+                }
+            }
+        }
+        self::assertSame([], $wrong, implode("\n", $table));
+    }
+
+    /** The IdP answers the token and introspection requests at `$status` — the good bodies, none, or B1's `error` alone. */
+    private static function answer(int $status, string $body): void
+    {
+        self::state(['status' => $status, 'bodies' => match ($body) {
+            'good' => ['token' => self::GOOD_TOKEN, 'introspect' => self::GOOD_INTROSPECT],
+            'empty' => ['token' => '', 'introspect' => ''],
+            default => ['token' => '{"error":"invalid_grant","error_description":"d"}', 'introspect' => '{"error":"invalid_token"}'],
+        }]);
+        @unlink(self::$dir . '/requests.log');
+    }
+
+    /**
+     * A lane on a new client, as a call that can be made again on the same provider or facade. The code exchange sends no
+     * nonce, so a token response without an id_token is its success.
+     *
+     * @return \Closure(): mixed
+     */
+    private static function laneCall(string $lane): \Closure
+    {
+        $cfg = new KeycloakConfig(serverUrl: 'http://127.0.0.1:' . self::$port, realm: 'r', clientId: 'c', clientSecret: self::SECRET);
+        $kc = KeycloakClient::create($cfg);
+        $factory = new HttpFactory();
+        $provider = new ClientCredentialsTokenProvider($cfg, new OidcEndpoints($cfg), new \GuzzleHttp\Client(), $factory, $factory);
+
+        return match ($lane) {
+            'client_credentials' => static fn (): mixed => $kc->auth()->clientCredentialsToken()->accessToken,
+            'provider' => static fn (): mixed => $provider->getToken(),
+            'refresh' => static fn (): mixed => $kc->auth()->refresh(self::REFRESH)->accessToken,
+            'exchange_code' => static fn (): mixed => $kc->auth()->exchangeCode(self::CODE, self::VERIFIER, null, 'http://localhost/cb')->accessToken,
+            'introspect' => static fn (): mixed => $kc->auth()->introspect(self::TOKEN)->active,
+            'admin' => static fn (): mixed => $kc->admin()->users()->get('u1')->getUsername(),
+            default => throw new \LogicException($lane),
+        };
+    }
+
+    /**
+     * What a call came to, as one line — its value, or the SDK error's class, message and `oauthError`.
+     *
+     * @param \Closure(): mixed $call
+     */
+    private static function outcome(\Closure $call): string
+    {
+        try {
+            $value = $call();
+        } catch (KeycloakException $e) {
+            $code = $e instanceof KeycloakAuthError ? $e->oauthError ?? 'null' : '-';
+
+            return (new \ReflectionClass($e))->getShortName() . '(' . $e->getMessage() . ") code=$code";
+        }
+
+        return 'success(' . (\is_bool($value) ? ($value ? 'true' : 'false') : (\is_string($value) ? $value : get_debug_type($value))) . ')';
+    }
+
+    /** @return list<string> the path of every request since the last {@see self::answer()} */
+    private static function requestPaths(): array
+    {
+        $out = [];
+        $lines = @file(self::$dir . '/requests.log', FILE_IGNORE_NEW_LINES);
+        foreach ($lines === false ? [] : $lines as $line) {
+            $row = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            self::assertIsArray($row);
+            self::assertIsString($row[0] ?? null);
+            $out[] = $row[0];
+        }
+
+        return $out;
+    }
 }

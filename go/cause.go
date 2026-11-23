@@ -246,6 +246,23 @@ func (s *belowHTTPSlot) fullyArrived() bool {
 	return s != nil && s.arrived.Load() && !s.cut.Load()
 }
 
+// at200 is what a grant takes from x/oauth2's tok and err for the call s marks, once the status has decided: a token
+// response is a success only at 200 (RFC 6749 §5.1 — registry token-success-status-range-divergent). x/oauth2 takes any
+// 2xx as one (internal/token.go failureStatus), so a 201 carrying a usable token was handed out, cached by a provider and
+// sent on admin requests (measured on main c4b5096a at 201 · 202 · 203 · 206 · 299). A token response that arrived in full
+// at another 2xx fails as x/oauth2 fails a 400 with the same body — a *oauth2.RetrieveError with that status, which
+// grantFailed turns into the 400's *AuthError — unless x/oauth2 returned one itself: the body carried an OAuth `error`, and
+// that error already names the status and the code. A response that did not arrive in full, and every other status, keep
+// what x/oauth2 returned (grantFailed classifies them as before; x/oauth2 already fails a 3xx).
+func (s *belowHTTPSlot) at200(tok *oauth2.Token, err error) (*oauth2.Token, error) {
+	status := int(s.status.Load())
+	var re *oauth2.RetrieveError
+	if !non200Success(status) || errors.As(err, &re) || (err != nil && !s.fullyArrived()) {
+		return tok, err
+	}
+	return nil, &oauth2.RetrieveError{Response: &http.Response{StatusCode: status}}
+}
+
 // withBelowHTTP marks ctx and returns its slot.
 func withBelowHTTP(ctx context.Context) (context.Context, *belowHTTPSlot) {
 	s := new(belowHTTPSlot)
@@ -440,13 +457,18 @@ func loginStatusError(status int, message, typ string, sent ...string) *AuthErro
 //     auth-2xx-error-code-divergent). It takes the form of a status that carries an error (loginStatusError) and carries
 //     the code in OAuthError too — unlike loginError, it read the body whole, so which member is the code can be told.
 //   - Then gocloak's own failure (loginError).
+//   - Then a 2xx other than 200: a token response is a success only at 200 (RFC 6749 §5.1 — registry
+//     token-success-status-range-divergent), and gocloak takes any status below 400, so a 201 carrying a usable token was
+//     cached and sent on admin requests (measured on main c4b5096a). It fails as a 400 with the same body does — the
+//     status, and no code: a body that named one was the first case.
 //   - Then a JWT without an access token: gocloak reports a non-2xx it can still unmarshal as success — a 3xx surfaced by
 //     noFollowRedirect, or any body without an access_token, yields a zero-value JWT and a nil error. Handing that upward
 //     would install an **empty bearer token** on every admin request. Measured: a 302 on the token endpoint returned
 //     ("", nil) before this check.
 //
-// The last two carry the code an error-status body named, as the grants do at any status (kept.carried — registry
-// oauth-error-code-surface-divergent: OAuthError was empty on a 400 · 401 while the 2xx form above carried it).
+// gocloak's failure and the empty JWT carry the code an error-status body named, as the grants do at any status
+// (kept.carried — registry oauth-error-code-surface-divergent: OAuthError was empty on a 400 · 401 while the 2xx form above
+// carried it).
 func loginRefused(jwt *gocloak.JWT, err error, capped *atomic.Bool, strict *bodyRefusal, below *belowHTTPSlot,
 	kept *loginBody, sent ...string) error {
 	if found := kept.found.Load(); found != nil {
@@ -460,6 +482,9 @@ func loginRefused(jwt *gocloak.JWT, err error, capped *atomic.Bool, strict *body
 	}
 	if err != nil {
 		return kept.carried(loginError(err, capped, strict, below, sent...), sent...)
+	}
+	if status := int(below.status.Load()); non200Success(status) {
+		return loginStatusError(status, "", fmt.Sprintf("%T", jwt), sent...)
 	}
 	if jwt == nil || jwt.AccessToken == "" {
 		return kept.carried(&AuthError{Msg: "client-credentials login returned no access token"}, sent...)

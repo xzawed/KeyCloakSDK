@@ -17,6 +17,9 @@
   auth-2xx-error-code-divergent) — 4xx 가 그 `error` 를 실었을 때와 같은 판정이고, 본문의 나머지
   (`access_token` · `active`)는 쓰지 않는다. 수정 전: B1 은 코드 없는 「없음」 판정, B2 는 그 토큰을
   받아들이고(admin 은 그것으로 요청을 보냈다) introspection 은 활성이었다(실측 2026-11-20).
+- 성공은 200 하나다(등록부 token-success-status-range-divergent) — 200 이 아닌 2xx 는 그 레인이 같은
+  본문의 400 에 내는 판정이고 그 본문은 보지 않는다. 수정 전: python-keycloak 이 받는 201 은 다섯
+  호출 모두 성공, 204 는 빈 본문의 「없음」 판정이었다(실측 2026-11-23).
 
 S5 의 기대는 손으로 적지 않는다 — 같은 칸에서 S1 이 낸 판정과 대조한다.
 """
@@ -237,7 +240,9 @@ S1: dict[str, _Verdict] = {
     "r16c 200 gzip with a bad CRC": _auth("token response could not be decoded"),
     "r16i 200 gzip with a bad length": _auth("token response could not be decoded"),
     "r16r 200 raw deflate": OK,
-    "r13c 201 unpaired surrogate": _auth("token response holds an unpaired surrogate escape"),
+    # 201 은 성공이 아니다(등록부 token-success-status-range-divergent) — 그 본문은 보지 않고 상태가
+    # 판정한다(오류 상태의 본문처럼). 전에는 2xx 라 본문을 검사해 서로게이트로 거부했다.
+    "r13c 201 unpaired surrogate": _auth(f"{_HTTP} 201"),
     "r13d 200 unpaired surrogate after 70 KB": _auth(
         "token response holds an unpaired surrogate escape"
     ),
@@ -353,10 +358,13 @@ class _Idp:
     logout: _Answer = (204, _JSON, b"")
     url: str = ""
     admin: list[str] = field(default_factory=list)
+    grants: int = 0  # 토큰 엔드포인트가 받은 요청 수
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def answer(self, method: str, path: str) -> _Answer:
         if path == _TOKEN:
+            with self.lock:
+                self.grants += 1
             return self.token
         if path == _INTROSPECT:
             return self.introspection
@@ -444,8 +452,10 @@ def _verdict(err: BaseException | None) -> _Verdict:
     return (type(err).__name__, str(err))
 
 
-#: python-keycloak 의 그랜트가 성공으로 받는 상태(`raise_error_from_response` 의 기본값).
-_GRANT_SUCCESS = (200, 201, 204)
+#: 그랜트의 성공 상태 — 200 하나다. python-keycloak 은 201 · 204 도 받지만
+#: (`raise_error_from_response` 의 기본값) SDK 는 그것을 오류 상태로 판정한다(등록부
+#: token-success-status-range-divergent).
+_GRANT_SUCCESS = (200,)
 
 
 def _as_admin_grant(err: BaseException | None, status: int) -> _Verdict:
@@ -626,6 +636,100 @@ async def test_success_status_oauth_error_takes_the_same_verdict_on_refresh_and_
     assert _verdict(err) == S1[cell]
     if err is None:
         assert result.access_token == "AT-ok-token"
+
+
+# --- 성공은 200 하나다(등록부 token-success-status-range-divergent) -------------------------------
+
+#: 200 이 아닌 2xx — python-keycloak 은 그중 201 · 204 를 성공으로 받는다
+#: (`raise_error_from_response` 의 기본값 200 · 201 · 204). 204 에는 본문이 없다
+#: (RFC 9110 §15.3.5) — 빈 본문으로 답한다.
+_NON_200_SUCCESS = (201, 202, 203, 204, 206, 299)
+
+
+def _status_verdict(call: str, status: int, body: str) -> _Verdict:
+    """`call` 이 `status` 의 응답에 내야 할 판정 — 200 의 좋은 본문이면 성공, 아니면 그 레인이 오류
+    상태에 내는 것이다: `HTTP <상태>` 와 본문의 코드(`B1` — 토큰 엔드포인트는 `invalid_grant`,
+    introspection 은 `invalid_token`). admin 자체 그랜트의 오류 상태는 코드를 메시지에 싣지 않는다
+    (`lower.grant_failure`)."""
+    if status == 200 and body == "good":
+        return OK
+    code = None if body == "good" else "invalid_token" if call == "introspect" else "invalid_grant"
+    shown = "" if code is None or call == "admin" else f" ({code})"
+    return _auth(f"{_HTTP} {status}{shown}", code)
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_non_200_success_status_fails_as_the_lanes_error_response(lane: str) -> None:
+    """토큰 · introspection 응답의 성공은 200 하나다(토큰은 RFC 6749 §5.1, introspection 은 SDK
+    의 규칙 — RFC 7662 §2.2 는 상태를 정하지 않고 그 예와 Keycloak 이 200 이다 · 아홉 언어,
+    등록부 token-success-status-range-divergent). 200 이 아닌 2xx 는 그 레인이 같은
+    본문의 400 에 내는 판정이다 — `KeycloakAuthError`(`HTTP <상태>`)이고, 본문의 `error` 는
+    400 이 실었을 때처럼 싣는다(B1). 토큰도 introspection 결과도 돌려주지 않고, admin 은 요청을
+    보내지 않으며 그 토큰을 캐시하지 않는다 — 같은 클라이언트의 다음 호출이 토큰 엔드포인트에
+    다시 가서 200 의 토큰으로 요청을 보낸다. 400 행이 그 기준이고 200 행이 대조군이다.
+    수정 전(실측 2026-11-23, 두 미러 같다): 201 은 다섯 호출 모두 성공이었다(admin 은 그
+    토큰으로 요청을 보냈다). 204 는 python-keycloak 이 빈 본문을 `{}` 로 돌려줘 「없음」
+    판정(그랜트 · admin 은 `token response has no usable access_token`, introspection 은
+    `introspection response has no active`)이었고, 201 의 B1 은 admin 메시지에 코드를 실었다.
+    202 · 203 · 206 · 299 는 이미 오류 상태였다."""
+    calls: dict[str, Callable[[Any], Any]] = {
+        "client_credentials_token": lambda c: c.auth.client_credentials_token(),
+        "refresh": lambda c: c.auth.refresh("rt-1"),
+        "exchange_code": lambda c: c.auth.exchange_code("code-1", "http://localhost/cb", "v" * 43),
+        "introspect": lambda c: c.auth.introspect(_INTROSPECTED),
+        "admin": lambda c: c.admin.users.get("u1"),
+    }
+    rows = [(status, "good") for status in (200, 400, *_NON_200_SUCCESS)] + [
+        (400, "B1"),
+        (201, "B1"),
+    ]
+    wrong: list[str] = []
+    for status, body in rows:
+        for name, act in calls.items():
+            intro = name == "introspect"
+            sent = (
+                (_B1_INTRO if intro else _B1_TOKEN)
+                if body == "B1"
+                else _GOOD_INTRO
+                if intro
+                else _GOOD_TOKEN
+            )
+            answer: _Answer = (status, _JSON, b"" if status == 204 else sent)
+            token, introspection = (
+                (TOKEN_CELLS["ok"], answer) if intro else (answer, INTROSPECTION_CELLS["ok"])
+            )
+            again: tuple[Any, Any] | None = None
+            with _fake_idp(token, introspection) as idp:
+                async with _client(lane, idp) as client:
+                    result, err = await _attempt(lane, client, act)
+                    admin_first = idp.admin_requests()
+                    if name == "admin" and err is not None:
+                        idp.token = TOKEN_CELLS["ok"]
+                        again = await _attempt(lane, client, act)
+                grants, admin_all = idp.grants, idp.admin_requests()
+            label = f"{lane} {status} {body} {name}"
+            got, want = _verdict(err), _status_verdict(name, status, body)
+            if got != want:
+                wrong.append(f"{label}: {got} ≠ {want}")
+            elif err is None and name == "admin":
+                if result != {"id": "u1"} or admin_first != ["GET /admin/realms/r/users/u1"]:
+                    wrong.append(f"{label}: 대조군 — {result} · admin {admin_first}")
+            elif err is None:
+                value = result.active if intro else result.access_token
+                if value != (True if intro else "AT-ok-token"):
+                    wrong.append(f"{label}: 대조군 — {value!r}")
+            elif name == "admin" and (
+                admin_first != []
+                or again != ({"id": "u1"}, None)
+                or grants != 2
+                or len(admin_all) != 1
+            ):
+                wrong.append(
+                    f"{label}: admin {admin_first} · 다음 호출 {again} · 그랜트 {grants} · "
+                    f"{admin_all}"
+                )
+
+    assert not wrong, f"{len(wrong)} 칸:\n" + "\n".join(wrong)
 
 
 # --- 짝 없는 서로게이트 판독기 ------------------------------------------------------------------

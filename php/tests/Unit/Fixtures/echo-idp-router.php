@@ -12,6 +12,10 @@ declare(strict_types=1);
  * token POST answers `application/json` `{"error": …}` — at 400 unless `"status"` sets another, with `error_description`
  * when `"description"` is a string — and is logged to `requests.log` as `[path, sent form fields]`. fschmtt asks
  * `/admin/serverinfo` before its first resource call — that is where its grant happens.
+ *
+ * `{"bodies": {"token": "…", "introspect": "…"}, "status"?: <int>}` answers those bodies as they are instead — the token POST
+ * and the introspection at that status (200 when absent) — and the admin user `u1` (`{"id":"u1","username":"alice"}`); every
+ * request is logged then, the admin ones too (with no form fields).
  */
 
 $dir = getenv('EI_STATE');
@@ -23,6 +27,34 @@ if (!is_string($dir) || $dir === '') {
 $uri = $_SERVER['REQUEST_URI'] ?? '/';
 $path = parse_url(is_string($uri) ? $uri : '/', PHP_URL_PATH);
 $path = is_string($path) ? $path : '/';
+
+$state = json_decode((string) file_get_contents($dir . '/state.json'), true);
+$state = is_array($state) ? $state : [];
+if (is_array($state['bodies'] ?? null)) {
+    parse_str((string) file_get_contents('php://input'), $sent);
+    file_put_contents($dir . '/requests.log', json_encode([$path, $sent], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
+    $kind = match (true) {
+        str_ends_with($path, '/protocol/openid-connect/token') => 'token',
+        str_ends_with($path, '/protocol/openid-connect/token/introspect') => 'introspect',
+        default => null,
+    };
+    $body = $kind === null ? null : $state['bodies'][$kind] ?? null;
+    if (is_string($body)) {
+        http_response_code(is_int($state['status'] ?? null) ? $state['status'] : 200);
+        header('Content-Type: application/json');
+        echo $body;
+    } elseif ($path === '/admin/serverinfo') {
+        header('Content-Type: application/json');
+        echo '{"systemInfo":{"version":"26.6.0"}}';
+    } elseif ($path === '/admin/realms/r/users/u1') {
+        header('Content-Type: application/json');
+        echo '{"id":"u1","username":"alice"}';
+    } else {
+        http_response_code(404);
+    }
+
+    return;
+}
 
 if (!str_ends_with($path, '/protocol/openid-connect/token')) {
     if ($path === '/admin/serverinfo') {
@@ -44,8 +76,6 @@ if (is_string($auth) && str_starts_with($auth, 'Basic ')) {
 }
 file_put_contents($dir . '/requests.log', json_encode([$path, $sent], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
 
-$state = json_decode((string) file_get_contents($dir . '/state.json'), true);
-$state = is_array($state) ? $state : [];
 if (array_key_exists('fixed', $state)) {
     $error = $state['fixed'];
 } else {

@@ -10,3 +10,8 @@ lc_bearer_canary() {
     java) printf '%s\n' 'java/core/src/test/java/io/x/TokenTest.java|void bearerCanonicalTable(' ;;
   esac
 }
+lc_status200_canary() {
+  case "$1" in
+    php) printf '%s\n' 'php/tests/Unit/TokenTest.php|public function testNon200SuccessStatusFailsAsTheLanesErrorResponse(' ;;
+  esac
+}

@@ -33,13 +33,13 @@ const tokenResponseMaxBytes = 1048576
 // Its text is the SDK's own; it quotes nothing the server sent.
 var errTokenResponseTooLarge = fmt.Errorf("token response exceeds %d bytes", tokenResponseMaxBytes)
 
-// errTokenResponseNotUTF8 is what a strict body's Read returns once a 2xx token response has a byte sequence that is not
+// errTokenResponseNotUTF8 is what a strict body's Read returns once a 200 token response has a byte sequence that is not
 // UTF-8 (RFC 8259 §8.1). encoding/json — x/oauth2's and resty's decoder — turns such a sequence into U+FFFD without an
 // error, so the grants returned a token the IdP never issued as a success (measured 2026-11-10). The response arrived,
 // so the class is *AuthError (registry token-response-class-divergent, decision D1).
 var errTokenResponseNotUTF8 = errors.New("token response is not valid UTF-8")
 
-// errTokenResponseUnpairedSurrogate is what a strict body's Read returns once a 2xx token response, read to its end, holds
+// errTokenResponseUnpairedSurrogate is what a strict body's Read returns once a 200 token response, read to its end, holds
 // a \u escape of a UTF-16 surrogate without its pair — in a value or a member name (RFC 8259 §8.2 allows the grammar, I-JSON
 // §2.1 forbids it). encoding/json turns it into U+FFFD without an error, so the grants returned a token whose bytes the IdP
 // never sent (measured 2026-11-11). The response arrived, so the class is *AuthError (registry
@@ -91,7 +91,7 @@ func (r *bodyRefusal) reason() error {
 	return nil
 }
 
-// strictKey marks the context of a token request whose body must be usable as it arrived: a 2xx body must be UTF-8 without
+// strictKey marks the context of a token request whose body must be usable as it arrived: a 200 body must be UTF-8 without
 // an unpaired surrogate escape (strictBody), and no body's gzip coding may fail to decode (capTokenResponse).
 type strictKey int
 
@@ -101,11 +101,11 @@ func withStrictBody(ctx context.Context) (context.Context, *bodyRefusal) {
 	return context.WithValue(ctx, strictKey(0), refused), refused
 }
 
-// strictBody wraps a 2xx body in the check when ctx carries the mark — an error status is judged by its status, and its
-// body is never decoded as a token.
+// strictBody wraps a 200 body in the check when ctx carries the mark — any other status, a 2xx included (statusIs200), is
+// judged by its status, and its body is never decoded as a token.
 func strictBody(ctx context.Context, status int, body io.ReadCloser) io.ReadCloser {
 	refused, ok := ctx.Value(strictKey(0)).(*bodyRefusal)
-	if !ok || status < 200 || status >= 300 {
+	if !ok || !statusIs200(status) {
 		return body
 	}
 	return &utf8Body{ReadCloser: body, refused: refused}
@@ -448,7 +448,7 @@ func (b *cappedBody) lookPast() error {
 	return b.end
 }
 
-// introspectionRefusal is Introspect's error for a 2xx body that arrived but cannot be read as the JSON text it claims to
+// introspectionRefusal is Introspect's error for a 200 body that arrived but cannot be read as the JSON text it claims to
 // be, or nil: not UTF-8 (RFC 8259 §8.1; decision D1, measured 2026-11-10) or holding an unpaired surrogate escape (decision
 // Q2, measured 2026-11-11 — accepted) — encoding/json turns either into U+FFFD without an error, so the claims would be ones
 // the IdP never sent. Then a body that carries an OAuth `error` (oauthErrorMember) is that error, before `active` is looked
@@ -504,14 +504,24 @@ func oauthErrorMember(body []byte) (string, bool) {
 }
 
 // statusRefused is postForm's error for a status its caller does not take as success, and the form Introspect's error
-// takes for a 2xx whose body carries an OAuth `error` (introspectionRefusal). Kept out of auth.go for the reason
+// takes for a 200 whose body carries an OAuth `error` (introspectionRefusal). Kept out of auth.go for the reason
 // introspectionRefusal is.
 func statusRefused(endpoint string, status int) *AuthError {
 	return &AuthError{Msg: "request to " + endpoint + " failed (HTTP " + strconv.Itoa(status) + ")"}
 }
 
-// statusIs2xx is Introspect's success: any 2xx (RFC 7662 §2.2 answers 200).
-func statusIs2xx(status int) bool { return status >= 200 && status < 300 }
+// statusIs200 is the success of a token or introspection response: 200 and no other (RFC 6749 §5.1 for a token; the SDK's
+// rule for introspection — RFC 7662 §2.2 names no status, its examples and Keycloak answer 200 — registry
+// token-success-status-range-divergent). Introspect took any 2xx, so a 201 carrying `"active":true` was read as
+// an active token (measured on main c4b5096a); every other status now gets postForm's refusal, as a 400 does.
+func statusIs200(status int) bool { return status == http.StatusOK }
+
+// non200Success reports whether status is a 2xx other than 200 — a success to HTTP and not to OAuth (statusIs200). A token
+// response with one fails as a 400 with the same body does: the grants' (at200) and the admin login's (loginRefused) lower
+// libraries take it as a success, so the SDK asks (cause.go).
+func non200Success(status int) bool {
+	return status > http.StatusOK && status < http.StatusMultipleChoices
+}
 
 // statusIs204 is Logout's success: Keycloak answers the backchannel logout with 204 only. Taking every 2xx made an
 // intercepting 200 page — a proxy's login form — a successful logout while the session stayed alive (registry

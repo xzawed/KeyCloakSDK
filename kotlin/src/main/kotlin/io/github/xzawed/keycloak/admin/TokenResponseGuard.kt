@@ -9,6 +9,7 @@ import io.github.xzawed.keycloak.adminSentValues
 import io.github.xzawed.keycloak.errorStatusCode
 import io.github.xzawed.keycloak.judgedTokenBody
 import io.github.xzawed.keycloak.readWithinCap
+import io.github.xzawed.keycloak.refuseUnlessOk
 import io.github.xzawed.keycloak.unbound
 import jakarta.ws.rs.HttpMethod
 import jakarta.ws.rs.client.ClientRequestContext
@@ -34,7 +35,8 @@ import java.net.URI
  * 타입이 남지 않으므로 결합 **앞**의 바이트를 본다. TokenManager 의 부여·갱신 요청도 [AdminClient.buildTimeoutClient] 의
  * 클라이언트로 나가므로 거기에 등록한다.
  *
- * 판정의 범위는 POST · 경로 꼬리 [TOKEN_PATH_SUFFIX] · 2xx 응답뿐이다 — 응답 필터가 정한다. admin 자원 응답의 역직렬화는
+ * 판정의 범위는 POST · 경로 꼬리 [TOKEN_PATH_SUFFIX] · 200 응답뿐이다 — 응답 필터가 정한다. 200 이 아닌 2xx 는 판정하지 않고 그 상태의
+ * 오류 응답으로 거부한다(`refuseUnlessOk` — 토큰 응답의 성공은 200 뿐이다). admin 자원 응답의 역직렬화는
  * 건드리지 않는다. 오류 상태는 판정하지 않고 넘긴다 — 갱신이 400 이면 TokenManager 가 `BadRequestException` 을 받아 client_credentials 로
  * 다시 부여하는 복구 경로가 있다. ⚠️ 다만 그 본문(과 admin 이 닫힐 때 TokenManager 가 보내는 logout 의 오류 본문 —
  * [LOGOUT_PATH_SUFFIX])은 상한([TOKEN_RESPONSE_MAX_BYTES])까지만 읽어 바이트 그대로 넘긴다 — RESTEasy 가 예외에 담으려고 오류
@@ -47,9 +49,9 @@ import java.net.URI
  * 사슬을 거쳐 결합에 넘기고, 그 사슬이 바이트를 바꿀 수 있다: 소비자가 `resteasy.allowGzip=true` 를 켜면
  * GZIPDecodingInterceptor 가 `Content-Encoding: gzip` 을 푼다. 원시 바이트를 판정하던 때는 gzip 으로 온 쓸 수 있는 토큰을
  * 거부해 admin 이 통째로 멈췄다(실측 — 가드 없이는 성공). 그래서 범위 안의 응답은 이 객체를 **가장 안쪽** ReaderInterceptor
- * 로도 등록해([READ_PRIORITY]) 결합 직전의 스트림을 판정한다. 예외는 하나 — 미디어 타입이 없는 2xx 는 결합이 아예 읽지
- * 않으므로(RESTEasy `ClientInvocation.extractResult` 는 200 이면 ResponseProcessingException 을 던지고 그 밖의 2xx 면 null 을
- * 돌려줘 TokenManager 가 NPE 로 멈춘다 — 그 사슬은 ProcessingException 이 그대로다) 응답 필터에서 원시 바이트로 판정한다.
+ * 로도 등록해([READ_PRIORITY]) 결합 직전의 스트림을 판정한다. 예외는 하나 — 미디어 타입이 없는 200 은 결합이 아예 읽지
+ * 않으므로(RESTEasy `ClientInvocation.extractResult` 가 ResponseProcessingException 을 던진다 — 그 사슬은 ProcessingException 이
+ * 그대로다) 응답 필터에서 원시 바이트로 판정한다.
  *
  * 거부는 상수 메시지의 [IOException] 이다. 응답 필터에서 던지면 RESTEasy 가 `ResponseProcessingException` 으로, 엔티티
  * 읽기에서 던지면 `ProcessingException` 을 거쳐 `ResponseProcessingException` 으로 감싸고(그래서 TokenManager 갱신의
@@ -92,16 +94,18 @@ internal class TokenResponseGuard :
             return
         }
         if (!token) return // 2xx logout 은 RESTEasy 의 void 추출기가 읽지 않고 닫는다
-        if (response.mediaType != null && response.status != 204 && response.status != 205) {
+        // 200 이 아닌 2xx 는 판정하지 않고 그 상태의 오류 응답으로 거부한다([refuseUnlessOk] — 토큰 응답의 성공은 200 뿐이다). 한 줄에 둔다 —
+        // 실 Keycloak 은 200 이라 람다가 돌지 않는다(이 파일은 통합 전용 경계 커버리지의 경계 파일이다). 200 이면 엔티티를 건드리지 않는다.
+        refuseUnlessOk(response.status, { response.entityStream }, { capPlusOne(it) }, { sentBy(request) }) { release(it, exchange) }
+        if (response.mediaType != null) {
             request.setProperty(JUDGE_ENTITY, true) // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
             request.setProperty(STATUS, response.status)
             request.setProperty(SENT, sentBy(request).toTypedArray())
             return
         }
-        // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
-        // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx)로 끝내 전송 실패로 나갔다(등록부
-        // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
-        // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
+        // 미디어 타입이 없는 200 은 결합이 읽지 않는다 — 판정을 통과해도 RESTEasy 가 ResponseProcessingException 으로 끝내 전송 실패로
+        // 나갔다(등록부 token-response-class-residue, 2026-11-11 실측). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도 같은 응답을
+        // 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다. Java 동형.
         throw unbound(response.status, usableOrReject(response.entityStream, exchange, response.status, sentBy(request)))
     }
 

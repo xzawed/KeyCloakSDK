@@ -161,8 +161,8 @@ func TestSurrogateScanAgreesWithTheBatchScanner(t *testing.T) {
 	}
 }
 
-// TestStrictBodyWrapsOnlyMarkedSuccessBodies — 오류 상태(3xx 이상)의 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은
-// 감싸지 않는다.
+// TestStrictBodyWrapsOnlyMarkedSuccessBodies — 200 밖의 상태(다른 2xx 포함 — 등록부 token-success-status-range-divergent)의
+// 본문은 그 상태가 판정한다. 표지 없는 요청(admin 목록 등)은 감싸지 않는다.
 func TestStrictBodyWrapsOnlyMarkedSuccessBodies(t *testing.T) {
 	marked, _ := withStrictBody(context.Background())
 	body := io.NopCloser(strings.NewReader("x"))
@@ -171,8 +171,8 @@ func TestStrictBodyWrapsOnlyMarkedSuccessBodies(t *testing.T) {
 		status  int
 		wrapped bool
 	}{
-		{marked, 200, true}, {marked, 204, true}, {marked, 302, false}, {marked, 400, false}, {marked, 503, false},
-		{context.Background(), 200, false},
+		{marked, 200, true}, {marked, 201, false}, {marked, 204, false}, {marked, 299, false}, {marked, 302, false},
+		{marked, 400, false}, {marked, 503, false}, {context.Background(), 200, false},
 	} {
 		if _, got := strictBody(c.ctx, c.status, body).(*utf8Body); got != c.wrapped {
 			t.Errorf("status %d (marked %v): wrapped %v, want %v", c.status, c.ctx != context.Background(), got, c.wrapped)

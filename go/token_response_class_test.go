@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -367,5 +368,230 @@ func TestAdminTokenFailureNeverMatchesAdminSentinels(t *testing.T) {
 			t.Errorf("token endpoint %d: 토큰 없이 admin 요청이 %d 번 나갔다", status, sent)
 		}
 		srv.Close()
+	}
+}
+
+// 성공 상태는 200 하나다(등록부 token-success-status-range-divergent) — 토큰 응답은 200 으로만 성공하고(RFC 6749 §5.1)
+// introspection 응답도 200 으로만 성공한다(SDK 의 규칙 — RFC 7662 §2.2 는 상태를 정하지 않고 그 예와 Keycloak 이 200 이다).
+// HTTP 가 성공이라 부르는 다른 2xx 는 그 레인이 같은 본문의 400 에
+// 내는 것을 그대로 낸다 — 같은 형 · 같은 메시지(상태 숫자만 다르다) · 같은 코드, 내준 것 없음, admin 요청 0, 캐시된 것 없음.
+// 수정 전(c4b5096a): x/oauth2 는 2xx 를 전부 성공으로 받았고(internal/token.go failureStatus), Introspect 도 그랬고
+// (statusIs2xx), admin 로그인은 gocloak 이 400 미만을 전부 받았다 — 201 에 실린 토큰이 그랜트 · provider · admin 요청으로 나갔다.
+var non200SuccessStatuses = []int{201, 202, 203, 204, 206, 299}
+
+const (
+	statusFresh        = "status-fresh-token"
+	statusUsable       = `{"access_token":"` + statusFresh + `","token_type":"Bearer","expires_in":300,"refresh_token":"rt"}`
+	statusAgain        = "status-again-token" // 200 으로 돌아선 IdP 의 토큰 — 이것이 나오면 다시 받은 것이다
+	statusUsableAgain  = `{"access_token":"` + statusAgain + `","token_type":"Bearer","expires_in":300,"refresh_token":"rt"}`
+	statusActive       = `{"active":true,"username":"svc","client_id":"app"}`
+	statusB1Token      = `{"error":"invalid_grant","error_description":"d"}`
+	statusB1Introspect = `{"error":"invalid_token"}`
+)
+
+// statusIdP answers the token and introspection endpoints with the status and the bodies last set — a body and its JSON
+// media type, or neither (net/http sends no body with a 204: it has no content) — serves /admin/realms/r/users/{id} with
+// 200, and counts admin requests, keeping the last one's Authorization.
+type statusIdP struct {
+	srv               *httptest.Server
+	status            atomic.Int64
+	token, introspect atomic.Value
+	bearer            atomic.Value
+	adminHits         atomic.Int32
+}
+
+func newStatusIdP(t *testing.T) *statusIdP {
+	t.Helper()
+	p := &statusIdP{}
+	p.set(http.StatusOK, statusUsable, statusActive)
+	p.bearer.Store("")
+	answer := func(w http.ResponseWriter, body string) {
+		if body != "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.WriteHeader(int(p.status.Load()))
+		_, _ = w.Write([]byte(body))
+	}
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token/introspect"):
+			answer(w, p.introspect.Load().(string))
+		case strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token"):
+			answer(w, p.token.Load().(string))
+		case strings.HasPrefix(r.URL.Path, "/admin/realms/r/users/"):
+			p.adminHits.Add(1)
+			p.bearer.Store(r.Header.Get("Authorization"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"u1","username":"alice"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+func (p *statusIdP) set(status int, token, introspect string) {
+	p.status.Store(int64(status))
+	p.token.Store(token)
+	p.introspect.Store(introspect)
+}
+
+// statusLane is one lane that reads a token or introspection response, on clients of its own: run is asked once at a cell's
+// status and again once the IdP answers 200, so a lane that cached what the first answer held hands that out the second
+// time. It returns what the lane handed out ("" when nothing) and its error.
+type statusLane struct {
+	name string
+	run  func(context.Context) (string, error)
+}
+
+func statusLanes(t *testing.T, p *statusIdP) []statusLane {
+	t.Helper()
+	cfg := Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c", ClientSecret: "s"}
+	client := func() *Client {
+		c, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.Close() })
+		return c
+	}
+	cc, rf, ex, in, pv, ad, inj := client(), client(), client(), client(), client(), client(), client()
+	provider := NewClientCredentialsTokenProvider(pv.Auth.ClientCredentialsToken, 30)
+	injected := NewClientCredentialsTokenProvider(inj.Auth.ClientCredentialsToken, 30)
+	token := func(ts *TokenSet, err error) (string, error) {
+		if ts != nil {
+			return "token " + ts.AccessToken, err
+		}
+		return "", err
+	}
+	// An admin lane hands out a read user and the bearer its request carried.
+	read := func(ctx context.Context, a *AdminClient, err error) (string, error) {
+		if err != nil {
+			return "", err
+		}
+		u, err := a.Users.Get(ctx, "u1")
+		if u != nil && u.ID != nil {
+			return "user " + *u.ID + " read with " + p.bearer.Load().(string), err
+		}
+		return "", err
+	}
+	return []statusLane{
+		{"ClientCredentialsToken", func(ctx context.Context) (string, error) { return token(cc.Auth.ClientCredentialsToken(ctx)) }},
+		{"Refresh", func(ctx context.Context) (string, error) { return token(rf.Auth.Refresh(ctx, "rt-in")) }},
+		{"ExchangeCode", func(ctx context.Context) (string, error) {
+			return token(ex.Auth.ExchangeCode(ctx, "code-in", "https://app/cb", "verifier-0123456789-0123456789-0123456789", ""))
+		}},
+		{"Introspect", func(ctx context.Context) (string, error) {
+			r, err := in.Auth.Introspect(ctx, "tok-in")
+			if r != nil {
+				return fmt.Sprintf("introspection active=%v username=%s", r.Active, r.Username), err
+			}
+			return "", err
+		}},
+		{"provider", func(ctx context.Context) (string, error) {
+			tok, err := provider.Token(ctx)
+			if tok != "" {
+				return "token " + tok, err
+			}
+			return "", err
+		}},
+		{"Admin", func(ctx context.Context) (string, error) {
+			a, err := ad.Admin(ctx)
+			return read(ctx, a, err)
+		}},
+		{"NewAdminClient(provider)", func(ctx context.Context) (string, error) {
+			a, err := NewAdminClient(ctx, cfg, injected)
+			return read(ctx, a, err)
+		}},
+	}
+}
+
+// statusVerdict renders what a lane gave: the class, the message, the cause's own words — not its type: the lower value a
+// cause stands in for is x/oauth2's or gocloak's failure for a 400 and the value they returned for a 201 — the OAuth code,
+// what it handed out, and the admin requests it sent.
+func statusVerdict(handed string, err error, admin int32) string {
+	if err == nil {
+		return fmt.Sprintf("ok %s admin=%d", handed, admin)
+	}
+	code, cause := "", ""
+	var ae *AuthError
+	if errors.As(err, &ae) {
+		code = ae.OAuthError
+	}
+	var rf *responseFreeError
+	if c := errors.Unwrap(err); errors.As(c, &rf) {
+		cause = rf.msg
+	} else if c != nil {
+		cause = c.Error()
+	}
+	return fmt.Sprintf("%s(%v) cause=%q code=%q handed=%q admin=%d", classKind(err), err, cause, code, handed, admin)
+}
+
+// atStatus is a 400's verdict as it reads for status: the status line and the status number.
+func atStatus(verdict400 string, status int) string {
+	code := strconv.Itoa(status)
+	v := strings.ReplaceAll(verdict400, "HTTP 400 "+http.StatusText(http.StatusBadRequest), "HTTP "+code+" "+http.StatusText(status))
+	return strings.ReplaceAll(v, "HTTP 400", "HTTP "+code)
+}
+
+// TestNon200SuccessStatusFailsAsTheLanesErrorResponse — a 2xx other than 200 fails every lane exactly as a 400 with the same
+// content does (a 204 has none: no body, no media type), and nothing of it is kept: once the IdP answers 200, the same lanes
+// fetch again. The control: 200 is every lane's success, and each admin lane sends its one admin request with its token.
+func TestNon200SuccessStatusFailsAsTheLanesErrorResponse(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	p := newStatusIdP(t)
+	// ask runs lanes once with the IdP at status and the bodies, and returns each lane's verdict.
+	ask := func(lanes []statusLane, status int, token, introspect string) []string {
+		p.set(status, token, introspect)
+		out := make([]string, len(lanes))
+		for i, l := range lanes {
+			before := p.adminHits.Load()
+			handed, err := l.run(ctx)
+			out[i] = statusVerdict(handed, err, p.adminHits.Load()-before)
+		}
+		return out
+	}
+	// ok is what every lane hands out from a 200 carrying token.
+	ok := func(token string) []string {
+		return []string{
+			"ok token " + token + " admin=0", "ok token " + token + " admin=0", "ok token " + token + " admin=0",
+			"ok introspection active=true username=svc admin=0", "ok token " + token + " admin=0",
+			"ok user u1 read with Bearer " + token + " admin=1", "ok user u1 read with Bearer " + token + " admin=1",
+		}
+	}
+	var wrong []string
+	compare := func(label string, lanes []statusLane, got, want []string) {
+		for i, l := range lanes {
+			t.Logf("%s × %s → %s", label, l.name, got[i])
+			if got[i] != want[i] {
+				wrong = append(wrong, fmt.Sprintf("%s × %s:\n      got  %s\n      want %s", label, l.name, got[i], want[i]))
+			}
+		}
+	}
+	control := statusLanes(t, p)
+	compare("200 usable", control, ask(control, http.StatusOK, statusUsable, statusActive), ok(statusFresh))
+	for _, status := range non200SuccessStatuses {
+		bodies := []struct{ name, token, introspect string }{{"usable", statusUsable, statusActive}}
+		if status == http.StatusCreated {
+			bodies = append(bodies, struct{ name, token, introspect string }{"B1", statusB1Token, statusB1Introspect})
+		}
+		for _, b := range bodies {
+			if status == http.StatusNoContent {
+				b.token, b.introspect = "", ""
+			}
+			var want []string
+			for _, v := range ask(statusLanes(t, p), http.StatusBadRequest, b.token, b.introspect) {
+				want = append(want, atStatus(v, status))
+			}
+			lanes := statusLanes(t, p)
+			label := strconv.Itoa(status) + " " + b.name
+			compare(label, lanes, ask(lanes, status, b.token, b.introspect), want)
+			compare(label+", then 200", lanes, ask(lanes, http.StatusOK, statusUsableAgain, statusActive), ok(statusAgain))
+		}
+	}
+	if len(wrong) > 0 {
+		t.Errorf("200 밖의 2xx 가 같은 본문의 400 과 다르게 끝난 칸 %d:\n%s", len(wrong), strings.Join(wrong, "\n"))
 	}
 }

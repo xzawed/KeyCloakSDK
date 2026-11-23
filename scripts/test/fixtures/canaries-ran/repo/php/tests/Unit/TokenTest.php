@@ -18,4 +18,8 @@ final class TokenTest extends TestCase
     public function testEmptyKeySetKeepsTheCache(): void
     {
     }
+
+    public function testNon200SuccessStatusFailsAsTheLanesErrorResponse(): void
+    {
+    }
 }

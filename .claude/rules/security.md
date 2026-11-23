@@ -10,7 +10,12 @@ paths:
   - "rust/**"
   - "ruby/**"
 ---
-<!-- doc-budget: max-bytes=7374 -->
+<!-- doc-budget: max-bytes=7661 -->
+<!-- 7374 → 7661 (2026-11-23): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 새 「Success status」 줄은 아홉
+     언어 시험 하나씩이 잰다 — 이름이 `non.?200.?success.?status` 에 맞는 것(네 레인 × 201 · 202 · 203 · 204 · 206 · 299 와 대조군
+     200, 레인 카나리아 표 `lc_status200_canary` 가 그 레인 실행에서 돌아 통과했는지 대조한다 — 등록부
+     token-success-status-range-divergent). **교환** — 「OAuth error code」 줄의 「success-status」 는 이제 200 하나라 「200」 으로
+     좁혔다(범위로 읽으면 201 이 그 문장의 성공 상태로 읽힌다 — 201 은 이제 오류 상태의 길이다). -->
 <!-- 7167 → 7374 (2026-11-21): 래칫 조건 (1) — 증가분이 **그 주장을 다시 재는 명령**을 사 온다. 「OAuth error code」 줄에 더한
      문장(모든 레인이 어느 상태에서든 코드를 코드 칸에 싣고, 실린 것이 없으면 비운다 — .NET 의 reason phrase 밖)은 여섯 언어의 칸
      시험이 잰다 — 이름이 `error.?status.?(oauth|carries)` 에 맞는 것(A 400 invalid_grant · B 401 invalid_client, 수정 전 42d8858b 에서
@@ -129,9 +134,13 @@ The guard is `scripts/test/test-security-defaults.sh`, which inspects the code, 
 
 ⚠️ **A response the SDK reads must arrive in full within the configured timeout, counted from send** — a per-read timeout alone lets a trickle hold one call for ≈ cap × timeout. Tests: `ResponseReadDeadline*` — no known gap left in the nine.
 
+## Success status
+
+⚠️ **A token or introspection response succeeds only at HTTP 200, in all nine; any other status, 201–299 too, takes the lane's error path — no token, no introspection result, no admin request, the lane's error class.** Tests: names matching `non.?200.?success.?status`.
+
 ## OAuth error code
 
-⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A success-status token or introspection response whose `error` is a non-empty string fails like a 400 carrying it; nothing in it is used.** Every lane (grants, introspection, token provider, admin self-grant) puts it in the code field at any status, empty when none was sent — except .NET's reason phrase (registry `dotnet-oauth-error-reason-phrase`). Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error` · `error.?status.?(oauth|carries)`.
+⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A 200 token or introspection response whose `error` is a non-empty string fails like a 400 carrying it; nothing in it is used.** Every lane (grants, introspection, token provider, admin self-grant) puts it in the code field at any status, empty when none was sent — except .NET's reason phrase (registry `dotnet-oauth-error-reason-phrase`). Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error` · `error.?status.?(oauth|carries)`.
 
 ## Token kind
 

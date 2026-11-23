@@ -43,7 +43,8 @@ import org.jboss.resteasy.client.jaxrs.internal.ClientResponse;
  * 결합 뒤에는 원래 JSON 타입이 남지 않으므로 결합 <b>앞</b>의 바이트를 본다. TokenManager 의 부여·갱신 요청도
  * {@link AdminClient#buildTimeoutClient} 의 클라이언트로 나가므로 거기에 등록한다.
  *
- * <p>범위는 POST · 경로 꼬리 {@value #TOKEN_PATH_SUFFIX} · 2xx 응답뿐이다 — 응답 필터가 정한다. admin 자원 응답의
+ * <p>범위는 POST · 경로 꼬리 {@value #TOKEN_PATH_SUFFIX} · 200 응답뿐이다 — 응답 필터가 정한다. 200 이 아닌 2xx 는 판정하지 않고
+ * 그 상태의 오류 응답으로 거부한다({@link OAuthErrorResponse} — 토큰 응답의 성공은 200 뿐이다). admin 자원 응답의
  * 역직렬화는 건드리지 않는다. 오류 상태는 상한 안이면 그대로 넘긴다 — 갱신이 400 이면 TokenManager 가 {@code BadRequestException} 을
  * 받아 client_credentials 로 다시 부여하는 복구 경로가 있다. ⚠️ 그래도 오류 본문은 상한까지만 읽는다 — RESTEasy 는 오류 상태의 본문을
  * 통째로 버퍼에 담아(32 MiB 오류 본문에 약 107 MB 할당, 실측 — {@code TokenResponseCapTest}) 상한을 넘으면 같은 거부를 던진다.
@@ -52,10 +53,9 @@ import org.jboss.resteasy.client.jaxrs.internal.ClientResponse;
  * ReaderInterceptor 사슬을 거쳐 결합에 넘기고, 그 사슬이 바이트를 바꿀 수 있다: 소비자가 {@code resteasy.allowGzip=true} 를
  * 켜면 GZIPDecodingInterceptor 가 {@code Content-Encoding: gzip} 을 푼다. 원시 바이트를 판정하던 때는 gzip 으로 온 쓸 수 있는
  * 토큰을 거부해 admin 이 통째로 멈췄다(실측 — 가드 없이는 성공). 그래서 범위 안의 응답은 이 객체를 <b>가장 안쪽</b>
- * ReaderInterceptor 로도 등록해({@link #READ_PRIORITY}) 결합 직전의 스트림을 판정한다. 예외는 둘 — 미디어 타입이 없는
- * 2xx 와 본문이 없는 2xx(204 · 205)는 결합이 아예 읽지 않으므로(RESTEasy {@code ClientInvocation.extractResult} 는 200 이면
- * ResponseProcessingException 을 던지고 그 밖의 2xx 면 null 을 돌려줘 TokenManager 가 NPE 로 멈춘다 — 그 사슬은
- * ProcessingException 이 그대로다) 응답 필터에서 원시 바이트로 판정한다. 해제기가 스트림을 감쌀 때 읽는 gzip 머리의 손상은 가장
+ * ReaderInterceptor 로도 등록해({@link #READ_PRIORITY}) 결합 직전의 스트림을 판정한다. 예외는 하나 — 미디어 타입이 없는
+ * 200 은 결합이 아예 읽지 않으므로(RESTEasy {@code ClientInvocation.extractResult} 가 ResponseProcessingException 을 던진다 — 그
+ * 사슬은 ProcessingException 이 그대로다) 응답 필터에서 원시 바이트로 판정한다. 해제기가 스트림을 감쌀 때 읽는 gzip 머리의 손상은 가장
  * 안쪽에 닿지 않으므로 해제기 바깥의 {@link CodingGuard} 가 받는다.
  *
  * <p>거부는 상수 메시지의 {@link IOException} 이다. 응답 필터에서 던지면 RESTEasy 가 {@code ResponseProcessingException} 으로,
@@ -142,18 +142,28 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       return;
     }
     int status = response.getStatus();
-    if (response.getMediaType() != null && status != 204 && status != 205) {
+    if (status != 200) {
+      // 200 이 아닌 2xx — 토큰 응답의 성공은 200 뿐이다(RFC 6749 §5.1, 아홉 언어의 규칙). 본문이 쓸 수 있는 토큰이어도 그 상태의 오류
+      // 응답처럼 실패한다: 오류 상태와 같이 상한까지만 읽고(넘치면 같은 전송 실패) 그 OAuth 코드를 보낸 비밀에 대어 판정해 싣는다 —
+      // 「admin token request failed: HTTP <상태>」({@link OAuthErrorResponse}). 판정은 본문을 보지 않는다(auth 레인의 Nimbus 도 200 밖은
+      // 오류 응답으로 읽는다). 수정 전에는 201 · 202 · 203 · 206 · 299 의 토큰을 캐시해 admin 요청을 보냈고 204 는 「(unusable token
+      // response)」 였다(실측 — TokenResponseClassTest).
+      InputStream in = response.getEntityStream();
+      byte[] body = in == null ? new byte[0] : withinCapOrReject(in, exchange);
+      release(in, exchange);
+      throw new OAuthErrorResponse(status, OAuthErrorCode.carried(oauthError(body), sentValues(request)));
+    }
+    if (response.getMediaType() != null) {
       request.setProperty(JUDGE_ENTITY, Boolean.TRUE); // 결합이 읽는 바이트(해제 뒤)는 aroundReadFrom 이 판정한다
       request.setProperty(STATUS, status);
       request.setProperty(SENT, sentValues(request).toArray(String[]::new));
       return;
     }
-    // 미디어 타입이 없는 2xx 와 본문이 없는 2xx(204 · 205 — RFC 9110 §15.3.5 · §15.3.6)는 결합이 읽지 않는다 — 판정을 통과해도
-    // RESTEasy 가 ResponseProcessingException(200)이나 null(그 밖의 2xx → TokenManager 의 NPE)로 끝내 전송 실패로 나갔다(등록부
-    // token-response-class-residue, 2026-11-11 실측 — 204 · 205 는 JVM 실행 레그). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도
-    // 같은 응답을 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다.
-    usableOrReject(response.getEntityStream(), exchange, response.getStatus(), sentValues(request));
-    throw new Unusable(response.getStatus(), UNBOUND, null);
+    // 미디어 타입이 없는 200 은 결합이 읽지 않는다 — 판정을 통과해도 RESTEasy 가 ResponseProcessingException 으로 끝내 전송 실패로
+    // 나갔다(등록부 token-response-class-residue, 2026-11-11 실측). 끝까지 온 응답을 쓸 수 없다 — auth 레인(Nimbus)도 같은 응답을
+    // 거부한다. 판정(상한 · UTF-8 · access_token)은 먼저 한다 — 그 거부가 더 구체적이다.
+    usableOrReject(response.getEntityStream(), exchange, status, sentValues(request));
+    throw new Unusable(status, UNBOUND, null);
   }
 
   /**
@@ -505,10 +515,11 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   }
 
   /**
-   * 성공 상태의 본문이 OAuth 오류 응답이다({@link #oauthError}) — 그 상태와, 그 {@code error} 가운데 {@link OAuthErrorCode#carried} 가
-   * 허락한 코드(아니면 null)를 싣는다. {@link AdminExceptions} 가 같은 본문의 4xx 와 같은 꼴(「admin token request failed: HTTP
-   * &lt;상태&gt;」)로 바꾸고 코드는 {@code getError()} 에 싣는다 — 아홉 언어의 규칙(등록부 auth-2xx-error-code-divergent). 그 레인의
-   * 4xx 도 같은 코드를 싣는다({@link #codeOf}). 메시지는 상수다(응답을 인용하지 않는다).
+   * 오류 상태처럼 실패하는 2xx 토큰 응답 — 200 의 본문이 OAuth 오류 응답이거나({@link #oauthError} — 등록부
+   * auth-2xx-error-code-divergent) 상태가 200 이 아닌 2xx 다({@link #filter} — 토큰 응답의 성공은 200 뿐이다). 그 상태와, 그
+   * {@code error} 가운데 {@link OAuthErrorCode#carried} 가 허락한 코드(아니면 null)를 싣는다. {@link AdminExceptions} 가 같은 본문의
+   * 4xx 와 같은 꼴(「admin token request failed: HTTP &lt;상태&gt;」)로 바꾸고 코드는 {@code getError()} 에 싣는다 — 아홉 언어의 규칙.
+   * 그 레인의 4xx 도 같은 코드를 싣는다({@link #codeOf}). 메시지는 상태로만 고른 상수다(응답을 인용하지 않는다).
    */
   static final class OAuthErrorResponse extends IOException {
     private static final long serialVersionUID = 1L;
@@ -516,7 +527,8 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
     private final String code;
 
     OAuthErrorResponse(int status, String code) {
-      super("token endpoint answered a success status with an OAuth error");
+      super(status == 200 ? "token endpoint answered a success status with an OAuth error"
+          : "token endpoint answered a status other than 200");
       this.status = status;
       this.code = code;
     }

@@ -123,9 +123,9 @@ def _overlaps(value: str, secret: str | None) -> bool:
 def refused_body(exc: BaseException) -> KeycloakAuthError | KeycloakTransportError | None:
     """`exc` 가 이 SDK 의 응답 본문 거부(`token_cap.py`)를 감싼 python-keycloak 실패면, 같은
     메시지의 SDK 오류를 **새로** 만든다 — 아니면 `None`. 다 읽지 않은 응답(`incomplete` — 상한을
-    넘은 본문 · 2xx 토큰 응답의 잘린 압축)은 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
+    넘은 본문 · 200 토큰 응답의 잘린 압축)은 `KeycloakTransportError`(아홉 언어의 규칙 — 등록부
     token-response-class-divergent · residue · 1.0.7 까지는 `KeycloakAuthError`), 끝까지 온 응답을
-    쓸 수 없다는 거부(두 번 압축 — 본문을 읽기 전 · 풀 수 없는 압축 · 2xx 본문이 UTF-8 JSON 텍스트가
+    쓸 수 없다는 거부(두 번 압축 — 본문을 읽기 전 · 풀 수 없는 압축 · 200 본문이 UTF-8 JSON 텍스트가
     아니거나 짝 없는 서로게이트 이스케이프를 품음)는 `KeycloakAuthError`.
 
     ⚠️ 그 거부는 세션 안에서 나므로 python-keycloak 의 `raw_*` 가 무엇이든
@@ -191,8 +191,9 @@ def error_in_success(
     sent: Iterable[str | None] = (),
     carry_code: bool = True,
 ) -> KeycloakAuthError | None:
-    """python-keycloak 이 성공으로 받은 응답(그 레인이 받는 2xx)이 OAuth `error` 를 실었으면 그
-    거부다 — 4xx 가 같은 `error` 를 실었을 때와 같은 판정(`oauth_failure`)이고, 아니면 `None`.
+    """python-keycloak 이 성공으로 받은 응답(그 레인이 받는 2xx — 토큰 · introspection 은
+    200 이 아니면 `non_200_success` 가 먼저 거부한다)이 OAuth `error` 를 실었으면 그 거부다 —
+    4xx 가 같은 `error` 를 실었을 때와 같은 판정(`oauth_failure`)이고, 아니면 `None`.
 
     ⚠️ 그 응답의 나머지(`access_token` · `refresh_token` · `id_token` · `active`)는 쓰지 않는다 —
     호출자는 이것을 응답의 **어떤** 검사보다 먼저 부른다. 예전에는 토큰이 있으면 받아들여
@@ -206,6 +207,37 @@ def error_in_success(
     if not isinstance(value, str) or not value:
         return None
     return oauth_failure(answered.status, value if carry_code else None, sent)
+
+
+def non_200_success(
+    answer: object,
+    answered: Answered,
+    *,
+    sent: Iterable[str | None] = (),
+    in_message: bool = True,
+) -> KeycloakAuthError | None:
+    """python-keycloak 이 성공으로 받은 토큰 · introspection 응답(`raise_error_from_response`
+    의 기본값 200 · 201 · 204)의 상태가 200 이 아니면 그 상태의 거부다 — 아니면 `None`.
+
+    그 응답의 성공은 200 하나다(토큰은 RFC 6749 §5.1, introspection 은 SDK 의 규칙 — RFC 7662
+    §2.2 는 상태를 정하지 않고 그 예와 Keycloak 이 200 이다 · 아홉 언어, 등록부
+    token-success-status-range-divergent). 그 밖의 상태는 같은 본문의 오류 상태가 받는
+    판정이다(`oauth_failure` — `HTTP <상태>` 와, 본문 `error` 중 `carried_code` 가 허락한
+    코드). `in_message` 가 거짓이면 그 코드를 메시지에는 싣지 않고 `error` 에만 싣는다 —
+    admin 자체 그랜트의 오류 상태 모양이다(`grant_failure`). 그 응답의 나머지는 쓰지 않는다 —
+    호출자는 이것을 응답의 **어떤** 검사보다 먼저 부른다. 예전에는 201 의 토큰을 돌려주고
+    (admin 은 그것으로 요청을 보냈다) introspection 을 활성으로 읽었고, 204 는 python-keycloak
+    이 돌려준 `{}` 의 「없음」 판정이었다(실측 2026-11-23). 상태를 모르면(세션을 지나지 않은
+    목 — `token_cap.Answered`) 보지 않는다."""
+    status = answered.status
+    if status is None or status == 200:
+        return None
+    value = answer.get("error") if isinstance(answer, dict) else None
+    if in_message:
+        return oauth_failure(status, value, sent)
+    failure = oauth_failure(status, None, sent)
+    failure.error = carried_code(value, sent)
+    return failure
 
 
 def unusable_answer(exc: BaseException, answered: Answered | None) -> KeycloakAuthError:

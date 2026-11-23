@@ -411,3 +411,176 @@ async fn injected_following_client_reports_a_redirect_loop_as_auth() {
     let hits = server.received_requests().await.expect("recording").len();
     assert!(hits > 2, "따라가지 않았다 — 요청 {hits} 번");
 }
+
+/// 칸 하나의 결과를 한 줄로 — 성공이면 `ok`, 실패면 계급 · 문구 · 코드(같은 본문의 400 과 견준다).
+fn line(r: &Outcome) -> String {
+    match r {
+        Ok(()) => "ok".into(),
+        Err(KeycloakError::Auth {
+            message,
+            oauth_error,
+        }) => format!("Auth({message}) code={oauth_error:?}"),
+        Err(KeycloakError::Transport(m)) => format!("Transport({m})"),
+        Err(other) => format!("unexpected {other:?}"),
+    }
+}
+
+/// 두 엔드포인트가 `status` 로 각자의 본문을 준다(204 는 본문 없이 간다) — `GET /admin/realms` 는 200 `[]` 다.
+async fn mount_status(server: &MockServer, status: u16, token: &str, introspect: &str) {
+    server.reset().await;
+    let oidc = "/realms/r/protocol/openid-connect";
+    for (p, body) in [
+        (format!("{oidc}/token"), token),
+        (format!("{oidc}/token/introspect"), introspect),
+    ] {
+        Mock::given(method("POST"))
+            .and(path(p))
+            .respond_with(
+                ResponseTemplate::new(status).set_body_raw(body.to_string(), "application/json"),
+            )
+            .mount(server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/admin/realms"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw("[]", "application/json"))
+        .mount(server)
+        .await;
+}
+
+async fn token_requests(server: &MockServer) -> usize {
+    server
+        .received_requests()
+        .await
+        .expect("recording")
+        .iter()
+        .filter(|r| r.url.path().ends_with("/token"))
+        .count()
+}
+
+/// 토큰 · introspection 응답의 성공은 HTTP 200 뿐이다(토큰은 RFC 6749 §5.1, introspection 은 SDK 의 규칙 — RFC 7662 §2.2 는
+/// 상태를 정하지 않고 그 예와 Keycloak 이 200 이다 · 아홉 언어, 등록부
+/// `token-success-status-range-divergent`): 다른 2xx 는 같은 본문의 400 과 같은 길로 실패한다 — 같은 계급 · 문구 · 코드, 토큰을
+/// 돌려주지도 캐시하지도 않고 admin 요청이 없다(204 는 본문이 없어 본문 없는 400 과 견준다). `error` 를 실은 201 은 그것을 실은
+/// 400 과 같다. 고치기 전(main c4b5096a): `AuthClient` 의 여섯 칸은 oauth2 가 200 만 성공으로 읽어 이미 그랬고(핀), provider 는
+/// 2xx 의 토큰을 캐시했고 admin 은 그것으로 요청을 보냈다.
+#[tokio::test]
+async fn non_200_success_status_fails_as_the_lanes_error_response() {
+    const B1_TOKEN: &str = r#"{"error":"invalid_grant","error_description":"d"}"#;
+    const B1_INTROSPECT: &str = r#"{"error":"invalid_token"}"#;
+    const PARSE: &str = "Auth(token request failed: Failed to parse server response) code=None";
+    const EMPTY: &str =
+        "Auth(token request failed: Other error: server returned empty error response) code=None";
+    // introspection 은 제 엔드포인트를 댄다(#1205 auth-error-message-misnames — 그랜트 문구는 그대로다).
+    const PARSE_INTROSPECT: &str =
+        "Auth(introspection request failed: Failed to parse server response) code=None";
+    const EMPTY_INTROSPECT: &str = "Auth(introspection request failed: Other error: server returned empty error response) code=None";
+    const PROVIDER: &str = "Auth(client-credentials failed) code=None";
+    const PROVIDER_EMPTY: &str = "Auth(token response: error decoding response body) code=None";
+    // 400 의 칸(고정 — 다른 상태가 견주는 기준): `CALLS` 순서로 AuthClient 여섯(다섯째 뒤 여섯째가 introspect) · provider · admin.
+    let auth_six = |token: &'static str, introspect: &'static str| {
+        let mut six = [token; 6];
+        six[5] = introspect;
+        six
+    };
+    let at400 = |six: [&str; 6], provider: &str| -> Vec<String> {
+        six.iter()
+            .chain([provider, provider].iter())
+            .map(|s| s.to_string())
+            .collect()
+    };
+    let b1_six = auth_six(
+        "Auth(token endpoint rejected) code=Some(\"invalid_grant\")",
+        "Auth(introspection endpoint rejected) code=Some(\"invalid_token\")",
+    );
+    let pinned = [
+        ("good", at400(auth_six(PARSE, PARSE_INTROSPECT), PROVIDER)),
+        (
+            "empty",
+            at400(auth_six(EMPTY, EMPTY_INTROSPECT), PROVIDER_EMPTY),
+        ),
+        (
+            "B1",
+            at400(
+                b1_six,
+                "Auth(client-credentials failed) code=Some(\"invalid_grant\")",
+            ),
+        ),
+    ];
+    let body = |kind: &str| match kind {
+        "good" => (USABLE, USABLE),
+        "empty" => ("", ""),
+        _ => (B1_TOKEN, B1_INTROSPECT),
+    };
+    // (상태, 본문) — 400 칸 셋 · 200 · 다른 2xx(204 는 본문 없는 400 과) · `error` 를 실은 201.
+    let mut cells: Vec<(u16, &str)> =
+        vec![(400, "good"), (400, "empty"), (400, "B1"), (200, "good")];
+    cells.extend([201, 202, 203, 204, 206, 299].map(|s| (s, "good")));
+    cells.push((201, "B1"));
+    let server = MockServer::start().await;
+    let cfg = KeycloakConfig::new(server.uri(), "r", "it-client")
+        .expect("config")
+        .with_client_secret("s");
+    let (mut wrong, mut table) = (Vec::new(), Vec::new());
+    for (status, kind) in cells {
+        let (token, introspect) = body(kind);
+        mount_status(&server, status, token, introspect).await;
+        let got: Vec<String> = drive(cfg.clone()).await.iter().map(line).collect();
+        let held_to = if status == 204 { "empty" } else { kind };
+        let want: Vec<String> = if status == 200 {
+            vec!["ok".to_string(); CALLS.len()]
+        } else {
+            pinned
+                .iter()
+                .find(|(k, _)| *k == held_to)
+                .expect("pinned")
+                .1
+                .clone()
+        };
+        for ((call, got), want) in CALLS.iter().zip(&got).zip(&want) {
+            table.push(format!("{status} {kind} × {call} → {got}"));
+            if got != want {
+                wrong.push(format!("{status} {kind} × {call}: {got} ≠ {want}"));
+            }
+        }
+        let admin = admin_requests(&server).await;
+        if admin != usize::from(status == 200) {
+            wrong.push(format!("{status} {kind}: admin 요청 {admin} 번"));
+        }
+        // 캐시하지 않았다 — 같은 provider · 같은 admin 파사드가 200 에서 다시 묻고 그 토큰을 쓴다.
+        if status != 200 {
+            let client = KeycloakClient::new(cfg.clone()).expect("client");
+            let provider = ClientCredentialsTokenProvider::new(cfg.clone(), reqwest::Client::new());
+            let first = (
+                provider.access_token().await,
+                client.admin().list_realms().await,
+            );
+            mount_status(&server, 200, USABLE, USABLE).await;
+            let again = (
+                provider.access_token().await,
+                client.admin().list_realms().await,
+            );
+            let (tokens, admin) = (token_requests(&server).await, admin_requests(&server).await);
+            if first.0.is_ok() || first.1.is_ok() || again.0.is_err() || again.1.is_err() {
+                wrong.push(format!(
+                    "{status} {kind}: provider {} → {} · admin {} → {}",
+                    first.0.is_ok(),
+                    again.0.is_ok(),
+                    first.1.is_ok(),
+                    again.1.is_ok()
+                ));
+            }
+            if (tokens, admin) != (2, 1) {
+                wrong.push(format!(
+                    "{status} {kind}: 200 에서 토큰 요청 {tokens} 번 · admin 요청 {admin} 번(기대 2 · 1)"
+                ));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "다른 칸:\n{}\n\n{}",
+        wrong.join("\n"),
+        table.join("\n")
+    );
+}

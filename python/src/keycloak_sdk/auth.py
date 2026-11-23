@@ -27,7 +27,13 @@ from ._internal.jwks_cache import JwksKeyCache
 from ._internal.jwks_fetch import fetch_jwks
 from ._internal.jwks_keys import import_usable_keys
 from ._internal.jwt import JwtValidator, TokenKind, check_token_size, refuse_hs_algorithm
-from ._internal.lower import auth_failure, error_in_success, is_lower_failure, summarize
+from ._internal.lower import (
+    auth_failure,
+    error_in_success,
+    is_lower_failure,
+    non_200_success,
+    summarize,
+)
 from ._internal.redirect_uri import checked_redirect_uri
 from ._internal.redirects import harden_openid
 from ._internal.retries import forbid_retries
@@ -127,7 +133,7 @@ class AuthClient:
         # 실패한 fetch 의 백오프 — 위 30초와 **다른 축**이다(콜드 캐시 + IdP 장애).
         self._jwks_backoff = JwksFailureBackoff()
 
-    def _wrap(self, fn: Callable[[], T], *sent: str) -> T:
+    def _wrap(self, fn: Callable[[], T], *sent: str, token_response: bool = True) -> T:
         """python-keycloak 호출을 실행하고 그 실패를 SDK 예외로 변환한다.
 
         `response_code`가 있으면(HTTP 응답을 받았으나 실패) 인증/토큰 흐름 실패로
@@ -141,6 +147,9 @@ class AuthClient:
 
         python-keycloak 이 성공으로 받은 응답(2xx)도 OAuth `error` 를 실었으면 여기서 같은 판정으로
         실패한다 — 그 응답은 레인의 어떤 검사(토큰 · `active`)에도 닿지 않는다(`error_in_success`).
+        토큰 · introspection 응답은 200 만 성공이다 — python-keycloak 이 성공으로 받는 201 ·
+        204 도 오류 상태의 판정이다(`non_200_success`). logout 은 그 규칙 밖이다
+        (`token_response=False` — python-keycloak 이 204 만 받는다).
         """
         answered = Answered()  # 그 호출이 받은 마지막 응답의 상태(`token_cap.py`)
         sent_secrets = (self._config.client_secret, *sent)
@@ -155,7 +164,9 @@ class AuthClient:
             error = auth_failure(exc, sent=sent_secrets, answered=answered)
             cause = summarize(exc)
         else:
-            named = error_in_success(answer, answered, sent=sent_secrets)
+            named = (
+                non_200_success(answer, answered, sent=sent_secrets) if token_response else None
+            ) or error_in_success(answer, answered, sent=sent_secrets)
             if named is None:
                 return answer
             error = named
@@ -272,7 +283,7 @@ class AuthClient:
     @scrub_frames
     def logout(self, refresh_token: str) -> None:
         """Invalidates the session (refresh token revoke)."""
-        self._wrap(lambda: self._openid.logout(refresh_token), refresh_token)
+        self._wrap(lambda: self._openid.logout(refresh_token), refresh_token, token_response=False)
 
     @scrub_frames
     def introspect(self, token: str) -> IntrospectionResult:

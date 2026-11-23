@@ -339,7 +339,13 @@ public sealed class AuthClient : ITokenSource
         // alone misses a whitespace-only one on a 2xx, and the RFC grammar this used to add missed one that is not spaces — a
         // tab, an LF or an NBSP left the token beside it returned and introspection active (measured 2026-11-20; the tab is
         // AuthClientTests' SuccessStatusOAuthError rows). What is carried of it is OAuthErrorOf's, which is narrower.
-        if (resp.IsError || CarriesError(resp.Json))
+        // And a 2xx other than 200 fails as a 400 with the same body does, whatever the body: only 200 is the success of a token
+        // response (RFC 6749 §5.1) and, by the SDK's rule, of an introspection response (RFC 7662 §2.2 names no status — its
+        // examples and Keycloak answer 200) — registry token-success-status-range-divergent. Duende
+        // takes every 2xx as one (IsSuccessStatusCode), so a 201 carrying a token was returned, cached and sent on admin
+        // requests, and a 201 carrying "active":true read as active (measured on main c4b5096a: TokenResponseClassTests'
+        // Non200_success_status_fails_as_the_lanes_error_response).
+        if (resp.IsError || CarriesError(resp.Json) || resp.HttpStatusCode != HttpStatusCode.OK)
         {
             var code = OAuthErrorOf(resp.Json, sent);
             throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
