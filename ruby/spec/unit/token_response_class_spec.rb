@@ -130,14 +130,15 @@ module TokenResponseClassSpec
 
     S1 = {
       "ok" => [:ok, "AT-ok-token"],
-      # rack-oauth2's "Unknown" and Keycloak's prose are no codes (`oauth_error_code_echo_spec`).
-      "r1 503 HTML" => [AUTH, "#{CC}: non-standard error code (HTTP 503)", nil],
+      # A body with no readable `error` says it sent no code; Keycloak's prose is a code withheld
+      # (`oauth_error_code_echo_spec` · registry auth-error-message-misnames — r1 · r8 said "non-standard error code").
+      "r1 503 HTML" => [AUTH, "#{CC}: no OAuth error code (HTTP 503)", nil],
       "r2 200 HTML" => [AUTH, "#{CC}: unusable token response (NoMethodError)", nil],
       "r2j 200 HTML typed as JSON" => [AUTH, "token response is not valid JSON", nil],
       "r4 200 JSON without access_token" => [AUTH, "#{CC}: unusable token response (AttrRequired::AttrMissing)", nil],
-      "r8 400 HTML" => [AUTH, "#{CC}: non-standard error code (HTTP 400)", nil],
-      "r8j 400 HTML typed as JSON" => [AUTH, "#{CC}: non-standard error code (HTTP 400)", nil],
-      "r8u 400 invalid UTF-8 in the error body" => [AUTH, "#{CC}: non-standard error code (HTTP 400)", nil],
+      "r8 400 HTML" => [AUTH, "#{CC}: no OAuth error code (HTTP 400)", nil],
+      "r8j 400 HTML typed as JSON" => [AUTH, "#{CC}: no OAuth error code (HTTP 400)", nil],
+      "r8u 400 invalid UTF-8 in the error body" => [AUTH, "#{CC}: no OAuth error code (HTTP 400)", nil],
       "r9 200 invalid UTF-8 inside a string" => [AUTH, "token response is not valid UTF-8", nil],
       "r10 200 unknown charset" => [:ok, "AT-ok-token"],
       "r11 200 charset=utf-16 over a UTF-8 body" => [:ok, "AT-ok-token"],

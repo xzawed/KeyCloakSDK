@@ -393,6 +393,43 @@ RSpec.describe KeycloakSdk::AuthClient do
     end
   end
 
+  # 그랜트 메시지에서 싣지 않은 코드의 자리(등록부 auth-error-message-misnames) — 그 응답이 코드를 보냈는가만 말한다. `error` 가
+  # 없거나 비었으면(객체가 아닌 본문 포함) 「no OAuth error code」, 보냈으나 `OAuthErrorCode.carried` 가 뺀 값이면
+  # 「non-standard error code」 다. 수정 전: 코드 없는 503 HTML 도 후자였다(rack-oauth2 의 'Unknown' 을 서버의 코드처럼 읽었다).
+  # 시크릿 `sekret` 은 코드 모양이다 — 그 되울림은 모양이 아니라 겹침이 뺀다.
+  describe "a grant error response that carries no code to show (auth-error-message-misnames)" do
+    json = "application/json"
+    none = "no OAuth error code"
+    withheld = "non-standard error code"
+    {
+      "503 HTML" => [503, "text/html", "<html><body>503 Service Unavailable</body></html>", none, nil],
+      "503 empty body" => [503, json, "", none, nil],
+      "400 JSON without error" => [400, json, '{"error_description":"d"}', none, nil],
+      "400 JSON error null" => [400, json, '{"error":null}', none, nil],
+      "400 JSON error empty" => [400, json, '{"error":""}', none, nil],
+      "400 JSON error not code-shaped" => [400, json, '{"error":"Invalid-Grant"}', withheld, nil],
+      "400 JSON error a number" => [400, json, '{"error":400}', withheld, nil],
+      "401 JSON error echoing the client secret" => [401, json, '{"error":"sekret"}', withheld, nil],
+      "400 JSON invalid_grant (control)" => [400, json, '{"error":"invalid_grant"}', "invalid_grant", "invalid_grant"]
+    }.each do |name, (status, type, body, shown, code)|
+      {
+        "client_credentials_token" => ["client-credentials", lambda(&:client_credentials_token)],
+        "refresh" => ["refresh", ->(a) { a.refresh(refresh_token: "RT-opaque-refresh") }],
+        "exchange_code" => ["authorization_code exchange", lambda { |a|
+          a.exchange_code(code: "AUTH-CODE-1234", code_verifier: "pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz",
+                          redirect_uri: "https://app/cb")
+        }]
+      }.each do |lane, (operation, call)|
+        it "says #{shown.inspect} on #{lane} for #{name}" do
+          stub_request(:post, token_url).to_return(status: status, body: body, headers: { "Content-Type" => type })
+          expect { call.call(auth) }.to raise_error(KeycloakSdk::AuthError) do |e|
+            expect([e.message, e.oauth_error]).to eq(["#{operation} failed: #{shown} (HTTP #{status})", code])
+          end
+        end
+      end
+    end
+  end
+
   # rack-oauth2 의 HTTP 설정은 프로세스 전역이고 먼저 건 쪽이 이긴다(`@@http_config ||= block`) — SDK 가 걸면 호스트
   # 앱이 나중에 건 블록이 조용히 버려진다. SDK 의 요청은 그 연결을 타지 않으므로(`host_http_config_spec.rb`) 걸지 않는다.
   describe "rack-oauth2's process-global http_config" do

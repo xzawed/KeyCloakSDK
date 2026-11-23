@@ -98,15 +98,41 @@ impl<'c> AsyncHttpClient<'c> for CappedHttp<'_> {
             // `endpoint_response`·`check_response_status`) `{…}garbage` 를 받았다. admin provider·JWKS·admin 파사드는
             // `from_slice` 라 거부한다 — 그 답에 맞춘다. 상태와 무관하다(오류 본문도). 분류는 다른 형식 오류와 같다.
             if trails_json_value(&body) {
-                return Err(HttpClientError::Other(UNPARSABLE_RESPONSE.into()));
+                return Err(HttpClientError::Other(TRAILING_BYTES.into()));
             }
             builder.body(body).map_err(HttpClientError::Http)
         })
     }
 }
 
-/// 형식이 틀린 토큰·introspection 응답의 SDK 문구 — oauth2 의 `Parse` 와 `CappedHttp` 의 꼬리 거부가 함께 쓴다.
-const UNPARSABLE_RESPONSE: &str = "token request failed: Failed to parse server response";
+/// `CappedHttp` 가 JSON 값 뒤 꼬리를 거부할 때 `HttpClientError::Other` 에 싣는 표식 — `map_token_err` 가 같음으로 알아보고
+/// 그 요청의 형식 오류 문구(`Endpoint::unparsable`)로 바꾼다. 사용자에게 닿지 않는다(`CappedHttp` 의 `Other` 는 이것과 상한
+/// 초과뿐이다).
+const TRAILING_BYTES: &str = "response carries bytes after its JSON value";
+
+/// 오류 문구가 대는 엔드포인트 — 그랜트 셋은 토큰 엔드포인트, `introspect` 는 introspection 엔드포인트다. introspection 의
+/// 실패도 「token endpoint rejected」 · 「token request …」 였다(등록부 `auth-error-message-misnames`). 문구만 고른다 — 계급은
+/// `map_token_err` 의 갈래가 정한다.
+struct Endpoint {
+    /// 서버 OAuth 오류(`ServerResponse`).
+    rejected: &'static str,
+    /// 요청의 이름 — reqwest 오류와 oauth2 `Other` 문구의 머리.
+    request: &'static str,
+    /// 형식이 틀린 응답 — oauth2 의 `Parse` 와 `CappedHttp` 의 꼬리 거부([`TRAILING_BYTES`])가 함께 쓴다.
+    unparsable: &'static str,
+}
+
+const TOKEN_ENDPOINT: Endpoint = Endpoint {
+    rejected: "token endpoint rejected",
+    request: "token request",
+    unparsable: "token request failed: Failed to parse server response",
+};
+
+const INTROSPECTION_ENDPOINT: Endpoint = Endpoint {
+    rejected: "introspection endpoint rejected",
+    request: "introspection request",
+    unparsable: "introspection request failed: Failed to parse server response",
+};
 
 /// JSON 값 하나 **뒤에** JSON 공백(SP·HTAB·LF·CR) 아닌 바이트가 있는가 — `serde_json::from_slice` 가 거부하는 모양
 /// (`Deserializer::end`). 첫 값부터 안 풀리면 `false` 다 — 그 본문은 oauth2 가 지금처럼 거부한다(빈 본문의 문구 포함).
@@ -307,7 +333,7 @@ impl AuthClient {
         let resp = req
             .request_async(&self.capped("token response"))
             .await
-            .map_err(|e| map_token_err(e, &sent))?;
+            .map_err(|e| map_token_err(e, &sent, &TOKEN_ENDPOINT))?;
         let token_set = to_token_set(&resp)?;
         if let Some(nonce) = expected_nonce {
             self.verify_nonce(token_set.id_token.as_deref(), nonce)
@@ -380,7 +406,7 @@ impl AuthClient {
             .add_scopes(self.scopes())
             .request_async(&self.capped("token response"))
             .await
-            .map_err(|e| map_token_err(e, &sent))?;
+            .map_err(|e| map_token_err(e, &sent, &TOKEN_ENDPOINT))?;
         to_token_set(&resp)
     }
 
@@ -393,7 +419,7 @@ impl AuthClient {
             .exchange_refresh_token(&rt)
             .request_async(&self.capped("token response"))
             .await
-            .map_err(|e| map_token_err(e, &sent))?;
+            .map_err(|e| map_token_err(e, &sent, &TOKEN_ENDPOINT))?;
         to_token_set(&resp)
     }
 
@@ -433,7 +459,7 @@ impl AuthClient {
             .introspect(&at)
             .request_async(&self.capped("introspection response"))
             .await
-            .map_err(|e| map_token_err(e, &sent))?;
+            .map_err(|e| map_token_err(e, &sent, &INTROSPECTION_ENDPOINT))?;
         Ok(IntrospectionResult {
             active: resp.active(),
             username: resp.username().map(str::to_string),
@@ -532,43 +558,50 @@ fn to_token_set(resp: &CoreTokenResponse) -> Result<TokenSet> {
 /// 토큰을 되울리는 `error_description`·`error_uri` 가 `{:?}` 로 원문 그대로 찍혔고, `Other` 문구는 응답
 /// Content-Type 헤더 값을 인용했다(실측 2026-09-26 — `tests/hostile_token_response.rs`). `Parse` 의 serde
 /// 오류는 틀린 타입의 문자열 값을 인용하고 원 본문을 품으므로 그 문구도 옮기지 않는다.
+///
+/// `endpoint` 는 문구가 대는 엔드포인트다([`TOKEN_ENDPOINT`] · [`INTROSPECTION_ENDPOINT`]) — 계급은 아래 갈래가 정하고 그것과
+/// 무관하다.
 fn map_token_err(
     e: RequestTokenError<HttpClientError<reqwest::Error>, TokenErrorResponse>,
     sent: &[&str],
+    endpoint: &Endpoint,
 ) -> KeycloakError {
     use openidconnect::RequestTokenError as RTE;
     match e {
         // 200 이 `error` 를 실어 온 본문도 여기로 온다(`CappedHttp` 가 400 으로 넘긴다).
         RTE::ServerResponse(resp) => KeycloakError::Auth {
-            message: "token endpoint rejected".into(),
+            message: endpoint.rejected.into(),
             // RFC 6749 §5.2 의 `error` — 코드다. description·uri 는 서버의 자유 서술이라 싣지 않는다.
             // 코드 자리에 코드 아닌 값(되울린 토큰)이나 그 요청이 보낸 비밀(`sent`)과 겹치는 값이 오면 그것도 싣지
             // 않는다(`oauth_error_code`).
             oauth_error: oauth_error_code(resp.error().as_ref(), sent),
         },
-        // `Other` 는 `CappedHttp` 만 만든다 — 고정 문구 둘이라 그대로 옮긴다. 값 뒤 바이트는 끝까지 온 쓸 수 없는 응답이라
-        // 아래 `Parse` 와 같은 `Auth` 다. 상한 초과는 다 받지 않은 응답이라 `Transport` 다(admin 레인과 같다).
-        RTE::Request(HttpClientError::Other(msg)) if msg == UNPARSABLE_RESPONSE => {
-            KeycloakError::Auth {
-                message: msg,
-                oauth_error: None,
-            }
-        }
+        // `Other` 는 `CappedHttp` 만 만든다 — 값 뒤 바이트(표식 [`TRAILING_BYTES`])는 끝까지 온 쓸 수 없는 응답이라 아래
+        // `Parse` 와 같은 `Auth` · 같은 문구다. 상한 초과는 다 받지 않은 응답이라 `Transport` 이고 `CappedHttp` 의 고정 문구 그대로다
+        // (admin 레인과 같다).
+        RTE::Request(HttpClientError::Other(msg)) if msg == TRAILING_BYTES => KeycloakError::Auth {
+            message: endpoint.unparsable.into(),
+            oauth_error: None,
+        },
         RTE::Request(HttpClientError::Other(msg)) => KeycloakError::Transport(msg),
         // reqwest 오류의 계급은 provider 와 한 함수다(`token_http_error` — 리다이렉트 실패만 온 응답이라 `Auth`).
         RTE::Request(re) => {
-            let message = format!("token request: {re}");
+            let message = format!("{}: {re}", endpoint.request);
             match &re {
                 HttpClientError::Reqwest(e) => token_http_error(e, message),
                 _ => KeycloakError::Transport(message),
             }
         }
         RTE::Parse(..) => KeycloakError::Auth {
-            message: UNPARSABLE_RESPONSE.into(),
+            message: endpoint.unparsable.into(),
             oauth_error: None,
         },
         RTE::Other(msg) => {
-            let message = format!("token request failed: Other error: {}", other_message(&msg));
+            let message = format!(
+                "{} failed: Other error: {}",
+                endpoint.request,
+                other_message(&msg)
+            );
             // 보내지도 못한 요청(준비 실패)만 전송이다 — 빈 오류 본문 · 틀린 Content-Type 은 끝까지 온 응답이다.
             // ⚠️ oauth2 의 device flow(`devicecode.rs` 의 `compute_timeout`)는 접두 없이 보내기 전 `Other` 를 만든다 — 이
             // SDK 는 그 흐름을 쓰지 않는다. 쓰게 되면 이 갈래를 다시 본다(#951 독립 레그).
@@ -2213,7 +2246,7 @@ mod tests {
     #[test]
     fn map_token_err_other_is_transport_only_for_an_unsent_request() {
         use openidconnect::RequestTokenError as RTE;
-        let class = |msg: &str| match map_token_err(RTE::Other(msg.into()), &[]) {
+        let class = |msg: &str| match map_token_err(RTE::Other(msg.into()), &[], &TOKEN_ENDPOINT) {
             KeycloakError::Transport(_) => "Transport",
             KeycloakError::Auth {
                 oauth_error: None, ..
@@ -2258,6 +2291,170 @@ mod tests {
         assert!(r.active);
         assert_eq!(r.username.as_deref(), Some("alice"));
         assert_eq!(r.client_id.as_deref(), Some("it-client"));
+    }
+
+    // `server` 를 IdP 로 삼는 기밀 클라이언트(시크릿 `s` — 아래 코드들과 겹치지 않는다).
+    fn auth_at(server: &MockServer) -> AuthClient {
+        auth_for(server.uri())
+    }
+
+    fn auth_for(uri: String) -> AuthClient {
+        let config = KeycloakConfig::new(uri, "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let endpoints = OidcEndpoints::new(&config);
+        let jwks = JwksStore::new(endpoints.jwks(), reqwest::Client::new(), 60);
+        let validator = JwtValidator::new(&config, &endpoints, jwks).unwrap();
+        AuthClient::new(config, endpoints, reqwest::Client::new(), validator).unwrap()
+    }
+
+    /// 거절 문구는 거절한 엔드포인트를 댄다 — introspection 의 OAuth 오류가 「token endpoint rejected」 였다(다른 엔드포인트 ·
+    /// 등록부 `auth-error-message-misnames`). 오류 상태(400)와 `CappedHttp` 가 400 으로 넘기는 200 의 `error` 가 같은 갈래다.
+    /// 코드는 그대로 싣는다(`oauth_error_code`).
+    #[tokio::test]
+    async fn introspect_rejection_names_the_introspection_endpoint() {
+        for status in [400, 200] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(
+                    "/realms/it-realm/protocol/openid-connect/token/introspect",
+                ))
+                .respond_with(
+                    ResponseTemplate::new(status).set_body_json(serde_json::json!({
+                        "error": "invalid_token", "error_description": "d"
+                    })),
+                )
+                .mount(&server)
+                .await;
+            match auth_at(&server).introspect("some-token").await {
+                Err(KeycloakError::Auth {
+                    message,
+                    oauth_error,
+                }) => {
+                    assert_eq!(message, "introspection endpoint rejected", "HTTP {status}");
+                    assert!(!message.contains("token endpoint"), "HTTP {status}");
+                    assert_eq!(
+                        oauth_error.as_deref(),
+                        Some("invalid_token"),
+                        "HTTP {status}"
+                    );
+                }
+                other => panic!("HTTP {status}: {other:?}"),
+            }
+        }
+    }
+
+    /// 대조군 — 토큰 그랜트의 거절은 그대로 「token endpoint rejected」 이고 코드도 그대로다(세 그랜트가 한 갈래).
+    #[tokio::test]
+    async fn token_grant_rejection_still_names_the_token_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/realms/it-realm/protocol/openid-connect/token"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "error": "invalid_grant", "error_description": "d"
+            })))
+            .mount(&server)
+            .await;
+        let auth = auth_at(&server);
+        let verifier = "v".repeat(43);
+        for (grant, result) in [
+            ("client_credentials", auth.client_credentials_token().await),
+            ("refresh", auth.refresh("RT").await),
+            (
+                "exchange_code",
+                auth.exchange_code("code", &verifier, None).await,
+            ),
+        ] {
+            match result {
+                Err(KeycloakError::Auth {
+                    message,
+                    oauth_error,
+                }) => {
+                    assert_eq!(message, "token endpoint rejected", "{grant}");
+                    assert_eq!(oauth_error.as_deref(), Some("invalid_grant"), "{grant}");
+                }
+                other => panic!("{grant}: {other:?}"),
+            }
+        }
+    }
+
+    /// 끝까지 온 쓸 수 없는 응답의 문구도 그 요청을 댄다 — introspection 에서 「token request …」 였다(등록부
+    /// `auth-error-message-misnames`). 칸: oauth2 `Parse`(JSON 아님) · `CappedHttp` 의 꼬리 거부(값 뒤 바이트) · oauth2
+    /// `Other`(JSON 아닌 Content-Type). 그랜트는 대조군이다 — 문구 그대로, 계급은 둘 다 `Auth` 그대로.
+    #[tokio::test]
+    async fn unusable_answers_name_the_request_that_got_them() {
+        let html: &[u8] = b"<html><body>oops</body></html>";
+        let parse = "failed: Failed to parse server response";
+        let content_type = "failed: Other error: unexpected response Content-Type (value withheld), \
+                            should be `application/json`";
+        let cells: [(&str, &str, &[u8], &str); 3] = [
+            ("200 not JSON", "application/json", html, parse),
+            (
+                "200 a JSON value then bytes",
+                "application/json",
+                br#"{"active":true}x"#,
+                parse,
+            ),
+            ("200 text/html", "text/html", html, content_type),
+        ];
+        let mut wrong = Vec::new();
+        for (cell, mime, body, tail) in cells {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(200).set_body_raw(body, mime))
+                .mount(&server)
+                .await;
+            let auth = auth_at(&server);
+            for (request, result) in [
+                (
+                    "introspection request",
+                    auth.introspect("t").await.map(|_| ()),
+                ),
+                (
+                    "token request",
+                    auth.client_credentials_token().await.map(|_| ()),
+                ),
+            ] {
+                let want = format!("{request} {tail}");
+                match result {
+                    Err(KeycloakError::Auth {
+                        message,
+                        oauth_error: None,
+                    }) if message == want => {}
+                    other => wrong.push(format!(
+                        "{cell} · {request}: want Auth {want:?}, got {other:?}"
+                    )),
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// 보내지 못한 요청(닫힌 포트 — reqwest 오류)의 문구도 그 요청을 대고, 계급은 그대로 `Transport` 다. 그랜트는 대조군이다.
+    #[tokio::test]
+    async fn an_unsent_request_names_the_request_and_stays_transport() {
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let uri = format!("http://{}", closed.local_addr().unwrap());
+        drop(closed);
+        let auth = auth_for(uri);
+        let mut wrong = Vec::new();
+        for (request, result) in [
+            (
+                "introspection request",
+                auth.introspect("t").await.map(|_| ()),
+            ),
+            (
+                "token request",
+                auth.client_credentials_token().await.map(|_| ()),
+            ),
+        ] {
+            let want = format!("{request}: client error");
+            match result {
+                Err(KeycloakError::Transport(message)) if message == want => {}
+                other => wrong.push(format!("{request}: want Transport {want:?}, got {other:?}")),
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
     // end_session 이 `status` 를 돌려주도록 mount 한 AuthClient.
