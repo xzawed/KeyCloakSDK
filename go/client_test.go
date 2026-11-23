@@ -42,3 +42,26 @@ func TestCloseWithoutAdmin(t *testing.T) {
 		t.Fatalf("Close without admin must be a no-op, got %v", err)
 	}
 }
+
+// TestAdminReturnsTheCachedClient pins the cache hit in Client.Admin: after a
+// successful creation, a second call returns the same *AdminClient and does not
+// ask the token endpoint again.
+func TestAdminReturnsTheCachedClient(t *testing.T) {
+	p := newFlightIdP(t)
+	c := p.client(t)
+	ctx := context.Background()
+	first, err := c.Admin(ctx)
+	if err != nil {
+		t.Fatalf("first Admin: %v", err)
+	}
+	second, err := c.Admin(ctx)
+	if err != nil {
+		t.Fatalf("second Admin: %v", err)
+	}
+	if first != second {
+		t.Fatalf("second Admin = %p, want the cached client %p", second, first)
+	}
+	if n := p.tokens.Load(); n != 1 {
+		t.Fatalf("token requests = %d, want 1", n)
+	}
+}

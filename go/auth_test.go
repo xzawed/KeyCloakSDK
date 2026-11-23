@@ -99,6 +99,26 @@ func TestCreateAuthorizationRequest(t *testing.T) {
 	}
 }
 
+// TestCreateAuthorizationRequestJoinsConfiguredScopes pins scope() when Config.Scopes
+// is set. CreateAuthorizationRequest is the only caller, and it puts the
+// space-joined scopes in the authorization URL. The empty-Scopes default
+// "openid" is already pinned by TestCreateAuthorizationRequest.
+func TestCreateAuthorizationRequestJoinsConfiguredScopes(t *testing.T) {
+	cfg := Config{
+		ServerURL: "https://kc.example.com", Realm: "demo", ClientID: "app",
+		Scopes: []string{"openid", "profile", "email"},
+	}.withDefaults()
+	a := newAuthClient(cfg, nil)
+	u, err := url.Parse(a.CreateAuthorizationRequest("https://app/cb").URL)
+	if err != nil {
+		t.Fatalf("bad URL: %v", err)
+	}
+	const want = "openid profile email"
+	if got := u.Query()["scope"]; len(got) != 1 || got[0] != want {
+		t.Fatalf("scope = %#v, want %q", got, want)
+	}
+}
+
 func TestClientCredentialsToken(t *testing.T) {
 	f := newAuthFixture(t, "sekret")
 	ts, err := f.auth.ClientCredentialsToken(context.Background())
