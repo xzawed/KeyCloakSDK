@@ -157,6 +157,9 @@ module KeycloakSdk
     # ⚠️ OAuth 오류는 **코드와 HTTP 상태만** 싣는다 — `error_description` 은 서버가 고른 자유 문장이라 토큰을
     # 되울릴 수 있고, 오류 본문이 JSON 이 아니면 rack-oauth2 가 본문 전체를 거기 넣는다. 코드 자리도 서버 값이라
     # `OAuthErrorCode.carried` 가 허락한 것만 메시지와 `oauth_error` 에 함께 싣는다(이 요청이 보낸 비밀과 겹치면 뺀다).
+    # 싣지 않은 코드의 자리에는 그 응답이 코드를 보냈는가만 적는다 — `error` 가 없거나 비었으면(`missing?` · 객체가 아닌
+    # 본문 포함) 「no OAuth error code」, 보냈으나 뺐으면 「non-standard error code」(등록부 auth-error-message-misnames —
+    # 코드 없는 503 HTML 도 후자였다).
     # ⚠️ 마지막 `StandardError` 는 형식이 틀린 200 을 읽다 나는 것(NoMethodError·AttrMissing·'Unknown Token Type')과
     # `to_token_set` 의 형 변환 실패다 — 원본이 새면 Ruby 3.2 의 NoMethodError 가 본문을 인용한다.
     # ⚠️ 필수 값(`code`·`refresh_token`)이 비면 보내지 않는다 — rack-oauth2 의 그랜트가 하던 검사이고, 그때는 이 경계
@@ -168,8 +171,9 @@ module KeycloakSdk
     rescue Error
       raise
     rescue Rack::OAuth2::Client::Error => e
-      code = OAuthErrorCode.carried(e.response[:error], [@config.client_secret, *params.values_at(*SENT_SECRETS)])
-      shown = code || "non-standard error code"
+      error = e.response[:error]
+      code = OAuthErrorCode.carried(error, [@config.client_secret, *params.values_at(*SENT_SECRETS)])
+      shown = code || (missing?(error) ? "no OAuth error code" : "non-standard error code")
       raise AuthError.new("#{operation} failed: #{shown} (HTTP #{e.status})", oauth_error: code),
             cause: RedactedCause.new(e)
     rescue Faraday::Error => e
@@ -191,16 +195,17 @@ module KeycloakSdk
     end
 
     # rack-oauth2 의 응답 규칙(`Client#handle_response` — 2.3.0 client.rb:205-240)을 SDK 가 읽은 본문에 그대로 건다:
-    # 200·201 은 token_type 이 bearer 인 `AccessToken::Bearer`, 그 밖은 `Client::Error`(본문이 객체가 아니면 'Unknown').
+    # 200·201 은 token_type 이 bearer 인 `AccessToken::Bearer`, 그 밖은 `Client::Error`.
     # 그 메서드는 private 이라 규칙만 옮겼다 — 결과·오류는 rack-oauth2 의 공개 타입이라 위 오류 대응이 그대로다.
     # 객체가 아닌 200 본문은 rack-oauth2 처럼 NoMethodError 로 떨어져 `token_request` 가 AuthError 로 바꾼다.
-    # ⚠️ 하나는 rack-oauth2 와 다르다: 200·201 이라도 OAuth `error` 를 실은 본문은 `Client::Error` 다(`TokenResponse.granted?`)
-    # — 오류 상태와 같은 메시지 · 코드이고 실린 토큰은 쓰지 않는다(등록부 auth-2xx-error-code-divergent).
+    # ⚠️ 둘은 rack-oauth2 와 다르다: 200·201 이라도 OAuth `error` 를 실은 본문은 `Client::Error` 다(`TokenResponse.granted?`)
+    # — 오류 상태와 같은 메시지 · 코드이고 실린 토큰은 쓰지 않는다(등록부 auth-2xx-error-code-divergent). 그리고 객체가 아닌
+    # 오류 본문은 빈 오류다 — rack-oauth2 의 'Unknown' 은 서버가 보낸 코드가 아니고(auth-error-message-misnames), 그것이
+    # 함께 싣던 본문은 아무도 읽지 않는다(`token_request` 가 읽는 것은 `error` 뿐이고 원인은 `RedactedCause` 다).
     def oauth_token(resp)
       body = resp.body
       unless TokenResponse.granted?(resp)
-        error = body.is_a?(Hash) ? body.transform_keys(&:to_sym) : { error: "Unknown", error_description: body }
-        raise Rack::OAuth2::Client::Error.new(resp.status, error)
+        raise Rack::OAuth2::Client::Error.new(resp.status, body.is_a?(Hash) ? body.transform_keys(&:to_sym) : {})
       end
 
       token_hash = body.transform_keys(&:to_sym)

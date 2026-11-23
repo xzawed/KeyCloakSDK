@@ -2,7 +2,7 @@
 
 이 프로젝트의 주요 변경사항을 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 [SemVer](https://semver.org/lang/ko/)를 지향합니다.
 
-> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)·Go(`github.com/xzawed/KeyCloakSDK/go`)·C#/.NET(`Xzawed.Keycloak.Sdk`)·PHP(`xzawed/keycloak-sdk`)·Rust(`keycloak-sdk`)·Ruby(`keycloak-sdk`)·Kotlin(`io.github.xzawed:keycloak-sdk-kotlin`) 9개 언어가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 지금까지 아홉 언어 전부가 **`1.0.0`**을 게시했습니다 — 같은 릴리스 물결에서 도달한 것은 1.0 기준(`git show d4e8958:docs/superpowers/plans/release-1.0.md`)의 A–G를 아홉 곳이 동시에 충족했기 때문이지 함대로 움직여서가 아닙니다(태그는 2026-08-30~09-01에 걸쳐 있고, 이후에는 다시 갈립니다). 그 아래 `[0.2.x]`·`[0.1.x]`·RC 항목은 그대로 역사로 남습니다. ⚠️ 어느 레지스트리에 실제로 올라갔는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh`의 `df_published_version`이 소유합니다 — 태그를 밀었다는 것과 게시됐다는 것은 다릅니다.
+> 이 리포지토리는 **폴리글랏 SDK**입니다. Java(`io.github.xzawed:keycloak-sdk`)·Python(`keycloak-sdk`)·Node(`@xzawed/keycloak-sdk`)·Go(`github.com/xzawed/KeyCloakSDK/go`)·C#/.NET(`Xzawed.Keycloak.Sdk`)·PHP(`xzawed/keycloak-sdk`)·Rust(`keycloak-sdk`)·Ruby(`keycloak-sdk`)·Kotlin(`io.github.xzawed:keycloak-sdk-kotlin`) 9개 언어가 독립 배포되며, 아래 항목은 언어 태그로 구분합니다. 지금까지 아홉 언어 전부가 **`1.0.0`**을 게시했습니다 — 한 물결에 닿은 것은 1.0 기준(`git show d4e8958:docs/superpowers/plans/release-1.0.md`)을 아홉 곳이 함께 충족해서이고, 번호는 언어마다 따로 움직입니다. ⚠️ 어느 레지스트리에 실제로 올라갔는지는 이 파일이 아니라 `scripts/lib/deploy-facts.sh`의 `df_published_version`이 소유합니다 — 태그를 밀었다는 것과 게시됐다는 것은 다릅니다.
 
 > 이전 릴리스(월별 보관본): [2026-10](changelog/2026-10.md) · [2026-09](changelog/2026-09.md) · [2026-08](changelog/2026-08.md)
 
@@ -47,6 +47,7 @@
 - **(Java · Kotlin · Node · Go · PHP · Rust · Ruby · .NET)** ⚠️ `logout` 은 이제 HTTP 204 일 때만 성공합니다 — Keycloak 의 답은 204 뿐인데, 지금까지는 2xx 전부(PHP 는 3xx 까지)를 성공으로 읽어 요청을 가로챈 200 로그인 페이지에도 세션이 끝났다고 돌려줬습니다. 그 밖의 상태는 전부 인증 오류이고 메시지에 상태를 싣습니다(PHP 의 오류 상태 `logout failed` 도 `logout failed (HTTP 400)`). 본문은 판정에 쓰지 않습니다 — Ruby 에서 JSON 이라 적힌 깨진 본문이 `TransportError` 이던 것도 이제 상태가 정합니다. Python 은 처음부터 204 만 받았습니다. 204 를 200 으로 바꾸는 프록시 뒤라면 그 프록시를 고치십시오.
 
 ### Fixed
+- **(Rust · Ruby)** 오류 메시지가 사실대로입니다 — Rust `introspect` 의 실패는 `token …` 대신 `introspection …` 을 댑니다. Ruby 그랜트는 `error` 없는 오류 응답(본문 없는 503 등)에 `non-standard error code` 대신 `no OAuth error code` 입니다. 계급과 코드 칸은 그대로입니다.
 - **(Java · Kotlin · Python · Go · PHP · Ruby)** 오류 상태(400 · 401 등)의 토큰 · introspection 응답이 실은 OAuth `error` 코드를 이제 다른 레인처럼 코드 칸에 싣습니다 — Java · Kotlin · Python 의 admin 자기 그랜트, Go 의 admin 로그인과 `Introspect`, PHP · Ruby 의 `introspect` 는 비워 뒀습니다. 규칙(보낸 비밀과 겹치면 싣지 않음)과 메시지는 그대로입니다.
 - **(Node)** 200 토큰 응답의 id_token 헤더나 페이로드가 base64url 이 아니면 `KeycloakTransportError` 였습니다 — 이제 JSON 이 아닐 때와 같은 `KeycloakAuthError` 입니다.
 - **(Ruby)** 주입한 토큰 공급자가 낸 `Faraday::ParsingError` 는 이제 상태와 무관하게 파사드 · `raw` 모두 `TransportError` 입니다(예전에는 409 면 admin 요청 없이 `ConflictError`).
