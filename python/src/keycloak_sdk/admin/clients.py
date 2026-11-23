@@ -23,7 +23,8 @@ class ClientsResource:
 
     def create(self, rep: dict[str, Any]) -> str:
         """Creates a client and returns its internal UUID — the one the answer's `Location` names,
-        resolved against the request URL (the last path segment, in the clients collection)."""
+        resolved against the request URL (the last path segment, in the clients collection). Raises
+        `KeycloakTransportError` when it names none."""
         encodable(rep)
         return create_call(lambda: self._admin.create_client(rep))
 

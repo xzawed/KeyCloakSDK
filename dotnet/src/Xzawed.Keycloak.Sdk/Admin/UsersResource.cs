@@ -8,6 +8,9 @@ public sealed class UsersResource
     private readonly AdminClient _a;
     internal UsersResource(AdminClient a) => _a = a;
 
+    /// <summary>Creates a user and returns its id — the one the answer's <c>Location</c> names, resolved against the
+    /// request URL (the last path segment, in the users collection). Throws <see cref="KeycloakAdminException"/> (500)
+    /// when it names none.</summary>
     public Task<string> CreateAsync(UserRepresentation user, CancellationToken ct = default)
         => _a.CreateReturningIdAsync(c => c.CreateUserWithResponseAsync(_a.Realm, user, ct), ct);
 

@@ -8,6 +8,9 @@ public sealed class GroupsResource
     private readonly AdminClient _a;
     internal GroupsResource(AdminClient a) => _a = a;
 
+    /// <summary>Creates a group and returns its id — the one the answer's <c>Location</c> names, resolved against the
+    /// request URL (the last path segment, in the groups collection). Throws <see cref="KeycloakAdminException"/> (500)
+    /// when it names none.</summary>
     public Task<string> CreateAsync(GroupRepresentation group, CancellationToken ct = default)
         => _a.CreateReturningIdAsync(c => c.CreateGroupWithResponseAsync(_a.Realm, group, ct), ct);
 

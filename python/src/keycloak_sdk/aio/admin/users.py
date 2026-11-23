@@ -21,7 +21,8 @@ class AsyncUsersResource:
 
     async def create(self, rep: dict[str, Any]) -> str:
         """Creates a user and returns its id — the one the answer's `Location` names, resolved
-        against the request URL (the last path segment, in the users collection)."""
+        against the request URL (the last path segment, in the users collection). Raises
+        `KeycloakTransportError` when it names none."""
         encodable(rep)
         return await acreate_call(self._admin.a_create_user(rep))
 

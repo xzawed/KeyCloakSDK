@@ -10,6 +10,8 @@ module KeycloakSdk
         @realm = realm
       end
 
+      # Creates a group and returns its id — the one the answer's Location names, resolved against the request URL
+      # (the last path segment, in the groups collection); nil when it names none.
       def create(representation)
         path = "admin/realms/#{esc(@realm)}/groups"
         id_from_location(request { @conn.post(path, representation, &SettleBody::MARK) })

@@ -25,7 +25,8 @@ class AsyncClientsResource:
 
     async def create(self, rep: dict[str, Any]) -> str:
         """Creates a client and returns its internal UUID — the one the answer's `Location` names,
-        resolved against the request URL (the last path segment, in the clients collection)."""
+        resolved against the request URL (the last path segment, in the clients collection). Raises
+        `KeycloakTransportError` when it names none."""
         encodable(rep)
         return await acreate_call(self._admin.a_create_client(rep))
 

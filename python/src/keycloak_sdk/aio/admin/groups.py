@@ -21,7 +21,8 @@ class AsyncGroupsResource:
 
     async def create(self, rep: dict[str, Any]) -> str:
         """Creates a group and returns its id — the one the answer's `Location` names, resolved
-        against the request URL (the last path segment, in the groups collection)."""
+        against the request URL (the last path segment, in the groups collection). Raises
+        `KeycloakTransportError` when it names none."""
         # python-keycloak's a_create_group() returns None for an answer without a Location — the
         # facade reads the id from the answer itself (`acreate_call`), so that is the no-id error.
         encodable(rep)
