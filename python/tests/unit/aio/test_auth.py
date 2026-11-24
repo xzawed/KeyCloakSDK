@@ -107,6 +107,80 @@ async def test_awrap_translates_error_without_response_code_to_transport_error()
         await _client(openid).client_credentials_token()
 
 
+async def test_awrap_reraises_an_sdk_exception_unchanged():
+    """`keycloak_sdk` 예외는 python-keycloak 실패가 아니다 — 같은 객체를 변환 없이 다시 던진다
+    (sync `_wrap` 동형)."""
+    client = _client(MagicMock())
+    original = KeycloakTransportError("already ours")
+
+    async def boom() -> None:
+        raise original
+
+    with pytest.raises(KeycloakTransportError) as excinfo:
+        await client._awrap(boom())
+
+    assert excinfo.value is original
+
+
+async def test_awrap_reraises_a_runtime_error_from_the_awaitable_unchanged():
+    """awaitable 이 던진 `RuntimeError`(우리 버그)는 `KeycloakError` 도 아니고 python-keycloak
+    프레임을 지나지도 않는다 — 같은 객체 그대로 전파된다."""
+    client = _client(MagicMock())
+    original = RuntimeError("bug in the awaitable")
+
+    async def boom() -> None:
+        raise original
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await client._awrap(boom())
+
+    assert excinfo.value is original
+
+
+async def test_refetch_done_keeps_a_newer_fetch():
+    """끝난 옛 fetch 의 콜백은 그 사이 갈아 끼운 더 새로운 fetch 를 현재 조회로 남긴다."""
+    client = _client(MagicMock())
+
+    async def finish() -> None:
+        await asyncio.sleep(0)
+
+    async def wait_forever() -> None:
+        await asyncio.Event().wait()
+
+    old = asyncio.ensure_future(finish())
+    await old
+    newer = asyncio.ensure_future(wait_forever())
+    client._jwks_fetch = newer
+
+    client._refetch_done(old)
+
+    assert client._jwks_fetch is newer
+    newer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await newer
+
+
+async def test_refetch_done_clears_a_cancelled_fetch_without_raising():
+    """취소된 현재 fetch 는 `.exception()` 을 부르지 않는다 — 그 호출은 `CancelledError` 다.
+    슬롯만 비우고 그대로 돌아온다."""
+    client = _client(MagicMock())
+
+    async def wait_forever() -> None:
+        await asyncio.Event().wait()
+
+    fetch = asyncio.ensure_future(wait_forever())
+    client._jwks_fetch = fetch
+    fetch.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await fetch
+    assert fetch.cancelled()
+    assert client._jwks_fetch is fetch
+
+    client._refetch_done(fetch)
+
+    assert client._jwks_fetch is None
+
+
 # --- authorization_url (sync — no network) -----------------------------------------
 
 

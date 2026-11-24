@@ -206,16 +206,6 @@
       "branches": 1,
       "why": "defensive: 바깥 연결의 `if callable(aclose)` 거짓 쪽 — 연결은 python-keycloak 7.1.1 의 ConnectionManager 이고 그것은 aclose 를 정의한다(connection.py). aclose 없는 연결에 대비한 방어선이다 — 가짜 admin 을 주입해야만 닿는다"
     },
-    "python/src/keycloak_sdk/aio/auth.py:AsyncAuthClient._awrap": {
-      "lines": 1,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "python/src/keycloak_sdk/aio/auth.py:AsyncAuthClient._refetch_done": {
-      "lines": 0,
-      "branches": 2,
-      "why": "coverage-omit-hides-security-paths"
-    },
     "python/src/keycloak_sdk/aio/auth.py:AsyncAuthClient.aclose": {
       "lines": 0,
       "branches": 1,
@@ -225,11 +215,6 @@
       "lines": 1,
       "branches": 1,
       "why": "defensive: 이중 검사 잠금의 두 번째 검사(`_jwks_lock` 안의 `not force and cached is not None`)가 참인 쪽 — 다른 스레드가 락을 기다리는 동안 키셋을 먼저 (재)로드한 경쟁에서만 참이다(실패 분기가 아니다 — 단위 시험의 스레드는 서버 쪽뿐이라 이 경쟁을 안 만든다)"
-    },
-    "python/src/keycloak_sdk/auth.py:AuthClient._wrap": {
-      "lines": 1,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
     },
     "python/src/keycloak_sdk/auth.py:AuthClient.close": {
       "lines": 0,
