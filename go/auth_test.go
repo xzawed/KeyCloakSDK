@@ -1218,11 +1218,40 @@ func TestSuccessStatusOAuthErrorFailsTheAuthLanes(t *testing.T) {
 	}
 }
 
-// TestSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString — an `error` member that is not a JSON string of at
-// least one character is ignored, as it was: Introspect still reads active, and the admin login still uses the token. (The
-// three grants' handling of such a member is x/oauth2's and unchanged — a number or an object fails its decode.)
-func TestSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString(t *testing.T) {
-	for _, v := range []string{`5`, `{}`, `[]`, `true`, `null`, `""`} {
+// TestSuccessStatusOAuthErrorCountsAnErrorThatIsNotAString — an `error` member that is present and neither null nor ""
+// names an error even when it is no JSON string (a number, an object, an array, a boolean): Introspect and the admin login
+// fail as a 400 carrying it does — *AuthError, no code (it is no string), no active read, no admin request (registry
+// token-response-residual-divergence A; it was ignored — active read, the token used). The three grants already failed
+// such a member in x/oauth2's decode.
+func TestSuccessStatusOAuthErrorCountsAnErrorThatIsNotAString(t *testing.T) {
+	for _, v := range []string{`5`, `{}`, `[]`, `true`} {
+		t.Run(v, func(t *testing.T) {
+			ctx := context.Background()
+			p := newSuccessStatusIdP(t)
+			c := p.client(t, "sekret")
+			p.token.Store(`{"error":` + v + `,"access_token":"` + successStatusFresh + `","token_type":"Bearer","expires_in":300}`)
+			p.introspect.Store(`{"error":` + v + `,"active":true}`)
+			r, err := c.Auth.Introspect(ctx, "tok-in")
+			if r != nil {
+				t.Errorf("Introspect handed out active=%v", r.Active)
+			}
+			successStatusRefused(t, "Introspect", err, "")
+			a, err := c.Admin(ctx)
+			if err == nil {
+				_, err = a.Users.Get(ctx, "u1")
+			}
+			successStatusRefused(t, "admin", err, "")
+			if n := p.adminHits.Load(); n != 0 {
+				t.Errorf("admin: %d admin requests went out — want none", n)
+			}
+		})
+	}
+}
+
+// TestSuccessStatusOAuthErrorIgnoresANullOrEmptyError — an `error` member that is null or "" is ignored, as it was:
+// Introspect still reads active, and the admin login still uses the token.
+func TestSuccessStatusOAuthErrorIgnoresANullOrEmptyError(t *testing.T) {
+	for _, v := range []string{`null`, `""`} {
 		t.Run(v, func(t *testing.T) {
 			ctx := context.Background()
 			p := newSuccessStatusIdP(t)

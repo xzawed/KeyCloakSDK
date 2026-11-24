@@ -135,7 +135,7 @@ class AsyncAuthClient:
             cause = summarize(exc)
         else:
             named = (
-                non_200_success(answer, answered, sent=sent_secrets) if token_response else None
+                non_200_success(answered, sent=sent_secrets) if token_response else None
             ) or error_in_success(answer, answered, sent=sent_secrets)
             if named is None:
                 return answer

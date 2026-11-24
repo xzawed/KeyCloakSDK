@@ -398,4 +398,260 @@ class OAuthErrorCodeEchoTest {
     System.out.println(String.join("\n", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
   }
+
+  // ---- Residual divergences (registry token-response-residual-divergence) — the cells' text is the assertion's message,
+  // the targets: (A) a 200 whose error is present and neither null nor "" fails like a 400 carrying it — the lane's error class,
+  // no code unless a string the echo filter lets through, nothing in the body used (A1–A4 · B2); null and "" still succeed
+  // (A5 · A6). (C) a 2xx other than 200 gets the verdict the lane gives a 400 with the same body — class and code; the
+  // message may differ only by the status number (C1 ~ C2 · C3 ~ C4). Printed, never asserted: which duplicated error an
+  // error status echoes (B1 · B3 · B4 — RFC 8259 §4 leaves it open) and B5 (a 200 whose duplicated error is a code, then
+  // "" — a parser differential the registry holds). ----
+
+  private static byte[] ascii(String s) {
+    return s.getBytes(StandardCharsets.US_ASCII);
+  }
+
+  private static byte[] concat(byte[]... parts) {
+    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+    for (byte[] p : parts) out.writeBytes(p);
+    return out.toByteArray();
+  }
+
+  /** cell → {status, token-lane body bytes, introspection-lane body bytes} — written as bytes, never through a serializer. */
+  private static Map<String, Object[]> residualCells() {
+    String token = "{\"access_token\":\"AT-ok\",\"token_type\":\"Bearer\",\"expires_in\":300";
+    String active = "{\"active\":true,\"username\":\"svc\"";
+    Map<String, Object[]> cells = new LinkedHashMap<>();
+    cells.put("A0", new Object[] {200, ascii(token + "}"), ascii(active + "}")});
+    String[][] values = {{"A1", "123"}, {"A2", "{\"a\":1}"}, {"A3", "[\"x\"]"}, {"A4", "true"}, {"A5", "null"}, {"A6", "\"\""}};
+    for (String[] x : values) {
+      cells.put(x[0], new Object[] {200, ascii(token + ",\"error\":" + x[1] + "}"), ascii(active + ",\"error\":" + x[1] + "}")});
+    }
+    byte[] b1 = ascii("{\"error\":\"invalid_grant\",\"error\":\"temporarily_unavailable\"}");
+    cells.put("B1", new Object[] {400, b1, b1});
+    cells.put("B2", new Object[] {200,
+        ascii(token + ",\"error\":\"invalid_grant\",\"error\":\"temporarily_unavailable\"}"),
+        ascii("{\"active\":true,\"error\":\"invalid_grant\",\"error\":\"temporarily_unavailable\"}")});
+    byte[] b3 = ascii("{\"error\":\"invalid_grant\",\"error\":123}");
+    cells.put("B3", new Object[] {400, b3, b3});
+    byte[] b4 = ascii("{\"error\":123,\"error\":\"invalid_grant\"}");
+    cells.put("B4", new Object[] {400, b4, b4});
+    cells.put("B5", new Object[] {200, ascii(token + ",\"error\":\"invalid_grant\",\"error\":\"\"}"),
+        ascii("{\"active\":true,\"error\":\"invalid_grant\",\"error\":\"\"}")});
+    byte[] badUtf8 = concat(ascii("{\"error\":\"invalid_grant\",\"error_description\":\""), new byte[] {(byte) 0xC3, 0x28},
+        ascii("\"}"));
+    cells.put("C1", new Object[] {201, badUtf8, badUtf8});
+    cells.put("C2", new Object[] {400, badUtf8, badUtf8});
+    byte[] notJson = ascii("not json");
+    cells.put("C3", new Object[] {201, notJson, notJson});
+    cells.put("C4", new Object[] {400, notJson, notJson});
+    return cells;
+  }
+
+  /** Every character outside printable ASCII as a backslash, u, then its code point in uppercase hex in braces; null → null. */
+  private static String printable(String s) {
+    if (s == null) return "null";
+    StringBuilder out = new StringBuilder();
+    s.codePoints().forEach(cp -> {
+      if (cp >= 0x20 && cp <= 0x7E) out.appendCodePoint(cp);
+      else out.append("\\u{").append(Integer.toHexString(cp).toUpperCase(Locale.ROOT)).append('}');
+    });
+    return out.toString();
+  }
+
+  /** The lane's call, returning what it returns — every lane {@link #SURFACES} names. */
+  private static Object callLane(String lane, KeycloakClient kc) {
+    return switch (lane) {
+      case "clientCredentialsToken" -> kc.auth().clientCredentialsToken();
+      case "provider" ->
+          new ClientCredentialsTokenProvider(kc.auth(), Clock.systemUTC(), Duration.ofSeconds(30)).getAccessToken();
+      case "refresh" -> kc.auth().refresh(REFRESH);
+      case "exchangeCode" -> kc.auth().exchangeCode(CODE, java.net.URI.create("https://app.example/cb"), VERIFIER);
+      case "introspect" -> kc.auth().introspect(TOKEN);
+      case "admin" -> kc.admin().users().get("u1");
+      default -> throw new IllegalArgumentException("no call for lane " + lane);
+    };
+  }
+
+  private static String outcomeOf(Throwable t) {
+    String name = t.getClass().getName();
+    return name.startsWith("io.github.xzawed.keycloak.") ? t.getClass().getSimpleName() : name;
+  }
+
+  /**
+   * One lane × cell's outcome — {@code row} is {outcome, code, message} (the assertions' text), {@code shown} the outcome class
+   * alone and {@code used} whether anything in the body was used (a token returned, active read, an admin request sent).
+   */
+  private record Recorded(String[] row, String shown, boolean used) {}
+
+  /** One lane × cell. Never throws: a failure of any type is the recorded outcome. */
+  private Recorded recordCell(String lane, List<String> adminAuthorizations) {
+    KeycloakConfig config = KeycloakConfig.builder().serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+        .realm(REALM).clientId("app").clientSecret(SECRET.toCharArray())
+        .connectTimeout(Duration.ofSeconds(5)).readTimeout(Duration.ofSeconds(5)).build();
+    Object result = null;
+    Throwable failure = null;
+    try (KeycloakClient kc = KeycloakClient.create(config)) {
+      result = callLane(lane, kc);
+    } catch (Throwable t) { // NOSONAR — record-only: every failure type is a recorded outcome
+      failure = t;
+    }
+    String outcome;
+    String code;
+    String message;
+    List<String> authorizations;
+    synchronized (adminAuthorizations) {
+      authorizations = new ArrayList<>(adminAuthorizations);
+    }
+    if ("admin".equals(lane) && !authorizations.isEmpty()) {
+      String header = authorizations.get(0);
+      outcome = "Bearer AT-ok".equals(header) ? "SUCCESS" : "SENT-WITH-OTHER-AUTHORIZATION";
+      code = "-";
+      message = "admin request sent, Authorization=" + header + "; call="
+          + (failure == null ? "ok" : outcomeOf(failure) + ": " + failure.getMessage());
+    } else if (failure == null) {
+      outcome = "SUCCESS";
+      code = "-";
+      if (result instanceof io.github.xzawed.keycloak.core.TokenSet t) {
+        message = "access_token=" + t.getAccessToken();
+      } else if (result instanceof io.github.xzawed.keycloak.auth.IntrospectionResult r) {
+        message = "active=" + r.isActive();
+      } else if (result instanceof String s) {
+        message = "access_token=" + s;
+      } else {
+        outcome = "RETURNED-WITHOUT-ADMIN-REQUEST";
+        message = String.valueOf(result);
+      }
+    } else {
+      outcome = outcomeOf(failure);
+      if (failure instanceof KeycloakAuthException e) {
+        code = e.getError() == null ? "null" : "\"" + printable(e.getError()) + "\"";
+      } else {
+        code = "n/a";
+      }
+      message = failure.getMessage();
+    }
+    boolean used = "admin".equals(lane) ? !authorizations.isEmpty() : failure == null;
+    return new Recorded(new String[] {outcome, code, printable(message)},
+        used || failure == null ? "SUCCESS" : outcomeOf(failure), used);
+  }
+
+  /** (A) the cells a token or introspection lane takes as success — no error, a null one, "". */
+  private static final List<String> SUCCEEDS = List.of("A0", "A5", "A6");
+  /** (A) a 200 whose error is a number, an object, an array, a boolean — and (B) a duplicated string one. */
+  private static final List<String> NAMES_AN_ERROR = List.of("A1", "A2", "A3", "A4", "B2");
+
+  /** The message with its status number named alike — (C) lets the message differ by it alone. */
+  private static String statusBlind(String message, int status) {
+    return message.replace("HTTP " + status, "HTTP <status>");
+  }
+
+  /** Each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them. */
+  private static List<String> residualWrong(String lane, Map<String, String[]> rows) {
+    List<String> wrong = new ArrayList<>();
+    for (String cell : SUCCEEDS) {
+      if (!"SUCCESS".equals(rows.get(cell)[0])) wrong.add(lane + " " + cell + ": " + String.join("|", rows.get(cell)) + " -- wants SUCCESS");
+    }
+    for (String cell : NAMES_AN_ERROR) {
+      String[] row = rows.get(cell);
+      if (!"KeycloakAuthException".equals(row[0]) || (!"B2".equals(cell) && !"null".equals(row[1]))) {
+        wrong.add(lane + " " + cell + ": " + String.join("|", row) + " -- wants KeycloakAuthException, no code");
+      }
+    }
+    for (String[] pair : new String[][] {{"C1", "C2"}, {"C3", "C4"}}) {
+      String[] got = rows.get(pair[0]);
+      String[] want = rows.get(pair[1]);
+      if (!got[0].equals(want[0]) || !got[1].equals(want[1]) || !statusBlind(got[2], 201).equals(statusBlind(want[2], 400))) {
+        wrong.add(lane + " " + pair[0] + " " + String.join("|", got) + " != " + pair[1] + " " + String.join("|", want));
+      }
+    }
+    return wrong;
+  }
+
+  /**
+   * The bytes a plain client reads for a C cell — the fake's answer on the wire, compared with the cell's bytes (C1/C2
+   * carry 0xC3 0x28 inside a string): null when status and bytes are the cell's, else what differs (never the bytes).
+   */
+  private static String wireDiffers(int port, String cell, int status, byte[] expected) throws IOException {
+    java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+        java.net.URI.create("http://127.0.0.1:" + port + OIDC + "/token").toURL().openConnection();
+    c.setRequestMethod("POST");
+    c.setDoOutput(true);
+    try (OutputStream out = c.getOutputStream()) {
+      out.write(ascii("grant_type=client_credentials"));
+    }
+    int got = c.getResponseCode();
+    byte[] body;
+    try (java.io.InputStream in = got >= 400 ? c.getErrorStream() : c.getInputStream()) {
+      body = in == null ? new byte[0] : in.readAllBytes();
+    }
+    c.disconnect();
+    boolean same = java.util.Arrays.equals(body, expected);
+    return got == status && same ? null : "fake " + cell + ": status " + got + ", bytes " + (same ? "equal" : "differ");
+  }
+
+  /**
+   * Registry {@code token-response-residual-divergence}: every lane × the cells A0–A6 (a 200 whose {@code error} is not a
+   * non-empty string), B1–B5 (a duplicated {@code error} key) and C1–C4 (a 201 beside a 400 with an invalid-UTF-8 or
+   * non-JSON body), after a plain client checks the fake serves the C cells' bytes as written. Holds every lane to the
+   * targets above — the admin lane SUCCEEDS only when its request went out with the token.
+   */
+  @Test void residualDivergenceCellsMeetTheirTargets() throws IOException {
+    java.util.concurrent.atomic.AtomicReference<Object[]> answer = new java.util.concurrent.atomic.AtomicReference<>();
+    List<String> adminAuthorizations = new ArrayList<>();
+    server.removeContext("/");
+    server.createContext("/", ex -> {
+      ex.getRequestBody().readAllBytes();
+      String path = ex.getRequestURI().getRawPath();
+      int code;
+      byte[] bytes;
+      if ("POST".equals(ex.getRequestMethod())
+          && (path.endsWith("/protocol/openid-connect/token") || path.endsWith("/protocol/openid-connect/token/introspect"))) {
+        Object[] a = answer.get();
+        code = (Integer) a[0];
+        bytes = (byte[]) a[1];
+      } else if ("GET".equals(ex.getRequestMethod()) && path.equals("/admin/realms/" + REALM + "/users/u1")) {
+        synchronized (adminAuthorizations) {
+          adminAuthorizations.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
+        }
+        code = 200;
+        bytes = ascii("{\"id\":\"u1\",\"username\":\"svc\"}");
+      } else {
+        code = 404;
+        bytes = ascii("{}");
+      }
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(code, bytes.length);
+      try (OutputStream out = ex.getResponseBody()) {
+        out.write(bytes);
+      }
+    });
+    Map<String, Object[]> cells = residualCells();
+    List<String> wrong = new ArrayList<>();
+    for (String cell : List.of("C1", "C2", "C3", "C4")) {
+      Object[] c = cells.get(cell);
+      answer.set(new Object[] {c[0], c[1]});
+      String differs = wireDiffers(server.getAddress().getPort(), cell, (Integer) c[0], (byte[]) c[1]);
+      if (differs != null) wrong.add(differs);
+    }
+    // Only B5 prints — its outcome class and whether anything in the body was used, never a code or a message (the cells'
+    // text is the assertion's message alone: CodeQL's clear-text-logging heuristic flags a line built from the OAuth code).
+    List<String> b5 = new ArrayList<>();
+    for (String lane : SURFACES.keySet()) {
+      Map<String, String[]> rows = new LinkedHashMap<>();
+      for (Map.Entry<String, Object[]> cell : cells.entrySet()) {
+        Object[] c = cell.getValue();
+        answer.set(new Object[] {c[0], "introspect".equals(lane) ? c[2] : c[1]});
+        synchronized (adminAuthorizations) {
+          adminAuthorizations.clear();
+        }
+        Recorded recorded = recordCell(lane, adminAuthorizations);
+        rows.put(cell.getKey(), recorded.row());
+        if ("B5".equals(cell.getKey())) b5.add("B5|java|" + lane + "|" + recorded.shown() + "|used=" + recorded.used());
+      }
+      wrong.addAll(residualWrong(lane, rows));
+    }
+    System.out.println(String.join("\n", b5));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
+  }
 }

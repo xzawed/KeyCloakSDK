@@ -731,14 +731,30 @@ internal class TokenResponseClassTest {
             assertNone(wrong)
         }
 
-    // 대조 — error 가 비어 있지 않은 JSON 문자열이 아니면(숫자 · 객체 · 배열 · 불리언 · null · "") 지금처럼 본문의 나머지가 판정한다. auth
-    // 레인은 토큰을 쓰고 활성으로 읽는다. admin 의 결합(keycloak-admin-client 의 AccessTokenResponse 는 문자열 error 칸을 가진다 —
-    // TokenManager 는 그것을 읽지 않는다)은 스칼라를 받고 객체 · 배열에서 실패한다 — 그대로다. JSON 객체가 아닌 본문도 판정하지 않는다.
+    // error 가 있고 null 도 "" 도 아니면 — 숫자 · 객체 · 배열 · 불리언도 — 그 응답은 오류 응답이다: 같은 본문의 400 처럼 실패하고, 코드는
+    // 싣지 않으며(문자열이 아니다) 본문에서 아무것도 쓰지 않는다(등록부 token-response-residual-divergence A · Java 동형). 예전에는
+    // 대조군이었다 — auth 레인은 토큰을 쓰고 활성으로 읽었고, admin 의 결합은 스칼라를 받아 그 토큰으로 요청을 보냈다(객체 · 배열은 결합이
+    // 실패했다). 대조 — null 과 "" 는 지금처럼 본문의 나머지가 판정한다. JSON 객체가 아닌 본문도 판정하지 않는다.
     @Test
-    fun `success status OAuth error counts only a non-empty string`() =
+    fun `success status OAuth error counts any error but null or empty`() =
         runTest(timeout = 120.seconds) {
             val wrong = mutableListOf<String>()
-            for (value in listOf("12345", """{"e":"invalid_grant"}""", """["invalid_grant"]""", "true", "null", "\"\"")) {
+            for (value in listOf("12345", """{"e":"invalid_grant"}""", """["invalid_grant"]""", "true")) {
+                tokens(trxJson(200, """{"error":$value,"access_token":"AT-ok","token_type":"Bearer","expires_in":300}"""))
+                val s1 = call(block = cc)
+                trxExpect("S1 error $value", s1, KeycloakAuthException::class.java, "Client credentials failed: HTTP 200", wrong)
+                trxExpectCode("S1 error $value", s1, null, wrong)
+                introspectReply = trxJson(200, """{"error":$value,"active":true,"username":"svc"}""")
+                val inspected = call(block = introspect)
+                trxExpect("IN error $value", inspected, KeycloakAuthException::class.java, "Introspection failed: HTTP 200", wrong)
+                trxExpectCode("IN error $value", inspected, null, wrong)
+                tokens(trxJson(200, """{"error":$value,"access_token":"good","token_type":"Bearer","expires_in":300}"""))
+                val s5 = call(block = admin)
+                trxExpect("S5 error $value", s5, KeycloakAuthException::class.java, "Admin token request failed: HTTP 200", wrong)
+                trxExpectCode("S5 error $value", s5, null, wrong)
+                if (adminHits() != 0) wrong += "S5 error $value: admin 요청이 나갔다 — ${adminHits()}"
+            }
+            for (value in listOf("null", "\"\"")) {
                 tokens(trxJson(200, """{"error":$value,"access_token":"AT-ok","token_type":"Bearer","expires_in":300}"""))
                 val s1 = call(block = cc)
                 if (s1.value != "AT-ok") wrong += "S1 error $value: 토큰을 써야 한다 — $s1"
@@ -747,9 +763,7 @@ internal class TokenResponseClassTest {
                 if (inspected.value != "svc") wrong += "IN error $value: 활성으로 읽어야 한다 — $inspected"
                 tokens(trxJson(200, """{"error":$value,"access_token":"good","token_type":"Bearer","expires_in":300}"""))
                 val s5 = call(block = admin)
-                if (value.startsWith("{") || value.startsWith("[")) {
-                    trxExpect("S5 error $value", s5, KeycloakAuthException::class.java, trxAdminAuth(200), wrong)
-                } else if (s5.value != "alice" || adminHits() != 1) {
+                if (s5.value != "alice" || adminHits() != 1) {
                     wrong += "S5 error $value: 토큰을 써야 한다 — $s5 · admin ${adminHits()}"
                 }
             }

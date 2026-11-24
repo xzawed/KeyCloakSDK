@@ -72,11 +72,15 @@ _B2_TOKEN = (
 )
 _B1_INTRO = b'{"error":"invalid_token"}'
 _B2_INTRO = b'{"error":"invalid_token","active":true}'
-#: `error` 가 비어 있지 않은 문자열이 아니면 예전 그대로다 — 대조군의 멤버들.
+#: `error` 가 null 이거나 `""` 이면 예전 그대로다 — 대조군의 멤버들.
 _NOT_A_NAMED_ERROR = {
-    "a number": b'"error":400',
     "empty": b'"error":""',
     "null": b'"error":null',
+}
+#: 문자열이 아닌 `error`(수 · 객체)도 오류를 이름한다 — 코드 없이 400 처럼 실패한다(등록부
+#: token-response-residual-divergence A · 예전에는 대조군이었다: 토큰을 쓰고 활성으로 읽었다).
+_A_NAMED_ERROR_WITHOUT_A_CODE = {
+    "a number": b'"error":400',
     "an object": b'"error":{"code":"invalid_grant"}',
 }
 
@@ -197,6 +201,10 @@ TOKEN_CELLS: dict[str, _Answer] = {
         )
         for what, member in _NOT_A_NAMED_ERROR.items()
     },
+    **{
+        f"success_status_oauth_error: error is {what}": (200, _JSON, _with(_GOOD_TOKEN, member))
+        for what, member in _A_NAMED_ERROR_WITHOUT_A_CODE.items()
+    },
 }
 
 _HTTP = "Keycloak request failed: HTTP"
@@ -265,6 +273,10 @@ S1: dict[str, _Verdict] = {
     "success_status_oauth_error B1 200": _auth(f"{_HTTP} 200 (invalid_grant)", "invalid_grant"),
     "success_status_oauth_error B2 200": _auth(f"{_HTTP} 200 (invalid_grant)", "invalid_grant"),
     **{f"success_status_oauth_error control: error is {what}": OK for what in _NOT_A_NAMED_ERROR},
+    **{
+        f"success_status_oauth_error: error is {what}": _auth(f"{_HTTP} 200")
+        for what in _A_NAMED_ERROR_WITHOUT_A_CODE
+    },
 }
 
 #: introspection 엔드포인트의 칸 — 토큰 엔드포인트는 정상이다.
@@ -314,6 +326,10 @@ INTROSPECTION_CELLS: dict[str, _Answer] = {
         )
         for what, member in _NOT_A_NAMED_ERROR.items()
     },
+    **{
+        f"success_status_oauth_error: error is {what}": (200, _JSON, _with(_GOOD_INTRO, member))
+        for what, member in _A_NAMED_ERROR_WITHOUT_A_CODE.items()
+    },
 }
 
 INTRO: dict[str, _Verdict] = {
@@ -341,6 +357,10 @@ INTRO: dict[str, _Verdict] = {
     "success_status_oauth_error B1 200": _auth(f"{_HTTP} 200 (invalid_token)", "invalid_token"),
     "success_status_oauth_error B2 200": _auth(f"{_HTTP} 200 (invalid_token)", "invalid_token"),
     **{f"success_status_oauth_error control: error is {what}": OK for what in _NOT_A_NAMED_ERROR},
+    **{
+        f"success_status_oauth_error: error is {what}": _auth(f"{_HTTP} 200")
+        for what in _A_NAMED_ERROR_WITHOUT_A_CODE
+    },
 }
 
 #: introspect 하는 값 — `invalid_token` 의 조각이 아니어야 그 코드가 실린다(보낸 값과 겹치는 코드는

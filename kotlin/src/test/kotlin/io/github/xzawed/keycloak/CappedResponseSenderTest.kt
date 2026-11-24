@@ -201,11 +201,12 @@ internal class CappedResponseSenderTest {
         assertTrue(wrong.isEmpty(), "${wrong.size} 건:\n" + wrong.joinToString("\n"))
     }
 
-    // strict(토큰·introspection) — 2xx 본문의 잘못된 UTF-8 은 본문을 인용하지 않는 ResponseNotUtf8Exception 이다(끝까지 온 응답을 쓸 수
+    // strict(토큰·introspection) — 200 본문의 잘못된 UTF-8 은 본문을 인용하지 않는 ResponseNotUtf8Exception 이다(끝까지 온 응답을 쓸 수
     // 없다 — 등록부 token-response-class-divergent · Java 동형). 잘못된 꼴은 대체 문자를 낳는 다섯이다 — 이음 바이트가 아닌 바이트 · UTF-8
     // 에 없는 바이트 · 겹침 꼴 · 서로게이트 · 끝에서 잘린 열. 그 밖은 strict 가 아닌 송신과 같은 응답이다: 유효한 UTF-8 · BOM · 4 KiB
-    // 버퍼를 여러 번 채우는 글자 수 · 오류 상태의 잘못된 UTF-8(판정은 상태가 한다) · 빈 본문 · 204 · 302. 상한을 넘는 본문은 UTF-8 을
-    // 보기 전에 ResponseTooLargeException 이다(다 읽지 않았다).
+    // 버퍼를 여러 번 채우는 글자 수 · 오류 상태의 잘못된 UTF-8(판정은 상태가 한다 — 200 밖의 2xx 도 오류 상태라 같은 본문의 400 과 같은
+    // 판정이다, 등록부 token-response-residual-divergence C) · 빈 본문 · 204 · 302. 상한을 넘는 본문은 UTF-8 을 보기 전에
+    // ResponseTooLargeException 이다(다 읽지 않았다).
     @Test
     fun `strict rejects an invalid UTF-8 success body and is the plain sender otherwise`() {
         val wrong = mutableListOf<String>()
@@ -216,7 +217,7 @@ internal class CappedResponseSenderTest {
                 byteArrayOf(0xC0.toByte(), 0xAF.toByte()),
                 byteArrayOf(0xED.toByte(), 0xA0.toByte(), 0x80.toByte()),
             )
-        for (code in listOf(200, 201, 299)) {
+        for (code in listOf(200)) {
             status = code
             // 마지막 줄 — 디코더의 4 KiB 버퍼를 넘긴 뒤의 잘못된 바이트(첫 버퍼만 재는 검사 — 넘침에서 멈춤 — 가 놓친다, 독립 레그의 변이)
             val bodies =
@@ -242,7 +243,13 @@ internal class CappedResponseSenderTest {
                 200 to ByteArray(0),
                 204 to ByteArray(0),
                 302 to "moved\n".toByteArray(),
-            )
+            ) +
+                // 200 밖의 2xx — 오류 상태다(토큰 응답의 성공은 200 하나): 그 잘못된 UTF-8 은 400 의 것처럼 상태가 판정한다
+                listOf(201, 299).flatMap { code ->
+                    malformed.map { bad ->
+                        code to "{\"error\":\"invalid_grant\",\"error_description\":\"a".toByteArray() + bad + "b\"}".toByteArray()
+                    }
+                }
         for ((code, payload) in same) {
             status = code
             body = payload

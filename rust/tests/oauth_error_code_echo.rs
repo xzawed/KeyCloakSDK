@@ -523,3 +523,346 @@ async fn a_redirect_error_status_carries_the_oauth_error_and_is_never_followed()
         wrong.join("\n")
     );
 }
+
+// ── Residual divergence cells ────────────────────────────────────────────────────────────────────────────────────────
+// Registry `token-response-residual-divergence`: (A) a 200 whose `error` is not a non-empty string, (B) a duplicated
+// `error` key, (C) a non-200 2xx next to a 400 with the same unreadable body. A bare reqwest client first checks every
+// cell's bytes come off the fake as written; then the targets: (A) a 200 whose `error` is present and neither null nor ""
+// fails like a 400 carrying it — the lane's error class, no code unless a string the echo filter lets through, nothing in
+// the body used (A1–A4 · B2); null and "" still succeed (A5 · A6). (C) a 2xx other than 200 gets the verdict the lane
+// gives a 400 with the same body — class and code; the message may differ only by the status number (C1 ~ C2 · C3 ~ C4).
+// Never asserted: which duplicated `error` an error status echoes (B1 · B3 · B4 — RFC 8259 §4 leaves it open) and B5 (a
+// 200 whose duplicated `error` is a code, then "" — a parser differential the registry holds; `-- --nocapture` prints its
+// outcome class).
+
+const CELL_ADMIN_PATH: &str = "/admin/realms/r/users/u1";
+
+/// (cell, status, token-lane body, introspection-lane body) — raw bytes, never a serializer: the duplicate keys and the
+/// invalid UTF-8 (0xC3 0x28) must reach the client as written.
+fn residual_cells() -> Vec<(&'static str, u16, Vec<u8>, Vec<u8>)> {
+    let token = |x: &str| {
+        format!(r#"{{"access_token":"AT-ok","token_type":"Bearer","expires_in":300,"error":{x}}}"#)
+            .into_bytes()
+    };
+    let introspection =
+        |x: &str| format!(r#"{{"active":true,"username":"svc","error":{x}}}"#).into_bytes();
+    let mut bad_utf8 = br#"{"error":"invalid_grant","error_description":""#.to_vec();
+    bad_utf8.extend_from_slice(&[0xC3, 0x28]);
+    bad_utf8.extend_from_slice(br#""}"#);
+    let b1 = br#"{"error":"invalid_grant","error":"temporarily_unavailable"}"#.to_vec();
+    let b3 = br#"{"error":"invalid_grant","error":123}"#.to_vec();
+    let b4 = br#"{"error":123,"error":"invalid_grant"}"#.to_vec();
+    let mut cells = vec![(
+        "A0",
+        200,
+        br#"{"access_token":"AT-ok","token_type":"Bearer","expires_in":300}"#.to_vec(),
+        br#"{"active":true,"username":"svc"}"#.to_vec(),
+    )];
+    for (name, x) in [
+        ("A1", "123"),
+        ("A2", r#"{"a":1}"#),
+        ("A3", r#"["x"]"#),
+        ("A4", "true"),
+        ("A5", "null"),
+        ("A6", r#""""#),
+    ] {
+        cells.push((name, 200, token(x), introspection(x)));
+    }
+    cells.push(("B1", 400, b1.clone(), b1));
+    cells.push((
+        "B2",
+        200,
+        br#"{"access_token":"AT-ok","token_type":"Bearer","expires_in":300,"error":"invalid_grant","error":"temporarily_unavailable"}"#.to_vec(),
+        br#"{"active":true,"error":"invalid_grant","error":"temporarily_unavailable"}"#.to_vec(),
+    ));
+    cells.push(("B3", 400, b3.clone(), b3));
+    cells.push(("B4", 400, b4.clone(), b4));
+    cells.push((
+        "B5",
+        200,
+        br#"{"access_token":"AT-ok","token_type":"Bearer","expires_in":300,"error":"invalid_grant","error":""}"#.to_vec(),
+        br#"{"active":true,"error":"invalid_grant","error":""}"#.to_vec(),
+    ));
+    cells.push(("C1", 201, bad_utf8.clone(), bad_utf8.clone()));
+    cells.push(("C2", 400, bad_utf8.clone(), bad_utf8));
+    cells.push(("C3", 201, b"not json".to_vec(), b"not json".to_vec()));
+    cells.push(("C4", 400, b"not json".to_vec(), b"not json".to_vec()));
+    cells
+}
+
+/// Every character outside printable ASCII as `\u{XXXX}` (a Rust `String` holds no invalid UTF-8, so `\x{HH}` never
+/// arises here).
+fn cell_text(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if (' '..='~').contains(&c) {
+                c.to_string()
+            } else {
+                format!("\\u{{{:X}}}", c as u32)
+            }
+        })
+        .collect()
+}
+
+fn cell_variant(e: &KeycloakError) -> String {
+    let name = match e {
+        KeycloakError::Config(_) => "Config".to_string(),
+        KeycloakError::Auth { .. } => "Auth".to_string(),
+        KeycloakError::Transport(_) => "Transport".to_string(),
+        KeycloakError::Admin(_) => "Admin".to_string(),
+        KeycloakError::TokenValidation(_) => "TokenValidation".to_string(),
+        other => format!("{other:?}")
+            .split(['(', ' ', '{'])
+            .next()
+            .unwrap_or("?")
+            .to_string(),
+    };
+    format!("KeycloakError::{name}")
+}
+
+/// (outcome, code, message) of an error — the code is `oauth_error`, which only `Auth` has.
+fn cell_error(e: &KeycloakError) -> (String, String, String) {
+    let code = match e {
+        KeycloakError::Auth {
+            oauth_error: Some(c),
+            ..
+        } => format!("\"{c}\""),
+        KeycloakError::Auth {
+            oauth_error: None, ..
+        } => "null".to_string(),
+        _ => "n/a".to_string(),
+    };
+    (cell_variant(e), code, e.to_string())
+}
+
+fn cell_token<T>(
+    r: Result<T, KeycloakError>,
+    access_token: impl Fn(&T) -> String,
+) -> (String, String, String) {
+    match r {
+        Ok(t) => (
+            "SUCCESS".into(),
+            "-".into(),
+            format!("access_token={}", access_token(&t)),
+        ),
+        Err(e) => cell_error(&e),
+    }
+}
+
+/// Records the `Authorization` header of every admin request and answers it with a user the facade parses.
+struct CellAdmin(Arc<Mutex<Vec<String>>>);
+
+impl Respond for CellAdmin {
+    fn respond(&self, req: &Request) -> ResponseTemplate {
+        let auth = req
+            .headers
+            .get("authorization")
+            .map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned())
+            .unwrap_or_else(|| "(none)".into());
+        self.0.lock().unwrap().push(auth);
+        ResponseTemplate::new(200).set_body_raw(
+            br#"{"id":"u1","username":"u1"}"#.to_vec(),
+            "application/json",
+        )
+    }
+}
+
+/// One lane × cell → (outcome, code, message).
+async fn residual_cell(lane: &'static str, status: u16, body: Vec<u8>) -> (String, String, String) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(status).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+    let admin_seen = Arc::new(Mutex::new(Vec::new()));
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path(CELL_ADMIN_PATH))
+        .respond_with(CellAdmin(admin_seen.clone()))
+        .mount(&server)
+        .await;
+    let cfg = config(&server.uri(), Some(SECRET));
+    let (outcome, code, message) = match KeycloakClient::new(cfg.clone()) {
+        Err(e) => cell_error(&e),
+        Ok(client) => {
+            let auth: &AuthClient = client.auth();
+            match lane {
+                "client_credentials_token" => {
+                    cell_token(auth.client_credentials_token().await, |t| {
+                        t.access_token.clone()
+                    })
+                }
+                "refresh" => cell_token(auth.refresh(REFRESH).await, |t| t.access_token.clone()),
+                "exchange_code" => {
+                    cell_token(auth.exchange_code(CODE, VERIFIER, None).await, |t| {
+                        t.access_token.clone()
+                    })
+                }
+                "introspect" => match auth.introspect(TOKEN).await {
+                    Ok(r) => ("SUCCESS".into(), "-".into(), format!("active={}", r.active)),
+                    Err(e) => cell_error(&e),
+                },
+                "AuthClient as TokenProvider" => {
+                    cell_token(TokenProvider::access_token(auth).await, String::clone)
+                }
+                "ClientCredentialsTokenProvider" => cell_token(
+                    ClientCredentialsTokenProvider::new(cfg.clone(), reqwest::Client::new())
+                        .access_token()
+                        .await,
+                    String::clone,
+                ),
+                "admin" => {
+                    let call = client.admin().get_user("u1").await;
+                    let sent = admin_seen.lock().unwrap().first().cloned();
+                    match (sent, call) {
+                        (Some(header), call) => {
+                            let call = match call {
+                                Ok(_) => "ok".to_string(),
+                                Err(e) => format!("{}: {e}", cell_variant(&e)),
+                            };
+                            let outcome = if header == "Bearer AT-ok" {
+                                "SUCCESS"
+                            } else {
+                                "ADMIN_SENT_WITH_OTHER_AUTHORIZATION"
+                            };
+                            (
+                                outcome.into(),
+                                "-".into(),
+                                format!("admin request sent, Authorization={header}; call={call}"),
+                            )
+                        }
+                        (None, Err(e)) => cell_error(&e),
+                        (None, Ok(_)) => (
+                            "ADMIN_CALL_OK_WITHOUT_REQUEST".into(),
+                            "-".into(),
+                            String::new(),
+                        ),
+                    }
+                }
+                other => ("UNKNOWN_LANE".into(), "-".into(), other.to_string()),
+            }
+        }
+    };
+    (outcome, code, cell_text(&message))
+}
+
+/// The message with its status number named alike — (C) lets the message differ by it alone.
+fn status_blind(message: &str, status: u16) -> String {
+    message.replace(&format!("HTTP {status}"), "HTTP <status>")
+}
+
+/// Each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them.
+fn residual_wrong(lane: &str, rows: &HashMap<&str, (String, String, String)>) -> Vec<String> {
+    let row = |cell: &str| rows.get(cell).cloned().unwrap_or_default();
+    let shown = |r: &(String, String, String)| format!("{}|{}|{}", r.0, r.1, r.2);
+    let mut wrong = Vec::new();
+    // (A) the cells a token or introspection lane takes as success — no `error`, a null one, ""
+    for cell in ["A0", "A5", "A6"] {
+        if row(cell).0 != "SUCCESS" {
+            wrong.push(format!(
+                "{lane} {cell}: {} -- wants SUCCESS",
+                shown(&row(cell))
+            ));
+        }
+    }
+    // (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated string one
+    for cell in ["A1", "A2", "A3", "A4", "B2"] {
+        let (outcome, code, _) = row(cell);
+        if outcome != "KeycloakError::Auth" || (cell != "B2" && code != "null") {
+            wrong.push(format!(
+                "{lane} {cell}: {} -- wants KeycloakError::Auth, no code",
+                shown(&row(cell))
+            ));
+        }
+    }
+    for (created, refused) in [("C1", "C2"), ("C3", "C4")] {
+        let (got, want) = (row(created), row(refused));
+        if got.0 != want.0
+            || got.1 != want.1
+            || status_blind(&got.2, 201) != status_blind(&want.2, 400)
+        {
+            wrong.push(format!(
+                "{lane} {created} {} != {refused} {}",
+                shown(&got),
+                shown(&want)
+            ));
+        }
+    }
+    wrong
+}
+
+/// What a bare reqwest client reads from the fake for a cell — status, Content-Type and whether the body bytes are the
+/// ones the cell wrote.
+async fn residual_probe(cell: &'static str, status: u16, body: Vec<u8>) -> Option<String> {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(status).set_body_raw(body.clone(), "application/json"))
+        .mount(&server)
+        .await;
+    let url = format!("{}/realms/r/protocol/openid-connect/token", server.uri());
+    let resp = reqwest::Client::new()
+        .post(url)
+        .send()
+        .await
+        .expect("the fake answers");
+    let got_status = resp.status().as_u16();
+    let same = resp
+        .bytes()
+        .await
+        .is_ok_and(|got| got.as_ref() == body.as_slice());
+    (got_status != status || !same).then(|| {
+        format!(
+            "fake {cell}: status {got_status}, bytes {}",
+            if same { "equal" } else { "differ" }
+        )
+    })
+}
+
+#[tokio::test]
+async fn residual_divergence_cells_meet_their_targets() {
+    let mut wrong = Vec::new();
+    // The instrument first: a bare reqwest client reads off the wire the exact status and bytes of every cell.
+    for (cell, status, token_body, _) in residual_cells() {
+        wrong.extend(residual_probe(cell, status, token_body).await);
+    }
+    // Only B5 prints — its outcome class and whether anything in the body was used, never a code or a message (the cells'
+    // text is the assertion's message alone).
+    let mut b5 = Vec::new();
+    for lane in SURFACES {
+        let mut rows = HashMap::new();
+        for (cell, status, token_body, introspection_body) in residual_cells() {
+            let body = if lane == "introspect" {
+                introspection_body
+            } else {
+                token_body
+            };
+            // Its own task, so a panic in a lane is recorded as that cell's outcome instead of ending the run.
+            let row = match tokio::spawn(residual_cell(lane, status, body)).await {
+                Ok(row) => row,
+                Err(join) => {
+                    let why = match join.try_into_panic() {
+                        Ok(payload) => payload
+                            .downcast_ref::<&str>()
+                            .map(|s| s.to_string())
+                            .or_else(|| payload.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "(non-string panic)".into()),
+                        Err(join) => join.to_string(),
+                    };
+                    ("PANIC".to_string(), "-".to_string(), cell_text(&why))
+                }
+            };
+            if cell == "B5" {
+                let used = row.0 == "SUCCESS" || row.0 == "ADMIN_SENT_WITH_OTHER_AUTHORIZATION";
+                b5.push(format!("B5|rust|{lane}|{}|used={used}", row.0));
+            }
+            rows.insert(cell, row);
+        }
+        wrong.extend(residual_wrong(lane, &rows));
+    }
+    println!("{}", b5.join("\n"));
+    assert!(
+        wrong.is_empty(),
+        "{} cells:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}

@@ -88,17 +88,20 @@ module KeycloakSdk
                                                            scope: @config.scopes.join(" ") },
                                                    max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES, what: "token"),
                                   what: "token")
-      error = TokenResponse.oauth_error(resp.body)
-      unless resp.status == 200 && error.nil?
-        raise AuthError.new("client-credentials token request failed: HTTP #{resp.status}",
-                            oauth_error: OAuthErrorCode.carried(error, [@config.client_secret]))
-      end
+      refuse(resp) unless resp.status == 200 && !TokenResponse.names_error?(resp.body)
 
       TokenSet.from_response(resp.body, received_at: Time.now.to_f)
     rescue Error
       raise
     rescue StandardError => e # Faraday 밖 예외도 — net-http 0.10 의 응답 헤더 검증은 ArgumentError 다(어댑터 목록 밖)
       raise TransportError, "token endpoint transport error: #{RedactedCause.describe(e)}", cause: RedactedCause.new(e)
+    end
+
+    # 200 이 아니거나 OAuth `error` 를 이름한(`TokenResponse.names_error?` — 문자열이 아니어도) 토큰 응답의 거부 — 코드는
+    # 문자열이고 보낸 시크릿과 겹치지 않을 때만 싣는다(등록부 token-response-residual-divergence A).
+    def refuse(resp)
+      code = OAuthErrorCode.carried(TokenResponse.oauth_error(resp.body), [@config.client_secret])
+      raise AuthError.new("client-credentials token request failed: HTTP #{resp.status}", oauth_error: code)
     end
   end
 end

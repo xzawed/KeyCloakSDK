@@ -290,6 +290,9 @@ final class AdminBearerGrammarTest extends TestCase
             // B2 · zero — an OAuth `error` beside a token fschmtt reads (the B2 token is the one the nine lanes are measured with).
             'ERROR-BESIDE-TOKEN' => '{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}',
             'ZERO-BESIDE-TOKEN' => '{"error":"0","access_token":"' . $jwt . '","token_type":"Bearer","expires_in":300}',
+            // number · false — an `error` that is no string names an error too (registry token-response-residual-divergence A)
+            'NUMBER-BESIDE-TOKEN' => '{"error":0,"access_token":"' . $jwt . '","token_type":"Bearer","expires_in":300}',
+            'FALSE-BESIDE-TOKEN' => '{"error":false,"access_token":"' . $jwt . '","token_type":"Bearer","expires_in":300}',
             default => $body,
         };
     }
@@ -310,6 +313,10 @@ final class AdminBearerGrammarTest extends TestCase
             'B1' => ['{"error":"invalid_grant","error_description":"d"}', "$head (invalid_grant)", 'invalid_grant'],
             'B2' => ['ERROR-BESIDE-TOKEN', "$head (invalid_grant)", 'invalid_grant'],
             'zero' => ['ZERO-BESIDE-TOKEN', $head, null],
+            // an `error` that is no string — a number, false — names an error with no code (registry
+            // token-response-residual-divergence A — it was the control below: the token beside it was used)
+            'number' => ['NUMBER-BESIDE-TOKEN', $head, null],
+            'false' => ['FALSE-BESIDE-TOKEN', $head, null],
         ];
     }
 
@@ -332,17 +339,18 @@ final class AdminBearerGrammarTest extends TestCase
     }
 
     /**
-     * 비어 있지 않은 문자열 `error` 만 센다 — 빈 문자열 · null · 숫자 · false 는 옆의 토큰과 함께 예전처럼 받아들인다(위 칸의 대조군).
+     * null 과 빈 문자열 `error` 는 오류가 아니다 — 옆의 토큰과 함께 예전처럼 받아들인다(위 칸의 대조군). 숫자 · false 는 이제 위 칸이다(등록부
+     * token-response-residual-divergence A).
      *
      * @return array<string, array{string}> `error` 자리의 JSON 리터럴
      */
     public static function successStatusOAuthErrorIgnored(): array
     {
-        return ['empty string' => ['""'], 'null' => ['null'], 'number' => ['0'], 'false' => ['false']];
+        return ['empty string' => ['""'], 'null' => ['null']];
     }
 
     #[DataProvider('successStatusOAuthErrorIgnored')]
-    public function testSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString(string $literal): void
+    public function testSuccessStatusOAuthErrorIgnoresANullOrEmptyError(string $literal): void
     {
         self::serveRaw(200, 'application/json', '{"error":' . $literal . ',"access_token":"' . self::jwt() . '","token_type":"Bearer","expires_in":300}');
         $admin = KeycloakClient::create(self::config())->admin();

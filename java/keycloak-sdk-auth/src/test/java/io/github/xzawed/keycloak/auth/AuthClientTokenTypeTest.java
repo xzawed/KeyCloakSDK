@@ -64,10 +64,20 @@ class AuthClientTokenTypeTest {
     assertError("Introspection failed: HTTP 200", "invalid_token", () -> withToken.introspect("tok-1"));
   }
 
-  // 대조 — error 가 비어 있지 않은 JSON 문자열이 아니면 지금처럼 나머지가 판정한다(토큰을 쓰고 활성으로 읽는다). JSON 객체가 아닌 본문 ·
-  // JSON 이 아닌 Content-Type 도 판정하지 않는다 — 성공 파서가 지금처럼 거부한다.
-  @Test void successStatusOAuthError_onlyANonEmptyStringCounts() throws Exception {
-    for (String value : List.of("12345", "{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]", "true", "null", "\"\"")) {
+  // error 가 있고 null 도 "" 도 아니면 — 숫자 · 객체 · 배열 · 불리언도 — 그 레인의 오류 응답이다: 400 이 같은 본문을 실었을 때와 같은
+  // 메시지(상태)이고 코드는 없다(문자열이 아니다 — 등록부 token-response-residual-divergence A · 예전에는 대조군이었다: 토큰을 쓰고 활성으로
+  // 읽었다). 대조 — null · "" 는 지금처럼 나머지가 판정한다(토큰을 쓰고 활성으로 읽는다). JSON 객체가 아닌 본문 · JSON 이 아닌
+  // Content-Type 도 판정하지 않는다 — 성공 파서가 지금처럼 거부한다.
+  @Test void successStatusOAuthError_anyErrorButNullOrEmptyCounts() throws Exception {
+    for (String value : List.of("12345", "{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]", "true")) {
+      AuthClient client = clientServing("application/json",
+          "{\"error\":" + value + ",\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300}",
+          "{\"error\":" + value + ",\"active\":true}");
+      assertError("Client credentials failed: HTTP 200", null, client::clientCredentialsToken);
+      assertError("Introspection failed: HTTP 200", null, () -> client.introspect("tok-1"));
+      server.stop(0);
+    }
+    for (String value : List.of("null", "\"\"")) {
       AuthClient client = clientServing("application/json",
           "{\"error\":" + value + ",\"access_token\":\"AT\",\"token_type\":\"Bearer\",\"expires_in\":300}",
           "{\"error\":" + value + ",\"active\":true}");

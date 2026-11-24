@@ -60,10 +60,11 @@ final class PkceKeycloakProvider extends Keycloak
      *
      * Which bodies are errors stays upstream's (a non-empty `error` — `0` and `false` are none), plus any array: upstream
      * skipped an empty one, so a 400 `{"error":[]}` went on to fail as "no usable access_token", a reason that was not the one
-     * (.NET also refuses any `error` member that is present). Plus the string `"0"` in a JSON body — upstream's `empty()` let
-     * it through, and the token beside it went out at a success status; in the nine a JSON object with any non-empty string
-     * `error` is an error response (`OAuthErrorCode::isErrorResponse`). A form-encoded body is no JSON object, so it keeps
-     * upstream's reading. And the status decides first: a 3xx · 4xx · 5xx that carried an
+     * (.NET also refuses any `error` member that is present). Plus the string `"0"`, `0` and `false` in a JSON body —
+     * upstream's `empty()` let them through, and the token beside them went out at a success status; in the nine a JSON
+     * object with any `error` that is neither null nor `""` is an error response (`OAuthErrorCode::isErrorResponse` —
+     * registry `token-response-residual-divergence` A). A form-encoded body is no JSON object, so it keeps upstream's
+     * reading. And the status decides first: a 3xx · 4xx · 5xx that carried an
      * `access_token` and no `error` went on to `createAccessToken` and the three grants succeeded with it (review leg, on
      * `origin/main` too — the provider and the admin grant already refused it) — and so did any other 2xx: 200 is a token
      * response's only success (RFC 6749 §5.1), so a 201–299 fails as the 400 with the same body does (registry

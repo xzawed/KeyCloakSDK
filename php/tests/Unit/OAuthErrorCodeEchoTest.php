@@ -713,4 +713,279 @@ final class OAuthErrorCodeEchoTest extends TestCase
         self::assertSame([], array_values(array_filter($requests, static fn (string $r): bool => str_ends_with($r, ' ' . self::REDIRECT_TARGET))), $line);
         self::assertSame('temporarily_unavailable', $code, $line);
     }
+
+    // --- residual divergence cells ------------------------------------------------------------------------------------------
+    // Registry `token-response-residual-divergence`: an `error` that is not a string at 200 (A), a duplicated `error` key (B), a
+    // 201 beside a 400 on a body that is not readable JSON (C) — measured lane by lane on raw bytes, which no JSON serializer
+    // writes (a duplicate key, invalid UTF-8), so a router of its own serves them base64-decoded (a plain Guzzle client first
+    // checks they come off the wire as written). The targets: (A) a 200 whose
+    // `error` is present and neither null nor "" fails like a 400 carrying it — the lane's error class, no code unless a string
+    // the echo filter lets through, nothing in the body used (A1–A4 · B2); null and "" still succeed (A5 · A6). (C) a 2xx other
+    // than 200 gets the verdict the lane gives a 400 with the same body — class and code; the message may differ only by the
+    // status number (C1 ~ C2 · C3 ~ C4). Printed, never asserted: which duplicated `error` an error status echoes (B1 · B3 · B4 —
+    // RFC 8259 §4 leaves it open) and B5 (a 200 whose duplicated `error` is a code, then "" — a parser differential the registry
+    // holds). `admin-jwt-at` is the admin lane again with `GOOD_AT` in place of `AT-ok` — the admin grant refuses an access token
+    // its parser (lcobucci) cannot read before it looks at anything else, so `admin` (with `AT-ok`) never succeeds and is not held
+    // to the success cells; `admin-jwt-at` is.
+
+    private const RESIDUAL_ROUTER = <<<'ROUTER'
+        <?php
+
+        declare(strict_types=1);
+
+        $dir = (string) getenv('RD_STATE');
+        $uri = $_SERVER['REQUEST_URI'] ?? '/';
+        $path = parse_url(is_string($uri) ? $uri : '/', PHP_URL_PATH);
+        $path = is_string($path) ? $path : '/';
+        file_get_contents('php://input');
+        if (str_starts_with($path, '/admin/')) {
+            $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '(none)';
+            file_put_contents($dir . '/admin.log', $path . "\t" . (is_string($auth) ? $auth : '(none)') . "\n", FILE_APPEND | LOCK_EX);
+            header('Content-Type: application/json');
+            echo $path === '/admin/serverinfo' ? '{"systemInfo":{"version":"26.6.0"}}' : '{"id":"u1","username":"alice"}';
+
+            return;
+        }
+        $kind = match (true) {
+            str_ends_with($path, '/protocol/openid-connect/token') => 'token',
+            str_ends_with($path, '/protocol/openid-connect/token/introspect') => 'introspect',
+            default => null,
+        };
+        $cell = json_decode((string) file_get_contents($dir . '/cell.json'), true);
+        if ($kind === null || !is_array($cell)) {
+            http_response_code(404);
+
+            return;
+        }
+        http_response_code((int) $cell['status']);
+        header('Content-Type: application/json');
+        echo base64_decode((string) $cell[$kind], true);
+        ROUTER;
+
+    /** One UTF-8 encoded character at the offset (RFC 3629 — no overlong form, no surrogate). */
+    private const UTF8_CHAR = '/\G(?:[\x00-\x7F]|[\xC2-\xDF][\x80-\xBF]|\xE0[\xA0-\xBF][\x80-\xBF]|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}|\xED[\x80-\x9F][\x80-\xBF]|\xF0[\x90-\xBF][\x80-\xBF]{2}|[\xF1-\xF3][\x80-\xBF]{3}|\xF4[\x80-\x8F][\x80-\xBF]{2})/';
+
+    public function testResidualDivergenceCellsMeetTheirTargets(): void
+    {
+        $wrong = [];
+        $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rd-idp-' . bin2hex(random_bytes(6));
+        mkdir($dir);
+        file_put_contents($dir . '/router.php', self::RESIDUAL_ROUTER);
+        $sock = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        $name = $sock === false ? '' : (string) stream_socket_get_name($sock, false);
+        if ($sock !== false) {
+            fclose($sock);
+        }
+        $port = (int) substr($name, (int) strrpos($name, ':') + 1);
+        $env = getenv();
+        $env['RD_STATE'] = $dir;
+        $pipes = [];
+        $proc = proc_open(
+            [PHP_BINARY, '-S', '127.0.0.1:' . $port, $dir . '/router.php'],
+            [0 => ['pipe', 'r'], 1 => ['file', $dir . '/server.out', 'a'], 2 => ['file', $dir . '/server.err', 'a']],
+            $pipes,
+            $dir,
+            $env,
+        );
+        // ⚠️ A fatal error or exit skips the `finally` — do not leave `php -S` orphaned on the port.
+        register_shutdown_function(static function () use (&$proc): void {
+            if (\is_resource($proc)) {
+                proc_terminate($proc);
+            }
+        });
+        try {
+            for ($i = 0; $i < 500; $i++) {
+                $c = @fsockopen('127.0.0.1', $port, $en, $es, 0.2);
+                if ($c !== false) {
+                    fclose($c);
+                    break;
+                }
+                usleep(20_000);
+            }
+            // The instrument first: a plain Guzzle client reads off the wire the exact status and bytes of the cells a serializer
+            // could not write — else the cells below would not be measuring what they name.
+            $guzzle = new \GuzzleHttp\Client(['http_errors' => false]);
+            foreach (self::residualCells('AT-ok') as [$id, $status, $token, $introspect]) {
+                if (!\in_array($id[0], ['B', 'C'], true)) {
+                    continue;
+                }
+                self::residualState($dir, $status, $token, $introspect);
+                foreach (['token' => $token, 'token/introspect' => $introspect] as $endpoint => $want) {
+                    $r = $guzzle->post("http://127.0.0.1:$port/realms/r/protocol/openid-connect/$endpoint");
+                    $same = (string) $r->getBody() === $want;
+                    if ($r->getStatusCode() !== $status || !$same) {
+                        $wrong[] = "fake $id $endpoint: status {$r->getStatusCode()}, bytes " . ($same ? 'equal' : 'differ');
+                    }
+                }
+            }
+            // Only B5 prints — its outcome class and whether anything in the body was used, never a code or a message (the
+            // cells' text is the assertion's message alone: CodeQL's clear-text-logging heuristic flags a line built from the
+            // OAuth code in its other languages). The first line break keeps PHPUnit's progress dots off the first line.
+            $b5 = [''];
+            foreach (['client_credentials', 'provider', 'refresh', 'exchange_code', 'introspect', 'admin', 'admin-jwt-at'] as $lane) {
+                $at = $lane === 'admin-jwt-at' ? self::GOOD_AT : 'AT-ok';
+                $rows = [];
+                foreach (self::residualCells($at) as [$id, $status, $token, $introspect]) {
+                    self::residualState($dir, $status, $token, $introspect);
+                    $rows[$id] = self::residualRecord($lane, $port, $dir, $at);
+                }
+                $used = \in_array($rows['B5'][0], ['SUCCESS', 'ADMIN-SENT-OTHER-TOKEN'], true);
+                $b5[] = "B5|php|$lane|{$rows['B5'][0]}|used=" . ($used ? 'true' : 'false');
+                array_push($wrong, ...self::residualWrong($lane, $rows));
+            }
+            fwrite(STDOUT, implode("\n", $b5) . "\n");
+        } finally {
+            if (\is_resource($proc)) {
+                proc_terminate($proc);
+                proc_close($proc);
+            }
+            foreach (['cell.json', 'admin.log', 'router.php', 'server.out', 'server.err'] as $f) {
+                @unlink($dir . '/' . $f);
+            }
+            @rmdir($dir);
+        }
+        self::assertSame([], $wrong, \count($wrong) . " cells:\n" . implode("\n", $wrong));
+    }
+
+    /**
+     * Each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them.
+     *
+     * @param array<string, array{string, string, string}> $rows cell → [outcome, code, message]
+     *
+     * @return list<string>
+     */
+    private static function residualWrong(string $lane, array $rows): array
+    {
+        $wrong = [];
+        // (A) the cells a token or introspection lane takes as success — no `error`, a null one, "" — but `admin` with `AT-ok`
+        // never succeeds (its parser cannot read that token); `admin-jwt-at` is held to them
+        foreach ($lane === 'admin' ? [] : ['A0', 'A5', 'A6'] as $cell) {
+            if ($rows[$cell][0] !== 'SUCCESS') {
+                $wrong[] = "$lane $cell: " . implode('|', $rows[$cell]) . ' -- wants SUCCESS';
+            }
+        }
+        // (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated string one
+        foreach (['A1', 'A2', 'A3', 'A4', 'B2'] as $cell) {
+            [$outcome, $code] = $rows[$cell];
+            if ($outcome !== KeycloakAuthError::class || ($cell !== 'B2' && $code !== 'null')) {
+                $wrong[] = "$lane $cell: " . implode('|', $rows[$cell]) . ' -- wants KeycloakAuthError, no code';
+            }
+        }
+        foreach ([['C1', 'C2'], ['C3', 'C4']] as [$created, $refused]) {
+            $got = $rows[$created];
+            $want = $rows[$refused];
+            $blind = [str_replace('HTTP 201', 'HTTP <status>', $got[2]), str_replace('HTTP 400', 'HTTP <status>', $want[2])];
+            if ($got[0] !== $want[0] || $got[1] !== $want[1] || $blind[0] !== $blind[1]) {
+                $wrong[] = "$lane $created " . implode('|', $got) . " != $refused " . implode('|', $want);
+            }
+        }
+
+        return $wrong;
+    }
+
+    /** @return list<array{string, int, string, string}> [cell, status, the token lanes' body, introspection's body] */
+    private static function residualCells(string $at): array
+    {
+        $token = '{"access_token":"' . $at . '","token_type":"Bearer","expires_in":300';
+        $active = '{"active":true,"username":"svc"';
+        $badUtf8 = '{"error":"invalid_grant","error_description":"' . "\xC3\x28" . '"}';
+        $cells = [['A0', 200, $token . '}', $active . '}']];
+        foreach (['A1' => '123', 'A2' => '{"a":1}', 'A3' => '["x"]', 'A4' => 'true', 'A5' => 'null', 'A6' => '""'] as $id => $x) {
+            $cells[] = [$id, 200, $token . ',"error":' . $x . '}', $active . ',"error":' . $x . '}'];
+        }
+        $duplicate = '{"error":"invalid_grant","error":"temporarily_unavailable"}';
+        $cells[] = ['B1', 400, $duplicate, $duplicate];
+        $cells[] = ['B2', 200, $token . ',"error":"invalid_grant","error":"temporarily_unavailable"}', '{"active":true,"error":"invalid_grant","error":"temporarily_unavailable"}'];
+        $cells[] = ['B3', 400, '{"error":"invalid_grant","error":123}', '{"error":"invalid_grant","error":123}'];
+        $cells[] = ['B4', 400, '{"error":123,"error":"invalid_grant"}', '{"error":123,"error":"invalid_grant"}'];
+        $cells[] = ['B5', 200, $token . ',"error":"invalid_grant","error":""}', '{"active":true,"error":"invalid_grant","error":""}'];
+        $cells[] = ['C1', 201, $badUtf8, $badUtf8];
+        $cells[] = ['C2', 400, $badUtf8, $badUtf8];
+        $cells[] = ['C3', 201, 'not json', 'not json'];
+        $cells[] = ['C4', 400, 'not json', 'not json'];
+
+        return $cells;
+    }
+
+    private static function residualState(string $dir, int $status, string $token, string $introspect): void
+    {
+        $state = ['status' => $status, 'token' => base64_encode($token), 'introspect' => base64_encode($introspect)];
+        file_put_contents($dir . '/cell.json', json_encode($state, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * One lane on a new client against the router's current cell — what it came to.
+     *
+     * @return array{string, string, string} [outcome, code, message]
+     */
+    private static function residualRecord(string $lane, int $port, string $dir, string $at): array
+    {
+        @unlink($dir . '/admin.log');
+        $value = null;
+        $error = null;
+        try {
+            $cfg = new KeycloakConfig(serverUrl: 'http://127.0.0.1:' . $port, realm: 'r', clientId: 'c', clientSecret: self::SECRET);
+            $kc = KeycloakClient::create($cfg);
+            $factory = new HttpFactory();
+            $value = match ($lane) {
+                'client_credentials' => $kc->auth()->clientCredentialsToken()->accessToken,
+                'provider' => (new ClientCredentialsTokenProvider($cfg, new OidcEndpoints($cfg), new \GuzzleHttp\Client(), $factory, $factory))->getToken(),
+                'refresh' => $kc->auth()->refresh(self::REFRESH)->accessToken,
+                'exchange_code' => $kc->auth()->exchangeCode(self::CODE, self::VERIFIER, null, 'http://localhost/cb')->accessToken,
+                'introspect' => $kc->auth()->introspect(self::TOKEN)->active,
+                'admin', 'admin-jwt-at' => $kc->admin()->users()->get('u1')->getUsername(),
+                default => throw new \LogicException($lane),
+            };
+        } catch (\Throwable $e) {
+            $error = $e;
+        }
+        $admin = @file($dir . '/admin.log', FILE_IGNORE_NEW_LINES);
+        $admin = $admin === false ? [] : $admin;
+        if (str_starts_with($lane, 'admin') && $admin !== []) {
+            $auth = explode("\t", $admin[0], 2)[1] ?? '';
+            $call = $error === null ? 'ok' : \get_class($error) . ': ' . $error->getMessage();
+            $more = \count($admin) > 1 ? ' (' . \count($admin) . ' admin requests)' : '';
+            $outcome = $auth === 'Bearer ' . $at ? 'SUCCESS' : 'ADMIN-SENT-OTHER-TOKEN';
+            $code = '-';
+            $message = "admin request sent, Authorization=$auth; call=$call$more";
+        } elseif ($error === null) {
+            $shown = \is_bool($value) ? ($value ? 'true' : 'false') : (\is_string($value) ? $value : get_debug_type($value));
+            $outcome = str_starts_with($lane, 'admin') ? 'NO-ADMIN-REQUEST' : 'SUCCESS';
+            $code = '-';
+            $message = ($lane === 'introspect' ? 'active=' : 'access_token=') . $shown;
+        } else {
+            $outcome = \get_class($error);
+            $code = $error instanceof KeycloakAuthError ? ($error->oauthError === null ? 'null' : '"' . self::cellText($error->oauthError) . '"') : 'n/a';
+            $message = $error->getMessage();
+        }
+
+        return [$outcome, $code, self::cellText($message)];
+    }
+
+    /** Printable ASCII as itself, every other code point as `\u{XXXX}`, every byte that is not UTF-8 as `\x{HH}`. */
+    private static function cellText(string $s): string
+    {
+        $out = '';
+        $n = \strlen($s);
+        for ($i = 0; $i < $n;) {
+            if (preg_match(self::UTF8_CHAR, $s, $m, 0, $i) !== 1) {
+                $out .= \sprintf('\x{%02X}', \ord($s[$i]));
+                $i++;
+
+                continue;
+            }
+            $ch = $m[0];
+            $len = \strlen($ch);
+            $cp = match ($len) {
+                1 => \ord($ch),
+                2 => ((\ord($ch[0]) & 0x1F) << 6) | (\ord($ch[1]) & 0x3F),
+                3 => ((\ord($ch[0]) & 0x0F) << 12) | ((\ord($ch[1]) & 0x3F) << 6) | (\ord($ch[2]) & 0x3F),
+                default => ((\ord($ch[0]) & 0x07) << 18) | ((\ord($ch[1]) & 0x3F) << 12) | ((\ord($ch[2]) & 0x3F) << 6) | (\ord($ch[3]) & 0x3F),
+            };
+            $out .= $cp >= 0x20 && $cp <= 0x7E ? $ch : \sprintf('\u{%X}', $cp);
+            $i += $len;
+        }
+
+        return $out;
+    }
 }

@@ -36,8 +36,8 @@ func withoutBody(ctx context.Context) context.Context {
 // auth-2xx-error-code-divergent, measured on main 350836b9).
 type loginBodyKey int
 
-// loginBody is the record of the admin login's last response: what readLoginBody found when it was a 2xx whose body carries
-// an OAuth `error` (oauthErrorMember, tokencap.go), and nil otherwise — and, when it was an error status (3xx and up), the
+// loginBody is the record of the admin login's last response: what readLoginBody found when it was a 2xx whose body names
+// an OAuth `error` (oauthErrorNamed, tokencap.go), and nil otherwise — and, when it was an error status (3xx and up), the
 // `error` member its body names (refused, recorded by refuse). It follows the last request, as belowHTTPSlot does —
 // RoundTrip clears it before each.
 type loginBody struct {
@@ -45,7 +45,7 @@ type loginBody struct {
 	refused atomic.Pointer[string]
 }
 
-// loginErrorBody is such a 2xx: its status, the `error` member's value, and the message gocloak builds for a status that
+// loginErrorBody is such a 2xx: its status, the `error` member's value ("" when it is no string), and the message gocloak builds for a status that
 // carries an error — the status, then the error, errorMessage and error_description members (gocloak's
 // HTTPErrorResponse), joined by ": " — which loginStatusError (cause.go) reads as it reads gocloak's.
 type loginErrorBody struct {
@@ -102,8 +102,9 @@ func readLoginBody(resp *http.Response, kept *loginBody) {
 		resp.Body = io.NopCloser(failedRead{err})
 		return
 	}
-	if value, ok := oauthErrorMember(b); ok {
-		// The members gocloak reads from an error body; one of another type is skipped, as gocloak's decoder skips it.
+	if value, named := oauthErrorNamed(b); named {
+		// The members gocloak reads from an error body; one of another type is skipped, as gocloak's decoder skips it — an
+		// `error` that is no string names an error all the same, with no code (token-response-residual-divergence A).
 		var e gocloak.HTTPErrorResponse
 		_ = json.Unmarshal(b, &e)
 		kept.found.Store(&loginErrorBody{status: resp.StatusCode, value: value,

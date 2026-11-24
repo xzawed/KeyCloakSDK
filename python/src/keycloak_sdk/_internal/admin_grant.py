@@ -124,7 +124,7 @@ def _carried(
     상태의 그랜트 실패와 같은 판정으로 거부한다 — 메시지는 상태뿐이고 코드는 `error` 에만
     싣는다(`lower.non_200_success` · 등록부 token-success-status-range-divergent). 예전에는
     201 의 토큰으로 admin 요청이 나갔다."""
-    refused = non_200_success(response, answered, sent=sent, in_message=False)
+    refused = non_200_success(answered, sent=sent, in_message=False)
     if refused is not None:
         raise refused
     named = error_in_success(response, answered, sent=sent)

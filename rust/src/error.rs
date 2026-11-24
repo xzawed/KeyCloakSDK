@@ -73,15 +73,26 @@ pub(crate) fn oauth_error_code(raw: &str, sent: &[&str]) -> Option<String> {
     (code_shaped && !echoed).then(|| raw.to_string())
 }
 
-/// 토큰·introspection 본문의 OAuth `error` — 본문이 JSON 객체이고 그 멤버가 **비지 않은 JSON 문자열**일 때만 그 값이다(토큰·provider
-/// 두 경로 공용). 성공 상태로 온 본문이 이것을 가지면 그 레인은 400 의 `error` 와 같은 길로 실패하고(코드는 [`oauth_error_code`]
-/// 를 거친다), 같이 온 `access_token`·`active` 는 쓰지 않는다 — 아홉 언어 같은 규칙(등록부 `auth-2xx-error-code-divergent`).
-/// 고치기 전에는 그 토큰을 돌려주고 캐시해 admin 요청에 실었고, introspect 는 active=true 였다. 숫자·객체·배열·불리언·null·`""`
-/// 이나 객체가 아닌 본문은 `None` 이다 — 지금처럼 다룬다.
+/// 토큰·introspection 본문의 OAuth `error` 를 코드 후보로 — 본문이 JSON 객체이고 그 멤버가 **비지 않은 JSON 문자열**일 때만 그
+/// 값이다(코드는 [`oauth_error_code`] 를 거친다).
 pub(crate) fn oauth_error_member(body: &serde_json::Value) -> Option<&str> {
     body.get("error")
         .and_then(serde_json::Value::as_str)
         .filter(|error| !error.is_empty())
+}
+
+/// 토큰·introspection 본문이 OAuth 오류를 이름하는가 — JSON 객체이고 그 `error` 가 있고 null 도 `""` 도 아니다. 숫자·객체·배열·
+/// 불리언도 이름한다(코드는 없다 — [`oauth_error_member`] 가 `None`. 등록부 `token-response-residual-divergence` A — 예전에는
+/// 보지 않아 같이 온 토큰·`active` 를 썼다). 성공 상태로 온 본문이 이것을 가지면 그 레인은 400 의 `error` 와 같은 길로 실패하고,
+/// 같이 온 `access_token`·`active` 는 쓰지 않는다 — 아홉 언어 같은 규칙(등록부 `auth-2xx-error-code-divergent`, 토큰·provider
+/// 두 경로 공용). 고치기 전에는 그 토큰을 돌려주고 캐시해 admin 요청에 실었고, introspect 는 active=true 였다. 객체가 아닌
+/// 본문은 `false` 다. 중복 키는 serde_json 이 마지막 값을 남긴다.
+pub(crate) fn names_oauth_error(body: &serde_json::Value) -> bool {
+    match body.get("error") {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::String(error)) => !error.is_empty(),
+        Some(_) => true,
+    }
 }
 
 /// 토큰·introspection 레인의 reqwest 오류 → 계급(auth 와 provider 두 경로 공용). 리다이렉트 실패(소비자가 준 클라이언트가

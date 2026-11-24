@@ -521,23 +521,33 @@ module KeycloakSdk
       raise AuthError, "#{what} response is not valid #{reason}", cause: lower && RedactedCause.new(lower)
     end
 
-    # The OAuth `error` a decoded body carries — the String when the body is a JSON object whose `error` is a non-empty
-    # String, else nil (a number, an object, an array, "" or null is no error, as before). A status the lane accepts
-    # as success does not make such a body a success (registry auth-2xx-error-code-divergent · the rule all nine
-    # share): the three grants, the provider (the admin's own grant) and introspection fail as for an error status that
-    # carries it — same class, message and code — before any other check of the body, and use nothing else in it (no
-    # token returned or cached, no admin request, never active).
+    # The OAuth `error` a decoded body carries as a code candidate — the String when the body is a JSON object whose
+    # `error` is a non-empty String, else nil. What is carried is `OAuthErrorCode.carried`'s.
     def oauth_error(body)
       error = body["error"] if body.is_a?(Hash)
       error if error.is_a?(String) && !error.empty?
     end
 
-    # The grants' success rule — HTTP 200 alone (RFC 6749 §5.1; rack-oauth2 takes 201 too) — less a body that carries an
+    # Whether a decoded body names an OAuth error — a JSON object whose `error` is present and neither null nor "": a
+    # number, an object, an array or a boolean names one too, with no code (`oauth_error` is nil — registry
+    # token-response-residual-divergence A; it was ignored and the token or `active` beside it used). A status the lane
+    # accepts as success does not make such a body a success (registry auth-2xx-error-code-divergent · the rule all nine
+    # share): the three grants, the provider (the admin's own grant) and introspection fail as for an error status that
+    # carries it — same class, message and code — before any other check of the body, and use nothing else in it (no
+    # token returned or cached, no admin request, never active).
+    def names_error?(body)
+      return false unless body.is_a?(Hash)
+
+      error = body["error"]
+      !error.nil? && error != ""
+    end
+
+    # The grants' success rule — HTTP 200 alone (RFC 6749 §5.1; rack-oauth2 takes 201 too) — less a body that names an
     # OAuth `error`. The provider and introspection check the same status themselves: success is 200 in all nine
     # (registry token-success-status-range-divergent — any other status, another 2xx included, fails as an error status
     # does: no token returned or cached, no admin request, never active).
     def granted?(resp)
-      resp.status == 200 && !oauth_error(resp.body)
+      resp.status == 200 && !names_error?(resp.body)
     end
 
     # 못 읽는 까닭 — nil(읽힌다) · ["JSON", 해석 실패] · ["UTF-8", nil].
