@@ -62,7 +62,7 @@ hbr_scan() {
         b = substr(L, 1, p - 1)
         while (gsub(/\([^()]*\)/, "_", b) > 0) { }
         sub(/.*[;&|()`]/, "", b)
-        while (sub(/^[ \t]*(if|then|else|elif|do|while|until|time|!)([ \t]|$)/, "", b) > 0) { }
+        while (sub(/^[ \t]*(if|then|else|elif|do|while|until|time|!|\{)([ \t]|$)/, "", b) > 0) { }
         cls = (b ~ /^[ \t]*build_with_retry[ \t]/) ? "WRAPPED" : "RAW"
         print cls "\t" where "\t" orig
       }
@@ -100,7 +100,10 @@ done
 if [ "$_h" = 0 ] && [ "$_b" = 0 ]; then
   _n=$(( $(cat "$HBR_COUNT" 2>/dev/null || echo 0) + 1 ))
   echo "$_n" > "$HBR_COUNT"
-  exit "$(echo "$HBR_EXITS" | awk -v n="$_n" '{ print (n <= NF) ? $n : $NF }')"
+  _rc="$(echo "$HBR_EXITS" | awk -v n="$_n" '{ v = (n <= NF) ? $n : $NF; print v }')"
+  # 열이 깨지면 조용한 exit 2 가 「빌드 실패」로 읽힌다 — 크게 운다.
+  case "$_rc" in ''|*[!0-9]*) echo "가짜 docker: HBR_EXITS 가 깨졌다 [$HBR_EXITS]" >&2; exit 99 ;; esac
+  exit "$_rc"
 fi
 if [ "$_h" = 0 ] && [ "$_u" = 0 ]; then exit "${HBR_UP_EXIT:-0}"; fi
 # 소비자 컨테이너가 남기는 표지 — dotnet 의 둘째 빌드(net10.0)는 첫 소비자의 표지 뒤에서만 닿는다.
@@ -187,9 +190,11 @@ id="$(docker build -q .)"
 id="$(build_with_retry ok "$f" docker build -q .)"
 echo build_with_retry docker build
 x="$(hostpath "a")"; build_with_retry ok "$(hostpath "$f")" docker build .
+{ build_with_retry ok "$f" docker compose build svc && docker compose up -d svc; } || { echo x; }
+{ docker build -t grouped .; }
 EOF
 _fxo="$(hbr_scan "$_t/fx.sh" | awk -F'\t' '{ n = split($2, a, ":"); printf "%s%s:%s", (NR > 1 ? " " : ""), $1, a[n] }')"
-assert_eq "RAW:1 WRAPPED:4 RAW:5 RAW:6 RAW:9 RAW:10 WRAPPED:11 RAW:12 WRAPPED:13" "$_fxo" \
+assert_eq "RAW:1 WRAPPED:4 RAW:5 RAW:6 RAW:9 RAW:10 WRAPPED:11 RAW:12 WRAPPED:13 WRAPPED:14 RAW:15" "$_fxo" \
   "[정적·대조군] 스캐너가 픽스처를 다르게 가른다(줄:판정) — 로그 문구 · 주석은 빌드가 아니고, 다른 감싸개 · 줄잇기 · 명령 치환 속 빌드는 RAW 다"
 # <<< hbr:static
 
@@ -329,7 +334,7 @@ EOF
 
 # 표 ↔ 정적 스캔 — 파일마다 자리 수가 같아야 한다(헬퍼를 거치는 새 자리는 위 표에 행이 있어야 지나간다).
 _tab="$(printf '%s\n' "$HBR_SITES" | awk -F'|' 'NF > 1 { n["harness/" $1]++ } END { for (f in n) print f, n[f] }' | sort)"
-_scn="$(hbr_scan_tree | awk -F'\t''$1 == "WRAPPED" { split($2, a, ":"); n[a[1]]++ } END { for (f in n) print f, n[f] }' | sort)"
+_scn="$(hbr_scan_tree | awk -F'\t' '$1 == "WRAPPED" { split($2, a, ":"); n[a[1]]++ } END { for (f in n) print f, n[f] }' | sort)"
 assert_eq "$_tab" "$_scn" "[자리] 행동 표와 정적 스캔의 파일별 자리 수가 다르다 — 헬퍼를 거치는 자리마다 위 표에 행을 두라"
 # 공허 하한 — 표가 깨져 루프가 안 돌면 초록이 된다. ⚠️ 세어서 박는다: 실측 16(2026-11-24).
 assert_eq "ok" "$(ok_if "$([ "$_ns" -ge 16 ] && echo 0 || echo 1)" "$_ns")" "[자리] 돈 빌드 자리가 16 개 미만이다($_ns) — 표가 깨졌나?"

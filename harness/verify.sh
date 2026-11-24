@@ -6,6 +6,10 @@ LANGS=("${@:-go dotnet node python java php rust ruby kotlin}")
 [ "${#LANGS[@]}" -eq 1 ] && read -ra LANGS <<< "${LANGS[0]}"
 export MSYS_NO_PATHCONV=1
 mkdir -p report/signals
+# 빌드는 상류의 일시 장애에 재시도한다 — 재시도는 업로드되는 신호 디렉터리(harness.yml)에 한 줄씩 남는다.
+# shellcheck source=lib/build-retry.sh
+. ./lib/build-retry.sh
+BUILD_RETRIES_FILE="report/signals/build-retries.txt"
 cleanup() { docker compose --profile apps down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
@@ -51,7 +55,8 @@ capture_compose_ps() { # $1=lang
 
 for L in "${LANGS[@]}"; do
   echo "== [$L] 앱 빌드·기동 =="
-  if ! docker compose --profile apps up -d --build "app-$L"; then capture_compose_ps "$L"; capture_app_log "$L"; echo "{\"lang\":\"$L\",\"error\":\"build/up failed\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; continue; fi
+  # 빌드만 재시도하고 기동은 한 번(`--build` 없이) — 실패 처리는 둘 다 같은 자리다(lib/build-retry.sh 머리).
+  if ! build_with_retry "app-$L" "$BUILD_RETRIES_FILE" docker compose --profile apps build "app-$L" || ! docker compose --profile apps up -d "app-$L"; then capture_compose_ps "$L"; capture_app_log "$L"; echo "{\"lang\":\"$L\",\"error\":\"build/up failed\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; continue; fi
   PORT=$(docker compose port "app-$L" 8090 2>/dev/null | sed 's/.*://')
   if ! timeout 120 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done"; then capture_app_log "$L"; capture_compose_ps "$L"; echo "{\"lang\":\"$L\",\"error\":\"healthz timeout\"}" > "report/signals/$L.error.json"; FAILED_LANGS="$FAILED_LANGS $L"; docker compose --profile apps stop "app-$L" >/dev/null 2>&1; continue; fi
 

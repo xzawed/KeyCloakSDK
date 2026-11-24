@@ -21,6 +21,9 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # lib.sh의 log()는 아래 로컬 log() 정의가 덮어쓰므로 [publish/ruby] 접두는 유지된다.
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
+# 빌드는 상류의 일시 장애에 재시도한다 — 재시도는 lib.sh 의 BUILD_RETRIES_FILE 에 한 줄씩 남는다.
+# shellcheck source=../../lib/build-retry.sh
+. "$HARNESS_DIR/lib/build-retry.sh"
 
 PKG_VER="${PKG_VER:-0.1.0}"
 GEM_FILE="keycloak-sdk-${PKG_VER}.gem"
@@ -32,7 +35,7 @@ REPO_DIR="$INSTALL_DIR/publish/ruby-repo"
 log() { printf '[publish/ruby] %s\n' "$*" >&2; }
 
 log "1/3 gem 빌드/게시 도구 이미지 준비(registries/ruby-gemserver.Dockerfile 재사용 — webrick + rubygems-generate_index)"
-if ! docker build -f "$(hostpath "$INSTALL_DIR/registries/ruby-gemserver.Dockerfile")" \
+if ! build_with_retry "$TOOL_IMAGE" "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$INSTALL_DIR/registries/ruby-gemserver.Dockerfile")" \
     -t "$TOOL_IMAGE" "$(hostpath "$INSTALL_DIR/registries")"; then
   log "도구 이미지 빌드 실패(docker build)"
   exit 1

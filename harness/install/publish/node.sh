@@ -19,6 +19,9 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # lib.sh의 log()는 아래 로컬 log() 정의가 덮어쓰므로 [publish/node] 접두는 유지된다.
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
+# 빌드는 상류의 일시 장애에 재시도한다 — 재시도는 lib.sh 의 BUILD_RETRIES_FILE 에 한 줄씩 남는다.
+# shellcheck source=../../lib/build-retry.sh
+. "$HARNESS_DIR/lib/build-retry.sh"
 
 PKG_VER="${PKG_VER:-0.1.0}"
 PKG_SPEC="@xzawed/keycloak-sdk@${PKG_VER}"
@@ -30,7 +33,7 @@ REGISTRY_URL="http://verdaccio:4873"
 log() { printf '[publish/node] %s\n' "$*" >&2; }
 
 log "1/4 SDK 빌드 — harness/apps/node/Dockerfile의 'sdk' 스테이지 재사용(npm ci && npm run build && npm pack)"
-if ! docker build --target sdk -t "$BUILDER_IMAGE" -f "$(hostpath "$HARNESS_DIR/apps/node/Dockerfile")" "$(hostpath "$REPO_ROOT")"; then
+if ! build_with_retry "$BUILDER_IMAGE" "$BUILD_RETRIES_FILE" docker build --target sdk -t "$BUILDER_IMAGE" -f "$(hostpath "$HARNESS_DIR/apps/node/Dockerfile")" "$(hostpath "$REPO_ROOT")"; then
   log "SDK 빌드 실패(docker build --target sdk)"
   exit 1
 fi

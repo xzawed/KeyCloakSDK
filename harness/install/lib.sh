@@ -12,6 +12,8 @@
 # (report/install-matrix.mjs가 __dirname 기준으로 report/signals/를 읽는 것과 동일한 이유).
 LIB_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SIGNALS_DIR="$LIB_SH_DIR/report/signals"
+# 빌드 재시도 기록(harness/lib/build-retry.sh 의 retries-file) — 신호 디렉터리 안이라 install-all 아티팩트에 실린다.
+BUILD_RETRIES_FILE="$SIGNALS_DIR/build-retries.txt"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2

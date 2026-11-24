@@ -34,6 +34,9 @@ REPO_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"        # 리포지토리 루트
 # lib.sh에서 hostpath()를 가져온다(Windows에서 docker에 넘길 호스트 경로를 D:/... 형식으로 변환).
 # shellcheck source=../lib.sh
 . "$INSTALL_DIR/lib.sh"
+# 빌드는 상류의 일시 장애에 재시도한다 — 재시도는 lib.sh 의 BUILD_RETRIES_FILE 에 한 줄씩 남는다.
+# shellcheck source=../../lib/build-retry.sh
+. "$HARNESS_DIR/lib/build-retry.sh"
 
 BUILDER_IMAGE="install-rust-sdk-builder"
 EXTRACT_DIR="$INSTALL_DIR/publish/out/rust-local-registry"
@@ -43,7 +46,7 @@ CRATE_FILE="keycloak-sdk-${PKG_VER}.crate"
 log() { printf '[publish/rust] %s\n' "$*" >&2; }
 
 log "1/3 로컬 레지스트리 빌드 — publish/rust.Dockerfile(rust:1.88-alpine, cargo package + local-registry sync + 수동주입)"
-if ! docker build -t "$BUILDER_IMAGE" --build-arg PKG_VER="$PKG_VER" \
+if ! build_with_retry "$BUILDER_IMAGE" "$BUILD_RETRIES_FILE" docker build -t "$BUILDER_IMAGE" --build-arg PKG_VER="$PKG_VER" \
     -f "$(hostpath "$SCRIPT_DIR/rust.Dockerfile")" "$(hostpath "$REPO_ROOT")"; then
   log "빌드 실패(docker build) — publish/rust.Dockerfile 로그 참고"
   exit 1
