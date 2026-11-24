@@ -42,7 +42,7 @@ final class BearerToken
     /** A 2xx grant body that is an OAuth error response all the same (`OAuthErrorCode::isErrorResponse`) — what `raw()` sees. */
     public const GRANT_OAUTH_ERROR = 'admin token request failed: the token response is an OAuth error response';
 
-    /** A grant answered with a status that is neither a success nor an error (1xx · 3xx) — redirects are not followed. */
+    /** A grant answered below 400 with a status other than 200 (1xx · 3xx · another 2xx) — redirects are not followed. */
     public const GRANT_STATUS = 'admin token request failed: HTTP %d';
 
     /** An access token that fschmtt's parser (lcobucci) cannot read — fschmtt parses it when it stores the grant. */
@@ -69,7 +69,7 @@ final class BearerToken
 
     /**
      * Admin handler-stack middleware — a response below 400 to a request picked by `$isTokenGrant` (fschmtt's token grant)
-     * must be a 200 (a 1xx · 3xx is `GRANT_STATUS`, another 2xx below) and a usable token response: strict UTF-8 JSON
+     * must be a 200 (any other status — 1xx · 3xx · another 2xx — below) and a usable token response: strict UTF-8 JSON
      * (`GRANT_NOT_JSON`), an object with a string `access_token` (`GRANT_NO_TOKEN`), that token a b64token that needs no
      * trimming (`GRANT_REFUSED`), and both tokens fschmtt parses readable by its parser (`GRANT_ACCESS_NOT_JWT` ·
      * `GRANT_REFRESH_NOT_JWT`). Otherwise it rejects the grant
@@ -79,8 +79,9 @@ final class BearerToken
      * Guzzle's: the same as `TokenResponseCap::middleware` — it reaches a `raw()` consumer as is.
      *
      * ⚠️ Two rejections carry a response, so `ErrorTranslation::grantFailed` — the builder of the error status carrying the
-     * same body — makes their type, message and code: a 2xx other than 200 (RFC 6749 §5.1 — registry
-     * `token-success-status-range-divergent`: a 201–299 token was stored and sent) and a JSON body that is an OAuth error
+     * same body — makes their type, message and code: a status other than 200 (RFC 6749 §5.1 — registry
+     * `token-success-status-range-divergent`: a 201–299 token was stored and sent; a 1xx · 3xx is an error status too, its
+     * `error` the code — registry `node-5xx-oauth-error-code-empty`: a 302's was dropped) and a JSON body that is an OAuth error
      * response at 200 (`GRANT_OAUTH_ERROR` — checked before `access_token`; registry `auth-2xx-error-code-divergent`: B1 failed
      * without its code, B2's token was stored and sent). Each goes out as a `BadResponseException` whose response carries only
      * the body's `error` member — never the token beside it.
@@ -93,7 +94,8 @@ final class BearerToken
      *
      * ⚠️ A 3xx is not passed on. Redirects are not followed (`HttpOptions`) and `http_errors` lets everything below 400
      * through, so fschmtt read a 3xx body as the token response — it took a 302 that carried a token, and an empty 302 ended
-     * as an unclassified `JsonException` (independent review leg, measured 2026-11-10).
+     * as an unclassified `JsonException` (independent review leg, measured 2026-11-10). It fails as the 4xx carrying the same
+     * body does — its `error` the code, nothing in it stored.
      *
      * ⚠️ fschmtt parses the access token and then a truthy `refresh_token` with lcobucci (`Http\Client::authorize`) — the
      * access token is already stored when the second parse fails, so the next call went out with it. So the same parser reads
@@ -117,12 +119,9 @@ final class BearerToken
                 if ($status >= 400) {
                     return $response;   // 오류 응답은 http_errors 와 `Admin\ErrorTranslation` 의 몫이다
                 }
-                if ($status < 200 || $status >= 300) {
-                    throw new RequestException(sprintf(self::GRANT_STATUS, $status), $request, null, null, [self::REJECTION => true]);
-                }
                 $raw = (string) $response->getBody();
                 if ($status !== 200) {
-                    // 성공은 200 뿐이다(RFC 6749 §5.1) — 다른 2xx 는 같은 본문의 오류 상태처럼 실패한다(이 메서드의 docblock).
+                    // 성공은 200 뿐이다(RFC 6749 §5.1) — 1xx · 3xx · 다른 2xx 는 같은 본문의 오류 상태처럼 실패한다(이 메서드의 docblock).
                     $error = json_decode($raw, true);
                     $error = \is_array($error) && \array_key_exists('error', $error) ? json_encode(['error' => $error['error']], JSON_THROW_ON_ERROR) : '';
                     throw new BadResponseException(sprintf(self::GRANT_STATUS, $status), $request, $response->withBody(Utils::streamFor($error)), null, [self::REJECTION => true]);

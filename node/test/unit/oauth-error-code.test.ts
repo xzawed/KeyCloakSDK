@@ -3,11 +3,13 @@
  * 보낸 비어 있지 않은 비밀 어느 것과도 겹치지 않는(어느 쪽도 다른 쪽을 품지 않는) 문자열뿐이다 — 아홉 언어의 한 규칙
  * (`.claude/rules/security.md` 「OAuth error code」, java `OAuthErrorCode.carried` · dotnet `OAuthErrorCode.Carried` 와 같은
  * 표). `oauthErrorOf` 는 openid-client 가 오류 본문에 던지는 `ResponseBodyError`(code `OAUTH_RESPONSE_BODY_ERROR`)의
- * `error` 만 읽는다 — 끝에서 끝까지는 `oauth-error-code-echo.test.ts` 가 잰다.
+ * `error` 와, 상태로 거부한 3xx · 5xx 응답(code `OAUTH_RESPONSE_IS_NOT_CONFORM`)에서 SDK 의 fetch 가 남긴 `error` 만 읽는다 —
+ * 끝에서 끝까지는 `oauth-error-code-echo.test.ts` 가 잰다.
  */
-import { ResponseBodyError, WWWAuthenticateChallengeError } from 'openid-client'
-import { describe, expect, it } from 'vitest'
+import { ClientError, ResponseBodyError, WWWAuthenticateChallengeError } from 'openid-client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { carriedOAuthError, oauthErrorOf } from '../../src/oauth-error-code.js'
+import { fetchTokenEndpointBounded } from '../../src/token-response-cap.js'
 
 const C = (code: number): string => String.fromCharCode(code)
 
@@ -119,5 +121,53 @@ describe('oauthErrorOf — 오류 본문의 `error` 만', () => {
       oauthErrorOf({ code: 'OAUTH_RESPONSE_BODY_ERROR', error: 'invalid_grant' }, []),
     ).toBeUndefined()
     expect(oauthErrorOf(undefined, [])).toBeUndefined()
+  })
+})
+
+// oauth4webapi 는 오류 본문을 4xx 에서만 읽는다 — 3xx · 5xx 는 상태로 읽지 않고 거부하고, openid-client 는 그 응답을 원인으로 단
+// `ClientError('unexpected HTTP response status code', { code: OAUTH_RESPONSE_IS_NOT_CONFORM })` 를 던진다. 그 `error` 는 SDK 의
+// fetch(`fetchTokenEndpointBounded`)가 4xx 본문과 같은 시험으로 남긴 것이고, 4xx 코드와 같은 규칙을 지난다(등록부
+// node-5xx-oauth-error-code-empty).
+describe('oauthErrorOf — 상태로 거부된 3xx · 5xx 응답의 `error`', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const TOKEN_URL = 'https://kc.example.com/realms/r/protocol/openid-connect/token'
+  const NOT_CONFORM = 'OAUTH_RESPONSE_IS_NOT_CONFORM'
+
+  /** openid-client 의 그 오류 — 생성자가 `code` 를 받지만 타입 선언에는 없어 덧붙인다. */
+  const clientError = (message: string, cause: unknown, code: string): ClientError =>
+    Object.assign(new ClientError(message, { cause }), { code })
+
+  /** openid-client 가 `status` 의 토큰 응답에 던지는 오류 — 원인은 SDK 의 fetch 가 돌려준 그 응답이다. */
+  async function rejectedByStatus(status: number, body: string): Promise<ClientError> {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(body, { status, headers: { 'content-type': 'application/json' } }),
+    )
+    const response = await fetchTokenEndpointBounded(TOKEN_URL, { method: 'POST' })
+    return clientError('unexpected HTTP response status code', response, NOT_CONFORM)
+  }
+
+  it('본문의 error 를 4xx 코드와 같은 규칙으로 싣는다', async () => {
+    const B5 = '{"error":"temporarily_unavailable","error_description":"down"}'
+    expect(oauthErrorOf(await rejectedByStatus(503, B5), ['sekret'])).toBe(
+      'temporarily_unavailable',
+    )
+    expect(oauthErrorOf(await rejectedByStatus(500, B5), [])).toBe('temporarily_unavailable')
+    expect(oauthErrorOf(await rejectedByStatus(302, B5), [])).toBe('temporarily_unavailable')
+    // 되울린 비밀(대소문자 무시) · 코드 모양이 아닌 값은 싣지 않는다.
+    expect(oauthErrorOf(await rejectedByStatus(503, '{"error":"mysecret"}'), ['MySecret'])).toBe(
+      undefined,
+    )
+    expect(oauthErrorOf(await rejectedByStatus(503, '{"error":"Down_now"}'), [])).toBeUndefined()
+  })
+
+  it('SDK 의 fetch 가 남긴 것이 없으면 싣지 않는다 — 다른 응답 · 다른 code · 원인 없음', async () => {
+    const elsewhere = new Response('{"error":"temporarily_unavailable"}', { status: 503 })
+    expect(oauthErrorOf(clientError('x', elsewhere, NOT_CONFORM), [])).toBeUndefined()
+    const kept = (await rejectedByStatus(503, '{"error":"temporarily_unavailable"}')).cause
+    expect(oauthErrorOf(clientError('x', kept, 'OAUTH_RESPONSE_IS_NOT_JSON'), [])).toBeUndefined()
+    expect(oauthErrorOf(clientError('x', undefined, NOT_CONFORM), [])).toBeUndefined()
   })
 })

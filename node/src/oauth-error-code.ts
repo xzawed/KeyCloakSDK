@@ -9,6 +9,7 @@
  * withholding that code. An empty or absent secret is not compared — the empty string is a piece of every code.
  * Pinned by `test/unit/oauth-error-code.test.ts` and `test/unit/oauth-error-code-echo.test.ts`.
  */
+import { errorStatusOAuthError } from './token-response-cap.js'
 
 /**
  * The `code` of oauth4webapi's `ResponseBodyError` — what openid-client throws when the token or introspection
@@ -17,6 +18,14 @@
  * `error`: a 401 with a `WWW-Authenticate` challenge ends before the body is read.
  */
 const RESPONSE_BODY_ERROR = 'OAUTH_RESPONSE_BODY_ERROR'
+
+/**
+ * The `code` of openid-client's "unexpected HTTP response status code" — oauth4webapi rejected a response by its status,
+ * unread, with that response as the cause. At 3xx and 5xx the SDK's fetch kept the body's `error`
+ * (`errorStatusOAuthError`), so the code comes from there. A `WWW-Authenticate` challenge ends before this at any status,
+ * with no code, as at 4xx.
+ */
+const RESPONSE_IS_NOT_CONFORM = 'OAUTH_RESPONSE_IS_NOT_CONFORM'
 
 /** The longest code carried. */
 const MAX_CODE_LENGTH = 64
@@ -56,15 +65,21 @@ function asciiLower(s: string): string {
 }
 
 /**
- * The OAuth error code an auth failure carries: the body's `error` of the `ResponseBodyError` openid-client threw,
- * through {@link carriedOAuthError} against `sent` — every secret that request carried. Any other failure carries
- * none. It reads the original error, before the SDK error scrubs its cause.
+ * The OAuth error code an auth failure carries: the body's `error` of the `ResponseBodyError` openid-client threw, or of
+ * the 3xx or 5xx response it rejected by its status — through {@link carriedOAuthError} against `sent`, every secret
+ * that request carried. Any other failure carries none. It reads the original error, before the SDK error scrubs its
+ * cause.
  *
  * @internal
  */
 export function oauthErrorOf(error: unknown, sent: ReadonlyArray<unknown>): string | undefined {
-  if (!(error instanceof Error) || (error as { code?: unknown }).code !== RESPONSE_BODY_ERROR) {
-    return undefined
+  if (!(error instanceof Error)) return undefined
+  const code = (error as { code?: unknown }).code
+  if (code === RESPONSE_BODY_ERROR) {
+    return carriedOAuthError((error as { error?: unknown }).error, sent)
   }
-  return carriedOAuthError((error as { error?: unknown }).error, sent)
+  if (code === RESPONSE_IS_NOT_CONFORM) {
+    return carriedOAuthError(errorStatusOAuthError(error.cause), sent)
+  }
+  return undefined
 }
