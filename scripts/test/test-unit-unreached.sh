@@ -1,11 +1,11 @@
 #!/usr/bin/env sh
-# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby · go · python · node,
+# 단위 미도달 장부(`scripts/integration-coverage.mjs` 의 `unit-report` · `check` — kotlin · php · dotnet · java · ruby · go · python · node · rust,
 # 등록부 coverage-exclusion-hides-untested-branches · coverage-omit-hides-security-paths) 자가테스트 — **종료코드**를 단언한다(0 측정 = 장부 ·
 # 1 DRIFT · 2 FAIL — 뜻은 그 도구 머리가 소유한다). 문구는 무엇을 잡았는지 가리는 데만 쓴다.
 #
-# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby · Go · Python · vitest(node_modules)가 필요 없다(`unit-report`
+# ⚠️ **커밋된 픽스처만 쓴다** — Docker · JDK · Gradle · Maven · PHP · .NET · Ruby · Go · Python · vitest(node_modules) · Rust 가 필요 없다(`unit-report`
 # 는 데이터를 읽기만 한다). 데이터는 실제 도구가 낸 것이다(php 2026-11-18 · dotnet 2026-11-19 · java 2026-11-19 · ruby · kotlin · go 2026-11-21 ·
-# python 2026-11-23 · node 2026-11-24):
+# python 2026-11-23 · node · rust 2026-11-24):
 #   fixtures/unit-unreached/data/kotlin.unit.xml · kotlin.unit.javap.txt   도구의 `unit kotlin`(JDK 21.0.8 · kotlin 2.4.21 · Kover 0.9.11 ·
 #       JaCoCo 0.8.16) — 임시 루트에 tree 사본 + 실제 kotlin/ 의 Gradle 래퍼(JaCoCo 판은 tree 의 java/pom.xml 에서 읽는다). 세션 id 를
 #       HOST-00000000 으로, javap 의 줄끝을 LF 로 · `Classfile` 의 생성 루트를 지워 `kotlin/` 부터로만 바꿨다(치환마다 되돌린 바이트가
@@ -39,6 +39,9 @@
 #       루트에 tree 사본 + node_modules 사본)로 다시 내도 같은 치환 뒤 바이트가 같았다
 #   fixtures/unit-unreached/data/node-zero.unit.json   같은 명령, 구동이 경계 밖 Config 만 부른다 — 경계 파일을 한 번도 불러오지 않는다(include 가
 #       싣는 0 회 파일 — 모듈 수준 문장까지 전부 0). 도구의 `unit node` 로 다시 내도 바이트가 같았다
+#   fixtures/unit-unreached/data/rust.unit.lcov   도구의 `unit rust`(rustc 1.100.0 (0ef1bc386 2026-11-09) · cargo-llvm-cov 0.8.7 — 레인 CI 의
+#       stable 과 같은 판) — 임시 루트에 tree 사본(의존 없는 크레이트 kc-fixture · Cargo.lock 은 tree 의 것). SF 는 절대 경로다 — 생성 루트만
+#       `@ROOT@` 로 바꿨다(윈도의 `\` · 마지막 줄바꿈 없음 그대로 — 되돌린 바이트가 원본과 같다)
 # 단위 구동(tree/kotlin/src/test · tree/php/tests/Unit · tree/dotnet/tests/Kc.Tests · tree/java/kc-auth/src/test · tree/ruby/spec/unit)은
 # 빈 code · null · 빈 user · 빈 문자열 · 빈 값 · nil 을 안 보내고 unused · logoutUrl · LogoutUrl · logout_url · Describe() · describe ·
 # token(String, int) 를 안 부른다. dotnet 의 Guarded 는 필터가 거절하는 예외만 받고 Describe(int) 는 양수로만 불린다 — 통합 시험(DriveIT)은
@@ -56,9 +59,13 @@
 # load 를 한 번만 부르고 fallback 의 조건식 · pick 의 `??` 를 한 쪽으로만 타며 describe · logoutUrl 을 안 부른다 — logoutUrl 을 부르는 통합
 # 구동(test/integration/drive.it.test.ts)은 레인 설정의 include(test/unit)가 싣지 않는다. 그 설정의 하한(100)은 경계가 못 넘는다 — 장부 실행은
 # 그것을 물려받지 않는다(물려받으면 exit 1 — 실측).
+# rust 의 구동(tree/rust/tests/drive.rs)은 빈 code 를 안 보내고 port · fallback 에 숫자만 주며(port 의 제 줄 map_err 클로저 · fallback 의 같은
+# 줄 클로저가 안 돈다) pick 에 늘 찾는 값만 주고 refresh 의 퓨처를 만들고 버리며 logout_url · convert · Display · DEFAULT_SCOPE 를 안 부른다 —
+# logout_url 을 부르는 통합 시험(tests/integration_test.rs)은 `#[ignore]` 라 단위 실행이 컴파일만 한다. 경계 파일 안의 cfg(test) 모듈은 안
+# 타는 갈래(panic!)를 하나 갖는다 — 단위 장부가 빼는 줄이다.
 # 숫자를 바꾸려면 구동을 고쳐 **도구로 재생성**할 것 — 데이터를 손으로 고치지 않는다(아래 음성 대조군만 고친다).
 # `check` 의 장부 판정(데이터 없이 — 꼴 · 경계 · why)은 통합 커버리지 픽스처 트리(`ic-fixture.sh` 의 fresh)에서 잰다 — check 는 아홉
-# 언어를 다 보므로 kotlin · php · dotnet · java · ruby · go · python · node 뿐인 이 트리로는 못 잰다.
+# 언어를 다 보므로 kotlin · php · dotnet · java · ruby · go · python · node · rust 뿐인 이 트리로는 못 잰다.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/assert.sh"
@@ -1309,9 +1316,9 @@ run unit-report node "$T" --out "$D"
 assert_eq 2 "$RC" "[ledger] node 항목에 branches 가 없으면 exit 2"
 assert_contains "$OUT" "FAIL [node] scripts/unit-unreached.json: node[\"$E:AuthClient.exchange\"] must be { branches, statements, why }" "[ledger] node 꼴 — 가지"
 ufresh
-run unit-report rust "$T" --out "$D"
+run unit-report scala "$T" --out "$D"
 assert_eq 2 "$RC" "[cli] 재지 않는 언어는 usage(exit 2)"
-assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby · go · python · node — got rust" "[cli] usage 문구"
+assert_contains "$OUT" "the unit-unreached ledger measures kotlin · php · dotnet · java · ruby · go · python · node · rust — got scala" "[cli] usage 문구"
 
 # ── (4) check — 데이터 없이 꼴 · 경계 · why(통합 픽스처 트리 — 아홉 언어) ──────────────────────────────
 fresh
@@ -1464,5 +1471,250 @@ assert_contains "$(cat "$D/kotlin.unit.xml")" '<line nr="49" mi="5" ci="0" ' "(�
 run unit-report kotlin "$T" --out "$D"
 assert_eq 1 "$RC" "[tail] 대조군 — 닫는 줄이 돌았어도 다른 놓친 줄은 센다: exit 1 — 출력: $OUT"
 assert_line "$OUT" "  UNREACHED $K:49 AuthClientTail.update · 1 line · 0 branches · NONE" "[tail] 대조군 — 돈 닫는 줄을 빼며 내리는 것은 covered 다"
+
+# ── (6) rust — llvm-cov lcov 의 줄(DA)을 소스의 이름 범위로 함수마다 센다(통합 리포트와 같은 리더 rustReport) ─────────────────────────
+# 이 절은 rust 픽스처만 쓴다(데이터 · 구동의 출처는 머리). 단위 실행은 경계 파일 안의 cfg(test) 모듈을 싣는다 — 시험이지 경계 코드가
+# 아니라 장부가 그 줄을 뺀다(통합 리포트는 같은 데이터에 FAIL 이다 — 아래). 단위 전용 판정 하나: 레코드가 없는 fn 은 줄을 셀 수 없어 FAIL.
+RS=rust/src/auth_client.rs
+# `unit rust` 의 기록 — 종료코드 · 지금 lcov 의 sha1 · 그 실행의 rustc(리포트가 찍기만 한다) · 경계 파일의 지금 sha1(lcov 에는 소스
+# 해시가 없다 — gmark · ymark 와 같은 꼴).
+rsmark() { # exit
+  printf '{"run":"rust","suite":"unit","exit":%s,"data_sha1":"%s","rustc":"rustc 1.100.0 (0ef1bc386 2026-11-09)","files":{"%s":"%s"}}\n' "$1" \
+    "$(sha1sum "$D/rust.unit.lcov" | cut -d' ' -f1)" "$RS" "$(sha1sum "$T/$RS" | cut -d' ' -f1)" > "$D/rust.unit.run.json"
+}
+# 단위 픽스처 트리 + rust 데이터 — lcov 의 SF 는 절대 경로다(통합 픽스처의 rust_data 와 같은 치환 · 뒤의 `\rust\src\…` 는 리더가 `/` 로
+# 읽는다).
+rsfresh() {
+  ufresh
+  _r="$(cd "$T" && { pwd -W 2>/dev/null || pwd; })"
+  sed "s#@ROOT@#$_r#g" "$UFIX/data/rust.unit.lcov" > "$D/rust.unit.lcov"
+  rsmark 0
+}
+
+# (가) 양성 — 측정 = 장부 → 0.
+rsfresh
+run unit-report rust "$T" --out "$D"
+assert_eq 0 "$RC" "[rust] 측정이 장부와 같으면 exit 0 — 출력: $OUT"
+assert_contains "$OUT" "/rust.unit.lcov (rustc 1.100.0 (0ef1bc386 2026-11-09) · lines (DA))" "[rust] 데이터 · 그 실행의 rustc 판(줄의 귀속을 바꾼다)을 찍는다"
+assert_line "$OUT" "  UNREACHED $RS:28 AuthClient::exchange · 1 line · defensive: the drive never sends an empty code" "[rust] 제 줄의 실패 갈래 — 안 돈 줄(가지가 아니다)"
+assert_line "$OUT" "  UNREACHED $RS:36 AuthClient::port · 1 line · open-gap" "[rust] rustfmt 가 끊은 사슬의 제 줄 map_err 클로저는 감싼 fn 의 안 돈 줄이다 · why 가 열린 항목 id"
+assert_line "$OUT" "  UNREACHED $RS:49 AuthClient::pick · 4 lines · unreachable: the lines sit in pick's closure — the key is the enclosing fn" "[rust] 여러 줄 클로저의 안 돈 줄은 감싼 fn 의 수다"
+assert_line "$OUT" "  UNREACHED $RS:60 AuthClient::token · 1 line · integration: an async fn's body is a record of its own inside the fn's range — the drive never sends an empty code" "[rust] poll 한 async fn — 몸통 레코드의 줄도 그 fn 의 것이다"
+assert_line "$OUT" "  UNREACHED $RS:69 AuthClient::refresh · 2 lines · integration: the drive drops the future unpolled — the library's unit-test binary keeps the body's zero-count record" "[rust] 버린 퓨처의 async 몸통도 센다 — 라이브러리 단위 시험 바이너리의 0 회 레코드"
+assert_line "$OUT" "  UNREACHED $RS:74 AuthClient::logout_url · 3 lines · integration: the drive never calls it — the integration test does, outside the unit run" "[rust] 통합 시험만 부르는 fn — #[ignore] 라 단위 실행은 컴파일만 한다"
+assert_line "$OUT" "  UNREACHED $RS:79 AuthClient::convert · 3 lines · integration: nothing instantiates the generic — the library's unit-test binary keeps a zero-count record of it" "[rust] 인스턴스화 안 된 제네릭도 센다"
+assert_line "$OUT" "  UNREACHED $RS:85 <AuthClient as fmt::Display>::fmt · 3 lines · integration: the drive never formats the client — a trait method keys as <Type as Trait>::name" "[rust] 트레이트 impl 의 메서드 — <타입 as 트레이트>::"
+assert_line "$OUT" "  UNREACHED $RS:91 static DEFAULT_SCOPE · 4 lines · integration: nothing forces the static's closure — its lines are the static's" "[rust] static 의 클로저는 그 static 의 범위다"
+# ⚠️ 알려진 틈을 고정한다 — 줄만 센다: 돈 호출과 같은 줄의 실패 클로저(fallback 의 `parse().map_err(…)`)는 그 줄이 돌아 안 보인다(port 의
+# 제 줄 클로저와 갈린다 — 도구 머리 주석). 이 단언이 깨지면 툴체인이 그 줄을 클로저의 것으로 세게 된 것이다 — 머리 주석과 장부를 함께 고칠 때다.
+assert_not_contains "$OUT" "AuthClient::fallback" "[rust] 돈 호출과 같은 줄의 실패 클로저는 줄로 안 보인다 — 알려진 틈"
+# cfg(test) 모듈(realm_is_kept)은 단위 시험 자신이다 — 안 탄 갈래(panic! 줄 106)가 데이터에 0 회로 있어도 목록 · 모듈 수준 어디에도 없다.
+assert_contains "$(cat "$D/rust.unit.lcov")" "DA:106,0" "[rust] (데이터에 cfg(test) 의 안 돈 줄이 있다 — 아래 둘이 공허하지 않다)"
+assert_not_contains "$OUT" "realm_is_kept" "[rust] cfg(test) 모듈의 함수는 목록에 없다"
+assert_not_contains "$OUT" "module level" "[rust] cfg(test) 의 안 돈 줄을 항목 밖 줄로 세지 않는다"
+for _x in "AuthClient::new" "AuthClient::realm" "config.rs" "owned ·"; do
+  assert_not_contains "$OUT" "$_x" "[rust] 다 닿는 fn · 경계 밖 파일 · macro_rules 는 목록에 없다: $_x"
+done
+assert_line "$OUT" "unit-unreached [rust]: OK — 9 functions with code the unit suite never reaches (22 lines), each recorded in scripts/unit-unreached.json" "[rust] 요약"
+# cfg(test) 를 빼는 것이 하중을 진다 — 그 속성을 지우면 모듈이 보통 항목이 되어 그 안 탄 갈래가 장부에 없는 미도달로 든다(exit 1).
+rsfresh
+sed -i 's/^#\[cfg(test)\]$//' "$T/$RS"
+assert_not_contains "$(cat "$T/$RS")" "#[cfg(test)]" "(변이가 착지했는지 먼저 본다)"
+rsmark 0
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] cfg(test) 를 안 읽으면 그 모듈의 안 탄 갈래가 장부에 없는 미도달이다 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] unrecorded unreached code $RS:tests::realm_is_kept — the unit suite never reaches 1 line of it" "[rust] cfg(test) 의 줄이 시험 함수의 것으로 샌다"
+# 대조군 — 통합 리포트는 같은 단위 데이터에 FAIL 이다(cfg(test) 레코드는 단위 시험이 같은 빌드에서 돈 것이다 — 통합 판정은 그대로다).
+rsfresh
+mkdir -p "$D/it"
+cp "$D/rust.unit.lcov" "$D/it/rust.lcov"
+run report rust "$T" --out "$D/it"
+assert_eq 2 "$RC" "[rust] 통합 리포트는 cfg(test) 레코드가 든 데이터에 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS:103: the data has a function inside an item compiled only with cfg(test) (" "[rust] 통합의 cfg(test) 판정은 그대로다"
+
+# (나) 음성 — 장부와 다르면 DRIFT(1).
+# 새로 생긴 미도달 — 다 닿던 realm 의 줄을 0 회로(장부에 없다).
+rsfresh
+sed -i 's/^DA:2\([345]\),2$/DA:2\1,0/' "$D/rust.unit.lcov"
+rsmark 0
+assert_contains "$(cat "$D/rust.unit.lcov")" "DA:25,0" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 장부에 없는 미도달 fn 은 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] unrecorded unreached code $RS:AuthClient::realm — the unit suite never reaches 3 lines of it: test that code, or record why in scripts/unit-unreached.json" "[rust] 새 미도달"
+# 적힌 fn 안에서 줄 하나가 더 안 돈다 — exchange 의 행복 경로 줄을 0 회로(fn 은 그대로 목록에 있고 수가 바뀐다).
+rsfresh
+sed -i 's/^DA:32,1$/DA:32,0/' "$D/rust.unit.lcov"
+rsmark 0
+assert_contains "$(cat "$D/rust.unit.lcov")" "DA:32,0" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 적힌 fn 의 줄 하나가 더 안 돌면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] $RS:AuthClient::exchange: the unit run leaves 2 lines unreached, scripts/unit-unreached.json records 1 line — test what the unit suite does not reach, or record why and correct the counts" "[rust] 더 놓친 줄 수"
+# 클로저의 줄 · 버린 퓨처의 몸통 — 장부에서 지우면 감싼 fn 이름으로 DRIFT 다(클로저 · 몸통 레코드의 이름으로 새지 않는다).
+rsfresh
+sed -i '/auth_client\.rs:AuthClient::pick"/,/},/d' "$L"
+assert_not_contains "$(cat "$L")" "auth_client.rs:AuthClient::pick" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 클로저 안의 안 돈 줄이 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] unrecorded unreached code $RS:AuthClient::pick — the unit suite never reaches 4 lines of it" "[rust] 클로저의 줄 — 감싼 fn 키"
+rsfresh
+sed -i '/auth_client\.rs:AuthClient::refresh"/,/},/d' "$L"
+assert_not_contains "$(cat "$L")" "auth_client.rs:AuthClient::refresh" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 버린 퓨처의 몸통이 장부에 없으면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] unrecorded unreached code $RS:AuthClient::refresh — the unit suite never reaches 2 lines of it" "[rust] poll 안 된 몸통의 줄 — async fn 키"
+# 장부의 수가 다르다 — 장부가 측정보다 많이 적었다.
+rsfresh
+sed -i '/auth_client\.rs:AuthClient::logout_url"/,/}/ s#"lines": 3,#"lines": 4,#' "$L"
+assert_contains "$(grep -A1 'auth_client.rs:AuthClient::logout_url"' "$L")" '"lines": 4,' "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 수가 다르면 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] $RS:AuthClient::logout_url: the unit run leaves 3 lines unreached, scripts/unit-unreached.json records 4 lines — the unit suite reaches more of it now: lower the counts" "[rust] 바뀐 줄 수 — 장부보다 덜 놓쳤다"
+# 낡은 항목 — 다 닿는 fn · 데이터에 없는 fn · 알려진 틈의 fn(그 줄은 돈다) · 경계 밖 파일을 가리킨다.
+rsfresh
+sed -i "s#\"rust\": {#\"rust\": {\n    \"$RS:AuthClient::realm\": { \"lines\": 1, \"why\": \"integration: stale\" },\n    \"$RS:AuthClient::gone\": { \"lines\": 1, \"why\": \"integration: renamed\" },\n    \"$RS:AuthClient::fallback\": { \"lines\": 1, \"why\": \"integration: the known gap\" },\n    \"rust/src/config.rs:Config::valid\": { \"lines\": 1, \"why\": \"integration: outside\" },#" "$L"
+assert_contains "$(cat "$L")" "\"$RS:AuthClient::gone\": { \"lines\": 1," "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 낡은 항목은 exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] stale entry $RS:AuthClient::realm — the unit run reaches all of it now; drop the entry" "[rust] 다 닿는 fn 의 항목"
+assert_contains "$OUT" "DRIFT [rust] stale entry $RS:AuthClient::gone — the data of $RS has no such function (renamed or removed?)" "[rust] 없는 fn 의 항목"
+assert_contains "$OUT" "DRIFT [rust] stale entry $RS:AuthClient::fallback — the unit run reaches all of it now" "[rust] 알려진 틈의 fn 은 장부에 적을 수 없다 — 그 줄은 돈다"
+assert_contains "$OUT" "DRIFT [rust] scripts/unit-unreached.json: entry rust/src/config.rs:Config::valid names a file outside the boundary derived from .github/workflows/rust-ci.yml:7" "[rust] 경계 밖 파일의 항목"
+# why — 닫힌 등록부 항목.
+rsfresh
+sed -i 's#"why": "open-gap"#"why": "closed-gap"#' "$L"
+run unit-report rust "$T" --out "$D"
+assert_eq 1 "$RC" "[rust] 닫힌 등록부 항목은 why 가 아니다 — exit 1 — 출력: $OUT"
+assert_contains "$OUT" "DRIFT [rust] $RS:AuthClient::port: why \"closed-gap\" is neither unreachable: · defensive: · integration: with a reason nor an open item of docs/superpowers/plans/remaining-work.md" "[rust] 닫힌 id"
+
+# (다) 무결성 — FAIL(2): 데이터 · 다른 바이트 · 단위 기록 · 기록 없음 · 기록 뒤 바뀐 데이터 · 경계 해시 없는 기록 · 실패한 실행 · 데이터에
+# 없는 경계 파일 · 공허한 실행 · 항목 밖 줄 · 레코드 없는 fn(단위 전용) · 통합 리포트가 내는 셋(macro_rules · 삼킨 범위 · FNDA 없음) · 장부의 꼴.
+rsfresh
+rm "$D/rust.unit.lcov"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 데이터가 없으면 exit 2"
+assert_contains "$OUT" "FAIL [rust] no coverage data at" "[rust] 데이터 없음"
+assert_contains "$OUT" "run the unit suite first (node scripts/integration-coverage.mjs unit rust)" "[rust] 다시 돌릴 명령"
+rsfresh
+printf '// changed after the run\n' >> "$T/$RS"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 다른 바이트의 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS: the data was taken from other bytes" "[rust] 다른 바이트"
+rsfresh
+sed -i 's#"suite":"unit",##' "$D/rust.unit.run.json"
+assert_not_contains "$(cat "$D/rust.unit.run.json")" '"suite"' "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 단위 실행의 것이 아닌 기록(suite 없음)은 exit 2"
+assert_contains "$OUT" "FAIL [rust] no record that \`unit rust\` wrote this data" "[rust] 단위 기록 아님"
+rsfresh
+rm "$D/rust.unit.run.json"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 기록이 없는 데이터(손으로 돌린 cargo llvm-cov)는 exit 2"
+assert_contains "$OUT" "FAIL [rust] no record that \`unit rust\` wrote this data" "[rust] 기록 없음"
+rsfresh
+printf '\nTN:\n' >> "$D/rust.unit.lcov"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 기록 뒤 바뀐 데이터는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "/rust.unit.lcov is not the data \`unit rust\` recorded" "[rust] 데이터의 sha1"
+rsfresh
+sed -i 's#"files":{[^}]*}#"files":null#' "$D/rust.unit.run.json"
+assert_contains "$(cat "$D/rust.unit.run.json")" '"files":null' "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 경계 해시가 없는 기록은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] the record has no boundary hashes" "[rust] 실행 중에 바뀐 경계 파일"
+rsfresh
+rsmark 1
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 실패한 실행의 데이터는 exit 2"
+assert_contains "$OUT" "FAIL [rust] the run that wrote this data exited 1 — the data of a failed run is partial" "[rust] 실패한 실행"
+rsfresh
+sed -i '/^SF:.*auth_client\.rs$/,/^end_of_record$/d' "$D/rust.unit.lcov"
+rsmark 0
+assert_not_contains "$(cat "$D/rust.unit.lcov")" "auth_client.rs" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 경계 파일이 데이터에 없으면 exit 2"
+assert_contains "$OUT" "FAIL [rust] $RS is not in the coverage data" "[rust] 데이터에 없는 경계 파일"
+# 경계 줄을 하나도 안 돈 실행 — 측정 실패다. 항목 밖의 안 돈 줄(13 을 심는다)이 있어도 그 판정보다 먼저다(분모는 cfg(test) 줄을 뺀 55 줄).
+rsfresh
+sed -i '/^SF:.*auth_client\.rs$/,/^end_of_record$/ s/^DA:\([0-9]*\),[1-9][0-9]*$/DA:\1,0/' "$D/rust.unit.lcov"
+sed -i 's/^DA:17,0$/DA:13,0\nDA:17,0/' "$D/rust.unit.lcov"
+rsmark 0
+assert_eq 0 "$(sed -n '/^SF:.*auth_client\.rs$/,/^end_of_record$/p' "$D/rust.unit.lcov" | grep -c '^DA:[0-9]*,[1-9]' || true)" "(변이가 착지했는지 먼저 본다 — 경계 줄 전부 0 회)"
+assert_contains "$(cat "$D/rust.unit.lcov")" "DA:13,0" "(변이가 착지했는지 먼저 본다 — 항목 밖 줄)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 경계 줄을 하나도 안 돈 실행은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] the run executed 0 of 55 boundary lines — a measurement failure, not a low number (did the unit tests run against this tree?)" "[rust] 공허한 실행"
+assert_not_contains "$OUT" "module level" "[rust] 공허한 실행은 항목 밖 줄로 읽지 않는다"
+# 항목 밖 줄(어느 이름 범위에도 안 드는 — 매크로가 펼친 코드가 그 자리를 가리킬 때)의 안 돈 줄은 어느 fn 에도 못 붙인다 — FAIL.
+# 구조체 필드 줄(13)에 줄을 심는다. 대조군: 돈 항목 밖 줄은 FAIL 이 아니다.
+rsfresh
+sed -i 's/^DA:17,2$/DA:13,0\nDA:17,2/' "$D/rust.unit.lcov"
+rsmark 0
+assert_contains "$(cat "$D/rust.unit.lcov")" "DA:13,0" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 항목 밖의 안 돈 줄은 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS: 1 of 1 lines outside every item (module level — code a macro placed there) never ran — no function can be credited with them" "[rust] 항목 밖 줄"
+rsfresh
+sed -i 's/^DA:17,2$/DA:13,1\nDA:17,2/' "$D/rust.unit.lcov"
+rsmark 0
+assert_contains "$(cat "$D/rust.unit.lcov")" "DA:13,1" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 0 "$RC" "[rust] 대조군 — 돈 항목 밖 줄은 FAIL 이 아니다 — 출력: $OUT"
+# 레코드가 없는 fn(단위 전용 판정) — 라이브러리 단위 시험 바이너리가 안 부른 것에도 0 회 레코드를 남기므로 없다면 이 빌드가 컴파일하지 않은
+# 코드다(그 줄을 셀 수 없다). logout_url 의 레코드 · 줄을 지운다. 통합 리포트는 같은 꼴을 「no record」 미실행으로 낸다(판정이 다르다).
+rsfresh
+sed -i '/10logout_url$/d; /^DA:7[456],0$/d' "$D/rust.unit.lcov"
+rsmark 0
+assert_not_contains "$(cat "$D/rust.unit.lcov")" "logout_url" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 레코드가 없는 fn 은 단위 장부에서 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS:74: the data has no record of AuthClient::logout_url — the unit build compiled no code for it" "[rust] 레코드 없는 fn"
+# 통합 리포트가 내는 무결성 판정 셋은 단위에서도 FAIL 이다 — macro_rules 안의 레코드 · 다음 fn 머리를 삼킨 범위 · FNDA 없는 레코드.
+rsfresh
+sed -i '/^SF:.*auth_client\.rs$/a FN:8,_RNvfake_macro_generated\nFNDA:1,_RNvfake_macro_generated' "$D/rust.unit.lcov"
+rsmark 0
+assert_contains "$(cat "$D/rust.unit.lcov")" "FN:8,_RNvfake_macro_generated" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] macro_rules! 안의 함수 레코드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS:8: the data has a function (_RNvfake_macro_generated) inside macro_rules! owned" "[rust] 매크로를 댄다"
+rsfresh
+sed -i '25s#^    }$#    }}#' "$T/$RS"
+assert_contains "$(sed -n '25p' "$T/$RS")" "    }}" "(변이가 착지했는지 먼저 본다)"
+rsmark 0
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] 다음 fn 머리를 삼킨 범위는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS:28: the data has a function (" "[rust] 삼켜진 fn 의 자리"
+assert_contains "$OUT" "that starts at a function head inside AuthClient::realm's range (23–33) — the range ran past its end" "[rust] 삼킨 범위를 댄다"
+rsfresh
+sed -i '/^FNDA:.*10logout_url$/d' "$D/rust.unit.lcov"
+rsmark 0
+assert_not_contains "$(grep '^FNDA:' "$D/rust.unit.lcov")" "logout_url" "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[rust] FNDA 없는 레코드는 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] $RS:74: the data has a function record (" "[rust] 그 레코드를 댄다"
+# 장부의 꼴 — rust 항목은 { lines, why } 다: 가지를 더하거나 문장으로 적으면 exit 2(안정판 툴체인의 llvm-cov 에는 가지가 없다).
+rsfresh
+sed -i '/auth_client\.rs:AuthClient::exchange"/,/}/ s#"lines": 1,#"lines": 1, "branches": 0,#' "$L"
+assert_contains "$(grep -A1 'auth_client.rs:AuthClient::exchange"' "$L")" '"lines": 1, "branches": 0,' "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] rust 항목에 branches 가 있으면 exit 2"
+assert_contains "$OUT" "FAIL [rust] scripts/unit-unreached.json: rust[\"$RS:AuthClient::exchange\"] must be { lines, why } — whole-number counts and a non-empty why" "[ledger] rust 꼴 — 가지 없음"
+rsfresh
+sed -i '/auth_client\.rs:AuthClient::exchange"/,/}/ s#"lines": 1,#"statements": 1,#' "$L"
+assert_contains "$(grep -A1 'auth_client.rs:AuthClient::exchange"' "$L")" '"statements": 1,' "(변이가 착지했는지 먼저 본다)"
+run unit-report rust "$T" --out "$D"
+assert_eq 2 "$RC" "[ledger] rust 항목을 문장으로 적으면 exit 2(문장은 go 의 것이다)"
+assert_contains "$OUT" "FAIL [rust] scripts/unit-unreached.json: rust[\"$RS:AuthClient::exchange\"] must be { lines, why }" "[ledger] rust 꼴 — 줄"
+
+# (라) check — 데이터 없이 꼴 · 경계 · why(통합 픽스처 트리).
+fresh
+run check "$T"
+assert_eq 0 "$RC" "[check] rust 장부가 든 건강한 장부는 exit 0 — 출력: $OUT"
+assert_line "$OUT" "[rust] unit-unreached: 1 entry (open-admin 1)" "[check] rust 장부"
+fresh
+sed -i '/auth\.rs:AuthClient::describe"/,/}/ s#"lines": 7,#"lines": 7, "branches": 0,#' "$T/scripts/unit-unreached.json"
+assert_contains "$(grep -A1 'auth.rs:AuthClient::describe"' "$T/scripts/unit-unreached.json")" '"branches": 0,' "(변이가 착지했는지 먼저 본다)"
+run check "$T"
+assert_eq 2 "$RC" "[check] rust 항목에 branches 가 있으면 데이터 없이도 exit 2 — 출력: $OUT"
+assert_contains "$OUT" "FAIL [rust] scripts/unit-unreached.json: rust[\"rust/src/auth.rs:AuthClient::describe\"] must be { lines, why }" "[check] rust 꼴"
 
 assert_report

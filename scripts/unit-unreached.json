@@ -238,5 +238,27 @@
       "branches": 1,
       "why": "coverage-omit-hides-security-paths"
     }
+  },
+  "rust": {
+    "rust/src/admin.rs:created_id": {
+      "lines": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "rust/src/auth.rs:AuthClient::new": {
+      "lines": 5,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "rust/src/auth.rs:to_token_set": {
+      "lines": 1,
+      "why": "coverage-omit-hides-security-paths"
+    },
+    "rust/src/auth.rs:map_token_err": {
+      "lines": 1,
+      "why": "defensive: `RTE::Request` 안 `match &re` 의 `_` 갈래(oauth2 5.0.0 src/lib.rs:597 의 HttpClientError 넷 중 Http · Io) — 그 오류를 만드는 것은 이 SDK 의 CappedHttp::call(auth.rs:66) 하나다(request_async 넷이 다 self.capped — auth.rs:334 · 407 · 420 · 460). 그것은 Io 를 만들지 않고 Http 는 builder.body(auth.rs:103) 뿐인데, 그 빌더에는 받은 응답의 상태 · 판 · 헤더를 무오류 변환으로만 넣는다(http 1.4.2 header/name.rs:1322 · header/value.rs:487 — try_append 의 상한 32,768(header/map.rs:289)은 hyper 1.11.0 의 응답 헤더 기본 상한 100(proto/h1/role.rs:31) 위다). 네 갈래를 다 받는 match 의 방어선이다"
+    },
+    "rust/src/client.rs:build_http": {
+      "lines": 1,
+      "why": "defensive: `ClientBuilder::build()` 실패의 map_err — reqwest 0.12.28 src/async_impl/client.rs:411 의 build 는 빌더가 기록한 오류(414 — 이 빌더의 redirect · connect_timeout · timeout 은 기록하지 않는다, 1383 · 1441 · 1466)와 rustls 설정(붙인 루트 인증서 · TLS 판 범위 · CRL · 신원 — 689 · 758 · 778 · 809 · 816, 이 빌더는 아무것도 안 준다)에서만 실패하고, 이 크레이트의 트리는 rustls 백엔드만 켠다(cargo tree -e features -i reqwest — __rustls · rustls-tls-webpki-roots). 소비자 빌드가 다른 TLS 백엔드를 기능 통합으로 켜 그 초기화가 실패하는 환경에 대비한 방어선이다 — 단위 시험이 만들 수 없다"
+    }
   }
 }

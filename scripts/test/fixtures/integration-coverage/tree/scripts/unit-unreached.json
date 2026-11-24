@@ -52,5 +52,11 @@
       "branches": 0,
       "why": "defensive: check reads no data — only the shape, the boundary and the why"
     }
+  },
+  "rust": {
+    "rust/src/auth.rs:AuthClient::describe": {
+      "lines": 7,
+      "why": "open-admin"
+    }
   }
 }

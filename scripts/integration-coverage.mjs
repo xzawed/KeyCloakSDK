@@ -80,7 +80,7 @@
 // 적재 때 도는 클래스 · def 줄이 lines 를 부풀리므로(python 의 import 와 같다) bodies(메서드 범위 안 줄)를 함께 낸다. 메서드
 // 밖 줄은 적재 때 돌았어야 한다 — 0 이면 블록이나 람다의 몸통이라 어느 메서드에도 못 붙인다(FAIL).
 //
-// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java · ruby · go · python · node, 등록부 coverage-exclusion-hides-untested-branches ·
+// ── 단위 미도달 장부(`unit` · `unit-report` — kotlin · php · dotnet · java · ruby · go · python · node · rust, 등록부 coverage-exclusion-hides-untested-branches ·
 // coverage-omit-hides-security-paths) ──
 // 왜: 위 소유 판정은 **함수 단위**다 — 통합이 한 번이라도 도는 경계 함수 안에 새로 생긴 · 바뀐 손으로 쓴 실패 갈래는 어느 게이트도
 // 못 본다(단위 게이트는 그 파일을 빼고, 이 장부는 함수가 돌았는지만 본다 — #1125). 그래서 같은 경계 파일을 **단위** 스위트로 계측해
@@ -88,8 +88,9 @@
 // 실행 가능 줄, dotnet 은 coverlet 메서드마다 0 회인 줄 · 0 회인 가지, ruby 는 VM `Coverage` 의 메서드마다 0 회인 줄(한 줄 메서드는
 // 호출 횟수) · 0 회인 가지 갈래, go 는 커버 프로필에서 함수마다 0 회인 블록의 문장(통합 리포트의 지표와 같다 — 프로필에는 줄 · 가지가
 // 없다), python 은 coverage.py JSON(형식 3)의 함수 영역마다 안 돈 문장 · 안 탄 가지 호(`branch = true`), node 는 istanbul JSON(vitest 의 v8)의
-// 이름 범위마다 안 돈 문장 · 안 탄 if · switch 갈래. 이름 · 접기 · 무결성은 위의 같은
-// 리더(jvmReport · phpReport · dotnetReport · rubyReport · goReport · pyReport · nodeReport)가 낸다: kotlin 의
+// 이름 범위마다 안 돈 문장 · 안 탄 if · switch 갈래, rust 는 llvm-cov lcov 의 줄(DA — 통합 리포트의 지표와 같다)을 소스의 이름 범위로
+// 함수마다 센 안 돈 줄. 이름 · 접기 · 무결성은 위의 같은
+// 리더(jvmReport · phpReport · dotnetReport · rubyReport · goReport · pyReport · nodeReport · rustReport)가 낸다: kotlin 의
 // 람다 · 로컬 함수 · 기본 인자 다리 · 익명 객체는 ktFold 가, java 의 람다(`lambda$…`) · 익명 · 지역 클래스는 javaFold 가, dotnet 의 상태
 // 기계 · 람다 · 로컬 함수는 dotnetFold 가 소스 함수로 접으므로 그 안의 놓친 가지도 그 소스 함수의 수다(키가 합성 이름이 되지 않는다 —
 // java 의 이름 붙은 중첩 클래스는 제 타입이고 오버로드는 매개변수로 가른다). ruby 의 블록 · 람다는 이름을 접을 것이 없다 — 감싼 메서드의
@@ -97,7 +98,8 @@
 // 함수 선언의 줄 범위 안이라 그 함수의 문장이다(goFuncs — 패키지 수준 함수 리터럴의 안 돈 문장은 리더가 FAIL 로 낸다). python 의 중첩
 // def 는 제 영역이다(`<감싼 함수>.<이름>` — coverage.py 가 감싼 함수의 영역에서 그 몸통을 뺀다) · 람다 · 컴프리헨션은 감싼 함수의 줄이다(영역
 // 이름 "" — 모듈 · 클래스 몸통 — 의 안 돈 줄 · 안 탄 호는 리더가 FAIL 로 낸다). node 의 콜백 · 중첩 함수는 감싼 멤버(nodeFuncs 의 이름
-// 범위)의 줄 범위 안이라 그 멤버의 문장 · 갈래다(이름 범위 밖의 안 돈 문장 · 안 탄 갈래는 리더가 FAIL 로 낸다). 정적 초기화는
+// 범위)의 줄 범위 안이라 그 멤버의 문장 · 갈래다(이름 범위 밖의 안 돈 문장 · 안 탄 갈래는 리더가 FAIL 로 낸다). rust 의 클로저 · async 몸통 ·
+// static 의 클로저 값은 감싼 항목의 이름 범위 안이라 그 항목의 줄이다(rustFuncs — 항목 밖 줄의 안 돈 것은 리더가 FAIL 로 낸다). 정적 초기화는
 // kotlin · java `<타입>.<clinit>` · dotnet `<타입>.#cctor` 다. 장부는 `scripts/unit-unreached.json`(언어 → `"<파일>:<함수>"` → { lines(go · node 는
 // statements), branches(kotlin · dotnet · java · ruby · python · node), why }) — why 는 `unreachable:` · `defensive:` · `integration:` 로 시작하는
 // 까닭이거나 **열린** 등록부 id 다(위 소유자와 같은 판정).
@@ -110,7 +112,9 @@
 // `pytest -m "not integration"` 을 `coverage run` 밑에서 — 그 표지의 통합 시험은 거르되 수집 때 그 모듈의 import 는 돈다, node 는 레인의 단위
 // 명령(`npm test` = `vitest run --coverage` — 설정의 include 가 test/unit 뿐이라 통합 시험은 안 실린다)을 같은 v8 · 같은 include 로 돌되 설정의
 // coverage 값을 CLI 로 덮는다: exclude 는 경계 자신이라 아무것도 빼지 않고(NODE_EXCLUDE_NOTHING), 하한 넷은 0 이다(설정의 하한은 경계를 넣은
-// 합계에 걸려 exit 1 을 낸다 — 실측) · reportOnFailure(실패한 실행도 JSON 을 내 기록이 그 종료코드를 싣는다)) —
+// 합계에 걸려 exit 1 을 낸다 — 실측) · reportOnFailure(실패한 실행도 JSON 을 내 기록이 그 종료코드를 싣는다), rust 는 레인
+// coverage 잡의 `cargo llvm-cov`(레인의 `cargo test` 를 계측해 돈다)를 경계를 빼는 정규식 없이 `--locked --lcov` 로 — lib 의 cfg(test)
+// 단위 시험과 tests/ 의 대상이 돌고, 통합 E2E 는 `#[ignore]` 라 컴파일만 된다) —
 // kotlin 은 그 태스크의 Kover 에이전트를 Kover 의 DSL(`instrumentation.disabledForTestTasks` — 빌드가 integrationTest 에 쓰는 그
 // 손잡이)로 꺼서 한 클래스를 에이전트 둘이 고쳐 쓰지 않게 한다. 데이터 · 기록은 `.unit` 이 붙은 이름이라 통합의 것과 섞이지 않는다.
 // ⚠️ java 의 jacoco.skip 모듈(예제 — 파생이 forced 로 넣는다)에는 에이전트가 안 붙고 단위 시험도 없다: 그 파일은 데이터에 줄 · 가지 전부를
@@ -149,6 +153,18 @@
 // 어느 함수에도 못 붙여 FAIL 이다 — 경계 파일을 한 번도 안 불러온 실행이면 그 측정 실패(ranNothing)가 먼저다. istanbul JSON 에도 소스 해시 ·
 // 시험 결과가 없어 run 이 기록에 종료코드 · coverage-v8 판 · JSON 의 sha1 · 경계 파일의 sha1(실행 앞뒤가 같을 때만)을 싣는다 — python 과 같다.
 // 실제 트리의 두 실행이 경계 파일의 문장 · 함수 · 가지 지도와 횟수까지 같았다(실측 2026-11-24).
+// ⚠️ rust 는 줄만 센다 — 안정판 툴체인의 llvm-cov 에는 가지가 없다(`--branch` 는 nightly — .claude/rules/rust.md). 단위 빌드는 `test` 로만
+// 컴파일되는 항목(경계 파일 안의 cfg(test) 시험 모듈)을 싣는다 — 시험이지 경계 코드가 아니라 장부가 그 레코드와 줄을 뺀다(통합 리포트는 그
+// 레코드에 FAIL 이다 — 위). 라이브러리의 단위 시험 바이너리는 아무도 안 부른 함수 · 인스턴스화 안 된 제네릭 · poll 안 된 async 몸통에도
+// 0 회 레코드를 남겨(실측 2026-11-24 rustc 1.100.0 — 픽스처의 refresh · convert) 그 줄도 센다. 그래서 레코드가 아예 없는 fn 은 이 빌드가
+// 컴파일하지 않은 코드다(이 플랫폼이 빼는 cfg 쌍둥이) — 줄을 셀 수 없어 FAIL 이다. 위 통합의 async 판정(돈 레코드 수)은 단위 데이터에서
+// 뜻이 없다 — 바이너리마다 레코드가 따로다(실제 트리: 한 fn 에 레코드 110). 못 보는 것: 줄만 세므로 코드가 돈 줄에 함께 있는 실패 클로저
+// (한 줄의 `parse().map_err(…)` — 픽스처의 fallback)는 안 보인다 — rustfmt 가 사슬을 끊어 제 줄에 둔 `.map_err(…)?` 는 보인다(rustc
+// 1.100.0 · 위 귀속의 판 차이). 항목 밖 줄의 안 돈 것은 어느 fn 에도 못 붙여 FAIL 이다. lcov 에는 소스 해시가 없어 run 이 기록에 종료코드 ·
+// lcov 의 sha1 · 경계 파일의 sha1(실행 앞뒤가 같을 때만)을 싣고 rustc 판을 더한다(리포트가 찍기만 한다 — 판이 귀속을 바꾼다) — go 와 같다.
+// ⚠️ 윈도 로컬: cargo 1.100 은 의존마다 `-L` 경로를 따로 넘겨 대상 디렉터리 경로가 길면 rustc 명령줄이 32,767 자를 넘는다 — cargo 가
+// @argfile 로 넘기면 cargo-llvm-cov 0.8.7 의 RUSTC_WRAPPER 는 `--crate-name` 을 못 읽어 계측을 안 건다(실측 2026-11-24: `-L` 252 개 · 53,114 자
+// → 「not found *.profraw」 exit 1 → FAIL). 짧은 CARGO_TARGET_DIR 로 돈다. CI(리눅스)는 해당이 없다.
 // ⚠️ dotnet 도 가지를 센다 — coverlet(10.1.0)은 컴파일러가 만든 갈래 대부분을 싣지 않는다: 상태 기계의 분기 · finally 의 가드 · using 의
 // null 검사 · 람다 · 메서드 그룹 캐시, 그리고 Task · ValueTask(ConfigureAwait 여부와 무관)를 await 할 때의 IsCompleted 검사(실측 2026-11-19,
 // 실제 트리 · net8.0 Release: 경계의 상태 기계 31 개에 await 40 개 — 그중 18 개는 실린 가지가 0 개다 · AdminAsync 의 IL 조건 점프 10 개 중
@@ -196,10 +212,10 @@
 //   node scripts/integration-coverage.mjs run    <LANG> [ROOT] [--out DIR]   CI 테스트 스텝 — 종료코드는 테스트의 것
 //   node scripts/integration-coverage.mjs report <LANG> [ROOT] [--out DIR]   CI 리포트 스텝(하한이 있으면 게이트)
 //   node scripts/integration-coverage.mjs check  [ROOT]                      파생 ↔ 핀 ↔ 소유자 · 단위 장부(데이터·Docker 불필요)
-//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java|ruby|go|python|node> [ROOT] [--out DIR]   단위 스위트를 경계 계측과
-//                                                                                                                       함께 돌리고 단위 미도달 장부와
-//                                                                                                                       대조한다(Docker 불필요 — 레인 게이트)
-//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java|ruby|go|python|node> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
+//   node scripts/integration-coverage.mjs unit        <kotlin|php|dotnet|java|ruby|go|python|node|rust> [ROOT] [--out DIR]   단위 스위트를 경계 계측과
+//                                                                                                                            함께 돌리고 단위 미도달 장부와
+//                                                                                                                            대조한다(Docker 불필요 — 레인 게이트)
+//   node scripts/integration-coverage.mjs unit-report <kotlin|php|dotnet|java|ruby|go|python|node|rust> [ROOT] [--out DIR]   같은 대조만 — 앞선 `unit` 의 데이터로
 // python 인터프리터는 `KCSDK_PY` → `python/.venv` → PATH 의 `python` 순이다. node 는 `node/node_modules` 의 vitest 를
 // 이 node 로 직접 띄운다(npm 을 거치지 않는다 — 윈도의 `npm.cmd` 는 셸 없이 못 띄운다). rust 는 PATH 의 `cargo` 에
 // `cargo-llvm-cov`(+ `llvm-tools-preview`)가 있어야 한다. php 는 PATH 의 `php` 에 커버리지 드라이버(pcov 또는 Xdebug —
@@ -238,7 +254,7 @@ const BODY_LANGS = new Set(['python', 'ruby', 'java', 'kotlin'])
 const JVM_LANGS = new Set(['java', 'kotlin'])
 // 단위 미도달 장부(머리 주석) — 재는 언어와 why 의 까닭 머리. 등록부 id 가 아닌 why 는 이 셋 중 하나로 시작해야 한다.
 const UNIT = 'scripts/unit-unreached.json'
-const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java', 'ruby', 'go', 'python', 'node']
+const UNIT_LANGS = ['kotlin', 'php', 'dotnet', 'java', 'ruby', 'go', 'python', 'node', 'rust']
 const UNIT_WHY = ['unreachable:', 'defensive:', 'integration:']
 // 놓친 가지도 세는 언어 — php 의 데이터 · go 의 커버 프로필에는 가지가 없다(머리 주석). node 는 if · switch 의 갈래만 센다.
 const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java', 'ruby', 'python', 'node'])
@@ -1657,16 +1673,21 @@ function rustFuncs(file) {
   }
   return ok ? { funcs, tests, macros, swallows, lines: L.length - (L.at(-1) === '' ? 1 : 0) } : null
 }
+// lcov — 통합(`run rust`)은 `rust.lcov`, 단위 미도달 장부(`unit rust`)는 `.unit` 이 붙은 이름과 그 실행의 기록이다(SUITE). 통합 run 은
+// 기록을 쓰지 않는다(머리 주석).
+const RUST_DATA = () => join(out, `rust${TAG}.lcov`)
+const RUST_RUN = () => join(out, `rust${TAG}.run.json`)
 function rustReport(d) {
-  const path = join(out, 'rust.lcov')
+  const path = RUST_DATA()
   const shown = path.replace(/\\/g, '/')
   if (!existsSync(path)) {
-    fail('rust', `no coverage data at ${shown} — run the integration suite first (node scripts/integration-coverage.mjs run rust)`)
+    fail('rust', `no coverage data at ${shown} — run the ${SUITE} suite first (node scripts/integration-coverage.mjs ${RUN_CMD} rust)`)
     return null
   }
+  const bytes = readFileSync(path)
   const recs = new Map()
   let cur = null
-  for (const l of readFileSync(path, 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+  for (const l of bytes.toString('utf8').replace(/\r\n/g, '\n').split('\n')) {
     if (l === '') continue
     if (l === 'end_of_record') {
       cur = null
@@ -1709,6 +1730,7 @@ function rustReport(d) {
   }
   const files = []
   const never = []
+  const units = []
   for (const f of sortU(d.files)) {
     const r = recs.get(f)
     if (!r) {
@@ -1733,6 +1755,9 @@ function rustReport(d) {
     let broken = false
     for (const rec of r.fns) {
       if (within(src.tests, rec.line)) {
+        // 단위 빌드는 `test` 로만 컴파일되는 항목(그 파일의 단위 시험 모듈)을 싣는다 — 경계 코드가 아니라 시험이다: 단위 장부는 그 레코드와
+        // 줄을 세지 않는다(아래 DA). 통합 리포트에서는 단위 시험이 같은 빌드에서 돈 것이라 FAIL 이다.
+        if (SUITE === 'unit') continue
         fail('rust', `${f}:${rec.line}: the data has a function inside an item compiled only with cfg(test) (${rec.name}) — unit tests ran in this build, so the report would not be integration-only`)
         broken = true
         break
@@ -1763,6 +1788,8 @@ function rustReport(d) {
         broken = true
         break
       }
+      // 단위 시험 모듈(cfg(test))의 줄 — 시험이지 경계 코드가 아니다(분모 · 미도달 어디에도 안 든다 — 위 레코드와 같다).
+      if (SUITE === 'unit' && within(src.tests, line)) continue
       stmts++
       if (c > 0) covered++
       const fn = rangeOf(line) ?? outside
@@ -1782,6 +1809,14 @@ function rustReport(d) {
         }
         // 레코드가 없는 fn — 크레이트 밖에 안 보이고 아무도 참조 안 한 fn · 인스턴스화 안 된 제네릭 · 이 빌드에서 cfg 로 빠진 쌍둥이.
         // static · const 는 코드가 없는 것이 보통이라(문자열 상수) 레코드가 없어도 목록에 올리지 않는다.
+        // ⚠️ 단위 장부는 그 함수의 줄을 셀 수 없다 — FAIL 이다(조용히 0 줄이면 아무것도 안 닿는 함수가 장부에서 사라진다). 단위 실행의
+        // 라이브러리 단위 시험 바이너리는 아무도 안 부른 함수 · 인스턴스화 안 된 제네릭 · poll 안 된 async 몸통에도 0 회 레코드를 남기므로
+        // (머리 주석의 실측) 레코드가 없으면 이 빌드가 컴파일하지 않은 코드다.
+        if (fn.kind === 'fn' && SUITE === 'unit') {
+          fail('rust', `${f}:${fn.start}: the data has no record of ${fn.name} — the unit build compiled no code for it (a cfg twin this platform leaves out, or a run without the library's unit-test binary, which keeps zero-count records of what nothing calls), so the lines the unit suite misses there cannot be counted`)
+          broken = true
+          continue
+        }
         if (fn.kind === 'fn') mine.push({ ...at, label: 'no record in the data' })
       } else if (fn.stmts > 0 && fn.covered === 0) mine.push(at)
       // 부른 async fn 은 퓨처만 만든다 — 몸통은 poll 될 때 도는 별도 레코드다. 범위 안에서 횟수 > 0 인 레코드가 바깥 함수 하나뿐이면
@@ -1796,8 +1831,50 @@ function rustReport(d) {
     if (broken) continue
     files.push({ file: f, stmts, covered, outside })
     never.push(...mine)
+    // 함수마다 안 돈 줄 — 단위 미도달 장부(unitReport)가 쓴다(통합 리포트는 never 만 쓴다). 데이터의 줄(DA)만 센다 — 위 async 판정(돈
+    // 레코드 수)은 단위 데이터에서 뜻이 없다: 바이너리마다 레코드가 따로라 바깥 레코드가 여럿이고, poll 안 된 몸통의 줄은 라이브러리 단위
+    // 시험 바이너리의 0 회 레코드로 이미 든다(머리 주석).
+    if (SUITE === 'unit') for (const fn of src.funcs) units.push({ file: f, line: fn.start, name: fn.name, lines: fn.stmts - fn.covered })
   }
-  return { path, files, never }
+  if (SUITE !== 'unit') return { path, files, never }
+  // ── 여기부터 단위 미도달 장부만 ──
+  // 항목 밖 줄(어느 이름 범위에도 안 드는 — 매크로가 펼친 코드가 항목 밖 자리를 가리킬 때)의 안 돈 줄은 어느 함수에도 못 붙인다 — FAIL 이다
+  // (go 의 패키지 수준 함수 리터럴 · python 의 모듈 수준과 같은 판정). 경계가 한 줄도 안 돈 실행이면 그 판정(ranNothing — 측정 실패)이 먼저다.
+  const ranSome = files.some((x) => x.covered > 0)
+  for (const x of files) if (ranSome && x.outside.covered < x.outside.stmts) fail('rust', `${x.file}: ${x.outside.stmts - x.outside.covered} of ${x.outside.stmts} lines outside every item (module level — code a macro placed there) never ran — no function can be credited with them`)
+  // run 기록 — go · python 과 같은 이유(손으로 돌린 실행 · 실패한 실행 · 다른 실행이 덮어쓴 데이터). lcov 에는 소스 해시가 없어(줄 번호뿐이다)
+  // 경계 파일의 바이트도 기록과 대조한다. 다른 판정 뒤에 두되 앞의 실패가 있어도 낸다(두 까닭이 한 번에 보인다).
+  const runRec = RUST_RUN()
+  let rec = null
+  try {
+    rec = JSON.parse(readFileSync(runRec, 'utf8'))
+  } catch {
+    rec = null
+  }
+  const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
+  const sha = (b) => createHash('sha1').update(b).digest('hex')
+  if (!isObj(rec) || rec.run !== 'rust' || (rec.suite ?? 'integration') !== SUITE) {
+    fail('rust', `no record that \`${RUN_CMD} rust\` wrote this data (${runRec.replace(/\\/g, '/')}) — run the suite through the script (node scripts/integration-coverage.mjs ${RUN_CMD} rust) so the report can tell a complete, successful run`)
+    return null
+  }
+  if (rec.exit !== 0) {
+    fail('rust', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+    return null
+  }
+  if (rec.data_sha1 !== sha(bytes)) {
+    fail('rust', `${shown} is not the data \`${RUN_CMD} rust\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+    return null
+  }
+  if (!isObj(rec.files)) {
+    fail('rust', 'the record has no boundary hashes — the boundary files changed while the suite ran, so the data may come from other bytes')
+    return null
+  }
+  for (const f of d.files) {
+    const now = existsSync(join(root, f)) ? sha(readFileSync(join(root, f))) : null
+    if (rec.files[f] !== now) fail('rust', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+  }
+  // 툴체인이 줄의 귀속을 바꾼다(머리 주석) — 판을 찍어 수가 바뀐 DRIFT 가 코드 때문인지 판 때문인지 보이게 한다(판정하지 않는다).
+  return { path, note: `${typeof rec.rustc === 'string' && rec.rustc ? rec.rustc : 'rustc ?'} · lines (DA)`, files, never, units }
 }
 
 // ── php: PHPUnit XML 커버리지(`--coverage-xml` — index.xml + 파일마다 `<경로>.xml`) ──────────────────
@@ -3806,7 +3883,7 @@ function unitReport(l) {
   const k = unitKey(l)
   // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
   if (d && pin) matchesPin(l, d, pin)
-  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x), ruby: rubyReport, go: goReport, python: pyReport, node: nodeReport }[l]
+  const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x), ruby: rubyReport, go: goReport, python: pyReport, node: nodeReport, rust: rustReport }[l]
   const data = fails(l) ? null : reader(d)
   const rows = []
   if (data && !fails(l)) {
@@ -3871,7 +3948,9 @@ function printUnit(l, d, data, rows) {
                 ? '  (counts = coverage.py function regions — statements the unit run never executed and branch arcs (branch = true) it never took; a nested def is its own region (outer.inner), a lambda\'s or comprehension\'s lines are its enclosing function\'s; a decision inside one line — a conditional expression, and/or, a comprehension filter — is not an arc, so its untaken side is not seen)'
                 : l === 'node'
                   ? '  (counts = istanbul (vitest v8) per name range — statements the unit run never executed and if or switch arms it never took; a callback\'s statements and arms are its enclosing member\'s, a function-valued const or property is a range of its own; a decision inside an expression — ?:, &&, ||, ??, a default argument — is not counted, so its untaken side is not seen)'
-                  : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
+                  : l === 'rust'
+                    ? '  (counts = llvm-cov lcov lines (DA) the unit run never executed, per name range from the source — a closure\'s or async body\'s lines are its function\'s, a #[cfg(test)] item is the unit tests\' own and is left out; the library\'s unit-test binary keeps zero-count records of what nothing calls — an unpolled async body, an uninstantiated generic — so those lines count too; lines only: a failure closure on a line where code ran is not seen)'
+                    : '  (counts = executable lines the unit run never executed — lines only: a failure branch on a line the happy path already runs is not seen)',
   )
   const sorted = [...rows].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
   for (const r of sorted) console.log(`  UNREACHED ${r.file}:${r.line} ${r.name} · ${unitCounts(l, r)} · ${r.why}`)
@@ -4029,11 +4108,27 @@ function run(l) {
     return rc
   }
   if (l === 'rust') {
-    const lcov = join(out, 'rust.lcov')
+    const lcov = RUST_DATA()
     rmSync(lcov, { force: true })
     // 통합 대상 하나만 — 라이브러리가 cfg(test) 없이 링크된다(단위 테스트가 같은 빌드에서 돌면 리포트가 FAIL 한다).
     // `--locked` 는 레인의 다른 빌드와 같은 이유다(커밋된 Cargo.lock 그대로).
-    return spawnStep('cargo', ['llvm-cov', '--locked', '--test', 'integration_test', '--lcov', '--output-path', lcov, '--', '--ignored'], cwd)
+    if (SUITE !== 'unit') return spawnStep('cargo', ['llvm-cov', '--locked', '--test', 'integration_test', '--lcov', '--output-path', lcov, '--', '--ignored'], cwd)
+    // 단위 미도달 장부(`unit rust`) — 레인의 단위 커버리지 명령(coverage 잡의 `cargo llvm-cov` — 레인의 `cargo test` 를 계측해 돈다)을 경계를
+    // 빼는 정규식 없이 lcov 로 돈다: 단위 시험(lib 의 cfg(test) · tests/ 의 대상)이 돌고, 통합 E2E 는 `#[ignore]` 라 컴파일만 된다. 옛 기록을
+    // 먼저 지운다(go 와 같다). 경계 파일의 바이트는 실행 앞뒤로 재서 같을 때만 기록에 싣는다(lcov 에는 소스 해시가 없다 — go 와 같다).
+    rmSync(RUST_RUN(), { force: true })
+    const shas = () => Object.fromEntries(d.files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha1').update(readFileSync(join(root, f))).digest('hex') : null]))
+    const before = shas()
+    const rc = spawnStep('cargo', ['llvm-cov', '--locked', '--lcov', '--output-path', lcov], cwd)
+    const after = shas()
+    if (existsSync(lcov)) {
+      const same = d.files.every((f) => before[f] !== null && before[f] === after[f])
+      const sha = createHash('sha1').update(readFileSync(lcov)).digest('hex')
+      // 그 실행의 rustc — 판이 줄의 귀속을 바꾼다(머리 주석). 기록에 싣고 리포트가 찍기만 한다.
+      const rustc = spawnSync('rustc', ['--version'], { cwd, encoding: 'utf8' }).stdout?.trim() || null
+      writeFileSync(RUST_RUN(), `${JSON.stringify({ run: 'rust', suite: 'unit', exit: rc, data_sha1: sha, rustc, files: same ? before : null })}\n`)
+    }
+    return rc
   }
   if (l === 'php') {
     // 단위 설정의 `<source>` 만 경계 파일로 바꾼 사본을 **그 옆에** 만든다 — bootstrap · 테스트 디렉터리 · cacheDirectory 의
