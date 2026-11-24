@@ -133,6 +133,35 @@ def test_wrap_passes_through_successful_result():
     assert client._wrap(lambda: 42) == 42
 
 
+def test_wrap_reraises_an_sdk_exception_unchanged():
+    """`keycloak_sdk` 예외는 python-keycloak 실패가 아니다 — 같은 객체를 변환 없이 다시 던진다."""
+    client = _client(MagicMock(spec=KeycloakOpenID))
+    original = KeycloakTransportError("already ours")
+
+    def boom() -> None:
+        raise original
+
+    with pytest.raises(KeycloakTransportError) as excinfo:
+        client._wrap(boom)
+
+    assert excinfo.value is original
+
+
+def test_wrap_reraises_a_runtime_error_from_the_callable_unchanged():
+    """호출 자체가 던진 `RuntimeError`(우리 버그)는 `KeycloakError` 도 아니고 python-keycloak
+    프레임을 지나지도 않는다 — 같은 객체 그대로 전파된다."""
+    client = _client(MagicMock(spec=KeycloakOpenID))
+    original = RuntimeError("bug in the callable")
+
+    def boom() -> None:
+        raise original
+
+    with pytest.raises(RuntimeError) as excinfo:
+        client._wrap(boom)
+
+    assert excinfo.value is original
+
+
 # --- 3.3: client_credentials_token + PKCE authorization_url ---------------------
 
 
