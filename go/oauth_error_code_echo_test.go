@@ -451,8 +451,8 @@ func TestThePriceASecretThatIsAPieceOfTheCodeWithholdsIt(t *testing.T) {
 }
 
 // The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code field
-// "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the contract reads.
-// 302 (Location on this server): recorded, not pinned — the 3xx contract is open; only "never followed" is asserted.
+// "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract reads at
+// 500 · 503 and at 302 (Location on this server — a 3xx is an error status too), which is never followed.
 const (
 	echoB5      = `{"error":"temporarily_unavailable","error_description":"down"}`
 	echoNoError = `{"message":"down"}`
@@ -515,7 +515,7 @@ func TestTheErrorStatusControlsCarryItAt400AndNoneWithoutOne(t *testing.T) {
 	}
 }
 
-func TestARedirectErrorStatusToThisServerIsRecordedAndNeverFollowed(t *testing.T) {
+func TestARedirectErrorStatusCarriesTheOAuthErrorAndIsNeverFollowed(t *testing.T) {
 	p := newEchoIdP(t)
 	for i := range echoSurfaces {
 		c := runErrorStatusCell(t, p, i, http.StatusFound, echoB5, p.srv.URL+redirectTarget)
@@ -524,6 +524,9 @@ func TestARedirectErrorStatusToThisServerIsRecordedAndNeverFollowed(t *testing.T
 			if strings.HasSuffix(r, " "+redirectTarget) {
 				t.Errorf("%s: the redirect was followed", c.line)
 			}
+		}
+		if c.code != "temporarily_unavailable" {
+			t.Errorf("%s: OAuthError = %q, want temporarily_unavailable", c.line, c.code)
 		}
 	}
 }

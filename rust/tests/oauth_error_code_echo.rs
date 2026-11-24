@@ -140,7 +140,12 @@ async fn run(surface: &str, cfg: &KeycloakConfig) -> Result<(), KeycloakError> {
         "introspect" => auth.introspect(TOKEN).await.map(|_| ()),
         "AuthClient as TokenProvider" => TokenProvider::access_token(auth).await.map(|_| ()),
         "ClientCredentialsTokenProvider" => {
-            ClientCredentialsTokenProvider::new(cfg.clone(), reqwest::Client::new())
+            // As the SDK's own client: no redirects (registry rust-lowlevel-ctor-redirect-policy).
+            let http = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("client");
+            ClientCredentialsTokenProvider::new(cfg.clone(), http)
                 .access_token()
                 .await
                 .map(|_| ())
@@ -389,9 +394,8 @@ async fn the_price_a_secret_that_is_a_piece_of_the_code_withholds_it() {
 }
 
 // The OAuth `error` at a 3xx and a 5xx (registry `node-5xx-oauth-error-code-empty`). The contract puts it in the code
-// field "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the
-// contract reads. 302 (`Location` on this server): recorded, not pinned — the 3xx contract is open; only "never followed"
-// is asserted.
+// field "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract
+// reads at 500 · 503 and at 302 (`Location` on this server — a 3xx is an error status too), which is never followed.
 const B5: &str = r#"{"error":"temporarily_unavailable","error_description":"down"}"#;
 const NO_ERROR: &str = r#"{"message":"down"}"#;
 /// Where the 3xx cells point `Location` (this server, same origin) — a client that follows it shows up in the requests.
@@ -499,15 +503,16 @@ async fn the_error_status_controls_carry_it_at_400_and_none_without_one() {
 }
 
 #[tokio::test]
-async fn a_redirect_error_status_to_this_server_is_recorded_and_never_followed() {
+async fn a_redirect_error_status_carries_the_oauth_error_and_is_never_followed() {
     let mut wrong = Vec::new();
     for surface in SURFACES {
         let c = error_status_cell(surface, 302, B5, true).await;
         println!("{}", c.line);
-        if c.requests
+        let followed = c
+            .requests
             .iter()
-            .any(|r| r.ends_with(&format!(" {REDIRECT_TARGET}")))
-        {
+            .any(|r| r.ends_with(&format!(" {REDIRECT_TARGET}")));
+        if followed || c.code.as_deref() != Some("temporarily_unavailable") {
             wrong.push(c.line);
         }
     }

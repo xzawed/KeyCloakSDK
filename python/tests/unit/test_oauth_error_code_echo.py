@@ -389,9 +389,9 @@ async def test_the_admin_grant_never_carries_a_lowercased_echo_of_the_client_sec
 
 # --- the OAuth `error` at a 3xx and a 5xx ------------------------------------------------------
 # Registry node-5xx-oauth-error-code-empty. The contract puts it in the code field "at any status";
-# that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the
-# contract reads. 302 (`Location` on this server): recorded, not pinned — the 3xx contract is open;
-# only "never followed" is asserted.
+# that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract
+# reads at 500 · 503 and at 302 (`Location` on this server — a 3xx is an error status too), which
+# is never followed.
 
 B5 = '{"error":"temporarily_unavailable","error_description":"down"}'
 NO_ERROR = '{"message":"down"}'
@@ -453,9 +453,10 @@ async def test_the_error_status_controls_carry_it_at_400_and_none_without_one(
 
 @pytest.mark.parametrize("surface", list(ERROR_STATUS_SURFACES))
 @pytest.mark.parametrize("lane", LANES)
-async def test_a_redirect_error_status_to_this_server_is_recorded_and_never_followed(
+async def test_a_redirect_error_status_carries_the_oauth_error_and_is_never_followed(
     lane: str, surface: str
 ) -> None:
-    _, line, requests = await _error_status_cell(lane, surface, 302, B5, redirect=True)
+    code, line, requests = await _error_status_cell(lane, surface, 302, B5, redirect=True)
     print(line)
     assert not [r for r in requests if r.endswith(" " + REDIRECT_TARGET)], line
+    assert code == "temporarily_unavailable", line

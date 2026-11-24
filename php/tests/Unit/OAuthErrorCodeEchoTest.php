@@ -614,8 +614,8 @@ final class OAuthErrorCodeEchoTest extends TestCase
 
     // --- the OAuth `error` at a 3xx and a 5xx ------------------------------------------------------------------------------
     // Registry `node-5xx-oauth-error-code-empty`. The contract puts it in the code field "at any status"; that was measured at
-    // 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the contract reads. 302 (`Location` on this server):
-    // recorded, not pinned — the 3xx contract is open; only "never followed" is asserted.
+    // 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract reads at 500 · 503 and at 302 (`Location` on this
+    // server — a 3xx is an error status too), which is never followed.
 
     private const B5 = '{"error":"temporarily_unavailable","error_description":"down"}';
     private const NO_ERROR = '{"message":"down"}';
@@ -707,9 +707,10 @@ final class OAuthErrorCodeEchoTest extends TestCase
     }
 
     #[DataProvider('errorStatusLanes')]
-    public function testARedirectErrorStatusToThisServerIsRecordedAndNeverFollowed(string $lane): void
+    public function testARedirectErrorStatusCarriesTheOAuthErrorAndIsNeverFollowed(string $lane): void
     {
-        [, $line, $requests] = self::errorStatusCell($lane, 302, self::B5, 'http://127.0.0.1:' . self::$port . self::REDIRECT_TARGET);
+        [$code, $line, $requests] = self::errorStatusCell($lane, 302, self::B5, 'http://127.0.0.1:' . self::$port . self::REDIRECT_TARGET);
         self::assertSame([], array_values(array_filter($requests, static fn (string $r): bool => str_ends_with($r, ' ' . self::REDIRECT_TARGET))), $line);
+        self::assertSame('temporarily_unavailable', $code, $line);
     }
 }

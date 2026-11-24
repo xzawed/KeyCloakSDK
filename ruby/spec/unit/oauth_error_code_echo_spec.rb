@@ -342,9 +342,8 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
   end
 
   # The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code
-  # field "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the
-  # contract reads. 302 (`Location` on this server): recorded, not pinned — the 3xx contract is open; only "never
-  # followed" is asserted.
+  # field "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract
+  # reads at 500 · 503 and at 302 (`Location` on this server — a 3xx is an error status too), which is never followed.
   describe "the OAuth error at an error status (3xx and 5xx)" do
     lanes = %w[client_credentials refresh exchange_code provider admin introspect]
 
@@ -421,10 +420,11 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
         expect(none).to be_nil, none_line
       end
 
-      it "records error status 302 to this server on #{lane} and never follows it" do
-        _, line, requests = error_status_cell(lane, 302, OAuthErrorCodeEchoSpec::B5,
-                                              location: OAuthErrorCodeEchoSpec::REDIRECT_TARGET_URL)
+      it "carries the OAuth error at error status 302 to this server on #{lane} and never follows it" do
+        code, line, requests = error_status_cell(lane, 302, OAuthErrorCodeEchoSpec::B5,
+                                                 location: OAuthErrorCodeEchoSpec::REDIRECT_TARGET_URL)
         expect(requests.grep(%r{ /redirect-target})).to be_empty, line
+        expect(code).to eq("temporarily_unavailable"), line
       end
     end
   end
