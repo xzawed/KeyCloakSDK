@@ -705,7 +705,6 @@ describe('error status OAuth error — a 3xx and a 5xx', () => {
     '%s — error status %i carries the OAuth error',
     async (name, s) => {
       const cell = await errorStatusCell(name, s, B5)
-      console.log(cell.line)
       expect(cell.code, cell.line).toBe('temporarily_unavailable')
     },
   )
@@ -716,7 +715,6 @@ describe('error status OAuth error — a 3xx and a 5xx', () => {
     async (name) => {
       const at400 = await errorStatusCell(name, 400, B5)
       const none = await errorStatusCell(name, 503, NO_ERROR)
-      console.log(`${at400.line}\n${none.line}`)
       expect(at400.code, at400.line).toBe('temporarily_unavailable')
       expect(none.code, none.line).toBeUndefined()
     },
@@ -726,7 +724,6 @@ describe('error status OAuth error — a 3xx and a 5xx', () => {
     '%s — error status 302 to this server carries the OAuth error, never followed',
     async (name) => {
       const cell = await errorStatusCell(name, 302, B5, `${origin}${REDIRECT_TARGET}`)
-      console.log(cell.line)
       expect(
         requests.filter((r) => r.endsWith(` ${REDIRECT_TARGET}`)),
         cell.line,
