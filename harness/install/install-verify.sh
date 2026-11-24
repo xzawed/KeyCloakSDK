@@ -33,6 +33,9 @@ set -uo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=lib.sh
 . ./lib.sh
+# 빌드는 상류의 일시 장애에 재시도한다 — 재시도는 lib.sh 의 BUILD_RETRIES_FILE(install-all 아티팩트)에 한 줄씩 남는다.
+# shellcheck source=../lib/build-retry.sh
+. ../lib/build-retry.sh
 
 DEFAULT_LANGS="go dotnet node python java php rust ruby kotlin"
 
@@ -143,7 +146,7 @@ run_lang_go() {
   # 해석 경로를 재사용하려는 의도). install(go get)/quickstart/boot는 런타임 엔트리포인트(go-run.sh)가
   # install-net에서 수행.
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/go.Dockerfile")" -t install-consume-go "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-go "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/go.Dockerfile")" -t install-consume-go "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/go.Dockerfile 빌드 실패"
     return
   fi
@@ -238,7 +241,7 @@ run_lang_dotnet() {
   # install-net에서 수행한다(node 참조 구현과 동형 — dotnet은 컴파일 언어라 "설치=복원"이라 이 설계가
   # 더 자연스럽다).
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/dotnet.Dockerfile")" -t install-consume-dotnet "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-dotnet "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/dotnet.Dockerfile")" -t install-consume-dotnet "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/dotnet.Dockerfile 빌드 실패"
     return
   fi
@@ -285,7 +288,7 @@ run_lang_dotnet() {
   local app10="install-app-dotnet10"
   local status10="$PWD/report/status/${lang}-net10"
   rm -rf "$status10"; mkdir -p "$status10"
-  if ! docker build -f "$(hostpath "$PWD/consume/dotnet10.Dockerfile")" -t install-consume-dotnet10 "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-dotnet10 "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/dotnet10.Dockerfile")" -t install-consume-dotnet10 "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/dotnet10.Dockerfile 빌드 실패"
     docker rm -f "$app_container" >/dev/null 2>&1 || true
     return
@@ -384,7 +387,7 @@ run_lang_node() {
   # consume 이미지는 파일만 담는다(빌드타임 네트워크 의존 없음 — BuildKit이 build-time custom --network을
   # 지원하지 않으므로). install/quickstart/boot는 런타임 엔트리포인트(node-run.sh)가 install-net에서 수행.
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/node.Dockerfile")" -t install-consume-node "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-node "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/node.Dockerfile")" -t install-consume-node "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/node.Dockerfile 빌드 실패"
     return
   fi
@@ -469,7 +472,7 @@ run_lang_python() {
 
   # consume 이미지는 파일만 담는다(빌드타임 네트워크 의존 없음 — node.Dockerfile과 동형 이유).
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/python.Dockerfile")" -t install-consume-python "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-python "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/python.Dockerfile")" -t install-consume-python "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/python.Dockerfile 빌드 실패"
     return
   fi
@@ -558,7 +561,7 @@ run_lang_java() {
   # 지원하지 않으므로). install(mvn-repo 저장소 해석)/quickstart/boot는 런타임 엔트리포인트(java-run.sh)가
   # install-net에서 수행.
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/java.Dockerfile")" -t install-consume-java "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-java "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/java.Dockerfile")" -t install-consume-java "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/java.Dockerfile 빌드 실패"
     return
   fi
@@ -649,7 +652,7 @@ run_lang_php() {
   # 브리지만 필요, install-net과 무관). install(composer require)/quickstart/boot는 런타임 엔트리포인트
   # (php-run.sh)가 install-net에서 수행(node 참조 구현과 동형).
   log "[$lang] consume 이미지 빌드(빌드타임 install-net 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/php.Dockerfile")" -t install-consume-php "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-php "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/php.Dockerfile")" -t install-consume-php "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/php.Dockerfile 빌드 실패"
     return
   fi
@@ -753,7 +756,7 @@ run_lang_rust() {
   # 레지스트리 볼륨만 읽음)이지만 quickstart 스모크·app boot는 실 Keycloak 접근이 필요해 install-net
   # 에서 실행되어야 한다.
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/rust.Dockerfile")" -t install-consume-rust "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-rust "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/rust.Dockerfile")" -t install-consume-rust "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/rust.Dockerfile 빌드 실패"
     return
   fi
@@ -823,7 +826,9 @@ run_lang_ruby() {
   mkdir -p "$PWD/publish/ruby-repo/gems"
 
   log "[$lang] gemserver(레지스트리) 기동"
-  if ! docker compose -f compose.install.yml up -d --build gemserver; then
+  # 빌드만 재시도하고 기동은 한 번(`--build` 없이) — 실패 처리는 둘 다 같은 자리다(../lib/build-retry.sh 머리).
+  if ! build_with_retry gemserver "$BUILD_RETRIES_FILE" docker compose -f compose.install.yml build gemserver \
+      || ! docker compose -f compose.install.yml up -d gemserver; then
     fail_lang "$lang" registry "gemserver 기동(docker compose up) 실패"
     return
   fi
@@ -842,7 +847,7 @@ run_lang_ruby() {
   # consume 이미지는 파일만 담는다(빌드타임 네트워크 의존 없음). install/quickstart/boot는 런타임
   # 엔트리포인트(ruby-run.sh)가 install-net에서 수행.
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/ruby.Dockerfile")" -t install-consume-ruby "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-ruby "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/ruby.Dockerfile")" -t install-consume-ruby "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/ruby.Dockerfile 빌드 실패"
     return
   fi
@@ -931,7 +936,7 @@ run_lang_kotlin() {
   emit_signal "$lang" "artifactBuilt=true" "published=true"
 
   log "[$lang] consume 이미지 빌드(빌드타임 네트워크 없음)"
-  if ! docker build -f "$(hostpath "$PWD/consume/kotlin.Dockerfile")" -t install-consume-kotlin "$(hostpath "$harness_dir/..")"; then
+  if ! build_with_retry install-consume-kotlin "$BUILD_RETRIES_FILE" docker build -f "$(hostpath "$PWD/consume/kotlin.Dockerfile")" -t install-consume-kotlin "$(hostpath "$harness_dir/..")"; then
     fail_lang "$lang" install "consume/kotlin.Dockerfile 빌드 실패"
     return
   fi

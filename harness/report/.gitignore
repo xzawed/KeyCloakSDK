@@ -9,3 +9,5 @@ SCORECARD.md
 # verify.sh가 실패 원인으로 남기는 증거(앱 로그·컨테이너 목록) — 생성 아티팩트, 커밋 제외
 *.app.log
 *.compose-ps.txt
+# lib/build-retry.sh 가 남기는 빌드 재시도 기록(verify.sh · run.sh) — 생성 아티팩트, 커밋 제외
+build-retries.txt

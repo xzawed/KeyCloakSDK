@@ -27,6 +27,10 @@ NET="$(docker compose ps --format '{{.Networks}}' keycloak 2>/dev/null | head -1
 
 # k6 컨테이너(비-root uid 12345)가 호스트 마운트 report/에 handleSummary JSON을 쓸 수 있도록(Linux CI 권한). Windows엔 무해.
 mkdir -p report report/signals && chmod -R 777 report 2>/dev/null || true
+# 빌드는 상류의 일시 장애에 재시도한다(verify.sh 와 같은 헬퍼) — 재시도는 신호 디렉터리에 한 줄씩 남는다.
+# shellcheck source=lib/build-retry.sh
+. ./lib/build-retry.sh
+BUILD_RETRIES_FILE="report/signals/build-retries.txt"
 
 # ⚠️ **실패의 원인을 남긴다 — `verify.sh` 가 이미 배운 것이다.** 앱을 `stop` 하고 EXIT 트랩이
 # `down -v` 로 지우면 컨테이너 로그가 사라져, 「무엇이 실패했다」만 남고 **왜**가 사라진다
@@ -48,7 +52,8 @@ capture_compose_ps() { # $1=lang
 rc=0
 for SDK_LANG in "${LANGS[@]}"; do
   echo "== [$SDK_LANG] 앱 빌드·기동 =="
-  docker compose --profile apps up -d --build "app-$SDK_LANG" || { capture_compose_ps "$SDK_LANG"; capture_app_log "$SDK_LANG"; rc=1; continue; }
+  # 빌드만 재시도하고 기동은 한 번(`--build` 없이) — 실패 처리는 둘 다 같은 자리다(lib/build-retry.sh 머리).
+  { build_with_retry "app-$SDK_LANG" "$BUILD_RETRIES_FILE" docker compose --profile apps build "app-$SDK_LANG" && docker compose --profile apps up -d "app-$SDK_LANG"; } || { capture_compose_ps "$SDK_LANG"; capture_app_log "$SDK_LANG"; rc=1; continue; }
   PORT=$(docker compose port "app-$SDK_LANG" "$(app_port "$SDK_LANG")" 2>/dev/null | sed 's/.*://')
   timeout 90 bash -c "until curl -fsS http://localhost:$PORT/healthz >/dev/null 2>&1; do sleep 2; done" || { capture_app_log "$SDK_LANG"; capture_compose_ps "$SDK_LANG"; rc=1; docker compose --profile apps stop "app-$SDK_LANG" >/dev/null 2>&1 || true; continue; }
   echo "== [$SDK_LANG] k6 실행 =="
