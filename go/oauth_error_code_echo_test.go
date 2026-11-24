@@ -42,13 +42,28 @@ type echoIdP struct {
 	echo     func(sent map[string]string) any
 	status   int
 	location string // a Location header on the answer, when set
+	raw      string // the whole answer body instead of {"error": …}, when set
 	sent     []map[string]string
+	requests []string // every request as "METHOD /path" — the 3xx cells read which method reached redirectTarget
 }
+
+// redirectTarget is where the 3xx cells point Location (this server, same origin) — a client that follows it shows up in
+// requests.
+const redirectTarget = "/redirect-target"
 
 func newEchoIdP(t *testing.T) *echoIdP {
 	t.Helper()
 	p := &echoIdP{}
 	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		p.requests = append(p.requests, r.Method+" "+r.URL.Path)
+		p.mu.Unlock()
+		if r.URL.Path == redirectTarget {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"redirect_target_reached"}`))
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token") &&
 			!strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token/introspect") {
 			http.NotFound(w, r)
@@ -68,9 +83,12 @@ func newEchoIdP(t *testing.T) *echoIdP {
 		if p.echo != nil {
 			value = p.echo(sent)
 		}
-		status, location := p.status, p.location
+		status, location, raw := p.status, p.location, p.raw
 		p.mu.Unlock()
 		body, _ := json.Marshal(map[string]any{"error": value})
+		if raw != "" {
+			body = []byte(raw)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if location != "" {
 			w.Header().Set("Location", location)
@@ -89,7 +107,16 @@ func (p *echoIdP) answer(fixed any, echo func(map[string]string) any) {
 func (p *echoIdP) answerWith(status int, fixed any, echo func(map[string]string) any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.status, p.fixed, p.echo, p.sent, p.location = status, fixed, echo, nil, ""
+	p.status, p.fixed, p.echo, p.sent, p.location, p.raw, p.requests = status, fixed, echo, nil, "", "", nil
+}
+
+// answerRaw answers every token and introspection POST at status with body as it is, and a Location header when location
+// is set.
+func (p *echoIdP) answerRaw(status int, body, location string) {
+	p.answerWith(status, nil, nil)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.raw, p.location = body, location
 }
 
 // redirectWith answers as answerWith does, with a Location header — a redirect net/http would follow.
@@ -420,5 +447,83 @@ func TestThePriceASecretThatIsAPieceOfTheCodeWithholdsIt(t *testing.T) {
 	err := echoSurfaces[4].run(context.Background(), echoClient(t, p, "client"))
 	if ae := authErrorOf(t, "admin", err); strings.Contains(ae.Msg, "invalid_client") {
 		t.Errorf("admin: Msg = %q, want no code", ae.Msg)
+	}
+}
+
+// The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code field
+// "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the contract reads.
+// 302 (Location on this server): recorded, not pinned — the 3xx contract is open; only "never followed" is asserted.
+const (
+	echoB5      = `{"error":"temporarily_unavailable","error_description":"down"}`
+	echoNoError = `{"message":"down"}`
+)
+
+// errorStatusCell is one surface's outcome: OAuthError ("" when none or not an *AuthError), one line, every request seen.
+type errorStatusCell struct {
+	code     string
+	line     string
+	requests []string
+}
+
+func runErrorStatusCell(t *testing.T, p *echoIdP, surface int, status int, body, location string) errorStatusCell {
+	t.Helper()
+	s := echoSurfaces[surface]
+	p.answerRaw(status, body, location)
+	err := s.run(context.Background(), echoClient(t, p, echoSecret))
+	p.mu.Lock()
+	seen := append([]string(nil), p.requests...)
+	p.mu.Unlock()
+	code, outcome := "", "success"
+	if err != nil {
+		var ae *AuthError
+		shown := "-"
+		if errors.As(err, &ae) {
+			code, shown = ae.OAuthError, fmt.Sprintf("%q", ae.OAuthError)
+		}
+		outcome = fmt.Sprintf("%T(%v) code=%s", err, err, shown)
+	}
+	return errorStatusCell{code, fmt.Sprintf("%d %s → %s requests=%q", status, s.name, outcome, seen), seen}
+}
+
+func TestAServerErrorStatusCarriesTheOAuthErrorOnEverySurface(t *testing.T) {
+	p := newEchoIdP(t)
+	for _, status := range []int{http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		for i := range echoSurfaces {
+			c := runErrorStatusCell(t, p, i, status, echoB5, "")
+			t.Log(c.line)
+			if c.code != "temporarily_unavailable" {
+				t.Errorf("%s: OAuthError = %q, want temporarily_unavailable", c.line, c.code)
+			}
+		}
+	}
+}
+
+// Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none.
+func TestTheErrorStatusControlsCarryItAt400AndNoneWithoutOne(t *testing.T) {
+	p := newEchoIdP(t)
+	for i := range echoSurfaces {
+		at400 := runErrorStatusCell(t, p, i, http.StatusBadRequest, echoB5, "")
+		none := runErrorStatusCell(t, p, i, http.StatusServiceUnavailable, echoNoError, "")
+		t.Log(at400.line)
+		t.Log(none.line)
+		if at400.code != "temporarily_unavailable" {
+			t.Errorf("%s: OAuthError = %q, want temporarily_unavailable", at400.line, at400.code)
+		}
+		if none.code != "" {
+			t.Errorf("%s: OAuthError = %q, want none", none.line, none.code)
+		}
+	}
+}
+
+func TestARedirectErrorStatusToThisServerIsRecordedAndNeverFollowed(t *testing.T) {
+	p := newEchoIdP(t)
+	for i := range echoSurfaces {
+		c := runErrorStatusCell(t, p, i, http.StatusFound, echoB5, p.srv.URL+redirectTarget)
+		t.Log(c.line)
+		for _, r := range c.requests {
+			if strings.HasSuffix(r, " "+redirectTarget) {
+				t.Errorf("%s: the redirect was followed", c.line)
+			}
+		}
 	}
 }

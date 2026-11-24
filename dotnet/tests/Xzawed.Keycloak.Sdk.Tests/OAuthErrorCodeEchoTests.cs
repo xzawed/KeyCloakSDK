@@ -8,6 +8,7 @@ using WireMock.Server;
 using WireMock.Types;
 using WireMock.Util;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Xzawed.Keycloak.Sdk.Tests;
 
@@ -36,10 +37,22 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
     private readonly ConcurrentQueue<Dictionary<string, string>> _sent = new();
     private Func<Dictionary<string, string>, object?> _error = _ => "invalid_request";
     private int _status = 400;
+    /// <summary>When set, the whole answer body instead of <c>{"error": …}</c>.</summary>
+    private string? _raw;
+    /// <summary>When set, a <c>Location</c> header on the answer.</summary>
+    private string? _location;
+    private readonly ITestOutputHelper _output;
 
-    public OAuthErrorCodeEchoTests()
+    /// <summary>Where the 3xx cells point <c>Location</c> (this server, same origin) — a client that follows it shows up in
+    /// the request log.</summary>
+    private const string RedirectTarget = "/redirect-target";
+
+    public OAuthErrorCodeEchoTests(ITestOutputHelper output)
     {
-        _idp.Given(Request.Create().UsingPost()).RespondWith(Response.Create().WithCallback(Handle));
+        _output = output;
+        _idp.Given(Request.Create().WithPath(RedirectTarget).UsingAnyMethod()).AtPriority(1).RespondWith(Response.Create()
+            .WithStatusCode(400).WithHeader("Content-Type", "application/json").WithBody("{\"error\":\"redirect_target_reached\"}"));
+        _idp.Given(Request.Create().UsingPost()).AtPriority(10).RespondWith(Response.Create().WithCallback(Handle));
     }
 
     public void Dispose() => _idp.Dispose();
@@ -57,11 +70,14 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
             sent["client_secret"] = Uri.UnescapeDataString(pair[1].Replace('+', ' '));
         }
         _sent.Enqueue(sent);
-        var body = JsonSerializer.Serialize(new Dictionary<string, object?> { ["error"] = _error(sent) });
+        var body = _raw ?? JsonSerializer.Serialize(new Dictionary<string, object?> { ["error"] = _error(sent) });
+        var answerHeaders = new Dictionary<string, WireMockList<string>> { ["Content-Type"] = new("application/json") };
+        if (_location is { } location)
+            answerHeaders["Location"] = new(location);
         return new ResponseMessage
         {
             StatusCode = _status,
-            Headers = new Dictionary<string, WireMockList<string>> { ["Content-Type"] = new("application/json") },
+            Headers = answerHeaders,
             BodyData = new BodyData { DetectedBodyType = BodyType.String, BodyAsString = body, Encoding = Encoding.UTF8 },
         };
     }
@@ -260,5 +276,66 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
     {
         _error = _ => "invalid_client";
         Assert.Null((await Fail(surface, secret: "client")).OAuthError);
+    }
+
+    // The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code field
+    // "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the contract
+    // reads. 302 (Location on this server): recorded, not pinned — the 3xx contract is open; only "never followed" is asserted.
+    private const string B5 = "{\"error\":\"temporarily_unavailable\",\"error_description\":\"down\"}";
+    private const string NoError = "{\"message\":\"down\"}";
+
+    /// <summary>One surface on a new client at one status and body: <c>OAuthError</c> (null when not an auth error), one
+    /// line, and every request the IdP saw.</summary>
+    private async Task<(string? Code, string Line, string[] Requests)> ErrorStatusCell(string surface, int status, string body,
+        string? location = null)
+    {
+        _status = status;
+        _raw = body;
+        _location = location;
+        while (_sent.TryDequeue(out _)) { }
+        _idp.ResetLogEntries();
+        using var kc = KeycloakClient.Create(new KeycloakConfig { ServerUrl = _idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = Secret });
+        var ex = await Record.ExceptionAsync(() => Surfaces[surface].Run(kc));
+        var requests = _idp.LogEntries.Select(e => $"{e.RequestMessage?.Method} {e.RequestMessage?.Path}").ToArray();
+        var code = (ex as KeycloakAuthException)?.OAuthError;
+        var outcome = ex is null
+            ? "success"
+            : $"{ex.GetType().Name}({ex.Message}) code={(ex is KeycloakAuthException ? code ?? "null" : "-")}";
+        return (code, $"{status} {surface} → {outcome} requests=[{string.Join(", ", requests)}]", requests);
+    }
+
+    public static IEnumerable<object[]> ServerErrorCells =>
+        Surfaces.Keys.SelectMany(s => new[] { 500, 503 }.Select(status => new object[] { s, status }));
+
+    [Theory]
+    [MemberData(nameof(ServerErrorCells))]
+    public async Task A_server_error_status_carries_the_OAuth_error(string surface, int status)
+    {
+        var cell = await ErrorStatusCell(surface, status, B5);
+        _output.WriteLine(cell.Line);
+        Assert.True(cell.Code == "temporarily_unavailable", cell.Line);
+    }
+
+    /// <summary>Controls: the same body at 400 carries it; a 503 whose body names no <c>error</c> carries no code — .NET puts
+    /// the reason phrase there (registry <c>dotnet-oauth-error-reason-phrase</c>, as the 401 cells above pin).</summary>
+    [Theory]
+    [MemberData(nameof(SurfaceNames))]
+    public async Task The_error_status_controls_carry_it_at_400_and_no_code_without_one(string surface)
+    {
+        var at400 = await ErrorStatusCell(surface, 400, B5);
+        var none = await ErrorStatusCell(surface, 503, NoError);
+        _output.WriteLine(at400.Line);
+        _output.WriteLine(none.Line);
+        Assert.True(at400.Code == "temporarily_unavailable", at400.Line);
+        Assert.True(none.Code == "Service Unavailable", none.Line);
+    }
+
+    [Theory]
+    [MemberData(nameof(SurfaceNames))]
+    public async Task A_redirect_error_status_to_this_server_is_recorded_and_never_followed(string surface)
+    {
+        var cell = await ErrorStatusCell(surface, 302, B5, _idp.Urls[0] + RedirectTarget);
+        _output.WriteLine(cell.Line);
+        Assert.False(cell.Requests.Any(r => r.EndsWith(" " + RedirectTarget, StringComparison.Ordinal)), cell.Line);
     }
 }

@@ -13,9 +13,11 @@ declare(strict_types=1);
  * when `"description"` is a string — and is logged to `requests.log` as `[path, sent form fields]`. fschmtt asks
  * `/admin/serverinfo` before its first resource call — that is where its grant happens.
  *
- * `{"bodies": {"token": "…", "introspect": "…"}, "status"?: <int>}` answers those bodies as they are instead — the token POST
- * and the introspection at that status (200 when absent) — and the admin user `u1` (`{"id":"u1","username":"alice"}`); every
- * request is logged then, the admin ones too (with no form fields).
+ * `{"bodies": {"token": "…", "introspect": "…"}, "status"?: <int>, "location"?: "…"}` answers those bodies as they are
+ * instead — the token POST and the introspection at that status (200 when absent), with that `Location` header when set —
+ * and the admin user `u1` (`{"id":"u1","username":"alice"}`); every request is logged then, the admin ones too (with no form
+ * fields). Each log row ends in the request method. `/redirect-target` — where the 3xx cells point `Location` — is logged
+ * and answers 400 `{"error":"redirect_target_reached"}` in either mode.
  */
 
 $dir = getenv('EI_STATE');
@@ -30,9 +32,18 @@ $path = is_string($path) ? $path : '/';
 
 $state = json_decode((string) file_get_contents($dir . '/state.json'), true);
 $state = is_array($state) ? $state : [];
+$method = $_SERVER['REQUEST_METHOD'] ?? '?';
+if ($path === '/redirect-target') {
+    file_put_contents($dir . '/requests.log', json_encode([$path, [], $method], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
+    http_response_code(400);
+    header('Content-Type: application/json');
+    echo '{"error":"redirect_target_reached"}';
+
+    return;
+}
 if (is_array($state['bodies'] ?? null)) {
     parse_str((string) file_get_contents('php://input'), $sent);
-    file_put_contents($dir . '/requests.log', json_encode([$path, $sent], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
+    file_put_contents($dir . '/requests.log', json_encode([$path, $sent, $method], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
     $kind = match (true) {
         str_ends_with($path, '/protocol/openid-connect/token') => 'token',
         str_ends_with($path, '/protocol/openid-connect/token/introspect') => 'introspect',
@@ -42,6 +53,9 @@ if (is_array($state['bodies'] ?? null)) {
     if (is_string($body)) {
         http_response_code(is_int($state['status'] ?? null) ? $state['status'] : 200);
         header('Content-Type: application/json');
+        if (is_string($state['location'] ?? null)) {
+            header('Location: ' . $state['location']);
+        }
         echo $body;
     } elseif ($path === '/admin/serverinfo') {
         header('Content-Type: application/json');
@@ -74,7 +88,7 @@ if (is_string($auth) && str_starts_with($auth, 'Basic ')) {
     $pair = explode(':', (string) base64_decode(substr($auth, 6), true), 2);
     $sent['client_secret'] = urldecode($pair[1] ?? '');
 }
-file_put_contents($dir . '/requests.log', json_encode([$path, $sent], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
+file_put_contents($dir . '/requests.log', json_encode([$path, $sent, $method], JSON_THROW_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
 
 if (array_key_exists('fixed', $state)) {
     $error = $state['fixed'];

@@ -66,6 +66,14 @@ class OAuthErrorCodeEchoTest {
   private final List<Map<String, String>> sent = new ArrayList<>();
   private Function<Map<String, String>, String> errorJson = s -> "\"invalid_request\"";
   private volatile int status = 400;
+  /** When set, the whole answer body instead of {@code {"error": …}}. */
+  private volatile String rawBody;
+  /** When set, a {@code Location} header on the answer. */
+  private volatile String location;
+  /** Every request as {@code METHOD /path}, in order — the 3xx cells read which method reached {@link #REDIRECT_TARGET}. */
+  private final List<String> requests = new ArrayList<>();
+  /** Where the 3xx cells point {@code Location} (this server, same origin) — a client that follows it shows up here. */
+  private static final String REDIRECT_TARGET = "/redirect-target";
 
   @BeforeEach void start() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -81,8 +89,21 @@ class OAuthErrorCodeEchoTest {
   }
 
   private void handle(HttpExchange ex) throws IOException {
+    String path = ex.getRequestURI().getPath();
+    synchronized (this) {
+      requests.add(ex.getRequestMethod() + " " + path);
+    }
     Map<String, String> form = new HashMap<>();
     String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    if (REDIRECT_TARGET.equals(path)) {
+      byte[] reached = "{\"error\":\"redirect_target_reached\"}".getBytes(StandardCharsets.UTF_8);
+      ex.getResponseHeaders().add("Content-Type", "application/json");
+      ex.sendResponseHeaders(400, reached.length);
+      try (OutputStream out = ex.getResponseBody()) {
+        out.write(reached);
+      }
+      return;
+    }
     for (String pair : body.split("&")) {
       if (pair.isEmpty()) continue;
       int eq = pair.indexOf('=');
@@ -97,10 +118,11 @@ class OAuthErrorCodeEchoTest {
     String json;
     synchronized (this) {
       sent.add(form);
-      json = "{\"error\":" + errorJson.apply(form) + "}";
+      json = rawBody != null ? rawBody : "{\"error\":" + errorJson.apply(form) + "}";
     }
     byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
     ex.getResponseHeaders().add("Content-Type", "application/json");
+    if (location != null) ex.getResponseHeaders().add("Location", location);
     ex.sendResponseHeaders(status, bytes.length);
     try (OutputStream out = ex.getResponseBody()) {
       out.write(bytes);
@@ -293,6 +315,86 @@ class OAuthErrorCodeEchoTest {
         if (!code.equals(got)) wrong.add(cell[0] + " · " + surface + ": getError() " + got + " (want " + code + ")");
       }
     }
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
+  }
+
+  // The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code field
+  // "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the contract
+  // reads. 302 (Location on this server): recorded, not pinned — the 3xx contract is open; only "never followed" is asserted.
+  private static final String B5 = "{\"error\":\"temporarily_unavailable\",\"error_description\":\"down\"}";
+  private static final String NO_ERROR = "{\"message\":\"down\"}";
+
+  /** One surface's outcome: {@code getError()} (null when not an auth error), one line, and every request seen. */
+  private record Cell(String code, String line, List<String> requests) {}
+
+  private Cell errorStatusCell(String surface, int cellStatus, String body, String cellLocation) {
+    synchronized (this) {
+      sent.clear();
+      requests.clear();
+    }
+    status = cellStatus;
+    rawBody = body;
+    location = cellLocation;
+    KeycloakConfig cfg = KeycloakConfig.builder().serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+        .realm(REALM).clientId("app").clientSecret(SECRET.toCharArray())
+        .connectTimeout(Duration.ofSeconds(5)).readTimeout(Duration.ofSeconds(5)).build();
+    String code = null;
+    String outcome;
+    try (KeycloakClient kc = KeycloakClient.create(cfg)) {
+      SURFACES.get(surface).getValue().run(kc);
+      outcome = "success";
+    } catch (KeycloakAuthException e) {
+      code = e.getError();
+      outcome = e.getClass().getSimpleName() + "(" + e.getMessage() + ") code=" + code;
+    } catch (Exception e) {
+      outcome = e.getClass().getSimpleName() + "(" + e.getMessage() + ") code=-";
+    }
+    List<String> seen;
+    synchronized (this) {
+      seen = List.copyOf(requests);
+    }
+    return new Cell(code, cellStatus + " " + surface + " → " + outcome + " requests=" + seen, seen);
+  }
+
+  @Test void aServerErrorStatusCarriesTheOAuthErrorOnEverySurface() {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    for (int s : new int[] {500, 503}) {
+      for (String surface : SURFACES.keySet()) {
+        Cell c = errorStatusCell(surface, s, B5, null);
+        table.add(c.line());
+        if (!"temporarily_unavailable".equals(c.code())) wrong.add(c.line());
+      }
+    }
+    System.out.println(String.join("\n", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
+  }
+
+  /** Controls: the same body at 400 carries it; a 503 whose body names no {@code error} carries none. */
+  @Test void theErrorStatusControlsCarryItAt400AndNoneWithoutOne() {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    for (String surface : SURFACES.keySet()) {
+      Cell at400 = errorStatusCell(surface, 400, B5, null);
+      Cell none = errorStatusCell(surface, 503, NO_ERROR, null);
+      table.add(at400.line());
+      table.add(none.line());
+      if (!"temporarily_unavailable".equals(at400.code())) wrong.add(at400.line());
+      if (none.code() != null) wrong.add(none.line());
+    }
+    System.out.println(String.join("\n", table));
+    assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
+  }
+
+  @Test void aRedirectErrorStatusToThisServerIsRecordedAndNeverFollowed() {
+    List<String> table = new ArrayList<>();
+    List<String> wrong = new ArrayList<>();
+    for (String surface : SURFACES.keySet()) {
+      Cell c = errorStatusCell(surface, 302, B5, "http://127.0.0.1:" + server.getAddress().getPort() + REDIRECT_TARGET);
+      table.add(c.line());
+      if (c.requests().stream().anyMatch(r -> r.endsWith(" " + REDIRECT_TARGET))) wrong.add(c.line());
+    }
+    System.out.println(String.join("\n", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " cells:\n" + String.join("\n", wrong));
   }
 }

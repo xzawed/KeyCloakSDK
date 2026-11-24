@@ -48,6 +48,10 @@ let padding = 0
 const paths: string[] = []
 /** When set, each endpoint's whole body instead of `{"error": …}` — the success-status cases send more than that. */
 let bodies: { token: string; introspect: string; admin: string } | undefined
+/** Every request but discovery as `METHOD /path`, in order — the 3xx cells read which method reached {@link REDIRECT_TARGET}. */
+const requests: string[] = []
+/** Where the 3xx cells point `Location` (this server, same origin) — a client that follows it shows up in {@link requests}. */
+const REDIRECT_TARGET = '/redirect-target'
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -59,6 +63,12 @@ beforeAll(async () => {
       if (path === '/realms/r/.well-known/openid-configuration') {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(discoveryDocument(`${origin}/realms/r`)))
+        return
+      }
+      requests.push(`${req.method ?? '?'} ${path}`)
+      if (path === REDIRECT_TARGET) {
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end('{"error":"redirect_target_reached"}')
         return
       }
       const form: Sent = Object.fromEntries(
@@ -654,4 +664,73 @@ describe('non-200 success status — only 200 is a token or introspection succes
     }
     expect(wrong, table.join('\n')).toEqual([])
   })
+})
+
+// The OAuth `error` at a 3xx and a 5xx (registry `node-5xx-oauth-error-code-empty`). The contract puts it in the code field
+// "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. 5xx: pinned as the contract reads.
+// 302 (`Location` on this server): recorded, not pinned — the 3xx contract is open; only "never followed" is asserted.
+const B5 = '{"error":"temporarily_unavailable","error_description":"down"}'
+const NO_ERROR = '{"message":"down"}'
+
+/** One lane on a new client at one status and body: its `oauthError` and one line — outcome and every request seen. */
+async function errorStatusCell(
+  name: string,
+  s: number,
+  body: string,
+  location?: string,
+): Promise<{ code: string | undefined; line: string }> {
+  const kc = newClient()
+  try {
+    const call = laneOn(name, kc)
+    status = s
+    bodies = { token: body, introspect: body, admin: USER }
+    headers = location === undefined ? {} : { location }
+    paths.length = 0
+    requests.length = 0
+    let code: string | undefined
+    const outcome = await outcomeOf(() =>
+      call().catch((e: unknown) => {
+        if (e instanceof KeycloakAuthError) code = e.oauthError
+        throw e
+      }),
+    )
+    return { code, line: `${s} ${name} → ${outcome} requests=[${requests.join(', ')}]` }
+  } finally {
+    await kc.close()
+  }
+}
+
+describe('error status OAuth error — a 3xx and a 5xx', () => {
+  it.each(NAMES.flatMap((n) => [500, 503].map((s) => [n, s] as const)))(
+    '%s — error status %i carries the OAuth error',
+    async (name, s) => {
+      const cell = await errorStatusCell(name, s, B5)
+      console.log(cell.line)
+      expect(cell.code, cell.line).toBe('temporarily_unavailable')
+    },
+  )
+
+  // Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none.
+  it.each(NAMES)(
+    '%s — error status controls: 400 carries it, a 503 without one carries none',
+    async (name) => {
+      const at400 = await errorStatusCell(name, 400, B5)
+      const none = await errorStatusCell(name, 503, NO_ERROR)
+      console.log(`${at400.line}\n${none.line}`)
+      expect(at400.code, at400.line).toBe('temporarily_unavailable')
+      expect(none.code, none.line).toBeUndefined()
+    },
+  )
+
+  it.each(NAMES)(
+    '%s — error status 302 to this server is recorded, never followed',
+    async (name) => {
+      const cell = await errorStatusCell(name, 302, B5, `${origin}${REDIRECT_TARGET}`)
+      console.log(cell.line)
+      expect(
+        requests.filter((r) => r.endsWith(` ${REDIRECT_TARGET}`)),
+        cell.line,
+      ).toEqual([])
+    },
+  )
 })
