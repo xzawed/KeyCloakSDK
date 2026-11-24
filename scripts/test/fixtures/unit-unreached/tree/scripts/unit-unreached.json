@@ -215,5 +215,52 @@
       "branches": 0,
       "why": "integration: the drive never calls it — the integration test does, outside the unit run"
     }
+  },
+  "node": {
+    "node/src/auth_client.ts:AuthClient.token": {
+      "statements": 1,
+      "branches": 1,
+      "why": "integration: a function-valued property is a range like a method — the drive never sends an empty code"
+    },
+    "node/src/auth_client.ts:AuthClient.static from": {
+      "statements": 1,
+      "branches": 1,
+      "why": "defensive: the drive never sends an empty realm — a static member keys with the static prefix"
+    },
+    "node/src/auth_client.ts:AuthClient.exchange": {
+      "statements": 1,
+      "branches": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "node/src/auth_client.ts:AuthClient.scope": {
+      "statements": 0,
+      "branches": 1,
+      "why": "open-gap"
+    },
+    "node/src/auth_client.ts:AuthClient.pick": {
+      "statements": 1,
+      "branches": 1,
+      "why": "unreachable: the statement and arm sit in pick's callback — the key is the member"
+    },
+    "node/src/auth_client.ts:AuthClient.kind": {
+      "statements": 1,
+      "branches": 1,
+      "why": "defensive: the drive passes 1 and 2 only — each switch case is an arm"
+    },
+    "node/src/auth_client.ts:AuthClient.#load": {
+      "statements": 1,
+      "branches": 1,
+      "why": "defensive: the drive loads once — a private member keys with #"
+    },
+    "node/src/auth_client.ts:AuthClient.describe": {
+      "statements": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it"
+    },
+    "node/src/auth_client.ts:AuthClient.logoutUrl": {
+      "statements": 1,
+      "branches": 0,
+      "why": "integration: the drive never calls it — the integration test does, outside the unit run"
+    }
   }
 }

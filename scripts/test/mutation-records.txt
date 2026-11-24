@@ -2005,3 +2005,89 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:    fail('python', `${shown} is not the data \`${RUN_CMD} python\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
 NEW:    void 0 // PROBE-REC python-data-sha
 SITE:void 0 // PROBE-REC python-data-sha
+
+# ── 같은 장부의 node 판정(coverage-omit-hides-security-paths, 2026-11-24)
+
+### unit-ledger-node-arms
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    if (SUITE === 'unit') for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.stmts - fn.covered, branches: fn.arms ?? 0 })
+NEW:    if (SUITE === 'unit') for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.stmts - fn.covered, branches: 0 }) // PROBE-REC node-arms
+SITE:// PROBE-REC node-arms
+
+### unit-ledger-node-statements
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    if (SUITE === 'unit') for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.stmts - fn.covered, branches: fn.arms ?? 0 })
+NEW:    if (SUITE === 'unit') for (const fn of funcs) units.push({ file: f, line: fn.start, name: fn.name, statements: fn.covered ? 0 : fn.stmts, branches: fn.arms ?? 0 }) // PROBE-REC node-statements
+SITE:// PROBE-REC node-statements
+
+### unit-ledger-node-every-kind
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (!NODE_ARMS.has(br.type)) continue
+NEW:        void 0 // PROBE-REC node-every-kind
+SITE:void 0 // PROBE-REC node-every-kind
+
+### unit-ledger-node-per-branch
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        const missed = arms.filter((c) => c === 0).length
+NEW:        const missed = arms.some((c) => c === 0) ? 1 : 0 // PROBE-REC node-per-branch
+SITE:// PROBE-REC node-per-branch
+
+### unit-ledger-node-arm-counts
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (typeof line !== 'number' || typeof col !== 'number' || !Array.isArray(arms) || !arms.length || !arms.every(isCount)) {
+NEW:        if (typeof line !== 'number' || typeof col !== 'number' || !Array.isArray(arms)) { // PROBE-REC node-arm-counts
+SITE:// PROBE-REC node-arm-counts
+
+### unit-ledger-node-kinds
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (!NODE_KINDS.has(br?.type)) {
+NEW:        if (false) { // PROBE-REC node-kinds
+SITE:// PROBE-REC node-kinds
+
+### unit-ledger-node-module-statements
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      if (x.outside.covered < x.outside.stmts) fail('node', `${x.file}: ${x.outside.stmts - x.outside.covered} of ${x.outside.stmts} module-level statements (outside every function — module code, class fields, the assignment of a function value) never ran — no function can be credited with them`)
+NEW:      void 0 // PROBE-REC node-module
+SITE:void 0 // PROBE-REC node-module
+
+### unit-ledger-node-module-arms
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      for (const s of x.strays) fail('node', `${x.file}:${s.line}: the ${s.type} branch there sits outside every function and has ${s.missed === 1 ? 'an arm' : `${s.missed} arms`} the run never took — no function can be credited with ${s.missed === 1 ? 'it' : 'them'}`)
+NEW:      void 0 // PROBE-REC node-module-arms
+SITE:void 0 // PROBE-REC node-module-arms
+
+### unit-ledger-node-module-first
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  const loadedAny = files.some((x) => x.covered > 0)
+NEW:  const loadedAny = true // PROBE-REC node-module-first
+SITE:// PROBE-REC node-module-first
+
+### unit-ledger-node-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (!isObj(rec) || rec.run !== 'node' || (rec.suite ?? 'integration') !== SUITE) {
+NEW:  if (!isObj(rec) || rec.run !== 'node') { // PROBE-REC node-record
+SITE:// PROBE-REC node-record
+
+### unit-ledger-node-exit
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    fail('node', `the run that wrote this data exited ${rec.exit} — the data of a failed run is partial`)
+NEW:    void 0 // PROBE-REC node-exit
+SITE:void 0 // PROBE-REC node-exit
+
+### unit-ledger-node-data-sha
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    fail('node', `${shown} is not the data \`${RUN_CMD} node\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
+NEW:    void 0 // PROBE-REC node-data-sha
+SITE:void 0 // PROBE-REC node-data-sha

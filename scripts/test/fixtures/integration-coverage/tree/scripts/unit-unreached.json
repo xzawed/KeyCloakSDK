@@ -45,5 +45,12 @@
       "branches": 1,
       "why": "open-masking"
     }
+  },
+  "node": {
+    "node/src/auth.ts:Masked.describe": {
+      "statements": 1,
+      "branches": 0,
+      "why": "defensive: check reads no data — only the shape, the boundary and the why"
+    }
   }
 }
