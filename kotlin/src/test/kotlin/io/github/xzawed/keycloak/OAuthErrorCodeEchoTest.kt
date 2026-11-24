@@ -39,6 +39,15 @@ class OAuthErrorCodeEchoTest {
 
     @Volatile private var status = 400
 
+    /** When set, the whole answer body instead of `{"error": …}`. */
+    @Volatile private var rawBody: String? = null
+
+    /** When set, a `Location` header on the answer. */
+    @Volatile private var location: String? = null
+
+    /** Every request as `METHOD /path`, in order — the 3xx cells read which method reached [REDIRECT_TARGET]. */
+    private val requests = mutableListOf<String>()
+
     @BeforeTest
     fun start() {
         server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
@@ -54,8 +63,17 @@ class OAuthErrorCodeEchoTest {
     }
 
     private fun handle(ex: HttpExchange) {
+        val path = ex.requestURI.path
+        synchronized(sent) { requests += "${ex.requestMethod} $path" }
         val form = HashMap<String, String>()
         val body = ex.requestBody.readAllBytes().toString(Charsets.UTF_8)
+        if (path == REDIRECT_TARGET) {
+            val reached = "{\"error\":\"redirect_target_reached\"}".toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(400, reached.size.toLong())
+            ex.responseBody.use { it.write(reached) }
+            return
+        }
         for (pair in body.split('&').filter { it.isNotEmpty() }) {
             val (name, value) = pair.split('=', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
             form[URLDecoder.decode(name, Charsets.UTF_8)] = URLDecoder.decode(value, Charsets.UTF_8)
@@ -68,10 +86,11 @@ class OAuthErrorCodeEchoTest {
         val json =
             synchronized(sent) {
                 sent += form
-                "{\"error\":${errorJson(form)}}"
+                rawBody ?: "{\"error\":${errorJson(form)}}"
             }
         val bytes = json.toByteArray()
         ex.responseHeaders.add("Content-Type", "application/json")
+        location?.let { ex.responseHeaders.add("Location", it) }
         ex.sendResponseHeaders(status, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }
@@ -283,7 +302,107 @@ class OAuthErrorCodeEchoTest {
         assertTrue(wrong.isEmpty(), "${wrong.size} cells:\n" + wrong.joinToString("\n"))
     }
 
+    // The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code field
+    // "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract reads at
+    // 500 · 503 and at 302 (Location on this server — a 3xx is an error status too), which is never followed.
+
+    /** One surface's outcome: `oauthError` (null when not an auth error), one line, and every request seen. */
+    private data class Cell(
+        val code: String?,
+        val line: String,
+        val requests: List<String>,
+    )
+
+    private fun errorStatusCell(
+        surface: String,
+        cellStatus: Int,
+        body: String,
+        cellLocation: String? = null,
+    ): Cell {
+        synchronized(sent) {
+            sent.clear()
+            requests.clear()
+        }
+        status = cellStatus
+        rawBody = body
+        location = cellLocation
+        val cfg =
+            KeycloakConfig(
+                serverUrl = "http://127.0.0.1:${server.address.port}",
+                realm = "r",
+                clientId = "c",
+                clientSecret = SECRET.toCharArray(),
+            )
+        var code: String? = null
+        val outcome =
+            runBlocking {
+                KeycloakClient.create(cfg).use { kc ->
+                    try {
+                        surfaces.getValue(surface).second(kc)
+                        "success"
+                    } catch (e: KeycloakAuthException) {
+                        code = e.oauthError
+                        "${e.javaClass.simpleName}(${e.message}) code=$code"
+                    } catch (e: Exception) {
+                        "${e.javaClass.simpleName}(${e.message}) code=-"
+                    }
+                }
+            }
+        val seen = synchronized(sent) { requests.toList() }
+        return Cell(code, "$cellStatus $surface → $outcome requests=$seen", seen)
+    }
+
+    @Test
+    fun aServerErrorStatusCarriesTheOAuthErrorOnEverySurface() {
+        val table = mutableListOf<String>()
+        val wrong = mutableListOf<String>()
+        for (s in listOf(500, 503)) {
+            for (surface in surfaces.keys) {
+                val c = errorStatusCell(surface, s, B5)
+                table += c.line
+                if (c.code != "temporarily_unavailable") wrong += c.line
+            }
+        }
+        println(table.joinToString("\n"))
+        assertTrue(wrong.isEmpty(), "${wrong.size} cells:\n" + wrong.joinToString("\n"))
+    }
+
+    /** Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none. */
+    @Test
+    fun theErrorStatusControlsCarryItAt400AndNoneWithoutOne() {
+        val table = mutableListOf<String>()
+        val wrong = mutableListOf<String>()
+        for (surface in surfaces.keys) {
+            val at400 = errorStatusCell(surface, 400, B5)
+            val none = errorStatusCell(surface, 503, NO_ERROR)
+            table += listOf(at400.line, none.line)
+            if (at400.code != "temporarily_unavailable") wrong += at400.line
+            if (none.code != null) wrong += none.line
+        }
+        println(table.joinToString("\n"))
+        assertTrue(wrong.isEmpty(), "${wrong.size} cells:\n" + wrong.joinToString("\n"))
+    }
+
+    @Test
+    fun aRedirectErrorStatusCarriesTheOAuthErrorAndIsNeverFollowed() {
+        val table = mutableListOf<String>()
+        val wrong = mutableListOf<String>()
+        for (surface in surfaces.keys) {
+            val c = errorStatusCell(surface, 302, B5, "http://127.0.0.1:${server.address.port}$REDIRECT_TARGET")
+            table += c.line
+            val followed = c.requests.any { it.endsWith(" $REDIRECT_TARGET") }
+            if (followed || c.code != "temporarily_unavailable") wrong += c.line
+        }
+        println(table.joinToString("\n"))
+        assertTrue(wrong.isEmpty(), "${wrong.size} cells:\n" + wrong.joinToString("\n"))
+    }
+
     private companion object {
+        /** Where the 3xx cells point `Location` (this server, same origin) — a client that follows it shows up in `requests`. */
+        const val REDIRECT_TARGET = "/redirect-target"
+        const val B5 = "{\"error\":\"temporarily_unavailable\",\"error_description\":\"down\"}"
+        const val NO_ERROR = "{\"message\":\"down\"}"
+
         // Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value
         // must be withheld by comparing against THAT value, not a sibling's prefix.
         const val SECRET = "zebrasecretjk"

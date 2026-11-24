@@ -8,6 +8,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
+  errorStatusOAuthError,
   fetchTokenEndpointBounded,
   readCapped,
   ResponseTooLargeError,
@@ -206,5 +207,64 @@ describe('responseTooLarge — 원인 사슬에서 신호를 찾는다', () => {
     const loop = new Error('loop') as Error & { cause?: unknown }
     loop.cause = loop
     expect(responseTooLarge(loop)).toBeUndefined()
+  })
+})
+
+// oauth4webapi 는 오류 본문을 4xx 에서만 읽는다 — 3xx · 5xx 토큰 · introspection 응답의 `error` 는 이 fetch 가 4xx 본문과 같은
+// 시험(`oauthErrorBody`)으로 남겨 경계가 싣는다(등록부 node-5xx-oauth-error-code-empty). 본문은 그대로 돌려준다.
+describe('errorStatusOAuthError — 3xx · 5xx 토큰 응답의 `error`', () => {
+  const TOKEN = 'https://kc.example.com/realms/r/protocol/openid-connect/token'
+  const B5 = '{"error":"temporarily_unavailable","error_description":"down"}'
+
+  async function answered(url: string, status: number, body: string): Promise<Response> {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(body, { status, headers: { 'content-type': 'application/json' } }),
+    )
+    return fetchTokenEndpointBounded(url, { method: 'POST' })
+  }
+
+  it.each([300, 302, 307, 399, 500, 502, 503, 599])(
+    '%i — 토큰 · introspection 응답의 error 를 남기고 본문은 그대로다',
+    async (status) => {
+      for (const url of [TOKEN, `${TOKEN}/introspect`]) {
+        const res = await answered(url, status, B5)
+        expect([res.status, errorStatusOAuthError(res)]).toEqual([
+          status,
+          'temporarily_unavailable',
+        ])
+        expect(await res.text()).toBe(B5)
+      }
+    },
+  )
+
+  // 4xx 는 oauth4webapi 가 읽는다 · discovery 는 상태가 판정한다 — 남기지 않는다.
+  it.each([
+    ['400', TOKEN, 400],
+    ['401', TOKEN, 401],
+    ['499', `${TOKEN}/introspect`, 499],
+    ['discovery 503', 'https://kc.example.com/realms/r/.well-known/openid-configuration', 503],
+  ] as const)('%s — 남기지 않는다', async (_cell, url, status) => {
+    expect(errorStatusOAuthError(await answered(url, status, B5))).toBeUndefined()
+  })
+
+  // 4xx 와 같다 — JSON 객체이고 `error` 가 비어 있지 않은 문자열일 때만.
+  it.each([
+    '{"message":"down"}',
+    '{"error":5}',
+    '{"error":""}',
+    '{"error":null}',
+    '["temporarily_unavailable"]',
+    '"temporarily_unavailable"',
+    '{"error":"temporarily_unavailable"',
+    '<html>Service Unavailable</html>',
+    '',
+  ])('503 %j — 남기지 않는다', async (body) => {
+    expect(errorStatusOAuthError(await answered(TOKEN, 503, body))).toBeUndefined()
+  })
+
+  it('이 fetch 가 돌려주지 않은 응답 · 응답이 아닌 값에는 없다', () => {
+    expect(errorStatusOAuthError(new Response(B5, { status: 503 }))).toBeUndefined()
+    expect(errorStatusOAuthError(undefined)).toBeUndefined()
+    expect(errorStatusOAuthError({ status: 503 })).toBeUndefined()
   })
 })

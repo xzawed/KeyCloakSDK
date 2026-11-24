@@ -31,6 +31,11 @@ module OAuthErrorCodeEchoSpec
   }.freeze
   TOKEN_URL = "https://kc.example.com/realms/demo/protocol/openid-connect/token"
   INTROSPECT_URL = "#{TOKEN_URL}/introspect".freeze
+  # The error status cells (a 3xx and a 5xx): the body, a 503 body that names no `error`, and where a 3xx points
+  # `Location` (this server, same origin) — a client that follows it shows up as a request there.
+  B5 = '{"error":"temporarily_unavailable","error_description":"down"}'
+  NO_ERROR = '{"message":"down"}'
+  REDIRECT_TARGET_URL = "https://kc.example.com/redirect-target"
 end
 
 RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
@@ -332,6 +337,94 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
         err = introspection_failure
         expect(seen).to eq(param == "token" ? OAuthErrorCodeEchoSpec::TOKEN : secret)
         expect_withheld(err, shape.call(seen))
+      end
+    end
+  end
+
+  # The OAuth `error` at a 3xx and a 5xx (registry node-5xx-oauth-error-code-empty). The contract puts it in the code
+  # field "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract
+  # reads at 500 · 503 and at 302 (`Location` on this server — a 3xx is an error status too), which is never followed.
+  describe "the OAuth error at an error status (3xx and 5xx)" do
+    lanes = %w[client_credentials refresh exchange_code provider admin introspect]
+
+    def fresh_provider
+      http = KeycloakSdk::Http.build(config) do |f|
+        f.request :url_encoded
+        f.response :json, content_type: /\bjson$/
+      end
+      KeycloakSdk::ClientCredentialsTokenProvider.new(config: config, http: http)
+    end
+
+    # A lane on a new client, as a call.
+    def error_status_call(lane)
+      kc = KeycloakSdk::KeycloakClient.new(config)
+      {
+        "client_credentials" => -> { kc.auth.client_credentials_token },
+        "refresh" => -> { kc.auth.refresh(refresh_token: OAuthErrorCodeEchoSpec::REFRESH_TOKEN) },
+        "exchange_code" => lambda {
+          kc.auth.exchange_code(code: OAuthErrorCodeEchoSpec::CODE, code_verifier: OAuthErrorCodeEchoSpec::VERIFIER,
+                                redirect_uri: "http://localhost/cb")
+        },
+        "provider" => -> { fresh_provider.access_token },
+        "admin" => -> { kc.admin.users.get("u1") },
+        "introspect" => -> { kc.auth.introspect(OAuthErrorCodeEchoSpec::TOKEN) }
+      }.fetch(lane)
+    end
+
+    def stub_error_status(status, body, location)
+      WebMock.reset!
+      headers = { "Content-Type" => "application/json", "Location" => location }.compact
+      [OAuthErrorCodeEchoSpec::TOKEN_URL, OAuthErrorCodeEchoSpec::INTROSPECT_URL].each do |url|
+        stub_request(:post, url).to_return(status: status, body: body, headers: headers)
+      end
+      stub_request(:any, OAuthErrorCodeEchoSpec::REDIRECT_TARGET_URL)
+        .to_return(status: 400, body: '{"error":"redirect_target_reached"}',
+                   headers: { "Content-Type" => "application/json" })
+    end
+
+    # [`oauth_error` (nil when not an auth error), the outcome as text].
+    def error_status_outcome(call)
+      call.call
+      [nil, "success"]
+    rescue StandardError => e
+      return [nil, "#{e.class.name}(#{e.message}) code=-"] unless e.is_a?(KeycloakSdk::AuthError)
+
+      [e.oauth_error, "#{e.class.name}(#{e.message}) code=#{e.oauth_error.inspect}"]
+    end
+
+    # One lane at one status and body: `oauth_error`, one line, and every request WebMock saw.
+    def error_status_cell(lane, status, body, location: nil)
+      stub_error_status(status, body, location)
+      code, outcome = error_status_outcome(error_status_call(lane))
+      requests = WebMock::RequestRegistry.instance.requested_signatures.hash.map do |signature, count|
+        "#{signature.method.to_s.upcase} #{signature.uri.path}#{" x#{count}" if count > 1}"
+      end
+      line = "#{status} #{lane} → #{outcome} requests=#{requests}"
+      RSpec.configuration.reporter.message(line)
+      [code, line, requests]
+    end
+
+    lanes.product([500, 503]).each do |lane, status|
+      it "carries the OAuth error at error status #{status} on #{lane}" do
+        code, line, = error_status_cell(lane, status, OAuthErrorCodeEchoSpec::B5)
+        expect(code).to eq("temporarily_unavailable"), line
+      end
+    end
+
+    lanes.each do |lane|
+      # Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none.
+      it "error status controls: carries it at 400 and none without one on #{lane}" do
+        at400, at400_line, = error_status_cell(lane, 400, OAuthErrorCodeEchoSpec::B5)
+        none, none_line, = error_status_cell(lane, 503, OAuthErrorCodeEchoSpec::NO_ERROR)
+        expect(at400).to eq("temporarily_unavailable"), at400_line
+        expect(none).to be_nil, none_line
+      end
+
+      it "carries the OAuth error at error status 302 to this server on #{lane} and never follows it" do
+        code, line, requests = error_status_cell(lane, 302, OAuthErrorCodeEchoSpec::B5,
+                                                 location: OAuthErrorCodeEchoSpec::REDIRECT_TARGET_URL)
+        expect(requests.grep(%r{ /redirect-target})).to be_empty, line
+        expect(code).to eq("temporarily_unavailable"), line
       end
     end
   end

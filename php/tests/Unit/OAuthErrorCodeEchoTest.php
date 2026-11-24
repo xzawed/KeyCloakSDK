@@ -611,4 +611,106 @@ final class OAuthErrorCodeEchoTest extends TestCase
 
         return $out;
     }
+
+    // --- the OAuth `error` at a 3xx and a 5xx ------------------------------------------------------------------------------
+    // Registry `node-5xx-oauth-error-code-empty`. The contract puts it in the code field "at any status"; that was measured at
+    // 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract reads at 500 · 503 and at 302 (`Location` on this
+    // server — a 3xx is an error status too), which is never followed.
+
+    private const B5 = '{"error":"temporarily_unavailable","error_description":"down"}';
+    private const NO_ERROR = '{"message":"down"}';
+    /** Where the 3xx cells point `Location` (this server, same origin) — a client that follows it shows up in the log. */
+    private const REDIRECT_TARGET = '/redirect-target';
+    private const LANES = ['client_credentials', 'provider', 'refresh', 'exchange_code', 'introspect', 'admin'];
+
+    /** @return list<string> every request since the last cell, as `METHOD /path` */
+    private static function requestLines(): array
+    {
+        $out = [];
+        $lines = @file(self::$dir . '/requests.log', FILE_IGNORE_NEW_LINES);
+        foreach ($lines === false ? [] : $lines as $line) {
+            $row = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            self::assertIsArray($row);
+            self::assertIsString($row[0] ?? null);
+            $out[] = (\is_string($row[2] ?? null) ? $row[2] : '?') . ' ' . $row[0];
+        }
+
+        return $out;
+    }
+
+    /**
+     * One lane on a new client at one status and body: `oauthError` (null when not an auth error), one line, and every request
+     * the IdP saw.
+     *
+     * @return array{?string, string, list<string>}
+     */
+    private static function errorStatusCell(string $lane, int $status, string $body, ?string $location = null): array
+    {
+        $state = ['status' => $status, 'bodies' => ['token' => $body, 'introspect' => $body]];
+        if ($location !== null) {
+            $state['location'] = $location;
+        }
+        self::state($state);
+        @unlink(self::$dir . '/requests.log');
+        $call = self::laneCall($lane);
+        $code = null;
+        try {
+            $call();
+            $outcome = 'success';
+        } catch (KeycloakAuthError $e) {
+            $code = $e->oauthError;
+            $outcome = 'KeycloakAuthError(' . $e->getMessage() . ') code=' . ($code ?? 'null');
+        } catch (\Throwable $e) {
+            $outcome = (new \ReflectionClass($e))->getShortName() . '(' . $e->getMessage() . ') code=-';
+        }
+        $requests = self::requestLines();
+        $line = "$status $lane → $outcome requests=[" . implode(', ', $requests) . ']';
+        fwrite(STDERR, $line . "\n");
+
+        return [$code, $line, $requests];
+    }
+
+    /** @return array<string, array{string, int}> */
+    public static function serverErrorCells(): array
+    {
+        $rows = [];
+        foreach (self::LANES as $lane) {
+            foreach ([500, 503] as $status) {
+                $rows["$lane · $status"] = [$lane, $status];
+            }
+        }
+
+        return $rows;
+    }
+
+    #[DataProvider('serverErrorCells')]
+    public function testAServerErrorStatusCarriesTheOAuthError(string $lane, int $status): void
+    {
+        [$code, $line] = self::errorStatusCell($lane, $status, self::B5);
+        self::assertSame('temporarily_unavailable', $code, $line);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function errorStatusLanes(): array
+    {
+        return array_combine(self::LANES, array_map(static fn (string $lane): array => [$lane], self::LANES));
+    }
+
+    /** Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none. */
+    #[DataProvider('errorStatusLanes')]
+    public function testTheErrorStatusControlsCarryItAt400AndNoneWithoutOne(string $lane): void
+    {
+        [$at400, $at400Line] = self::errorStatusCell($lane, 400, self::B5);
+        [$none, $noneLine] = self::errorStatusCell($lane, 503, self::NO_ERROR);
+        self::assertSame('temporarily_unavailable', $at400, $at400Line);
+        self::assertNull($none, $noneLine);
+    }
+
+    #[DataProvider('errorStatusLanes')]
+    public function testARedirectErrorStatusCarriesTheOAuthErrorAndIsNeverFollowed(string $lane): void
+    {
+        [$code, $line, $requests] = self::errorStatusCell($lane, 302, self::B5, 'http://127.0.0.1:' . self::$port . self::REDIRECT_TARGET);
+        self::assertSame([], array_values(array_filter($requests, static fn (string $r): bool => str_ends_with($r, ' ' . self::REDIRECT_TARGET))), $line);
+        self::assertSame('temporarily_unavailable', $code, $line);
+    }
 }

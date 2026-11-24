@@ -20,6 +20,8 @@
  *
  * The same place turns a 2xx token or introspection body that carries an OAuth `error` into the error a 4xx carrying
  * it produces ({@link fetchTokenEndpointBounded}).
+ *
+ * At 3xx and 5xx it keeps that `error` for the boundary instead ({@link errorStatusOAuthError}).
  */
 import { ResponseBodyError } from 'openid-client'
 
@@ -194,7 +196,8 @@ const BODY_ERROR = 'server responded with an error in the response body'
 /**
  * The body when it is a JSON object whose `error` is a non-empty string — the test oauth4webapi applies to a 4xx
  * (`parseOAuthResponseErrorBody`) — otherwise `undefined`: an `error` that is a number, an object, null or "", and a
- * body that is not a JSON object, are left to what follows as before. It runs on a body that passed the UTF-8 check.
+ * body that is not a JSON object, are left to what follows as before. At a 2xx it runs on a body that passed the UTF-8
+ * check; at 3xx · 5xx on the body as it came, as oauth4webapi reads a 4xx one ({@link errorStatusOAuthError}).
  */
 function oauthErrorBody(body: Uint8Array): OAuthErrorBody | undefined {
   let json: unknown
@@ -206,6 +209,28 @@ function oauthErrorBody(body: Uint8Array): OAuthErrorBody | undefined {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return undefined
   const error = (json as Record<string, unknown>)['error']
   return typeof error === 'string' && error.length > 0 ? (json as OAuthErrorBody) : undefined
+}
+
+/**
+ * The OAuth `error` of a token or introspection response at 3xx or 5xx, keyed by the response
+ * {@link fetchTokenEndpointBounded} hands back. oauth4webapi reads an error body at 4xx only: a 3xx or 5xx it rejects
+ * by its status, unread — openid-client's "unexpected HTTP response status code", that response as the cause — so its
+ * `error` was lost (registry `node-5xx-oauth-error-code-empty`). Weak: an entry lives as long as its response.
+ */
+const errorStatusErrors = new WeakMap<Response, string>()
+
+/** 3xx and 5xx — the error statuses whose body oauth4webapi does not read (it reads 4xx, `parseOAuthResponseErrorBody`). */
+function unreadErrorStatus(status: number): boolean {
+  return (status >= 300 && status < 400) || status >= 500
+}
+
+/**
+ * The OAuth `error` {@link fetchTokenEndpointBounded} found in `response` — a token or introspection response at 3xx or
+ * 5xx whose body passes the test a 4xx body gets ({@link oauthErrorBody}) — otherwise `undefined`. The boundary carries
+ * it through the rule a 4xx code takes (`oauthErrorOf`); the message stays the status one.
+ */
+export function errorStatusOAuthError(response: unknown): string | undefined {
+  return response instanceof Response ? errorStatusErrors.get(response) : undefined
 }
 
 /**
@@ -362,6 +387,9 @@ export async function drainCapped(body: ReadableStream<Uint8Array> | null): Prom
  * (measured 2026-11-20). 200 is the only status the grants and introspection take as success (`checkOAuthBodyError`), so
  * another 2xx without `error` stays rejected by its status as a 400 without one is; with `error` it was rejected the same
  * way, its code dropped — oauth4webapi reads an error body at 4xx only (registry `token-success-status-range-divergent`).
+ *
+ * ⚠️ At 3xx and 5xx it throws nothing: oauth4webapi rejects those by their status, unread, and the SDK error keeps that
+ * message. What the body's `error` is, the same test finds here and leaves for the boundary ({@link errorStatusOAuthError}).
  */
 export async function fetchTokenEndpointBounded(
   url: string,
@@ -381,6 +409,10 @@ export async function fetchTokenEndpointBounded(
     statusText: response.statusText,
     headers: response.headers,
   })
+  if (kind !== undefined && unreadErrorStatus(response.status)) {
+    const carried = oauthErrorBody(body)
+    if (carried !== undefined) errorStatusErrors.set(bounded, carried.error)
+  }
   const error = kind !== undefined && response.status < 300 ? oauthErrorBody(body) : undefined
   if (error !== undefined)
     throw new ResponseBodyError(BODY_ERROR, { cause: error, response: bounded })

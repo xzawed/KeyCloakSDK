@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import parse_qsl, unquote_plus
+from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 import pytest
 
@@ -52,20 +52,27 @@ CODE = "vulturecodeby"
 VERIFIER = "ocelotverifier" * 3 + "xx"  # 44 characters
 KC_SECRET = "Kx7mQ2vT9pLr4WzN8bYc3FhJ6sDa1gE5"  # the shape a Keycloak-generated secret has
 JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl"
+#: where the 3xx cells point `Location` (this server, same origin) — a client that follows it
+#: shows up in `_Idp.requests`
+REDIRECT_TARGET = "/redirect-target"
 
 
 @dataclass
 class _Idp:
     """Answers every POST with 400 `{"error": …}` — `error` is `fixed`, or built by `echo` from
     the form and the client secret this request sent (Basic or form field). `description`, when
-    set, rides along as `error_description`."""
+    set, rides along as `error_description`; `raw`, when set, is the whole body instead, and
+    `location` a `Location` header. `requests` is every request as `METHOD /path`."""
 
     echo: Callable[[dict[str, str]], Any] | None = None
     fixed: Any = None
     status: int = 400
     description: str | None = None
+    raw: str | None = None
+    location: str | None = None
     url: str = ""
     seen: list[dict[str, str]] = field(default_factory=list)
+    requests: list[str] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def error_for(self, sent: dict[str, str]) -> Any:
@@ -92,15 +99,28 @@ def _handler(idp: _Idp) -> type[BaseHTTPRequestHandler]:
             pass
 
         def do_POST(self) -> None:
+            path = urlsplit(self.path).path
+            with idp.lock:
+                idp.requests.append(f"{self.command} {path}")
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length).decode() if length else ""
+            if path == REDIRECT_TARGET:
+                self._send(400, b'{"error":"redirect_target_reached"}', None)
+                return
             answer = {"error": idp.error_for(_sent(self.headers, body))}
             if idp.description is not None:
                 answer["error_description"] = idp.description
-            payload = json.dumps(answer).encode()
-            self.send_response(idp.status)
+            payload = idp.raw.encode() if idp.raw is not None else json.dumps(answer).encode()
+            self._send(idp.status, payload, idp.location)
+
+        do_GET = do_PUT = do_DELETE = do_POST
+
+        def _send(self, status: int, payload: bytes, location: str | None) -> None:
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
+            if location is not None:
+                self.send_header("Location", location)
             self.end_headers()
             self.wfile.write(payload)
 
@@ -114,8 +134,9 @@ def _echo_idp(
     fixed: Any = None,
     status: int = 400,
     description: str | None = None,
+    raw: str | None = None,
 ) -> Iterator[_Idp]:
-    idp = _Idp(echo=echo, fixed=fixed, status=status, description=description)
+    idp = _Idp(echo=echo, fixed=fixed, status=status, description=description, raw=raw)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(idp))
     idp.url = f"http://127.0.0.1:{server.server_address[1]}"
     threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
@@ -364,3 +385,78 @@ async def test_the_admin_grant_never_carries_a_lowercased_echo_of_the_client_sec
         err = await _fail(lane, idp.url, _admin_get, secret="EchoMixedCase")
     assert idp.seen and idp.seen[0]["client_secret"] == "EchoMixedCase"
     _withheld(err, "echomixedcase")
+
+
+# --- the OAuth `error` at a 3xx and a 5xx ------------------------------------------------------
+# Registry node-5xx-oauth-error-code-empty. The contract puts it in the code field "at any status";
+# that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract
+# reads at 500 · 503 and at 302 (`Location` on this server — a 3xx is an error status too), which
+# is never followed.
+
+B5 = '{"error":"temporarily_unavailable","error_description":"down"}'
+NO_ERROR = '{"message":"down"}'
+#: every lane the cells drive — the auth surfaces and the admin self-grant
+ERROR_STATUS_SURFACES: dict[str, Callable[[Any], Any]] = {
+    **{name: act for name, (act, _) in SURFACES.items()},
+    "admin": _admin_get,
+}
+
+
+async def _error_status_cell(
+    lane: str, surface: str, status: int, raw: str, *, redirect: bool = False
+) -> tuple[str | None, str, list[str]]:
+    """One lane on a new client at one status and body: `error` (None when not an auth error),
+    one line, and every request the IdP saw."""
+    with _echo_idp(status=status, raw=raw) as idp:
+        if redirect:
+            idp.location = idp.url + REDIRECT_TARGET
+        cfg = KeycloakConfig(server_url=idp.url, realm="r", client_id="c", client_secret=SECRET)
+        act = ERROR_STATUS_SURFACES[surface]
+        if lane == "sync":
+            with KeycloakClient.create(cfg) as kc:
+                _, err = await _attempt(lane, kc, act)
+        else:
+            async with AsyncKeycloakClient.create(cfg) as akc:
+                _, err = await _attempt(lane, akc, act)
+        with idp.lock:
+            requests = list(idp.requests)
+    code = err.error if isinstance(err, KeycloakAuthError) else None
+    shown = repr(code) if isinstance(err, KeycloakAuthError) else "-"
+    outcome = "success" if err is None else f"{type(err).__name__}({err}) code={shown}"
+    return code, f"{status} {lane} {surface} → {outcome} requests={requests}", requests
+
+
+@pytest.mark.parametrize("status", [500, 503])
+@pytest.mark.parametrize("surface", list(ERROR_STATUS_SURFACES))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_server_error_status_carries_the_oauth_error(
+    lane: str, surface: str, status: int
+) -> None:
+    code, line, _ = await _error_status_cell(lane, surface, status, B5)
+    print(line)
+    assert code == "temporarily_unavailable", line
+
+
+@pytest.mark.parametrize("surface", list(ERROR_STATUS_SURFACES))
+@pytest.mark.parametrize("lane", LANES)
+async def test_the_error_status_controls_carry_it_at_400_and_none_without_one(
+    lane: str, surface: str
+) -> None:
+    """Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none."""
+    at400, at400_line, _ = await _error_status_cell(lane, surface, 400, B5)
+    none, none_line, _ = await _error_status_cell(lane, surface, 503, NO_ERROR)
+    print(at400_line)
+    print(none_line)
+    assert at400 == "temporarily_unavailable", at400_line
+    assert none is None, none_line
+
+
+@pytest.mark.parametrize("surface", list(ERROR_STATUS_SURFACES))
+@pytest.mark.parametrize("lane", LANES)
+async def test_a_redirect_error_status_carries_the_oauth_error_and_is_never_followed(
+    lane: str, surface: str
+) -> None:
+    code, line, requests = await _error_status_cell(lane, surface, 302, B5, redirect=True)
+    print(line)
+    assert not [r for r in requests if r.endswith(" " + REDIRECT_TARGET)], line
+    assert code == "temporarily_unavailable", line

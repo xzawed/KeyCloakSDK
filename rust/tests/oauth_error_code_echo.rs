@@ -15,7 +15,7 @@ use keycloak_sdk::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use wiremock::matchers::method;
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 // Code-shaped on purpose (the shape alone cannot withhold them), and no two share a piece — an echo of one value must be
@@ -127,24 +127,32 @@ fn params(surface: &str) -> &'static [&'static str] {
 }
 
 async fn fail(surface: &str, cfg: &KeycloakConfig) -> KeycloakError {
+    run(surface, cfg).await.expect_err(surface)
+}
+
+async fn run(surface: &str, cfg: &KeycloakConfig) -> Result<(), KeycloakError> {
     let client = KeycloakClient::new(cfg.clone()).expect("client");
     let auth: &AuthClient = client.auth();
-    let outcome = match surface {
+    match surface {
         "client_credentials_token" => auth.client_credentials_token().await.map(|_| ()),
         "refresh" => auth.refresh(REFRESH).await.map(|_| ()),
         "exchange_code" => auth.exchange_code(CODE, VERIFIER, None).await.map(|_| ()),
         "introspect" => auth.introspect(TOKEN).await.map(|_| ()),
         "AuthClient as TokenProvider" => TokenProvider::access_token(auth).await.map(|_| ()),
         "ClientCredentialsTokenProvider" => {
-            ClientCredentialsTokenProvider::new(cfg.clone(), reqwest::Client::new())
+            // As the SDK's own client: no redirects (registry rust-lowlevel-ctor-redirect-policy).
+            let http = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("client");
+            ClientCredentialsTokenProvider::new(cfg.clone(), http)
                 .access_token()
                 .await
                 .map(|_| ())
         }
         "admin" => client.admin().get_user("u1").await.map(|_| ()),
         other => unreachable!("{other}"),
-    };
-    outcome.expect_err(surface)
+    }
 }
 
 fn oauth_error_of(e: &KeycloakError) -> Option<&str> {
@@ -383,4 +391,135 @@ async fn the_price_a_secret_that_is_a_piece_of_the_code_withholds_it() {
         let e = fail(surface, &config(&run.server.uri(), Some("client"))).await;
         assert_eq!(oauth_error_of(&e), None, "{surface}");
     }
+}
+
+// The OAuth `error` at a 3xx and a 5xx (registry `node-5xx-oauth-error-code-empty`). The contract puts it in the code
+// field "at any status"; that was measured at 400 · 401 (#1199) and the other 2xx (#1207) only. Pinned as the contract
+// reads at 500 · 503 and at 302 (`Location` on this server — a 3xx is an error status too), which is never followed.
+const B5: &str = r#"{"error":"temporarily_unavailable","error_description":"down"}"#;
+const NO_ERROR: &str = r#"{"message":"down"}"#;
+/// Where the 3xx cells point `Location` (this server, same origin) — a client that follows it shows up in the requests.
+const REDIRECT_TARGET: &str = "/redirect-target";
+
+/// One surface's outcome: `oauth_error`, one line, and every request the IdP saw.
+struct Cell {
+    code: Option<String>,
+    line: String,
+    requests: Vec<String>,
+}
+
+async fn error_status_cell(surface: &str, status: u16, body: &str, redirect: bool) -> Cell {
+    let server = MockServer::start().await;
+    Mock::given(path(REDIRECT_TARGET))
+        .respond_with(
+            ResponseTemplate::new(400)
+                .set_body_raw(r#"{"error":"redirect_target_reached"}"#, "application/json"),
+        )
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    let mut answer = ResponseTemplate::new(status).set_body_raw(body, "application/json");
+    if redirect {
+        answer = answer.insert_header("Location", format!("{}{REDIRECT_TARGET}", server.uri()));
+    }
+    Mock::given(method("POST"))
+        .respond_with(answer)
+        .mount(&server)
+        .await;
+    let result = run(surface, &config(&server.uri(), Some(SECRET))).await;
+    let requests: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.url.path()))
+        .collect();
+    let (code, outcome) = match &result {
+        Ok(()) => (None, "success".to_string()),
+        Err(e) => {
+            let code = oauth_error_of(e).map(str::to_string);
+            let debug = format!("{e:?}");
+            let variant = debug
+                .split([' ', '(', '{'])
+                .next()
+                .unwrap_or("?")
+                .to_string();
+            let shown = match e {
+                KeycloakError::Auth { .. } => format!("{code:?}"),
+                _ => "-".to_string(),
+            };
+            (code, format!("{variant}({e}) code={shown}"))
+        }
+    };
+    let line = format!("{status} {surface} → {outcome} requests={requests:?}");
+    Cell {
+        code,
+        line,
+        requests,
+    }
+}
+
+#[tokio::test]
+async fn a_server_error_status_carries_the_oauth_error_on_every_surface() {
+    let mut wrong = Vec::new();
+    for status in [500, 503] {
+        for surface in SURFACES {
+            let c = error_status_cell(surface, status, B5, false).await;
+            println!("{}", c.line);
+            if c.code.as_deref() != Some("temporarily_unavailable") {
+                wrong.push(c.line);
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} cells:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// Controls: the same body at 400 carries it; a 503 whose body names no `error` carries none.
+#[tokio::test]
+async fn the_error_status_controls_carry_it_at_400_and_none_without_one() {
+    let mut wrong = Vec::new();
+    for surface in SURFACES {
+        let at400 = error_status_cell(surface, 400, B5, false).await;
+        let none = error_status_cell(surface, 503, NO_ERROR, false).await;
+        println!("{}\n{}", at400.line, none.line);
+        if at400.code.as_deref() != Some("temporarily_unavailable") {
+            wrong.push(at400.line);
+        }
+        if none.code.is_some() {
+            wrong.push(none.line);
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} cells:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn a_redirect_error_status_carries_the_oauth_error_and_is_never_followed() {
+    let mut wrong = Vec::new();
+    for surface in SURFACES {
+        let c = error_status_cell(surface, 302, B5, true).await;
+        println!("{}", c.line);
+        let followed = c
+            .requests
+            .iter()
+            .any(|r| r.ends_with(&format!(" {REDIRECT_TARGET}")));
+        if followed || c.code.as_deref() != Some("temporarily_unavailable") {
+            wrong.push(c.line);
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} cells:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
 }
