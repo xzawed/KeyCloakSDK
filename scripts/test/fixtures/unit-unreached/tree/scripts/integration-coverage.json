@@ -41,5 +41,11 @@
       "python/src/keycloak_sdk/auth_client.py"
     ],
     "owners": {}
+  },
+  "node": {
+    "pinned": [
+      "node/src/auth_client.ts"
+    ],
+    "owners": {}
   }
 }
