@@ -82,6 +82,42 @@ describe('discovery 실패 경계 변환 (§4 — 원시 하위 오류 누출 �
   })
 })
 
+/**
+ * `#discover` 의 single-flight — 진행 중인 discovery 가 있으면 뒤의 첫 호출은 새로 페치하지 않고 그 Promise 에 합류한다(단위
+ * 미도달 장부의 합류 갈래 — coverage-omit-hides-security-paths). 합류가 없으면 동시에 시작한 첫 호출마다 well-known 을 따로 페치한다.
+ */
+describe('discovery single-flight', () => {
+  it('discovery 가 끝나기 전에 시작한 두 번째 첫 호출은 그 discovery 에 합류한다 — discovery 는 한 번이다', async () => {
+    let finish!: (config: never) => void
+    vi.mocked(oidc.discovery).mockReturnValue(
+      new Promise<never>((resolve) => {
+        finish = resolve
+      }),
+    )
+    vi.mocked(oidc.clientCredentialsGrant).mockResolvedValue({
+      access_token: 'AT-cc',
+      expires_in: 60,
+    } as never)
+    vi.mocked(oidc.refreshTokenGrant).mockResolvedValue({
+      access_token: 'AT-rt',
+      expires_in: 60,
+    } as never)
+    const auth = new AuthClient(cfg)
+    const first = auth.clientCredentialsToken()
+    const second = auth.refresh('rt')
+    // 둘 다 시작했고 discovery 는 아직 끝나지 않았다 — 두 번째는 새 discovery 를 부르지 않았다.
+    expect(oidc.discovery).toHaveBeenCalledTimes(1)
+    const config = { timeout: 0 }
+    finish(config as never)
+    await expect(first).resolves.toMatchObject({ accessToken: 'AT-cc' })
+    await expect(second).resolves.toMatchObject({ accessToken: 'AT-rt' })
+    expect(oidc.discovery).toHaveBeenCalledTimes(1)
+    // 둘 다 그 한 discovery 의 Configuration 으로 그랜트를 보냈다.
+    expect(vi.mocked(oidc.clientCredentialsGrant).mock.calls[0]?.[0]).toBe(config)
+    expect(vi.mocked(oidc.refreshTokenGrant).mock.calls[0]?.[0]).toBe(config)
+  })
+})
+
 describe('createAuthorizationRequest (동기·네트워크 없음)', () => {
   it('PKCE S256 인가 URL을 모든 필수 파라미터와 함께 조립한다', () => {
     const req = new AuthClient(cfg).createAuthorizationRequest('https://app.example.com/cb')
@@ -269,6 +305,27 @@ describe('logout (백채널 — refresh_token revoke)', () => {
     expect(body.get('refresh_token')).toBe('RT')
     expect(body.get('client_id')).toBe('app')
     expect(body.get('client_secret')).toBe('sekret')
+    fetchSpy.mockRestore()
+  })
+
+  // 공개 클라이언트(clientSecret 없음)의 폼에는 client_secret 키가 없다 — 그 갈래가 `set` 을 건너뛰지 않으면 URLSearchParams 가
+  // `undefined` 를 문자열 "undefined" 로 싣는다(단위 미도달 장부의 logout 갈래 — coverage-omit-hides-security-paths).
+  it('공개 클라이언트(clientSecret 없음)는 client_id · refresh_token 만 POST 하고 client_secret 키를 싣지 않는다', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }))
+    const publicClient = defineConfig({
+      serverUrl: 'https://kc.example.com',
+      realm: 'demo',
+      clientId: 'app',
+    })
+    await new AuthClient(publicClient).logout('RT')
+    const [url, init] = fetchSpy.mock.calls[0]!
+    expect(String(url)).toBe(LOGOUT_EP)
+    expect([...(init!.body as URLSearchParams).entries()]).toEqual([
+      ['client_id', 'app'],
+      ['refresh_token', 'RT'],
+    ])
     fetchSpy.mockRestore()
   })
 
