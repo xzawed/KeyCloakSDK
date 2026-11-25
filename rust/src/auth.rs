@@ -1086,6 +1086,40 @@ mod tests {
         assert_eq!(sent, vec!["HTTP://LOCALHOST/cb".to_string()], "{}", req.url);
     }
 
+    /// 생성 때 issuer(`{server_url}/realms/{realm}`)가 URL 로 풀리지 않으면 `Config`(`issuer url: …`)다 — `KeycloakConfig::new`
+    /// 는 빈 server_url 만 거부하고 엔드포인트는 문자열을 잇기만 해서(oidc.rs) 여기가 첫 판정이다. 스킴 없는 값 · 범위 밖 포트.
+    #[tokio::test]
+    async fn construction_refuses_a_server_url_that_does_not_parse() {
+        for server_url in ["kc.example.com", "http://kc:99999"] {
+            let config = KeycloakConfig::new(server_url, "it-realm", "it-client").unwrap();
+            match crate::client::KeycloakClient::new(config) {
+                Err(KeycloakError::Config(m)) => {
+                    assert!(m.starts_with("issuer url: "), "{server_url:?}: {m}")
+                }
+                Err(e) => panic!("{server_url:?}: expected Config, got {e:?}"),
+                Ok(_) => panic!("{server_url:?}: an unparsable server_url was accepted"),
+            }
+        }
+    }
+
+    /// 생성 때 config 의 redirect_uri 가 절대 URL 로 풀리지 않으면 `Config`(`redirect uri: …`)다 — `with_redirect_uri` 는
+    /// 아무 문자열이나 받는다. 파싱이 R2 · R3 보다 먼저다(`cb#f` 도 이 문구 — 호출당 판의 R1 과 같은 순서).
+    #[tokio::test]
+    async fn construction_refuses_a_config_redirect_uri_that_does_not_parse() {
+        for input in ["", "cb", "/cb", "not a url", "cb#f"] {
+            let config = KeycloakConfig::new("http://kc:8080", "it-realm", "it-client")
+                .unwrap()
+                .with_redirect_uri(input);
+            match crate::client::KeycloakClient::new(config) {
+                Err(KeycloakError::Config(m)) => {
+                    assert!(m.starts_with("redirect uri: "), "{input:?}: {m}")
+                }
+                Err(e) => panic!("{input:?}: expected Config, got {e:?}"),
+                Ok(_) => panic!("{input:?}: an unparsable config redirect_uri was accepted"),
+            }
+        }
+    }
+
     /// 교환은 바뀌지 않는다 — R2 · R3 은 인가요청 쪽에만 걸었다(공유 `redirect_url` 에 넣지 않았다). 교환은 호출자의
     /// 문자열을 그대로 보낸다 — R3 이 원본을 보는 까닭이기도 하다(oauth2 5.0.0 은 정규화하지 않는다).
     #[tokio::test]
@@ -2218,6 +2252,54 @@ mod tests {
             auth.refresh("RT").await,
             Err(KeycloakError::Auth { .. })
         ));
+    }
+
+    /// `expires_in` 이 없거나 0 인 토큰 응답은 만료를 모르는 토큰이다 — `expires_in` 0 · `expires_at` `None`(`TokenSet::is_expired`
+    /// 가 만료로 본다 — provider 의 `a_token_without_expires_in_is_fetched_again_on_every_call` 과 같은 규칙). 세 부여가 같다.
+    /// 대조 — 300 이면 `expires_at` 은 받은 때 + 300 이다(늘 `None` 인 구현이 이 시험을 통과하지 못하게).
+    #[tokio::test]
+    async fn a_token_without_expires_in_has_no_expiry_on_every_grant() {
+        let server = MockServer::start().await;
+        let config = KeycloakConfig::new(server.uri(), "it-realm", "it-client")
+            .unwrap()
+            .with_client_secret("s");
+        let client = crate::client::KeycloakClient::new(config).unwrap();
+        let auth = client.auth();
+        for expires_in in [None, Some(0), Some(300)] {
+            let mut body = json!({"access_token": "AT", "token_type": "Bearer"});
+            if let Some(secs) = expires_in {
+                body["expires_in"] = json!(secs);
+            }
+            server.reset().await;
+            Mock::given(method("POST"))
+                .and(path("/realms/it-realm/protocol/openid-connect/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&server)
+                .await;
+            let before = now_secs();
+            for (grant, got) in [
+                ("client_credentials", auth.client_credentials_token().await),
+                ("refresh", auth.refresh("RT").await),
+                (
+                    "exchange_code",
+                    auth.exchange_code("code", "verifier", None).await,
+                ),
+            ] {
+                let ts = got.unwrap_or_else(|e| panic!("{grant} {expires_in:?}: {e:?}"));
+                let want = expires_in.unwrap_or(0);
+                assert_eq!(ts.expires_in, want, "{grant} {expires_in:?}");
+                if want == 0 {
+                    assert_eq!(ts.expires_at, None, "{grant} {expires_in:?}");
+                } else {
+                    assert!(
+                        ts.expires_at
+                            .is_some_and(|at| (before + want..=now_secs() + want).contains(&at)),
+                        "{grant} {expires_in:?}: expires_at {:?}",
+                        ts.expires_at
+                    );
+                }
+            }
+        }
     }
 
     /// `Other` 문구는 허용 목록이다 — 응답 입력을 인용하지 않는 고정 문구만 옮기고, 나머지는 숨긴다.

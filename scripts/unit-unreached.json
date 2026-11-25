@@ -240,17 +240,9 @@
     }
   },
   "rust": {
-    "rust/src/admin.rs:created_id": {
-      "lines": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
     "rust/src/auth.rs:AuthClient::new": {
-      "lines": 5,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "rust/src/auth.rs:to_token_set": {
-      "lines": 1,
-      "why": "coverage-omit-hides-security-paths"
+      "lines": 3,
+      "why": "unreachable: 인가 · 토큰 · introspection 끝점 URL 의 map_err 셋(auth.rs:198 · 202 · 206) — 셋은 같은 OidcEndpoints 의 base 에 고정 접미사(`/protocol/openid-connect/auth` · `…/token` · `…/token/introspect` — oidc.rs:30-38)를 이은 것이고 base 는 비공개 필드라 new 의 format!(oidc.rs:24) 말고는 못 만든다. 그 base 는 앞의 IssuerUrl::new(auth.rs:174)가 이미 풀었고 넷 다 url 2.5.9 의 Url::parse 다(openidconnect 4.1.0 macros.rs:344 · oauth2 5.0.0 types.rs:261). Url::parse 가 실패하는 자리는 스킴(parser.rs:395) · 권한 영역(userinfo · 호스트 · 포트 — 860 · 971 · 1062 · 1094) · to_u32 의 Overflow(1752 — 재는 오프셋은 다 접미사 앞이다)뿐인데, 권한 영역은 첫 `/` · `?` · `#`(특수 스킴은 `\\` 도 — 878 · 989 · 1071)에서 끝나 `{server_url}/realms` 안이다(특수 스킴은 슬래시를 다 건너뛰고(439) 비특수는 `//` 바로 뒤에서만 연다(472)). 접미사는 그 뒤 경로 · 질의 · 조각에 붙고 그 파서는 Result 를 내지 않는다(1133 · 1172 · 1417 · 1534 · 1635) — base 끝에서 떼인 C0 · 공백(375)도 이으면 그 안에 남을 뿐이다. 175 를 지난 base 로는 못 닿는다"
     },
     "rust/src/auth.rs:map_token_err": {
       "lines": 1,

@@ -843,6 +843,47 @@ mod tests {
         );
     }
 
+    /// `Location` 값이 보이는 ASCII 가 아니면(obs-text — 0x80 이상 바이트) id 는 `None` 이다 — 값을 디코드해 읽지 않는다.
+    /// UTF-8 로 읽으면 보낸 컬렉션의 id(`abc-%C3%A9`)가 될 값도, Latin-1 바이트 하나도 그렇다. 전제 — 그 바이트가 그대로
+    /// 클라이언트에 닿는다(안 닿으면 `Location` 없음의 `None` 과 구분되지 않는다).
+    #[tokio::test]
+    async fn create_returns_no_id_when_the_location_is_not_visible_ascii() {
+        let server = MockServer::start().await;
+        let admin = admin_against(&server);
+        let posted = format!("{}/admin/realms/it-realm/users", server.uri());
+        for tail in [&b"abc-\xC3\xA9"[..], &b"abc-\xE9"[..]] {
+            let location = [format!("{posted}/").as_bytes(), tail].concat();
+            server.reset().await;
+            Mock::given(method("POST"))
+                .and(path("/admin/realms/it-realm/users"))
+                .respond_with(
+                    ResponseTemplate::new(201).insert_header(
+                        "Location",
+                        reqwest::header::HeaderValue::from_bytes(&location)
+                            .expect("obs-text is a valid header value"),
+                    ),
+                )
+                .mount(&server)
+                .await;
+            let probe = reqwest::Client::new()
+                .post(posted.as_str())
+                .send()
+                .await
+                .expect("premise: the mock answers");
+            let sent = probe.headers().get(reqwest::header::LOCATION);
+            assert!(
+                sent.is_some_and(|v| v.as_bytes() == location.as_slice() && v.to_str().is_err()),
+                "premise: the Location arrives as sent and is not visible ASCII: {sent:?}"
+            );
+            let got = admin.create_user(UserRepresentation::default()).await;
+            assert!(
+                matches!(got, Ok(None)),
+                "{}: {got:?}",
+                String::from_utf8_lossy(tail)
+            );
+        }
+    }
+
     // ── list_*: 호출자의 페이지 경계가 와이어에 실리는지 ──
     // search_users와 같은 이유로 `max`는 Option이 아니다 — 상한은 항상 호출부에 보여야 한다.
 
