@@ -11,8 +11,9 @@
 # 묶음 — 실제 줄은 그대로 옮겼다(gh 의 잡 · 스텝 · 시각 칸만 뺐다):
 #   양성       인수인계 `positive-lines.txt` 의 줄 열(11-24 PR 실행의 429 포함) → 0, 그리고 맞은 줄을 찍는다.
 #              변형 양성(지어낸 줄 — 리뷰): 플러그인 요청의 꼬리 속성(`apply: false`) · 포털 앞문 `plugins.gradle.org` → 0.
-#   재시도     `build_with_retry` 를 실제로 불러 만든 표지(러너 꼴 `##[warning]…` · 헬퍼 그대로 둘 다): 재시도만 있고 포기가
-#              없으면 회복된 거절 → 1 · 포기가 있으면 → 0 · 접두 없는 닮은 줄은 표지가 아니다 → 0.
+#   재시도     `build_with_retry` 를 `bash -c` 로 실제로 불러 만든 표지(러너 꼴 `##[warning]…` · 헬퍼 그대로 둘 다 — 판정은
+#              본문 꼬리표): 재시도만 있고 포기가 없으면 회복된 거절 → 1 · 포기가 있으면 → 0 · 꼬리표 없는 닮은 줄은 표지가 아니다.
+#              (잡, 스텝)마다 가른다 — 두 잡 · 두 스텝에 걸친 거짓 양성 모양 → 1 · 거짓 음성 모양 → 0.
 #   음성       제품 실패 로그 23 개의 실제 줄 — `429 complete` · `(timeout 240s)` · `Fetching timeout` · `504 kB/s` 처럼 낱말만
 #              닮은 줄 포함 — · 상류 로그의 성공 줄 · 제품 자신의 낱말(SDK 의 `Read timed out` · JDK 의 `Connection reset` ·
 #              node 의 `read ECONNRESET`) → 1.
@@ -135,8 +136,8 @@ assert_eq "20" "$_nn" "[음성] 음성 줄이 20 개가 아니다 — 목록이 
 #    · gradle-plugin 의 해석 출처 절(`in any of the following sources`)을 뗀 문구 — 시험 이름 · 요약이 인용하는 꼴이다.
 #    · central-absent 의 꼬리표를 리졸버의 다른 로컬 상태로 — `(present, but unavailable)` 은 파일이 로컬 저장소에 **다른 원격에서**
 #      와 있다는 뜻이다(maven-resolver-api 1.9.27 `ArtifactResolutionException` 의 문자열 `present` · `, but unavailable` · `absent`).
-#      하네스가 스테이징한 BOM(`harness/install/consume/java-app-pom.xml` 의 import)을 central 로 푼 출처 설정 실패다 — 다시 돌려도
-#      같다(`java-run.sh` 가 같은 `_remote.repositories` 출처를 단언한다). `(absent)` 는 로컬에 없는 경우만이다.
+#      잰 거절 모양은 `(absent)` 뿐이라 이 꼴은 **일부러 서명 밖**이다(그런 줄이 오면 빨간 채로 남는다 — 거짓 음성의 값은 지금처럼
+#      빨간 밤이다). 좌표는 남의 것(junit-bom)이다 — 우리 좌표면 D 의 제외가 이 줄을 먼저 가려 꼬리표를 고정하지 못한다(리뷰 3-2).
 #    끝의 넷(리뷰 D · F): 이 저장소 자신의 좌표가 `(absent)` 로 Central 에 없다(스테이징한 판 · 아직 안 낸 판 — 참이고 다시 돌려도
 #    같다) · 포털 호스트(`plugins-artifacts.gradle.org` · `plugins.gradle.org`)는 두고 거절 모양(`Could not GET` · `: Try again`)만
 #    받는 동사로 바꾼 두 줄 · 남의 좌표(junit-bom)를 하네스 자신의 레지스트리에서 찾은 줄(설정 실패 — D 의 제외가 우리 좌표를 덮어
@@ -151,7 +152,7 @@ HUS_NEAR="$(cat <<'EOF'
 #15 32.80 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Could not transfer artifact org.junit:junit-bom:pom:6.1.3 from/to central (https://repo.maven.apache.org/maven2): status code: 401, reason phrase: Unauthorized (401) @ line 84, column 19
 #17 25.83     Failed to download psr/clock from dist: The "https://api.github.com/repos/php-fig/clock/zipball/e41a24703d4560fd0acb709162f73b8adfc3aa0d" file could not be downloaded (HTTP/2 404 )
 #15 23.70 Plugin [id: 'com.vanniktech.maven.publish', version: '0.37.0'] was not found
-#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 (present, but unavailable): Could not find artifact io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19
+#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (present, but unavailable): Could not find artifact org.junit:junit-bom:pom:6.1.3 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19
 #15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 (absent): Could not find artifact io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19
                 > Downloading 'https://plugins-artifacts.gradle.org/org.jetbrains.kotlin/kotlin-gradle-plugin/2.2.20/b9c3fd2ebd5484d60c5fe0db7aa10878303eeddfc93f942f735c07ba998187cc/kotlin-gradle-plugin-2.2.20.pom'.
                 > Downloading 'https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugin/2.2.20/kotlin-gradle-plugin-2.2.20.pom'.
@@ -198,24 +199,30 @@ printf '%s\t%s\t%s\n' "Could not GET 'https://plugins-artifacts.gradle.org/x.pom
 hus "$_t/gh-cols.log"
 assert_eq "1" "$(hus_rc)" "[gh 꼴] 잡 · 스텝 칸에만 있는 서명 글을 거절로 판정했다: $(cat "$_t/out" "$_t/err")"
 
-# ── 빌드 재시도 표지 — `build_with_retry` 를 **실제로 불러** 표지를 만든다(헬퍼의 문구가 갈리면 여기서 운다). 러너는 스텝이 찍은
-#    `::warning …::<글>` 을 로그에 `##[warning]<글>` 로 남긴다(실측 — 판정기 머리) — 헬퍼가 찍은 그대로와 그 꼴을 둘 다 먹인다.
-#    거절 줄은 실제 양성(central-absent)이다. 재시도만 있고 포기가 없으면 회복된 거절 → 1(재실행이 흔들리는 제품 실패를 덮지
-#    않게 — 리뷰 A) · 포기가 있으면 예전 규칙 → 0 · 접두 없는 닮은 줄(지어낸 줄)은 표지가 아니다 → 0.
+# ── 빌드 재시도 표지 — `build_with_retry` 를 **실제로 불러** 표지를 만든다(헬퍼의 문구가 갈리면 여기서 운다). 헬퍼는 bash 라
+#    `bash -c` 로 부른다(test-harness-build-retry.sh 와 같다 — sh 로 소싱하지 않는다). 러너는 스텝이 찍은 `::warning …::<글>` 을
+#    로그에 `##[warning]<글>` 로 남긴다(실측 — 판정기 머리) — 헬퍼가 찍은 그대로와 그 꼴을 둘 다 먹인다. 판정은 본문의 꼬리표
+#    (`[harness-build-retry]` · `[harness-build-retry-exhausted]`)에 건다. 거절 줄은 실제 양성(central-absent)이다.
+#    재시도만 있고 포기가 없으면 회복된 거절 → 1(재실행이 흔들리는 제품 실패를 덮지 않게) · 포기가 있으면 예전 규칙 → 0 ·
+#    꼬리표 없는 닮은 줄(지어낸 줄)은 재시도 표지도 포기 표지도 아니다.
+cat > "$_t/flaky.sh" <<'EOF'
+# 가짜 빌드 — $1 = 횟수 파일 · $2 = 실패할 횟수. 그 횟수만큼 실패하고 그 뒤로는 성공한다.
+n=$(( $(cat "$1" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$1"
+[ "$n" -gt "$2" ]
+EOF
 # hus_markers <실패할 횟수> — 1 이면 한 번 실패 뒤 회복(재시도 표지 하나), 3 이면 포기(재시도 둘 · 포기 하나).
-#   결과: $_t/mk.raw(헬퍼가 찍은 그대로) · $_t/mk.rendered(러너 꼴)
+#   결과: $_t/mk.raw(헬퍼가 찍은 그대로) · $_t/mk.rendered(러너 꼴) · $_t/mk.rc(build_with_retry 자신의 종료코드)
 hus_markers() {
   rm -f "$_t/mk.n"
-  (
-    . "$ROOT/harness/lib/build-retry.sh"
-    HARNESS_BUILD_RETRY_DELAY=0
-    export HARNESS_BUILD_RETRY_DELAY
-    build_with_retry hus-probe "$_t/mk.retries" \
-      sh -c 'n=$(( $(cat "$1" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$1"; [ "$n" -gt "$2" ]' _ "$_t/mk.n" "$1"
-  ) < /dev/null > "$_t/mk.raw" 2>&1 || true
+  _hm_rc=0
+  HARNESS_BUILD_RETRY_DELAY=0 bash -c '. "$1" && build_with_retry hus-probe "$2" sh "$3" "$4" "$5"' hus \
+    "$ROOT/harness/lib/build-retry.sh" "$_t/mk.retries" "$_t/flaky.sh" "$_t/mk.n" "$1" < /dev/null > "$_t/mk.raw" 2>&1 || _hm_rc=$?
+  echo "$_hm_rc" > "$_t/mk.rc"
   sed 's/^::warning title=[^:]*::/##[warning]/' "$_t/mk.raw" > "$_t/mk.rendered"
 }
 HUS_REFUSAL='#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Could not find artifact org.junit:junit-bom:pom:6.1.3 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19'
+printf '%s\n' "$HUS_REFUSAL" > "$_t/refusal.txt"
 # hus_retry_case <표지 파일> <기대 종료코드> <설명> — 거절 줄 뒤에 그 표지를 이어 붙인 로그를 판정한다.
 hus_retry_case() {
   { printf '%s\n' "$HUS_REFUSAL"; cat "$1"; } > "$_t/retry.log"
@@ -223,17 +230,48 @@ hus_retry_case() {
   assert_eq "$2" "$(hus_rc)" "[재시도] $3: $(cat "$_t/out" "$_t/err")"
 }
 hus_markers 1
-assert_eq "1 0" "$(grep -cF -- '— retrying' "$_t/mk.raw" || true) $(grep -cF -- '— giving up' "$_t/mk.raw" || true)" \
+assert_eq "0" "$(cat "$_t/mk.rc")" "[재시도] 한 번 실패 뒤 회복한 build_with_retry 가 0 을 돌려주지 않았다: $(cat "$_t/mk.raw")"
+assert_eq "1 0" "$(grep -cF -- '[harness-build-retry] ' "$_t/mk.raw" || true) $(grep -cF -- '[harness-build-retry-exhausted] ' "$_t/mk.raw" || true)" \
   "[재시도] 한 번 실패 뒤 회복한 헬퍼가 재시도 표지 하나 · 포기 표지 0 을 찍지 않았다: $(cat "$_t/mk.raw")"
+cp "$_t/mk.rendered" "$_t/mk1.rendered"
 hus_retry_case "$_t/mk.rendered" 1 "회복(러너 꼴 ##[warning]) — 회복된 거절인데 다시 돌린다"
 hus_retry_case "$_t/mk.raw" 1 "회복(헬퍼가 찍은 그대로) — 회복된 거절인데 다시 돌린다"
+# 꼬리표 없는 「포기」 닮은 줄(지어낸 줄)은 포기 표지가 아니다 — 회복된 재시도 뒤에 붙어도 회복된 거절 그대로 → 1.
+{ cat "$_t/mk.rendered"; printf '%s\n' 'hus-probe attempt 3 failed (exit 1) — giving up'; } > "$_t/mk.fakegiveup"
+hus_retry_case "$_t/mk.fakegiveup" 1 "꼬리표 없는 「giving up」 닮은 줄을 포기 표지로 셌다 — 회복된 거절인데 다시 돌린다"
 hus_markers 3
-assert_eq "2 1" "$(grep -cF -- '— retrying' "$_t/mk.raw" || true) $(grep -cF -- '— giving up' "$_t/mk.raw" || true)" \
+assert_eq "1" "$(cat "$_t/mk.rc")" "[재시도] 세 번 실패한 build_with_retry 가 마지막 시도의 종료코드(1)를 돌려주지 않았다: $(cat "$_t/mk.raw")"
+assert_eq "2 1" "$(grep -cF -- '[harness-build-retry] ' "$_t/mk.raw" || true) $(grep -cF -- '[harness-build-retry-exhausted] ' "$_t/mk.raw" || true)" \
   "[재시도] 세 번 실패한 헬퍼가 재시도 표지 둘 · 포기 표지 하나를 찍지 않았다: $(cat "$_t/mk.raw")"
+cp "$_t/mk.rendered" "$_t/mk3.rendered"
 hus_retry_case "$_t/mk.rendered" 0 "포기(러너 꼴 ##[warning]) — 끝내 받지 못한 거절을 회복된 것으로 봤다"
 hus_retry_case "$_t/mk.raw" 0 "포기(헬퍼가 찍은 그대로) — 끝내 받지 못한 거절을 회복된 것으로 봤다"
 printf '%s\n' 'hus-probe attempt 1 failed (exit 1) — retrying' > "$_t/mk.bare"
-hus_retry_case "$_t/mk.bare" 0 "접두 없는 닮은 줄을 재시도 표지로 셌다 — 제품 출력이 같은 글을 찍으면 거절이 가려진다"
+hus_retry_case "$_t/mk.bare" 0 "꼬리표 없는 닮은 줄을 재시도 표지로 셌다 — 제품 출력이 같은 글을 찍으면 거절이 가려진다"
+
+# ── (잡, 스텝)마다 — 회복 판정은 그 짝 단위다(리뷰 3-1). gh 꼴로 두 잡 · 두 스텝을 섞어 거짓 양성 · 거짓 음성 모양을 다 잰다.
+#    FP 모양: 한쪽은 거절 뒤 회복(재시도 · 포기 없음), 다른 쪽은 거절 없이 세 번 실패(포기 — Dockerfile 버그) → 다시 돌리면 안 된다 → 1.
+#    FN 모양: 한쪽은 거절 없이 회복한 재시도, 다른 쪽은 재시도 밖의 거절(런타임 내려받기) → 다시 돌린다 → 0.
+#    두 잡은 스텝 이름이 같고(`UNKNOWN STEP` — 실제 하네스 로그가 그렇다) 두 스텝은 잡 이름이 같다 — 짝의 두 칸이 각각 쓰이는지 본다.
+#    표지는 위에서 헬퍼가 실제로 찍은 것이다(mk1 = 회복 · mk3 = 포기).
+# hus_gh <잡> <스텝> <파일> — 그 파일의 줄을 gh 꼴로 바꿔 $_t/pairs.log 에 덧붙인다.
+hus_gh() { awk -v j="$1" -v s="$2" '{ printf "%s\t%s\t2026-11-22T03:%02d:00.0000000Z %s\n", j, s, NR % 60, $0 }' "$3" >> "$_t/pairs.log"; }
+# hus_pairs_case <기대 종료코드> <설명> — $_t/pairs.log 를 판정하고 비운다.
+hus_pairs_case() {
+  hus "$_t/pairs.log"
+  assert_eq "$1" "$(hus_rc)" "[짝] $2: $(cat "$_t/out" "$_t/err")"
+  : > "$_t/pairs.log"
+}
+: > "$_t/pairs.log"
+hus_gh score-all 'UNKNOWN STEP' "$_t/refusal.txt"; hus_gh score-all 'UNKNOWN STEP' "$_t/mk1.rendered"
+hus_gh install-all 'UNKNOWN STEP' "$_t/mk3.rendered"
+hus_pairs_case 1 "두 잡 FP — 한 잡의 회복된 거절이 다른 잡의 포기(거절 없음)로 되살아나 다시 돌린다"
+hus_gh score-all 'UNKNOWN STEP' "$_t/mk1.rendered"; hus_gh install-all 'UNKNOWN STEP' "$_t/refusal.txt"
+hus_pairs_case 0 "두 잡 FN — 한 잡의 회복된 재시도가 다른 잡의 재시도 밖 거절을 가렸다"
+hus_gh harness build "$_t/refusal.txt"; hus_gh harness build "$_t/mk1.rendered"; hus_gh harness suites "$_t/mk3.rendered"
+hus_pairs_case 1 "두 스텝 FP — 한 스텝의 회복된 거절이 다른 스텝의 포기(거절 없음)로 되살아나 다시 돌린다"
+hus_gh harness build "$_t/mk1.rendered"; hus_gh harness suites "$_t/refusal.txt"
+hus_pairs_case 0 "두 스텝 FN — 한 스텝의 회복된 재시도가 다른 스텝의 재시도 밖 거절을 가렸다"
 
 # ── 판정 불가(2) — 「서명 없음」(1)과 갈려야 한다. 만료된 로그(API 410)는 gh 가 아무것도 쓰지 않아 빈 파일로 온다.
 #    인자가 둘이면 첫 파일을 판정하지 않는다 — 그래서 첫 파일은 양성이다(무시하고 판정하면 0 이 나와 운다).

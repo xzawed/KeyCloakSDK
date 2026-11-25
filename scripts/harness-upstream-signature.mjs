@@ -13,9 +13,13 @@
 // ⚠️ 거짓 양성의 값은 재실행 한 번이다(attempt 1 만 다시 돈다) — 거짓 음성의 값은 지금처럼 빨간 밤이다.
 // ⚠️ **재시도로 회복된 거절은 세지 않는다.** `build_with_retry`(harness/lib/build-retry.sh)는 실패한 시도의 출력(거절 줄 포함)을
 // 로그에 남긴 채 다시 시도하므로, 회복한 빌드의 거절 줄 뒤에 진짜 제품 실패(때로는 흔들리는 시험)가 오면 그 실패를 재실행이
-// 덮을 수 있다. 그래서 로그에 재시도 표지(`— retrying`)가 있는데 포기 표지(`— giving up`)가 하나도 없으면 맞은 서명을 회복된
-// 시도의 것으로 보고 1 이다. 재시도 표지가 없는 로그(#1210 이전의 예약 실패 28 전부)는 예전 규칙 그대로다.
-// 이 판정은 **로그 전체** 단위다 — 한 잡의 회복이 다른 잡(재시도 밖의 내려받기 거절)을 가릴 수 있다(남는 틈).
+// 덮을 수 있다. 그래서 gh 의 **(잡, 스텝)마다** 가른다 — 그 짝이 거절로 세지는 것은 서명이 맞고 **재시도 표지가 없거나 포기
+// 표지가 있을 때**뿐이고, 로그는 그런 짝이 하나라도 있으면 맞는다(로그 전체로 가르면 한 잡의 회복이 다른 잡의 재시도 밖 거절을
+// 가리고, 한 잡의 포기(거절 없는 Dockerfile 버그)가 다른 잡의 회복된 거절을 되살린다). 표지가 없는 로그(#1210 이전의 예약 실패
+// 28 전부)는 예전 규칙 그대로다.
+// ⚠️ 남는 틈 — 한 스텝 **안**은 가르지 못한다. 하네스는 아홉 언어의 빌드를 한 스텝(verify.sh · install-verify.sh)에서 돌리고,
+// 거절 줄에는 라벨이 없어 표지와 이을 수 없다. 바로 뒤 표지에 붙이는 라벨 대응은 **하지 않았다** — 재시도 밖 거절이 뒤 빌드의
+// 회복에 붙어 가려지는 새 거짓 음성이 생긴다(정확히 이으려면 헬퍼가 시도 시작도 찍어야 한다).
 //
 // 사용: node scripts/harness-upstream-signature.mjs <로그 파일>   — `gh run view <id> --log-failed` 의 출력(잡 · 스텝 · 시각 칸)
 //   0 = 맞았다 — 서명마다 처음 맞은 줄을 찍는다
@@ -51,12 +55,13 @@ const SIGNATURES = [
   ],
 ]
 
-// build_with_retry 의 표지(harness/lib/build-retry.sh) — 재시도마다 `<label> attempt N failed (exit rc) — retrying`, 세 번째 실패에
-// `… — giving up`. ⚠️ 실측(2026-11-26): 스텝이 찍은 `::warning::<글>` 은 내려받은 로그에 `##[warning]<글>` 로 남는다(repo-hygiene
-// doc-facts run 45712880838 · job 139551479799 — check-versions.mjs 의 경고). 제목(`title=`)이 로그 글에 남는지는 재지 못했다(재시도가
-// 난 실행이 아직 없다) — 그래서 **끝말로** 가르고, 러너 꼴과 헬퍼가 찍은 그대로의 꼴을 둘 다 받는다.
-const RETRYING = /^(?:##\[warning\]|::warning title=harness build retry::)\S+ attempt \d+ failed \(exit \d+\) — retrying$/
-const GAVE_UP = /^(?:##\[warning\]|::warning title=harness build retry exhausted::)\S+ attempt \d+ failed \(exit \d+\) — giving up$/
+// build_with_retry 의 표지(harness/lib/build-retry.sh) — 본문이 꼬리표로 시작한다: 재시도마다 `[harness-build-retry] <label> attempt N
+// failed (exit rc) — retrying`, 세 번째 실패에 `[harness-build-retry-exhausted] … — giving up`. ⚠️ 실측(2026-11-26): 스텝이 찍은
+// `::warning::<글>` 은 내려받은 로그에 `##[warning]<글>` 로 남는다(repo-hygiene doc-facts run 45712880838 · job 139551479799 —
+// check-versions.mjs 의 경고). 제목(`title=`)이 로그 글에 남는지는 재지 못했다(재시도가 난 실행이 아직 없다) — 그래서 판정은 제목도
+// 러너의 접두도 아닌 **본문의 꼬리표**에 건다(앞에 무엇이 붙든 받는다).
+const RETRYING = /\[harness-build-retry\] \S+ attempt \d+ failed \(exit \d+\) — retrying$/
+const GAVE_UP = /\[harness-build-retry-exhausted\] \S+ attempt \d+ failed \(exit \d+\) — giving up$/
 
 // gh `--log-failed` 의 줄 = 잡 <TAB> 스텝 <TAB> [BOM]시각 본문 — 본문만 본다(잡 · 스텝 이름이 서명 행세를 하지 않게).
 // BOM 은 잡마다 첫 줄 시각 앞에 붙는다 — 보이는 이스케이프로 적는다(보이지 않는 글자는 리뷰가 못 읽는다).
@@ -85,28 +90,44 @@ function main(argv) {
   }
   const lines = text.split(/\r?\n/)
   if (lines.at(-1) === '') lines.pop()
-  const bodies = lines.map(body)
-  const hits = []
-  for (const [name, re] of SIGNATURES) {
-    const i = bodies.findIndex((b) => re.test(b))
-    if (i >= 0) hits.push({ name, n: i + 1, text: bodies[i] })
+  // (잡, 스텝)마다 서명 · 재시도 표지 · 포기 표지를 센다 — gh 의 두 칸은 떼기 **전에** 읽는다. 칸이 없는 줄(손으로 만든 로그)은 한 짝이다.
+  const pairs = new Map()
+  lines.forEach((line, i) => {
+    const col = /^([^\t]*)\t([^\t]*)\t/.exec(line)
+    const key = col ? `${col[1]}\t${col[2]}` : ''
+    if (!pairs.has(key)) pairs.set(key, { hits: new Map(), retried: 0, gaveUp: 0 })
+    const p = pairs.get(key)
+    const b = body(line)
+    for (const [name, re] of SIGNATURES) if (!p.hits.has(name) && re.test(b)) p.hits.set(name, { name, n: i + 1, text: b })
+    if (RETRYING.test(b)) p.retried++
+    if (GAVE_UP.test(b)) p.gaveUp++
+  })
+  // 짝이 거절로 세지는 것은 서명이 맞고 재시도 표지가 없거나 포기 표지가 있을 때뿐이다(머리 주석).
+  const counted = []
+  const recovered = []
+  for (const p of pairs.values()) {
+    if (p.hits.size === 0) continue
+    if (p.retried === 0 || p.gaveUp > 0) counted.push(...p.hits.values())
+    else recovered.push(...p.hits.values())
   }
-  if (hits.length === 0) {
+  counted.sort((a, b) => a.n - b.n)
+  recovered.sort((a, b) => a.n - b.n)
+  // ⚠️ 로그에서 온 글 앞에 `[이름]` 을 붙여 찍는다 — `::` 로 시작하는 줄은 러너가 워크플로 명령으로 읽는다.
+  const show = (h, tag) => console.log(`  ${tag}[${h.name}] 줄 ${h.n}: ${h.text}`)
+  if (counted.length === 0 && recovered.length === 0) {
     console.log(`harness-upstream-signature: 맞는 줄 없음 — ${lines.length} 줄에 상류 다운로드 거절 서명이 없다(제품 실패로 본다)`)
     return 1
   }
-  const retried = bodies.filter((b) => RETRYING.test(b)).length
-  const gaveUp = bodies.filter((b) => GAVE_UP.test(b)).length
-  if (retried > 0 && gaveUp === 0) {
+  if (counted.length === 0) {
     console.log(
-      `harness-upstream-signature: 빌드 재시도 ${retried} 번이 전부 회복됐다(포기 표지 없음) — 맞은 서명 ${hits.length} 개는 회복된 시도의 것으로 본다(제품 실패로 본다)`,
+      `harness-upstream-signature: 맞은 서명 ${recovered.length} 개가 전부 빌드 재시도로 회복된 (잡, 스텝)의 것이다(포기 표지 없음) — 회복된 시도의 거절로 본다(제품 실패로 본다)`,
     )
-    for (const h of hits) console.log(`  (회복) [${h.name}] 줄 ${h.n}: ${h.text}`)
+    for (const h of recovered) show(h, '(회복) ')
     return 1
   }
-  console.log(`harness-upstream-signature: 상류 다운로드 거절 — 서명 ${hits.length} 개${retried > 0 ? ` · 빌드 재시도 ${retried} · 포기 ${gaveUp}` : ''}`)
-  // ⚠️ 로그에서 온 글 앞에 `[이름]` 을 붙여 찍는다 — `::` 로 시작하는 줄은 러너가 워크플로 명령으로 읽는다.
-  for (const h of hits) console.log(`  [${h.name}] 줄 ${h.n}: ${h.text}`)
+  console.log(`harness-upstream-signature: 상류 다운로드 거절 — 서명 ${counted.length} 개${recovered.length > 0 ? ` · 회복된 짝의 서명 ${recovered.length} 개는 뺐다` : ''}`)
+  for (const h of counted) show(h, '')
+  for (const h of recovered) show(h, '(회복) ')
   return 0
 }
 

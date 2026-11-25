@@ -12,7 +12,8 @@
 #   static  하네스 셸 스크립트의 빌드(`docker build` · `docker compose … build` · `… --build`)는 전부 헬퍼를 거친다.
 #   helper  최대 3 회 · 시도 사이 ${HARNESS_BUILD_RETRY_DELAY:-60} 초 · 마지막 시도의 종료코드 그대로 · 재시도마다 경고
 #           주석 하나와 retries 파일 한 줄 · 첫 시도 성공은 아무것도 안 쓴다 · 세 번째 실패에만 포기 표지 하나(다른 제목 —
-#           회복한 빌드에는 없다. scripts/harness-upstream-signature.mjs 가 그 차이로 회복된 거절을 다시 돌리지 않는다).
+#           회복한 빌드에는 없다. scripts/harness-upstream-signature.mjs 가 그 차이로 회복된 거절을 다시 돌리지 않는다). 두 주석의
+#           본문은 꼬리표 `[harness-build-retry]` · `[harness-build-retry-exhausted]` 로 시작한다(판정기는 제목이 아니라 그것을 본다).
 #   sites   빌드 자리 전부 — 세 번 실패하면 그 자리의 기존 실패 처리가 돈다. 갈라 놓은 자리(build → up)는 빌드만
 #           재시도하고 기동은 한 번이다.
 # 가짜 docker · sleep · curl 을 PATH 앞에 둔다 — 진짜 Docker 는 건드리지 않고, 대상 스크립트는 임시 거울 트리에서 돈다.
@@ -124,9 +125,9 @@ chmod +x "$_t/bin/docker" "$_t/bin/sleep" "$_t/bin/curl"
 hbr_builds() { awk -v t="$2" '{ b = h = 0; for (i = 1; i <= NF; i++) { if ($i == "build" || $i == "--build") b = 1; if ($i == t) h = 1 } if (b && h) n++ } END { print n + 0 }' "$1"; }
 hbr_ups() { awk -v t="$2" '{ u = b = h = 0; for (i = 1; i <= NF; i++) { if ($i == "up") u = 1; if ($i == "--build") b = 1; if ($i == t) h = 1 } if (u && h && !b) n++ } END { print n + 0 }' "$1"; }
 hbr_upbuilds() { awk -v t="$2" '{ u = b = h = 0; for (i = 1; i <= NF; i++) { if ($i == "up") u = 1; if ($i == "--build") b = 1; if ($i == t) h = 1 } if (u && h && b) n++ } END { print n + 0 }' "$1"; }
-hbr_warns() { grep -cF -- "::warning title=harness build retry::$2 attempt " "$1" || true; }
+hbr_warns() { grep -cF -- "::warning title=harness build retry::[harness-build-retry] $2 attempt " "$1" || true; }
 # 포기 표지(세 번째 실패) — 제목이 달라 위 hbr_warns 에는 세지 않는다.
-hbr_gaveup() { grep -cF -- "::warning title=harness build retry exhausted::$2 attempt " "$1" || true; }
+hbr_gaveup() { grep -cF -- "::warning title=harness build retry exhausted::[harness-build-retry-exhausted] $2 attempt " "$1" || true; }
 hbr_count() { if [ -f "$1" ]; then grep -cF -- "$2" "$1" || true; else echo 0; fi; }
 hbr_exists() { if [ -e "$1" ]; then echo 있음; else echo 없음; fi; }
 
@@ -230,7 +231,7 @@ hbr_helper '1 0' ''
 assert_eq "0" "$(cat "$_t/h.rc")" "[헬퍼] (b) 재시도 끝에 성공했는데 종료코드가 0 이 아니다: $(cat "$_t/h.out")"
 assert_eq "2" "$(hbr_builds "$_t/h.log" hbr-probe)" "[헬퍼] (b) 한 번 실패 뒤 다시 시도하지 않았다(또는 성공 뒤에도 불렀다)"
 assert_eq "1" "$(hbr_warns "$_t/h.out" hbr-probe)" "[헬퍼] (b) 재시도 한 번에 경고 주석이 하나가 아니다"
-assert_contains "$(cat "$_t/h.out")" "::warning title=harness build retry::hbr-probe attempt 1 failed (exit 1) — retrying" \
+assert_contains "$(cat "$_t/h.out")" "::warning title=harness build retry::[harness-build-retry] hbr-probe attempt 1 failed (exit 1) — retrying" \
   "[헬퍼] (b) 경고 주석의 모양이 다르다"
 assert_eq "1" "$(hbr_count "$_t/h.retries" "hbr-probe attempt 1 failed (exit 1) — retrying")" \
   "[헬퍼] (b) 재시도가 retries 파일에 그 한 줄로 남지 않았다"
@@ -249,13 +250,13 @@ assert_eq "7
 7" "$(cat "$_t/h.sleeps")" "[헬퍼] (c) 시도 사이에 HARNESS_BUILD_RETRY_DELAY(7) 초를 두 번 자야 한다 — 지연 변수를 안 읽나?"
 assert_eq "1" "$(hbr_gaveup "$_t/h.out" hbr-probe)" \
   "[헬퍼] (c) 세 번 실패에 포기 표지가 하나가 아니다 — 판정기가 끝내 받지 못한 거절을 회복된 것으로 읽는다"
-assert_contains "$(cat "$_t/h.out")" "::warning title=harness build retry exhausted::hbr-probe attempt 3 failed (exit 17) — giving up" \
+assert_contains "$(cat "$_t/h.out")" "::warning title=harness build retry exhausted::[harness-build-retry-exhausted] hbr-probe attempt 3 failed (exit 17) — giving up" \
   "[헬퍼] (c) 포기 표지의 모양이 다르다"
 
 # (d) 돌려주는 것은 **마지막** 시도의 코드다 — 첫 실패의 코드가 아니다. retries 줄은 UTC 시각으로 시작한다(로컬 재실행이 쌓여도 가른다).
 hbr_helper '17 18 19' 0
 assert_eq "19" "$(cat "$_t/h.rc")" "[헬퍼] (d) 마지막 시도의 종료코드(19)를 돌려주지 않는다"
-assert_contains "$(cat "$_t/h.out")" "hbr-probe attempt 3 failed (exit 19) — giving up" \
+assert_contains "$(cat "$_t/h.out")" "[harness-build-retry-exhausted] hbr-probe attempt 3 failed (exit 19) — giving up" \
   "[헬퍼] (d) 포기 표지가 마지막 시도의 종료코드(19)를 말하지 않는다"
 assert_eq "2" "$(grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z hbr-probe attempt [12] failed \(exit 1[78]\) ' "$_t/h.retries" 2>/dev/null || true)" \
   "[헬퍼] (d) retries 줄이 「UTC 시각 · 라벨 · 시도 · 종료코드」 모양이 아니다"
