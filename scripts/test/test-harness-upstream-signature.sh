@@ -8,14 +8,19 @@
 #   제품 실패 23 — 다시 돌려 덮으면 안 된다. 그래서 판정은 **좁다**: 거절 모양 AND 다운로드 맥락이 한 줄에 함께 있어야 한다.
 #   로그 만료 1: 32211733068(08-19 — API 가 HTTP 410) — 빈 로그는 「서명 없음」(1)이 아니라 판정 불가(2)다.
 #
-# 세 묶음 — 실제 줄은 그대로 옮겼다(gh 의 잡 · 스텝 · 시각 칸만 뺐다):
+# 묶음 — 실제 줄은 그대로 옮겼다(gh 의 잡 · 스텝 · 시각 칸만 뺐다):
 #   양성       인수인계 `positive-lines.txt` 의 줄 열(11-24 PR 실행의 429 포함) → 0, 그리고 맞은 줄을 찍는다.
+#              변형 양성(지어낸 줄 — 리뷰): 플러그인 요청의 꼬리 속성(`apply: false`) · 포털 앞문 `plugins.gradle.org` → 0.
+#   재시도     `build_with_retry` 를 실제로 불러 만든 표지(러너 꼴 `##[warning]…` · 헬퍼 그대로 둘 다): 재시도만 있고 포기가
+#              없으면 회복된 거절 → 1 · 포기가 있으면 → 0 · 접두 없는 닮은 줄은 표지가 아니다 → 0.
 #   음성       제품 실패 로그 23 개의 실제 줄 — `429 complete` · `(timeout 240s)` · `Fetching timeout` · `504 kB/s` 처럼 낱말만
 #              닮은 줄 포함 — · 상류 로그의 성공 줄 · 제품 자신의 낱말(SDK 의 `Read timed out` · JDK 의 `Connection reset` ·
 #              node 의 `read ECONNRESET`) → 1.
 #              근접 대조군(지어낸 줄): 실제 양성 줄에서 **한 부분만** 바꾼 줄 — 거절 모양을 지우거나(429 → 401 · 504 → 404) 맥락을
 #              하네스 자신의 레지스트리로 바꾸거나(mvn-repo · mvn-repo-kotlin · satis-web · 컴포즈 서비스 keycloak) 서명의 꼬리를 바꾼다
-#              (해석 출처 절을 뗀 플러그인 문구 · `(present, but unavailable)`) — → 1. 넓어진 서명은 여기서 운다.
+#              (해석 출처 절을 뗀 플러그인 문구 · `(present, but unavailable)`) · 이 저장소 자신의 좌표(`io.github.xzawed:`) ·
+#              포털 호스트는 두고 거절 모양만 뺀 줄 — → 1. 넓어진 서명은 여기서 운다.
+#   gh 꼴      `--log-failed` 꼴(잡 · 스텝 · BOM · 시각): 묻힌 거절 · **맞은 줄에도** BOM · 서명 글이 잡 · 스텝 칸에만 있으면 → 1.
 #   판정 불가  인자 없음 · 둘 · 없는 파일 · 디렉터리 · 빈 로그 · 공백만 → 2.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -62,6 +67,27 @@ done <<EOF
 $HUS_POS
 EOF
 assert_eq "10" "$_np" "[양성] 양성 줄이 10 개가 아니다 — 목록이 깨졌나?"
+
+# ── 변형 양성 — **지어낸 줄이다**(독립 리뷰가 짚은 Gradle 의 다른 꼴 — 우리 로그에서 잰 줄이 아니다): 플러그인 요청의 꼬리 속성
+#    (`, apply: false`) · 포털 앞문 `plugins.gradle.org` 의 `Could not GET` 과 DNS 실패(첫 요청은 앞문으로 간다 — 09-19 의 사슬은
+#    `Could not get resource 'https://plugins.gradle.org/m2/…'` 에서 시작했다). 줄마다 0 이고 그 줄을 찍는다.
+HUS_VAR="$(cat <<'EOF'
+#15 23.70 Plugin [id: 'com.vanniktech.maven.publish', version: '0.37.0', apply: false] was not found in any of the following sources:
+                > Could not GET 'https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugin/2.2.20/kotlin-gradle-plugin-2.2.20.pom'.
+                   > plugins.gradle.org: Try again
+EOF
+)"
+_nv=0
+while IFS= read -r _l; do
+  [ -n "$_l" ] || continue
+  _nv=$((_nv + 1))
+  hus_line "$_l"
+  assert_eq "0" "$(hus_rc)" "[변형 양성] 상류 다운로드 거절의 다른 꼴을 놓쳤다(종료코드): $_l"
+  assert_contains "$(cat "$_t/out")" "$(hus_trim "$_l")" "[변형 양성] 맞은 줄을 찍지 않았다: $_l"
+done <<EOF
+$HUS_VAR
+EOF
+assert_eq "3" "$_nv" "[변형 양성] 변형 양성이 3 개가 아니다 — 목록이 깨졌나?"
 
 # ── 음성 — 제품 실패 로그 23 개(2026-09-08 ~ 11-06)의 실제 줄 · 상류 로그(09-19 · 11-08)의 성공 줄 · 제품 자신의 낱말.
 #    k6 의 `429 complete`/`504 complete` · 빌드킷 시각 `.429` 가 붙은 다운로드 · Central 에서 받은 `504 kB/s` · 이름이 failureaccess ·
@@ -111,6 +137,10 @@ assert_eq "20" "$_nn" "[음성] 음성 줄이 20 개가 아니다 — 목록이 
 #      와 있다는 뜻이다(maven-resolver-api 1.9.27 `ArtifactResolutionException` 의 문자열 `present` · `, but unavailable` · `absent`).
 #      하네스가 스테이징한 BOM(`harness/install/consume/java-app-pom.xml` 의 import)을 central 로 푼 출처 설정 실패다 — 다시 돌려도
 #      같다(`java-run.sh` 가 같은 `_remote.repositories` 출처를 단언한다). `(absent)` 는 로컬에 없는 경우만이다.
+#    끝의 넷(리뷰 D · F): 이 저장소 자신의 좌표가 `(absent)` 로 Central 에 없다(스테이징한 판 · 아직 안 낸 판 — 참이고 다시 돌려도
+#    같다) · 포털 호스트(`plugins-artifacts.gradle.org` · `plugins.gradle.org`)는 두고 거절 모양(`Could not GET` · `: Try again`)만
+#    받는 동사로 바꾼 두 줄 · 남의 좌표(junit-bom)를 하네스 자신의 레지스트리에서 찾은 줄(설정 실패 — D 의 제외가 우리 좌표를 덮어
+#    위 mvn-repo 줄이 central 맥락을 더는 고정하지 못해서 남의 좌표로 다시 고정한다).
 #    서명이 둘 중 하나만 보게 넓어지면 여기서 운다.
 HUS_NEAR="$(cat <<'EOF'
 #15 32.80 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk:pom:1.0.0 (absent): Could not transfer artifact io.github.xzawed:keycloak-sdk:pom:1.0.0 from/to mvn-repo (http://mvn-repo/): status code: 429, reason phrase: Too Many Requests (429) @ line 84, column 19
@@ -122,6 +152,10 @@ HUS_NEAR="$(cat <<'EOF'
 #17 25.83     Failed to download psr/clock from dist: The "https://api.github.com/repos/php-fig/clock/zipball/e41a24703d4560fd0acb709162f73b8adfc3aa0d" file could not be downloaded (HTTP/2 404 )
 #15 23.70 Plugin [id: 'com.vanniktech.maven.publish', version: '0.37.0'] was not found
 #15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 (present, but unavailable): Could not find artifact io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19
+#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 (absent): Could not find artifact io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19
+                > Downloading 'https://plugins-artifacts.gradle.org/org.jetbrains.kotlin/kotlin-gradle-plugin/2.2.20/b9c3fd2ebd5484d60c5fe0db7aa10878303eeddfc93f942f735c07ba998187cc/kotlin-gradle-plugin-2.2.20.pom'.
+                > Downloading 'https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugin/2.2.20/kotlin-gradle-plugin-2.2.20.pom'.
+#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Could not find artifact org.junit:junit-bom:pom:6.1.3 in mvn-repo (http://mvn-repo/) @ line 84, column 19
 EOF
 )"
 _nm=0
@@ -134,10 +168,11 @@ $(cat "$_t/out" "$_t/err")"
 done <<EOF
 $HUS_NEAR
 EOF
-assert_eq "9" "$_nm" "[근접] 근접 대조군이 9 개가 아니다 — 목록이 깨졌나?"
+assert_eq "13" "$_nm" "[근접] 근접 대조군이 13 개가 아니다 — 목록이 깨졌나?"
 
 # ── gh `--log-failed` 꼴(잡 <TAB> 스텝 <TAB> BOM·시각 본문) — 첫 줄도 끝 줄도 아닌 자리에 묻힌 거절 하나를 찾고, 찍는 줄에는
-#    gh 의 칸을 남기지 않는다(첫 줄 · 끝 줄만 보는 판정은 한 줄짜리 양성으로는 안 잡힌다).
+#    gh 의 칸을 남기지 않는다(첫 줄 · 끝 줄만 보는 판정은 한 줄짜리 양성으로는 안 잡힌다). BOM 은 첫 줄과 **맞는 줄(셋째)**에
+#    붙인다 — 맞는 줄에 없으면 판정기가 BOM 을 안 떼도 시각이 떨어져 이 묶음이 초록이다(리뷰 E).
 cat > "$_t/body.txt" <<'EOF'
 Current runner version: '2.338.2'
 running (0m06.0s), 10/10 VUs, 429 complete and 0 interrupted iterations
@@ -145,7 +180,7 @@ running (0m06.0s), 10/10 VUs, 429 complete and 0 interrupted iterations
 [2026-09-12 03:13:51] wait_healthy: waiting for http://localhost:9000/health/ready (timeout 240s)
 ##[error]Process completed with exit code 1.
 EOF
-awk '{ printf "score-all\tUNKNOWN STEP\t%s2026-11-22T03:%02d:12.2903984Z %s\n", (NR == 1 ? "\357\273\277" : ""), NR, $0 }' \
+awk '{ printf "score-all\tUNKNOWN STEP\t%s2026-11-22T03:%02d:12.2903984Z %s\n", (NR == 1 || NR == 3 ? "\357\273\277" : ""), NR, $0 }' \
   "$_t/body.txt" > "$_t/gh.log"
 hus "$_t/gh.log"
 assert_eq "0" "$(hus_rc)" "[gh 꼴] 셋째 줄의 거절을 놓쳤다: $(cat "$_t/out" "$_t/err")"
@@ -157,6 +192,48 @@ assert_not_contains "$(cat "$_t/out")" "2026-11-22T03:" "[gh 꼴] 찍은 줄에 
 grep -v 'Plugin \[id:' "$_t/gh.log" > "$_t/gh-neg.log"
 hus "$_t/gh-neg.log"
 assert_eq "1" "$(hus_rc)" "[gh 꼴] 거절 줄을 뺀 로그가 1 이 아니다: $(cat "$_t/out" "$_t/err")"
+# 서명 글이 잡 · 스텝 칸(1 · 2 칸)에만 있고 본문은 평범하면 거절이 아니다 — 판정은 본문만 본다(칸을 떼는 줄이 빠지면 여기서 운다).
+printf '%s\t%s\t%s\n' "Could not GET 'https://plugins-artifacts.gradle.org/x.pom'" 'plugins.gradle.org: Try again' \
+  '2026-11-22T03:09:12.2903984Z Process started' > "$_t/gh-cols.log"
+hus "$_t/gh-cols.log"
+assert_eq "1" "$(hus_rc)" "[gh 꼴] 잡 · 스텝 칸에만 있는 서명 글을 거절로 판정했다: $(cat "$_t/out" "$_t/err")"
+
+# ── 빌드 재시도 표지 — `build_with_retry` 를 **실제로 불러** 표지를 만든다(헬퍼의 문구가 갈리면 여기서 운다). 러너는 스텝이 찍은
+#    `::warning …::<글>` 을 로그에 `##[warning]<글>` 로 남긴다(실측 — 판정기 머리) — 헬퍼가 찍은 그대로와 그 꼴을 둘 다 먹인다.
+#    거절 줄은 실제 양성(central-absent)이다. 재시도만 있고 포기가 없으면 회복된 거절 → 1(재실행이 흔들리는 제품 실패를 덮지
+#    않게 — 리뷰 A) · 포기가 있으면 예전 규칙 → 0 · 접두 없는 닮은 줄(지어낸 줄)은 표지가 아니다 → 0.
+# hus_markers <실패할 횟수> — 1 이면 한 번 실패 뒤 회복(재시도 표지 하나), 3 이면 포기(재시도 둘 · 포기 하나).
+#   결과: $_t/mk.raw(헬퍼가 찍은 그대로) · $_t/mk.rendered(러너 꼴)
+hus_markers() {
+  rm -f "$_t/mk.n"
+  (
+    . "$ROOT/harness/lib/build-retry.sh"
+    HARNESS_BUILD_RETRY_DELAY=0
+    export HARNESS_BUILD_RETRY_DELAY
+    build_with_retry hus-probe "$_t/mk.retries" \
+      sh -c 'n=$(( $(cat "$1" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$1"; [ "$n" -gt "$2" ]' _ "$_t/mk.n" "$1"
+  ) < /dev/null > "$_t/mk.raw" 2>&1 || true
+  sed 's/^::warning title=[^:]*::/##[warning]/' "$_t/mk.raw" > "$_t/mk.rendered"
+}
+HUS_REFUSAL='#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Could not find artifact org.junit:junit-bom:pom:6.1.3 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19'
+# hus_retry_case <표지 파일> <기대 종료코드> <설명> — 거절 줄 뒤에 그 표지를 이어 붙인 로그를 판정한다.
+hus_retry_case() {
+  { printf '%s\n' "$HUS_REFUSAL"; cat "$1"; } > "$_t/retry.log"
+  hus "$_t/retry.log"
+  assert_eq "$2" "$(hus_rc)" "[재시도] $3: $(cat "$_t/out" "$_t/err")"
+}
+hus_markers 1
+assert_eq "1 0" "$(grep -cF -- '— retrying' "$_t/mk.raw" || true) $(grep -cF -- '— giving up' "$_t/mk.raw" || true)" \
+  "[재시도] 한 번 실패 뒤 회복한 헬퍼가 재시도 표지 하나 · 포기 표지 0 을 찍지 않았다: $(cat "$_t/mk.raw")"
+hus_retry_case "$_t/mk.rendered" 1 "회복(러너 꼴 ##[warning]) — 회복된 거절인데 다시 돌린다"
+hus_retry_case "$_t/mk.raw" 1 "회복(헬퍼가 찍은 그대로) — 회복된 거절인데 다시 돌린다"
+hus_markers 3
+assert_eq "2 1" "$(grep -cF -- '— retrying' "$_t/mk.raw" || true) $(grep -cF -- '— giving up' "$_t/mk.raw" || true)" \
+  "[재시도] 세 번 실패한 헬퍼가 재시도 표지 둘 · 포기 표지 하나를 찍지 않았다: $(cat "$_t/mk.raw")"
+hus_retry_case "$_t/mk.rendered" 0 "포기(러너 꼴 ##[warning]) — 끝내 받지 못한 거절을 회복된 것으로 봤다"
+hus_retry_case "$_t/mk.raw" 0 "포기(헬퍼가 찍은 그대로) — 끝내 받지 못한 거절을 회복된 것으로 봤다"
+printf '%s\n' 'hus-probe attempt 1 failed (exit 1) — retrying' > "$_t/mk.bare"
+hus_retry_case "$_t/mk.bare" 0 "접두 없는 닮은 줄을 재시도 표지로 셌다 — 제품 출력이 같은 글을 찍으면 거절이 가려진다"
 
 # ── 판정 불가(2) — 「서명 없음」(1)과 갈려야 한다. 만료된 로그(API 410)는 gh 가 아무것도 쓰지 않아 빈 파일로 온다.
 #    인자가 둘이면 첫 파일을 판정하지 않는다 — 그래서 첫 파일은 양성이다(무시하고 판정하면 0 이 나와 운다).

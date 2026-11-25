@@ -14,8 +14,11 @@ name: harness-rerun
 # 그 조건에서 건너뛴다(고리 없음). PR · push · 수동 harness 실행은 건드리지 않는다(민 사람이 본다).
 #
 # nightly-alert 와 맞물림: attempt 1 의 실패가 이미 이슈(`🌙 야간 실패 — harness`)를 연다. attempt 2 도 같은 예약 실행이라
-# nightly-alert 가 다시 받는다 — 초록이면 그 이슈를 닫고, 빨강이면 덧붙인다. ⚠️ 예약 실행 최근 100 회에 재실행(attempt 2)이
-# 하나도 없어 이 맞물림은 아직 잰 적이 없다 — 병합 뒤 첫 재실행의 nightly-alert 실행으로 잰다.
+# nightly-alert 가 다시 받으면 — 초록이면 그 이슈를 닫고, 빨강이면 덧붙인다.
+# ⚠️ **잰 적 없는 위험**: 재실행을 `GITHUB_TOKEN` 으로 요청한다. GitHub 의 재귀 방지 규칙(GITHUB_TOKEN 이 일으킨 이벤트는 새
+# 워크플로 실행을 만들지 않는다)에 걸리면 attempt 2 의 완료가 nightly-alert 의 `workflow_run` 을 깨우지 못하고, 이슈는 다음
+# 초록 밤까지 열려 있다. 예약 실행 최근 100 회에 재실행이 하나도 없어 잰 적이 없다 — 병합 뒤 `dry_run=false` 수동 실행으로
+# 잰다. 깨우지 못하면 대안은 App 토큰이다.
 #
 # ⚠️ **자기 실패는 못 잡는다.** 이 워크플로가 죽으면(로그를 못 받음 · 판정 불가 2 · `gh` 실패) 알릴 주체가 없다 —
 # nightly-alert 는 예약 · main push 실행만 보고, `workflow_run` 은 자기를 감시할 수 없다. 남는 구멍이고, 숨기지 않고 여기

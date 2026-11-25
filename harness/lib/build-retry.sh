@@ -11,6 +11,7 @@
 #   그대로** 돌려준다(성공이면 0) — 호출 자리의 기존 실패 처리가 세 번 실패를 그대로 받는다.
 #   재시도할 실패마다 GitHub Actions 경고 주석 하나(stdout)와 retries-file 한 줄(UTC 시각 · label · 시도 · 종료코드)을
 #   남긴다 — 그 파일을 업로드되는 신호 디렉터리에 두면 재시도가 아티팩트에 보인다. 첫 시도에 성공하면 아무것도 쓰지 않는다.
+#   세 번째 실패에는 포기 표지(제목 `harness build retry exhausted` · 끝말 `— giving up`) 하나만 stdout 에 찍는다(retries-file 엔 안 쓴다).
 #   label 은 빌드하는 이미지 · 서비스 이름이다(`install-consume-go` · `app-$L`).
 #
 # ⚠️ **빌드만 감싼다 — 기동(`up`)은 감싸지 않는다.** `docker compose … up -d --build X` 자리는
@@ -25,7 +26,12 @@ build_with_retry() {
     rc=0
     "$@" || rc=$?
     [ "$rc" -eq 0 ] && return 0
-    [ "$attempt" -ge 3 ] && return "$rc"
+    if [ "$attempt" -ge 3 ]; then
+      # 포기 표지 — 재시도 주석과 제목 · 끝말이 다르다. scripts/harness-upstream-signature.mjs 가 이것으로 「재시도로 회복된 거절」과
+      # 「끝내 받지 못한 거절」을 가른다(러너는 로그에 `##[warning]<글>` 만 남겨 제목이 안 보일 수 있다 — 끝말로 가른다).
+      printf '::warning title=harness build retry exhausted::%s attempt %s failed (exit %s) — giving up\n' "$label" "$attempt" "$rc"
+      return "$rc"
+    fi
     printf '::warning title=harness build retry::%s attempt %s failed (exit %s) — retrying\n' "$label" "$attempt" "$rc"
     # 기록 · 지연이 실패해도 재시도는 계속한다 — 호출자가 `set -e` 여도(run.sh) 여기서 끊기지 않게.
     { mkdir -p "$(dirname "$retries_file")" \
