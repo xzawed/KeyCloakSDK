@@ -122,8 +122,9 @@ internal fun holdsUnpairedSurrogate(json: ByteArray): Boolean {
  * 없는 자리는 [io.github.xzawed.keycloak.admin.UnusableTokenResponse] 다: 해제기(resteasy.allowGzip)가 풀지 못한 content-coding(잘린
  * gzip 의 EOFException 은 끊긴 연결과 가를 수 없어 그대로 전송 실패 — 등록부 판정 Q1) · 엄격한 UTF-8 아님 · 짝 없는 서로게이트 이스케이프
  * · 0x00(UTF-8 JSON 에는 없다 — BOM 없는 UTF-16 을 Jackson 이 짐작해 받아들였다) · 쓸 수 있는 access_token 없음([usable]). 그 사이 —
- * access_token 보다 먼저 — 비어 있지 않은 문자열 error 를 실은 본문은 성공 상태의 OAuth 오류 응답이다([OAuthErrorTokenResponse] — 함께 실린
- * 토큰은 쓰지 않는다, 코드는 [sent] 와 겹치지 않을 때만 싣는다 — 등록부 auth-2xx-error-code-divergent).
+ * access_token 보다 먼저 — null 도 "" 도 아닌 error 를 실은 본문([namesOAuthError] — 문자열이 아니어도)은 성공 상태의 OAuth 오류 응답이다
+ * ([OAuthErrorTokenResponse] — 함께 실린 토큰은 쓰지 않는다, 코드는 문자열이고 [sent] 와 겹치지 않을 때만 싣는다 — 등록부
+ * auth-2xx-error-code-divergent · token-response-residual-divergence A).
  * ⚠️ 가드의 파일이 아니라 여기 있는 까닭: 그 파일은 통합 전용 경계 커버리지의 경계 파일이고 이 거부 갈래들은 실 Keycloak 이 닿지 않는다
  * (2026-11-11 — 가드에 두자 bodies 78.7% 로 하한 79.2 아래였다). Java 는 가드 파일이 경계 밖이라 그 자리에 있다.
  */
@@ -156,10 +157,9 @@ internal fun judgedTokenBody(
         release()
         throw UnusableTokenResponse(status, unreadable, null)
     }
-    val error = oauthErrorValue(body)
-    if (error != null) {
+    if (namesOAuthError(body)) {
         release()
-        throw OAuthErrorTokenResponse(status, OAuthErrorCode.carried(error, sent))
+        throw OAuthErrorTokenResponse(status, OAuthErrorCode.carried(oauthErrorValue(body), sent))
     }
     if (!usable(body)) {
         release()
@@ -277,11 +277,13 @@ internal fun readWithinCap(input: InputStream): ByteArray? {
  * 운송은 내용 코딩을 요청하지도 풀지도 않으므로 센 바이트가 받은 바이트다. 그 본문을 읽는 동안 연결에서 받는 틀(청크 머리·트레일러
  * 포함)은 상한의 8 배까지다(`BoundedTransport.wireBounded`).
  *
- * [strict] 이면 **2xx 본문은 UTF-8 이어야 한다** — 아니면 [ResponseNotUtf8Exception](끝까지 온 응답을 쓸 수 없다 — 호출부가 그 레인의 인증
- * 오류로 바꾼다). 토큰(세 그랜트)·introspection 이 그렇다 — 그 2xx 본문은 JSON 이고 RFC 8259 §8.1 은 UTF-8 이다. ⚠️ Nimbus 와 같은
+ * [strict] 이면 **200 본문은 UTF-8 이어야 한다** — 아니면 [ResponseNotUtf8Exception](끝까지 온 응답을 쓸 수 없다 — 호출부가 그 레인의 인증
+ * 오류로 바꾼다). 토큰(세 그랜트)·introspection 이 그렇다 — 그 200 본문은 JSON 이고 RFC 8259 §8.1 은 UTF-8 이다. ⚠️ Nimbus 와 같은
  * 디코딩(`asNimbusReadsIt`)은 잘못된 바이트를 U+FFFD 로 바꿔 **받아들였다** — IdP 가 내지 않은 토큰·바뀐 클레임이 성공으로 나갔다(실측 —
- * `TokenResponseClassTest`). 오류 상태의 본문은 보지 않는다(판정은 상태가 한다). 선언된 charset 도 보지 않는다(RFC 8259 §11). logout 은
- * 본문을 쓰지 않으므로 strict 가 아니다. 유효한 UTF-8 은 지금과 같은 문자열이다.
+ * `TokenResponseClassTest`). 오류 상태의 본문은 보지 않는다(판정은 상태가 한다) — 200 이 아닌 2xx 도 오류 상태라 같은 본문의 400 과 같은
+ * 판정이다(등록부 token-response-residual-divergence C — 예전에는 201 의 잘못된 UTF-8 이 「Malformed auth response」 였고 400 은 그 본문의
+ * 코드를 실었다). 선언된 charset 도 보지 않는다(RFC 8259 §11). logout 은 본문을 쓰지 않으므로 strict 가 아니다. 유효한 UTF-8 은 지금과
+ * 같은 문자열이다.
  */
 internal class CappedResponseSender(
     private val what: String,
@@ -307,8 +309,8 @@ internal class CappedResponseSender(
     ): HTTPResponse {
         val bytes = readWithinCap(body) ?: throw ResponseTooLargeException(what)
         val status = head.statusLine.statusCode
-        if (strict && status in 200..299 && !isUtf8(bytes)) throw ResponseNotUtf8Exception(what)
-        if (strict && status in 200..299 && holdsUnpairedSurrogate(bytes)) {
+        if (strict && status == HTTPResponse.SC_OK && !isUtf8(bytes)) throw ResponseNotUtf8Exception(what)
+        if (strict && status == HTTPResponse.SC_OK && holdsUnpairedSurrogate(bytes)) {
             throw ResponseNotUtf8Exception(what, "holds an unpaired surrogate escape")
         }
         val response = HTTPResponse(status)

@@ -140,7 +140,7 @@ The guard is `scripts/test/test-security-defaults.sh`, which inspects the code, 
 
 ## OAuth error code
 
-⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A 200 token or introspection response whose `error` is a non-empty string fails like a 400 carrying it; nothing in it is used.** Every lane (grants, introspection, token provider, admin self-grant) puts it in the code field at any status, empty when none was sent — except .NET's reason phrase (registry `dotnet-oauth-error-reason-phrase`). Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error` · `error.?status.?(oauth|carries)`.
+⚠️ **An auth error carries the IdP's OAuth `error` — field or message — only as `[a-z_]{1,64}` that overlaps no non-empty secret the request sent (ASCII case ignored), in all nine** — an echoing IdP put the secret there. **A 200 token or introspection response whose `error` is not null or `""` fails like a 400 carrying it; nothing in it is used.** Every lane (grants, introspection, token provider, admin self-grant) puts it in the code field at any status, empty when none was sent — except .NET's reason phrase (registry `dotnet-oauth-error-reason-phrase`). Tests: `OAuthErrorCodeEcho*` · `*oauth[-_]error[-_]code[-_]echo*` · names matching `success.?status.?oauth.?error` · `error.?status.?(oauth|carries)`.
 
 ## Token kind
 

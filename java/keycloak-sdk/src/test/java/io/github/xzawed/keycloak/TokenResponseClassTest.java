@@ -684,13 +684,29 @@ class TokenResponseClassTest {
   }
 
   /**
-   * 대조 — error 가 비어 있지 않은 JSON 문자열이 아니면(숫자 · 객체 · 배열 · 불리언 · null · "") 지금처럼 본문의 나머지가 판정한다. auth 레인은
-   * 토큰을 쓰고 활성으로 읽는다. admin 의 결합(keycloak-admin-client 의 AccessTokenResponse 는 문자열 error 칸을 가진다 — TokenManager 는
-   * 그것을 읽지 않는다)은 스칼라를 받고 객체 · 배열에서 실패한다 — 그대로다. JSON 객체가 아닌 본문도 판정하지 않는다.
+   * error 가 있고 null 도 "" 도 아니면 — 숫자 · 객체 · 배열 · 불리언도 — 그 응답은 오류 응답이다: 같은 본문의 400 처럼 실패하고, 코드는
+   * 싣지 않으며(문자열이 아니다) 본문에서 아무것도 쓰지 않는다(등록부 token-response-residual-divergence A). 예전에는 대조군이었다 — auth
+   * 레인은 토큰을 쓰고 활성으로 읽었고, admin 의 결합은 스칼라를 받아 그 토큰으로 요청을 보냈다(객체 · 배열은 결합이 실패했다). 대조 —
+   * null 과 "" 는 지금처럼 본문의 나머지가 판정한다. JSON 객체가 아닌 본문도 판정하지 않는다.
    */
-  @Test void successStatusOAuthError_onlyANonEmptyStringCounts() {
+  @Test void successStatusOAuthError_anyErrorButNullOrEmptyCounts() {
     List<String> wrong = new ArrayList<>();
-    for (String value : new String[] {"12345", "{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]", "true", "null", "\"\""}) {
+    for (String value : new String[] {"12345", "{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]", "true"}) {
+      tokens(json(200, "{\"error\":" + value + ",\"access_token\":\"AT-ok\",\"token_type\":\"Bearer\",\"expires_in\":300}"));
+      Outcome cc = call(CC);
+      expect("S1 error " + value, cc, KeycloakAuthException.class, "Client credentials failed: HTTP 200", wrong);
+      expectCode("S1 error " + value, cc, null, wrong);
+      introspectReply = json(200, "{\"error\":" + value + ",\"active\":true,\"username\":\"svc\"}");
+      Outcome in = call(IN);
+      expect("IN error " + value, in, KeycloakAuthException.class, "Introspection failed: HTTP 200", wrong);
+      expectCode("IN error " + value, in, null, wrong);
+      tokens(json(200, "{\"error\":" + value + ",\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300}"));
+      Outcome admin = call(ADMIN);
+      expect("S5 error " + value, admin, KeycloakAuthException.class, "admin token request failed: HTTP 200", wrong);
+      expectCode("S5 error " + value, admin, null, wrong);
+      if (adminHits() != 0) wrong.add("S5 error " + value + ": admin 요청이 나갔다 — " + adminHits());
+    }
+    for (String value : new String[] {"null", "\"\""}) {
       tokens(json(200, "{\"error\":" + value + ",\"access_token\":\"AT-ok\",\"token_type\":\"Bearer\",\"expires_in\":300}"));
       Outcome cc = call(CC);
       if (!"AT-ok".equals(cc.value())) wrong.add("S1 error " + value + ": 토큰을 써야 한다 — " + cc);
@@ -699,9 +715,7 @@ class TokenResponseClassTest {
       if (!"svc".equals(in.value())) wrong.add("IN error " + value + ": 활성으로 읽어야 한다 — " + in);
       tokens(json(200, "{\"error\":" + value + ",\"access_token\":\"good\",\"token_type\":\"Bearer\",\"expires_in\":300}"));
       Outcome admin = call(ADMIN);
-      if (value.startsWith("{") || value.startsWith("[")) {
-        expect("S5 error " + value, admin, KeycloakAuthException.class, adminAuth(200), wrong);
-      } else if (!"alice".equals(admin.value()) || adminHits() != 1) {
+      if (!"alice".equals(admin.value()) || adminHits() != 1) {
         wrong.add("S5 error " + value + ": 토큰을 써야 한다 — " + admin + " · admin " + adminHits());
       }
     }

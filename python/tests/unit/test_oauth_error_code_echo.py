@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import http.client
 import json
 import threading
 import traceback
@@ -460,3 +461,272 @@ async def test_a_redirect_error_status_carries_the_oauth_error_and_is_never_foll
     print(line)
     assert not [r for r in requests if r.endswith(" " + REDIRECT_TARGET)], line
     assert code == "temporarily_unavailable", line
+
+
+# --- residual divergences (registry token-response-residual-divergence) ---------------------------
+# The targets: (A) a 200 whose `error` is present and neither null nor "" fails like a 400 carrying
+# it — the lane's error class, no code unless a string the echo filter lets through, nothing in the
+# body used (A1-A4 · B2); null and "" still succeed (A5 · A6). (C) a 2xx other than 200 gets the
+# verdict the lane gives a 400 with the same body — class and code; the message may differ only by
+# the status number (C1 ~ C2 · C3 ~ C4). Never asserted: which duplicated `error` an error status
+# echoes (B1 · B3 · B4 — RFC 8259 §4 leaves it open) and B5 (a 200 whose duplicated `error` is a
+# code, then "" — a parser differential the registry holds; `-s` prints its outcome class). The lane
+# is `<sync|aio>/<surface>`. The fake answers with the cell's exact bytes — no serializer, so a
+# duplicated key and an invalid UTF-8 sequence survive (a plain client reads them back first).
+
+_TOKEN_OK = b'"access_token":"AT-ok","token_type":"Bearer","expires_in":300'
+# 0xC3 opens a two-byte UTF-8 sequence that 0x28 cannot end
+_INVALID_UTF8 = b'{"error":"invalid_grant","error_description":"\xc3\x28"}'
+_Cell = tuple[int, bytes, bytes]  # status, token-lane body, introspection-lane body
+
+
+def _error_value_cell(x: bytes) -> _Cell:
+    return (
+        200,
+        b"{" + _TOKEN_OK + b',"error":' + x + b"}",
+        b'{"active":true,"username":"svc","error":' + x + b"}",
+    )
+
+
+def _both_lanes_cell(status: int, body: bytes) -> _Cell:
+    return status, body, body
+
+
+RESIDUAL_CELLS: dict[str, _Cell] = {
+    "A0": (200, b"{" + _TOKEN_OK + b"}", b'{"active":true,"username":"svc"}'),
+    "A1": _error_value_cell(b"123"),
+    "A2": _error_value_cell(b'{"a":1}'),
+    "A3": _error_value_cell(b'["x"]'),
+    "A4": _error_value_cell(b"true"),
+    "A5": _error_value_cell(b"null"),
+    "A6": _error_value_cell(b'""'),
+    "B1": _both_lanes_cell(400, b'{"error":"invalid_grant","error":"temporarily_unavailable"}'),
+    "B2": (
+        200,
+        b"{" + _TOKEN_OK + b',"error":"invalid_grant","error":"temporarily_unavailable"}',
+        b'{"active":true,"error":"invalid_grant","error":"temporarily_unavailable"}',
+    ),
+    "B3": _both_lanes_cell(400, b'{"error":"invalid_grant","error":123}'),
+    "B4": _both_lanes_cell(400, b'{"error":123,"error":"invalid_grant"}'),
+    "B5": (
+        200,
+        b"{" + _TOKEN_OK + b',"error":"invalid_grant","error":""}',
+        b'{"active":true,"error":"invalid_grant","error":""}',
+    ),
+    "C1": _both_lanes_cell(201, _INVALID_UTF8),
+    "C2": _both_lanes_cell(400, _INVALID_UTF8),
+    "C3": _both_lanes_cell(201, b"not json"),
+    "C4": _both_lanes_cell(400, b"not json"),
+}
+
+#: (A) the cells a token or introspection lane takes as success — no `error`, a null one, ""
+_SUCCEEDS = ("A0", "A5", "A6")
+#: (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated string
+#: one: the lane's error class; the code is pinned empty for the non-strings only
+_NAMES_AN_ERROR = ("A1", "A2", "A3", "A4", "B2")
+#: (C) a 2xx other than 200 beside the 400 with the same body
+_SAME_BODY = (("C1", "C2"), ("C3", "C4"))
+#: logout is no token or introspection response (python-keycloak takes 204 alone) — printed only
+_UNASSERTED_SURFACES = ("logout",)
+
+_Row = tuple[str, str, str]  # outcome, code, message
+
+
+@dataclass
+class _CellIdp:
+    """Answers every POST with the current cell (introspection body on `/token/introspect`, the
+    token body elsewhere) and the admin GET with 200 `{"id":"u1"}`, noting its Authorization and
+    counting it."""
+
+    url: str = ""
+    cell: _Cell = RESIDUAL_CELLS["A0"]
+    admin_authorization: list[str | None] = field(default_factory=list)
+    admin_requests: int = 0
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _cell_handler(idp: _CellIdp) -> type[BaseHTTPRequestHandler]:
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_args: Any) -> None:
+            pass
+
+        def _send(self, status: int, payload: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self) -> None:
+            if urlsplit(self.path).path != "/admin/realms/r/users/u1":
+                self._send(404, b"{}")
+                return
+            with idp.lock:
+                idp.admin_authorization.append(self.headers.get("Authorization"))
+                idp.admin_requests += 1
+            self._send(200, b'{"id":"u1","username":"svc"}')
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length:
+                self.rfile.read(length)
+            with idp.lock:
+                status, token_body, introspection_body = idp.cell
+            introspection = urlsplit(self.path).path.endswith("/token/introspect")
+            self._send(status, introspection_body if introspection else token_body)
+
+    return Handler
+
+
+@contextlib.contextmanager
+def _cell_idp() -> Iterator[_CellIdp]:
+    idp = _CellIdp()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _cell_handler(idp))
+    idp.url = f"http://127.0.0.1:{server.server_address[1]}"
+    threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
+    try:
+        yield idp
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _read_back(url: str, path: str, status: int, body: bytes) -> str | None:
+    """`None` when a plain HTTP client reads back exactly the status and bytes the cell holds for
+    `path` — else what differs (never the bytes): the instrument the cells stand on."""
+    parts = urlsplit(url)
+    conn = http.client.HTTPConnection(parts.hostname or "127.0.0.1", parts.port, timeout=5)
+    try:
+        conn.request("POST", f"/realms/r/protocol/openid-connect/{path}", body=b"")
+        resp = conn.getresponse()
+        same = resp.read() == body
+    finally:
+        conn.close()
+    if resp.status == status and same:
+        return None
+    return f"fake {path}: status {resp.status}, bytes {'equal' if same else 'differ'}"
+
+
+async def _recorded(
+    lane: str, url: str, act: Callable[[Any], Any]
+) -> tuple[Any, BaseException | None]:
+    """`_attempt` on a fresh client, but nothing escapes it — whatever is raised is the row."""
+    cfg = KeycloakConfig(server_url=url, realm="r", client_id="c", client_secret=SECRET)
+    try:
+        if lane == "sync":
+            with KeycloakClient.create(cfg) as kc:
+                result = act(kc)
+        else:
+            async with AsyncKeycloakClient.create(cfg) as akc:
+                result = await act(akc)
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:  # record-only: an unexpected type is a finding, not a crash
+        return None, exc
+    return result, None
+
+
+def _printable(text: str) -> str:
+    """Every character outside printable ASCII as `\\u{XXXX}` — one line stays one line."""
+    return "".join(ch if " " <= ch <= "~" else f"\\u{{{ord(ch):X}}}" for ch in text)
+
+
+def _class_of(err: BaseException) -> str:
+    kind = type(err)
+    sdk = kind.__module__.startswith("keycloak_sdk")
+    return kind.__name__ if sdk else f"{kind.__module__}.{kind.__qualname__}"
+
+
+def _code_of(err: BaseException) -> str:
+    if not isinstance(err, KeycloakAuthError):
+        return "n/a"
+    return "null" if err.error is None else f'"{_printable(str(err.error))}"'
+
+
+def _success(surface: str, result: Any) -> str:
+    if surface == "introspect":
+        return f"active={json.dumps(getattr(result, 'active', result))}"
+    if surface == "logout":
+        return f"returned {result!r}"
+    return f"access_token={getattr(result, 'access_token', result)}"
+
+
+def _residual_row(
+    surface: str, idp: _CellIdp, result: Any, err: BaseException | None
+) -> tuple[str, str, str]:
+    """(outcome, code, message) — the admin surface is SUCCESS only when its request went out."""
+    with idp.lock:
+        sent = list(idp.admin_authorization)
+    if surface == "admin" and sent:
+        call = "ok" if err is None else f"{_class_of(err)}: {err}"
+        outcome = "SUCCESS" if sent[0] == "Bearer AT-ok" else "SENT-WITH-OTHER-AUTHORIZATION"
+        return outcome, "-", f"admin request sent, Authorization={sent[0]}; call={call}"
+    if err is not None:
+        return _class_of(err), _code_of(err), str(err)
+    if surface == "admin":
+        return "NO-REQUEST-NO-ERROR", "-", ""
+    return "SUCCESS", "-", _success(surface, result)
+
+
+def _status_blind(message: str, status: int) -> str:
+    """The message with its status number named alike — (C) lets the message differ by it alone."""
+    return message.replace(f"HTTP {status}", "HTTP <status>")
+
+
+def _residual_wrong(lane: str, rows: dict[str, _Row]) -> list[str]:
+    """Each cell of one lane that misses its target (A · B2 · C) — none: the lane meets them."""
+    wrong = [
+        f"{lane} {cell}: {rows[cell]} -- wants SUCCESS"
+        for cell in _SUCCEEDS
+        if rows[cell][0] != "SUCCESS"
+    ]
+    for cell in _NAMES_AN_ERROR:
+        outcome, code, _ = rows[cell]
+        if outcome != "KeycloakAuthError" or (cell != "B2" and code != "null"):
+            wrong.append(f"{lane} {cell}: {rows[cell]} -- wants KeycloakAuthError, no code")
+    for created, refused in _SAME_BODY:
+        got, want = rows[created], rows[refused]
+        blind = (_status_blind(got[2], 201), _status_blind(want[2], 400))
+        if got[:2] != want[:2] or blind[0] != blind[1]:
+            wrong.append(f"{lane} {created} {got} != {refused} {want}")
+    return wrong
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_residual_divergence_cells_meet_their_targets(lane: str) -> None:
+    """Holds every asserted surface to (A) · (B2) · (C) above — a token or introspection lane, and
+    the admin self-grant (no admin request unless it succeeds). The cells' text is the assertion's
+    message alone; only B5 prints — its outcome class and whether anything in the body was used,
+    never a code or a message (CodeQL's clear-text-logging heuristic flags a line built from
+    `KeycloakAuthError.error`)."""
+    surfaces = [*((name, act) for name, (act, _) in SURFACES.items()), ("admin", _admin_get)]
+    wrong: list[str] = []
+    b5: list[str] = []
+    with _cell_idp() as idp:
+        for cell, answer in RESIDUAL_CELLS.items():
+            with idp.lock:
+                idp.cell = answer
+            for path, body in (("token", answer[1]), ("token/introspect", answer[2])):
+                differs = _read_back(idp.url, path, answer[0], body)
+                if differs is not None:
+                    wrong.append(f"{cell} {differs}")
+        for surface, act in surfaces:
+            rows: dict[str, _Row] = {}
+            for cell, answer in RESIDUAL_CELLS.items():
+                with idp.lock:
+                    idp.cell = answer
+                    idp.admin_authorization.clear()
+                    idp.admin_requests = 0
+                result, err = await _recorded(lane, idp.url, act)
+                rows[cell] = _residual_row(surface, idp, result, err)
+                if cell == "B5":
+                    with idp.lock:
+                        used = idp.admin_requests > 0 if surface == "admin" else err is None
+                    shown = "SUCCESS" if used else "NO-ERROR" if err is None else _class_of(err)
+                    b5.append(f"B5|python|{lane}/{surface}|{shown}|used={used}")
+            if surface not in _UNASSERTED_SURFACES:
+                wrong += _residual_wrong(f"{lane}/{surface}", rows)
+    print("", *b5, sep="\n", flush=True)
+    assert not wrong, f"{len(wrong)} cells:\n" + "\n".join(wrong)

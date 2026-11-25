@@ -80,8 +80,9 @@ module KeycloakSdk
     # A response that arrived but cannot be read is an AuthError — a 200 is judged by `TokenResponse`, any other status
     # by the status check below: success is HTTP 200 alone (the SDK's rule — RFC 7662 §2.2 names no status, its examples
     # and Keycloak answer 200 — another 2xx is an error status too, registry
-    # token-success-status-range-divergent; it was `success?`, any 2xx). A 200 whose body carries an OAuth `error`
-    # fails like an error status, before `active` is read. Either carries the code unless it overlaps the client secret
+    # token-success-status-range-divergent; it was `success?`, any 2xx). A 200 whose body names an OAuth `error` (any
+    # but null or "" — `TokenResponse.names_error?`) fails like an error status, before `active` is read. Either carries
+    # the code (a String only) unless it overlaps the client secret
     # or the token sent — an error status too, as the grants and the provider do (registry
     # oauth-error-code-surface-divergent: it was nil there).
     def introspect(token)
@@ -89,9 +90,9 @@ module KeycloakSdk
       resp = TokenResponse.decode(Http.read_capped(@http, :post, @endpoints.introspection,
                                                    body: form, max_bytes: Http::TOKEN_RESPONSE_MAX_BYTES,
                                                    what: "introspection"), what: "introspection")
-      error = TokenResponse.oauth_error(resp.body)
-      code = error && OAuthErrorCode.carried(error, [@config.client_secret, token])
-      raise AuthError.new("introspection failed: HTTP #{resp.status}", oauth_error: code) if error || resp.status != 200
+      code = OAuthErrorCode.carried(TokenResponse.oauth_error(resp.body), [@config.client_secret, token])
+      failed = TokenResponse.names_error?(resp.body) || resp.status != 200
+      raise AuthError.new("introspection failed: HTTP #{resp.status}", oauth_error: code) if failed
 
       IntrospectionResult.from_response(resp.body)
     rescue Error

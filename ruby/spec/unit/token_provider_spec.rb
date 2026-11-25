@@ -116,8 +116,22 @@ RSpec.describe KeycloakSdk::ClientCredentialsTokenProvider do
       end
     end
 
-    # 대조군 — 비지 않은 JSON 문자열이 아닌 `error`(수 · 객체 · 배열 · "" · null)는 예전처럼 보지 않는다: 토큰을 쓰고 캐시한다.
-    [400, { "code" => "invalid_grant" }, ["invalid_grant"], "", nil].each do |error|
+    # 문자열이 아닌 `error`(수 · 객체 · 배열 · 불리언)도 오류를 이름한다 — 오류 상태처럼 실패하고 코드는 싣지 않으며 캐시하지
+    # 않는다(등록부 token-response-residual-divergence A · 예전에는 대조군이었다: 토큰을 쓰고 캐시했다).
+    [400, { "code" => "invalid_grant" }, ["invalid_grant"], true, false].each do |error|
+      it "fails on HTTP 200 with an error member #{error.inspect} that is no String and caches nothing" do
+        body = { error: error, access_token: "AT1", expires_in: 300, token_type: "Bearer" }.to_json
+        stub = stub_request(:post, token_url).to_return({ status: 200, body: body, headers: json }, fresh)
+        expect { provider.access_token }.to raise_error(KeycloakSdk::AuthError) do |e|
+          expect([e.message, e.oauth_error]).to eq(["client-credentials token request failed: HTTP 200", nil])
+        end
+        expect(provider.access_token).to eq("AT2")
+        expect(stub).to have_been_requested.twice
+      end
+    end
+
+    # 대조군 — null 이거나 "" 인 `error` 는 예전처럼 보지 않는다: 토큰을 쓰고 캐시한다.
+    ["", nil].each do |error|
       it "ignores an error member #{error.inspect} on HTTP 200, as before (success-status OAuth error control)" do
         stub = stub_request(:post, token_url)
                .to_return(status: 200, headers: json,

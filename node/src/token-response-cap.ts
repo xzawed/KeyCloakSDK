@@ -62,8 +62,8 @@ export function responseTooLarge(error: unknown): ResponseTooLargeError | undefi
 
 /**
  * The signal of a token or introspection response that arrived but cannot be used as it came, so the boundary
- * (`auth.ts`) reports it as `KeycloakAuthError`, not as a transport failure: a 2xx body that is not UTF-8
- * ({@link ResponseNotUtf8Error}), a 2xx body holding an unpaired surrogate escape ({@link holdsUnpairedSurrogate}), or —
+ * (`auth.ts`) reports it as `KeycloakAuthError`, not as a transport failure: a 200 body that is not UTF-8
+ * ({@link ResponseNotUtf8Error}), a 200 body holding an unpaired surrogate escape ({@link holdsUnpairedSurrogate}), or —
  * at any status — a content coding that does not decode ({@link fetchTokenEndpointBounded}; registry
  * `token-response-class-residue`, decisions Q2 · Q1, 2026-11-11).
  */
@@ -75,7 +75,7 @@ export class ResponseUnusableError extends Error {
 }
 
 /**
- * The signal of a 2xx token or introspection body that is not UTF-8 (RFC 8259 §8.1) — the response arrived but cannot
+ * The signal of a 200 token or introspection body that is not UTF-8 (RFC 8259 §8.1) — the response arrived but cannot
  * be used (registry `token-response-class-divergent`, decision D1). oauth4webapi reads the body with `response.json()`,
  * whose decoder turns a byte that is not UTF-8 into U+FFFD without an error — the grants and introspection returned a
  * token or a claim the IdP never sent as a success (measured 2026-11-10).
@@ -162,8 +162,8 @@ function hex4(json: Uint8Array, at: number): number {
 }
 
 /**
- * Whose body is judged — the token and introspection responses: a 2xx body must be UTF-8, hold no unpaired surrogate
- * escape and carry no OAuth `error`, and no body's content coding may fail to decode. Discovery and
+ * Whose body is judged — the token and introspection responses: a 200 body must be UTF-8, hold no unpaired surrogate
+ * escape and carry no OAuth `error` (another 2xx no string one), and no body's content coding may fail to decode. Discovery and
  * logout keep what they had: an error status is judged by its status, and logout only drains its body
  * ({@link drainCapped}).
  */
@@ -194,12 +194,15 @@ type OAuthErrorBody = ConstructorParameters<typeof ResponseBodyError>[1]['cause'
 const BODY_ERROR = 'server responded with an error in the response body'
 
 /**
- * The body when it is a JSON object whose `error` is a non-empty string — the test oauth4webapi applies to a 4xx
- * (`parseOAuthResponseErrorBody`) — otherwise `undefined`: an `error` that is a number, an object, null or "", and a
- * body that is not a JSON object, are left to what follows as before. At a 2xx it runs on a body that passed the UTF-8
- * check; at 3xx · 5xx on the body as it came, as oauth4webapi reads a 4xx one ({@link errorStatusOAuthError}).
+ * The body when it is a JSON object whose `error` names an error, otherwise `undefined` — a body that is not a JSON object
+ * is left to what follows as before. `named` is the rule at 200: an `error` that is present and neither null nor "" — a
+ * number, an object, an array or a boolean too (registry `token-response-residual-divergence` A; the code it carries is
+ * `oauthErrorOf`'s, which takes a string only). Otherwise it is the test oauth4webapi applies to a 4xx
+ * (`parseOAuthResponseErrorBody`) — a non-empty string — so a 2xx other than 200 gets the verdict a 400 with the same body
+ * does, and a 3xx · 5xx keeps the `error` a 4xx would carry ({@link errorStatusOAuthError}). It decodes as
+ * `response.json()` does (U+FFFD for a byte that is not UTF-8); a 200 body passed the UTF-8 check.
  */
-function oauthErrorBody(body: Uint8Array): OAuthErrorBody | undefined {
+function oauthErrorBody(body: Uint8Array, named: boolean): OAuthErrorBody | undefined {
   let json: unknown
   try {
     json = JSON.parse(new TextDecoder().decode(body))
@@ -208,7 +211,10 @@ function oauthErrorBody(body: Uint8Array): OAuthErrorBody | undefined {
   }
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return undefined
   const error = (json as Record<string, unknown>)['error']
-  return typeof error === 'string' && error.length > 0 ? (json as OAuthErrorBody) : undefined
+  const names = named
+    ? error !== undefined && error !== null && error !== ''
+    : typeof error === 'string' && error.length > 0
+  return names ? (json as OAuthErrorBody) : undefined
 }
 
 /**
@@ -382,7 +388,8 @@ export async function drainCapped(body: ReadableStream<Uint8Array> | null): Prom
  * ⚠️ **A 2xx token or introspection body carrying an OAuth `error` throws** the {@link ResponseBodyError} a 4xx
  * carrying it gets (openid-client passes that error through as is), before oauth4webapi reads the body — so the SDK
  * error, its message and its `oauthError` are the 4xx ones, and nothing else in the body is used: no token returned or
- * cached, no admin request, no `active` (registry `auth-2xx-error-code-divergent`). oauth4webapi took such a body at 200
+ * cached, no admin request, no `active` (registry `auth-2xx-error-code-divergent`). At 200 an `error` that is no string
+ * counts too, with no code (registry `token-response-residual-divergence` A). oauth4webapi took such a body at 200
  * as an answer: one beside a token was a success and one without was "invalid response encountered", with no code
  * (measured 2026-11-20). 200 is the only status the grants and introspection take as success (`checkOAuthBodyError`), so
  * another 2xx without `error` stays rejected by its status as a 400 without one is; with `error` it was rejected the same
@@ -399,7 +406,10 @@ export async function fetchTokenEndpointBounded(
   if (response.body === null || response.status < 200 || response.status > 599) return response
   const kind = utf8Kind(url)
   const body = await readDecoded(response.body, kind)
-  if (kind !== undefined && response.status < 300) {
+  // Only 200 is a success here: a 2xx other than 200 is an error status, so its body is read as a 400's is — no UTF-8 or
+  // surrogate verdict (registry `token-response-residual-divergence` C: a 201 that is not UTF-8 was refused as such while
+  // a 400 with the same body carried its code).
+  if (kind !== undefined && response.status === 200) {
     if (!isUtf8(body)) throw new ResponseNotUtf8Error(kind)
     if (holdsUnpairedSurrogate(body))
       throw new ResponseUnusableError(`${kind} holds an unpaired surrogate escape`)
@@ -410,10 +420,13 @@ export async function fetchTokenEndpointBounded(
     headers: response.headers,
   })
   if (kind !== undefined && unreadErrorStatus(response.status)) {
-    const carried = oauthErrorBody(body)
+    const carried = oauthErrorBody(body, false)
     if (carried !== undefined) errorStatusErrors.set(bounded, carried.error)
   }
-  const error = kind !== undefined && response.status < 300 ? oauthErrorBody(body) : undefined
+  const error =
+    kind !== undefined && response.status < 300
+      ? oauthErrorBody(body, response.status === 200)
+      : undefined
   if (error !== undefined)
     throw new ResponseBodyError(BODY_ERROR, { cause: error, response: bounded })
   return bounded

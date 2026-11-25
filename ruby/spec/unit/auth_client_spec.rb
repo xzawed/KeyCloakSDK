@@ -382,8 +382,24 @@ RSpec.describe KeycloakSdk::AuthClient do
       end
     end
 
-    # 대조군 — 비지 않은 JSON 문자열이 아닌 `error`(수 · 객체 · 배열 · "" · null)는 예전처럼 보지 않는다.
-    [400, { "code" => "invalid_grant" }, ["invalid_grant"], "", nil].each do |error|
+    # 문자열이 아닌 `error`(수 · 객체 · 배열 · 불리언)도 오류를 이름한다 — 오류 상태처럼 실패하고 코드는 싣지 않는다(등록부
+    # token-response-residual-divergence A · 예전에는 대조군이었다: 토큰을 쓰고 활성으로 읽었다).
+    [400, { "code" => "invalid_grant" }, ["invalid_grant"], true, false].each do |error|
+      it "fails on HTTP 200 with an error member #{error.inspect} that is no String (success-status OAuth error)" do
+        answer(token_url, { error: error, access_token: "AT", token_type: "Bearer", expires_in: 300 }.to_json)
+        answer(introspect_url, { error: error, active: true }.to_json)
+        expect { auth.client_credentials_token }.to raise_error(KeycloakSdk::AuthError) do |e|
+          expect([e.message, e.oauth_error])
+            .to eq(["client-credentials failed: non-standard error code (HTTP 200)", nil])
+        end
+        expect { auth.introspect("AT-introspected-token") }.to raise_error(KeycloakSdk::AuthError) do |e|
+          expect([e.message, e.oauth_error]).to eq(["introspection failed: HTTP 200", nil])
+        end
+      end
+    end
+
+    # 대조군 — null 이거나 "" 인 `error` 는 예전처럼 보지 않는다.
+    ["", nil].each do |error|
       it "ignores an error member #{error.inspect} on HTTP 200, as before (success-status OAuth error control)" do
         answer(token_url, { error: error, access_token: "AT", token_type: "Bearer", expires_in: 300 }.to_json)
         answer(introspect_url, { error: error, active: true }.to_json)

@@ -451,11 +451,12 @@ func (b *cappedBody) lookPast() error {
 // introspectionRefusal is Introspect's error for a 200 body that arrived but cannot be read as the JSON text it claims to
 // be, or nil: not UTF-8 (RFC 8259 §8.1; decision D1, measured 2026-11-10) or holding an unpaired surrogate escape (decision
 // Q2, measured 2026-11-11 — accepted) — encoding/json turns either into U+FFFD without an error, so the claims would be ones
-// the IdP never sent. Then a body that carries an OAuth `error` (oauthErrorMember) is that error, before `active` is looked
-// at — an `active` true beside it was read as an active token (registry auth-2xx-error-code-divergent). It takes the form
-// of a status Introspect refuses (statusRefused) with the status it came with, and the code oauthErrorCode lets through
-// against sent, what the request sent. ⚠️ Kept out of auth.go: that file is pinned by the integration-only boundary
-// coverage (scripts/integration-coverage.json), and no real Keycloak reaches these refusals.
+// the IdP never sent. Then a body that names an OAuth `error` (oauthErrorNamed — a member that is no string counts too) is
+// that error, before `active` is looked at — an `active` true beside it was read as an active token (registry
+// auth-2xx-error-code-divergent · token-response-residual-divergence A). It takes the form of a status Introspect refuses
+// (statusRefused) with the status it came with, and the code oauthErrorCode lets through against sent, what the request
+// sent — none for an `error` that is no string. ⚠️ Kept out of auth.go: that file is pinned by the integration-only
+// boundary coverage (scripts/integration-coverage.json), and no real Keycloak reaches these refusals.
 func introspectionRefusal(body []byte, endpoint string, status int, sent ...string) error {
 	if !utf8.Valid(body) {
 		return &AuthError{Msg: "introspection response is not valid UTF-8"}
@@ -463,7 +464,7 @@ func introspectionRefusal(body []byte, endpoint string, status int, sent ...stri
 	if holdsUnpairedSurrogate(body) {
 		return &AuthError{Msg: "introspection response holds an unpaired surrogate escape"}
 	}
-	if value, ok := oauthErrorMember(body); ok {
+	if value, named := oauthErrorNamed(body); named {
 		refused := statusRefused(endpoint, status)
 		refused.OAuthError = oauthErrorCode(value, sent...)
 		return refused
@@ -484,23 +485,36 @@ func withOAuthError(err error, body []byte, sent ...string) error {
 	return err
 }
 
-// oauthErrorMember is the OAuth `error` of a token or introspection response body its lane took with a success status: the
-// member's value when body is a JSON object whose member `error` is a JSON string of at least one character, and false
-// otherwise — a number, an object, an array, a boolean, null or "" is no error, and neither is a body that is not a JSON
-// object. The name is matched exactly, as JSON compares member names. Such a response fails as the lane's OAuth error and
-// nothing else in it is used (registry auth-2xx-error-code-divergent): x/oauth2 already refuses one on the three grants,
-// so Introspect (introspectionRefusal) and the admin login (readLoginBody, adminbody.go) are the lanes that ask here —
-// and the same two read the code of an error-status body here (withOAuthError · loginBody.refuse).
+// oauthErrorMember is the OAuth `error` of a token or introspection response body as a code candidate: the member's value
+// when body is a JSON object whose member `error` is a JSON string of at least one character, and false otherwise. Introspect
+// and the admin login read the code of an error-status body here (withOAuthError · loginBody.refuse); a success status asks
+// oauthErrorNamed, whose value it is.
 func oauthErrorMember(body []byte) (string, bool) {
+	value, _ := oauthErrorNamed(body)
+	return value, value != ""
+}
+
+// oauthErrorNamed reports whether a token or introspection response body its lane took with a success status names an
+// OAuth error: body is a JSON object whose member `error` is present and neither null nor "" — a number, an object, an
+// array or a boolean names one too (registry token-response-residual-divergence A; it was ignored and the token or `active`
+// beside it used). value is the member when it is a JSON string, else "" — no code is carried for one that is no string.
+// A body that is not a JSON object names none. The name is matched exactly, as JSON compares member names; a duplicated
+// member is the last (encoding/json). Such a response fails as the lane's OAuth error and nothing else in it is used
+// (registry auth-2xx-error-code-divergent): x/oauth2 already refuses one on the three grants, so Introspect
+// (introspectionRefusal) and the admin login (readLoginBody, adminbody.go) are the lanes that ask here.
+func oauthErrorNamed(body []byte) (value string, named bool) {
 	var members map[string]json.RawMessage
 	if json.Unmarshal(body, &members) != nil {
 		return "", false
 	}
-	var value string
-	if raw, ok := members["error"]; !ok || json.Unmarshal(raw, &value) != nil || value == "" {
+	raw, ok := members["error"]
+	if !ok {
 		return "", false
 	}
-	return value, true
+	if json.Unmarshal(raw, &value) != nil {
+		return "", true // a number, an object, an array or a boolean
+	}
+	return value, value != "" // null leaves value "", as "" is
 }
 
 // statusRefused is postForm's error for a status its caller does not take as success, and the form Introspect's error

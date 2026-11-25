@@ -16,13 +16,14 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.Base64
 
-// tokenResponses.kt — 성공 상태의 OAuth error(등록부 auth-2xx-error-code-divergent · Java `TokenResponses` ·
-// `TokenResponseGuard.carriesOAuthError` 동형). 성공 상태의 본문이 JSON 객체이고 그 `error` 가 비어 있지 않은 JSON 문자열이면 그 응답은
-// **오류 응답**이다 — 400 이 같은 본문을 실었을 때와 같은 길로 보낸다(같은 타입 · 같은 메시지 꼴 · 같은 코드 판정 [OAuthErrorCode]).
-// 수정 전에는 그 본문의 나머지를 썼다 — access_token 이 있으면 토큰을 돌려주고(공급자는 캐시했다) admin 요청을 보냈고, active 가 참이면
-// 활성으로 읽었다(실측 — `TokenResponseClassTest`). error 가 문자열이 아니거나(숫자 · 객체 · 배열 · 불리언 · null) 비었으면 지금처럼
-// 나머지가 판정한다. admin 가드의 200 이 아닌 2xx([refuseUnlessOk])도 여기 있다. ⚠️ auth.kt · admin/ 에 두지 않는 까닭: 그 파일들은 통합
-// 실행으로 재는 경계 파일이고(scripts/integration-coverage.json) 이 갈래는 실 Keycloak 이 닿지 않는다 — 여기 두면 단위 게이트(Kover)가 잰다.
+// tokenResponses.kt — 성공 상태의 OAuth error(등록부 auth-2xx-error-code-divergent · token-response-residual-divergence A · Java
+// `TokenResponses` · `TokenResponseGuard` 동형). 성공 상태의 본문이 JSON 객체이고 그 `error` 가 있고 null 도 "" 도 아니면 — 문자열이
+// 아니어도(숫자 · 객체 · 배열 · 불리언) — 그 응답은 **오류 응답**이다: 400 이 같은 본문을 실었을 때와 같은 길로 보낸다(같은 타입 · 같은
+// 메시지 꼴 · 같은 코드 판정 [OAuthErrorCode] — 문자열이 아닌 error 는 코드가 아니다). 수정 전에는 그 본문의 나머지를 썼다 —
+// access_token 이 있으면 토큰을 돌려주고(공급자는 캐시했다) admin 요청을 보냈고, active 가 참이면 활성으로 읽었다(실측 —
+// `TokenResponseClassTest` · 문자열이 아닌 error 는 그 뒤에도 그랬다). null 이거나 비었으면 error 가 없는 것과 같다. admin 가드의 200 이
+// 아닌 2xx([refuseUnlessOk])도 여기 있다. ⚠️ auth.kt · admin/ 에 두지 않는 까닭: 그 파일들은 통합 실행으로 재는 경계 파일이고
+// (scripts/integration-coverage.json) 이 갈래는 실 Keycloak 이 닿지 않는다 — 여기 두면 단위 게이트(Kover)가 잰다.
 
 // client_credentials · refresh · 코드 교환(oidc — id_token 을 보존하는 파서)의 응답. 성공 상태의 OAuth error 는 오류 응답이다.
 internal fun tokenResponse(
@@ -43,10 +44,11 @@ internal fun introspectionResponse(response: HTTPResponse): TokenIntrospectionRe
         TokenIntrospectionResponse.parse(response)
     }
 
-// 성공 상태(200 — Nimbus 가 성공으로 읽는 유일한 상태)의 본문이 JSON 객체이고 그 error 가 비어 있지 않은 JSON 문자열인가. 그 밖의 상태는
-// Nimbus 가 이미 오류 응답으로 읽는다 — 상태의 수용 범위는 바꾸지 않는다. 본문은 성공 파서가 읽는 그대로 읽는다(JSON 이 아닌
-// Content-Type · JSON 객체가 아닌 본문은 판정하지 않고 성공 파서가 지금처럼 거부한다). ⚠️ Nimbus 의 `TokenErrorResponse.parse` ·
-// `TokenIntrospectionErrorResponse.parse` 는 200 을 거부하므로(ensureStatusCodeNotOK) 위 둘은 그것들이 하는 일(ErrorObject.parse)을 직접 한다.
+// 성공 상태(200 — Nimbus 가 성공으로 읽는 유일한 상태)의 본문이 JSON 객체이고 그 error 가 있고 null 도 "" 도 아닌가(JSON null 은 파서가
+// null 로 둔다). 그 밖의 상태는 Nimbus 가 이미 오류 응답으로 읽는다 — 상태의 수용 범위는 바꾸지 않는다. 본문은 성공 파서가 읽는 그대로
+// 읽는다(JSON 이 아닌 Content-Type · JSON 객체가 아닌 본문은 판정하지 않고 성공 파서가 지금처럼 거부한다). ⚠️ Nimbus 의
+// `TokenErrorResponse.parse` · `TokenIntrospectionErrorResponse.parse` 는 200 을 거부하므로(ensureStatusCodeNotOK) 위 둘은 그것들이 하는
+// 일(ErrorObject.parse — 문자열이 아닌 error 는 코드 없이 둔다)을 직접 한다.
 internal fun carriesOAuthError(response: HTTPResponse): Boolean {
     if (response.statusCode != HTTPResponse.SC_OK) return false
     val body =
@@ -55,15 +57,37 @@ internal fun carriesOAuthError(response: HTTPResponse): Boolean {
         } catch (notAJsonObject: ParseException) {
             return false // 성공 파서가 지금처럼 거부한다 — 이 예외의 메시지는 응답을 인용할 수 있어 버린다
         }
-    return (body["error"] as? String)?.isNotEmpty() == true
+    val error = body["error"]
+    return error != null && error != ""
 }
 
 private val OAUTH_ERROR_JSON = JsonFactory()
 
-// admin 가드([judgedTokenBody])의 판정 — 최상위가 JSON 객체이고 그 error 하나라도 비어 있지 않은 JSON 문자열이면 그 값(중복 키는 그 첫
-// 것), 아니면 null. 결합(AccessTokenResponse)은 error 칸을 읽어 두지만 TokenManager 는 그것을 보지 않고 access_token 을 썼다. 중복 키는
-// 하나라도 그러면 오류다(access_token 처럼 전부 본다 — 닫는 쪽으로). 형식이 틀리면 null — 그 본문은 가드의 다음 판정이 거부한다. 코드로
-// 싣는 것은 [OAuthErrorCode] 가 허락한 것뿐이다. 스트리밍 파서다(결합 · 자체 ObjectMapper 가 없다).
+// admin 가드([judgedTokenBody])의 판정 — 최상위가 JSON 객체이고 그 error 하나라도 있고 null 도 "" 도 아니다. 문자열이 아니어도(숫자 ·
+// 객체 · 배열 · 불리언) 오류를 이름한다(등록부 token-response-residual-divergence A — 예전에는 숫자 · 불리언을 결합이 문자열로 바꿔 받아
+// 그 토큰으로 admin 요청을 보냈다). 결합(AccessTokenResponse)은 error 칸을 읽어 두지만 TokenManager 는 그것을 보지 않고 access_token 을
+// 썼다. 중복 키는 하나라도 그러면 오류다(access_token 처럼 전부 본다 — 닫는 쪽으로). 실을 코드는 [oauthErrorValue] 가 고른다. 형식이
+// 틀리면 false — 그 본문은 가드의 다음 판정이 거부한다. 스트리밍 파서다(결합 · 자체 ObjectMapper 가 없다).
+internal fun namesOAuthError(body: ByteArray): Boolean {
+    try {
+        OAUTH_ERROR_JSON.createParser(body).use { p ->
+            if (p.nextToken() != JsonToken.START_OBJECT) return false
+            while (p.nextToken() == JsonToken.FIELD_NAME) {
+                val error = p.currentName() == "error"
+                val value = p.nextToken()
+                if (error && value != JsonToken.VALUE_NULL && !(value == JsonToken.VALUE_STRING && p.text.isEmpty())) return true
+                p.skipChildren()
+            }
+            return false
+        }
+    } catch (malformed: IOException) {
+        return false // 파서 메시지는 본문을 인용할 수 있다 — 버린다(가드의 다음 판정이 같은 본문을 거부한다)
+    }
+}
+
+// 최상위가 JSON 객체이고 그 error 하나라도 비어 있지 않은 JSON 문자열이면 그 값(중복 키는 그 첫 것), 아니면 null — 그 응답이 싣는 OAuth
+// 코드의 후보다(성공 상태는 [namesOAuthError] 가 판정한 뒤, 오류 상태는 그대로 — [errorStatusCode]). 형식이 틀리면 null — 그 본문은
+// 가드의 다음 판정이 거부한다. 코드로 싣는 것은 [OAuthErrorCode] 가 허락한 것뿐이다. 스트리밍 파서다(결합 · 자체 ObjectMapper 가 없다).
 internal fun oauthErrorValue(body: ByteArray): String? {
     try {
         OAUTH_ERROR_JSON.createParser(body).use { p ->
@@ -153,7 +177,7 @@ internal fun refuseUnlessOk(
 }
 
 /**
- * 오류 상태처럼 실패하는 admin 그랜트의 2xx 토큰 응답 — 200 의 본문이 OAuth 오류 응답이거나([oauthErrorValue] — 등록부
+ * 오류 상태처럼 실패하는 admin 그랜트의 2xx 토큰 응답 — 200 의 본문이 OAuth 오류 응답이거나([namesOAuthError] — 등록부
  * auth-2xx-error-code-divergent) 상태가 200 이 아닌 2xx 다([refuseUnlessOk]). 그 상태와, 그 error 가운데 [OAuthErrorCode] 가 허락한 코드(아니면
  * null)를 싣는다(Java `TokenResponseGuard.OAuthErrorResponse` 동형). [io.github.xzawed.keycloak.admin.grantFailure] 가 같은 본문의 4xx 와
  * 같은 꼴(「Admin token request failed: HTTP <상태>」)로 바꾸고 코드는 [KeycloakAuthException.oauthError] 에 싣는다 — 아홉 언어의 규칙. 그

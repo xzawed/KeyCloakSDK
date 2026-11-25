@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using WireMock;
@@ -338,5 +339,211 @@ public sealed class OAuthErrorCodeEchoTests : IDisposable
         _output.WriteLine(cell.Line);
         Assert.False(cell.Requests.Any(r => r.EndsWith(" " + RedirectTarget, StringComparison.Ordinal)), cell.Line);
         Assert.True(cell.Code == "temporarily_unavailable", cell.Line);
+    }
+
+    // ---- Residual divergences (registry token-response-residual-divergence) ----
+    // The targets, per lane × cell: (A) a 200 whose `error` is present and neither null nor "" fails like a 400 carrying
+    // it — the lane's error class, no code unless a string the echo filter lets through, nothing in the body used (A1–A4 ·
+    // B2); null and "" still succeed (A5 · A6). (C) a 2xx other than 200 gets the verdict the lane gives a 400 with the same
+    // body — class and code; the message may differ only by the status number (C1 ~ C2 · C3 ~ C4). Never asserted: which
+    // duplicated `error` an error status echoes (B1 · B3 · B4 — RFC 8259 §4 leaves it open) and B5 (a 200 whose duplicated
+    // `error` is a code, then "" — a parser differential the registry holds; its outcome class is written). The fake
+    // answers with the cell's exact bytes — no serializer, so a duplicated key and an invalid UTF-8 sequence survive (a
+    // plain HttpClient reads them back first).
+
+    private sealed record ResidualCell(string Name, int Status, byte[] TokenBody, byte[] IntrospectionBody);
+
+    private const string ResidualTokenMembers = "\"access_token\":\"AT-ok\",\"token_type\":\"Bearer\",\"expires_in\":300";
+
+    private static byte[] Ascii(string s) => Encoding.ASCII.GetBytes(s);
+
+    private static ResidualCell ErrorValueCell(string name, string x) =>
+        new(name, 200, Ascii("{" + ResidualTokenMembers + ",\"error\":" + x + "}"),
+            Ascii("{\"active\":true,\"username\":\"svc\",\"error\":" + x + "}"));
+
+    private static ResidualCell BothLanesCell(string name, int status, byte[] body) => new(name, status, body, body);
+
+    // `{"error":"invalid_grant","error_description":"` + 0xC3 0x28 + `"}` — 0xC3 opens a two-byte sequence, 0x28 cannot end it.
+    private static readonly byte[] InvalidUtf8Body =
+        Ascii("{\"error\":\"invalid_grant\",\"error_description\":\"").Concat(new byte[] { 0xC3, 0x28 }).Concat(Ascii("\"}")).ToArray();
+
+    private static readonly ResidualCell[] ResidualCells =
+    {
+        new("A0", 200, Ascii("{" + ResidualTokenMembers + "}"), Ascii("{\"active\":true,\"username\":\"svc\"}")),
+        ErrorValueCell("A1", "123"),
+        ErrorValueCell("A2", "{\"a\":1}"),
+        ErrorValueCell("A3", "[\"x\"]"),
+        ErrorValueCell("A4", "true"),
+        ErrorValueCell("A5", "null"),
+        ErrorValueCell("A6", "\"\""),
+        BothLanesCell("B1", 400, Ascii("{\"error\":\"invalid_grant\",\"error\":\"temporarily_unavailable\"}")),
+        new("B2", 200, Ascii("{" + ResidualTokenMembers + ",\"error\":\"invalid_grant\",\"error\":\"temporarily_unavailable\"}"),
+            Ascii("{\"active\":true,\"error\":\"invalid_grant\",\"error\":\"temporarily_unavailable\"}")),
+        BothLanesCell("B3", 400, Ascii("{\"error\":\"invalid_grant\",\"error\":123}")),
+        BothLanesCell("B4", 400, Ascii("{\"error\":123,\"error\":\"invalid_grant\"}")),
+        new("B5", 200, Ascii("{" + ResidualTokenMembers + ",\"error\":\"invalid_grant\",\"error\":\"\"}"),
+            Ascii("{\"active\":true,\"error\":\"invalid_grant\",\"error\":\"\"}")),
+        BothLanesCell("C1", 201, InvalidUtf8Body),
+        BothLanesCell("C2", 400, InvalidUtf8Body),
+        BothLanesCell("C3", 201, Ascii("not json")),
+        BothLanesCell("C4", 400, Ascii("not json")),
+    };
+
+    /// <summary>The lanes of <see cref="Surfaces"/> but <c>admin</c>, each returning what its success hands back.</summary>
+    private static readonly (string Lane, Func<KeycloakClient, Task<string>> Run)[] ResidualLanes =
+    {
+        ("ClientCredentialsTokenAsync", async kc => "access_token=" + (await kc.Auth.ClientCredentialsTokenAsync()).AccessToken),
+        ("RefreshAsync", async kc => "access_token=" + (await kc.Auth.RefreshAsync(Refresh)).AccessToken),
+        ("ExchangeCodeAsync", async kc => "access_token=" + (await kc.Auth.ExchangeCodeAsync(Code, "https://app/cb", Verifier)).AccessToken),
+        ("IntrospectAsync", async kc => "active=" + ((await kc.Auth.IntrospectAsync(Token)).Active ? "true" : "false")),
+        ("ClientCredentialsTokenProvider", async kc => "access_token=" + await new ClientCredentialsTokenProvider(kc.Auth).GetAccessTokenAsync()),
+    };
+
+    private volatile ResidualCell? _residualCell;
+
+    private static ResponseMessage RawJson(int status, byte[] body) => new()
+    {
+        StatusCode = status,
+        Headers = new Dictionary<string, WireMockList<string>> { ["Content-Type"] = new("application/json") },
+        BodyData = new BodyData { DetectedBodyType = BodyType.Bytes, BodyAsBytes = body },
+    };
+
+    // Every character outside printable ASCII as \u{XXXX} (the code point, uppercase hex), so a line stays one line.
+    private static string Printable(string s)
+    {
+        var b = new StringBuilder();
+        for (var i = 0; i < s.Length; i++)
+        {
+            int cp = s[i];
+            if (char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]))
+                cp = char.ConvertToUtf32(s[i], s[++i]);
+            if (cp is >= 0x20 and <= 0x7E) b.Append((char)cp);
+            else b.Append("\\u{").Append(cp.ToString("X", CultureInfo.InvariantCulture)).Append('}');
+        }
+        return b.ToString();
+    }
+
+    private static string ClassOf(Exception e) =>
+        e.GetType().Namespace?.StartsWith("Xzawed.Keycloak", StringComparison.Ordinal) == true ? e.GetType().Name : e.GetType().FullName ?? e.GetType().Name;
+
+    private static string Failure(Exception e) =>
+        $"{ClassOf(e)}|{(e is KeycloakAuthException a ? (a.OAuthError is { } c ? "\"" + Printable(c) + "\"" : "null") : "n/a")}|{Printable(e.Message)}";
+
+    /// <summary>The message with its status number named alike — (C) lets the message differ by it alone.</summary>
+    private static string StatusBlind(string message, int status) =>
+        message.Replace($"HTTP {status.ToString(CultureInfo.InvariantCulture)}", "HTTP <status>", StringComparison.Ordinal);
+
+    /// <summary>Each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them.</summary>
+    private static List<string> ResidualWrong(string lane, IReadOnlyDictionary<string, string[]> rows)
+    {
+        var wrong = new List<string>();
+        // (A) the cells a token or introspection lane takes as success — no `error`, a null one, ""
+        foreach (var cell in new[] { "A0", "A5", "A6" })
+        {
+            if (rows[cell][0] != "SUCCESS") wrong.Add($"{lane} {cell}: {string.Join("|", rows[cell])} -- wants SUCCESS");
+        }
+        // (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated string one
+        foreach (var cell in new[] { "A1", "A2", "A3", "A4", "B2" })
+        {
+            if (rows[cell][0] != "KeycloakAuthException" || (cell != "B2" && rows[cell][1] != "null"))
+                wrong.Add($"{lane} {cell}: {string.Join("|", rows[cell])} -- wants KeycloakAuthException, no code");
+        }
+        foreach (var (created, refused) in new[] { ("C1", "C2"), ("C3", "C4") })
+        {
+            var (got, want) = (rows[created], rows[refused]);
+            if (got[0] != want[0] || got[1] != want[1] || StatusBlind(got[2], 201) != StatusBlind(want[2], 400))
+                wrong.Add($"{lane} {created} {string.Join("|", got)} != {refused} {string.Join("|", want)}");
+        }
+        return wrong;
+    }
+
+    private static string[] Row(string outcome) => outcome.Split('|', 3);
+
+    [Fact]
+    public async Task ResidualDivergenceCellsMeetTheirTargets()
+    {
+        // The cells' text is the assertion's message alone; only B5 is written — its outcome class and whether anything in
+        // the body was used, never a code or a message (CodeQL's clear-text-logging heuristic flags a line built from the
+        // OAuth code).
+        var rows = new Dictionary<string, Dictionary<string, string[]>>();
+        var wrong = new List<string>();
+        void Keep(string lane, string cell, string outcome, string shown, bool used)
+        {
+            if (!rows.TryGetValue(lane, out var lanes)) rows[lane] = lanes = new Dictionary<string, string[]>();
+            lanes[cell] = Row(outcome);
+            if (cell == "B5") _output.WriteLine($"B5|dotnet|{lane}|{shown}|used={(used ? "true" : "false")}");
+        }
+        var adminAuthorization = new ConcurrentQueue<string>();
+        using var idp = WireMockServer.Start();
+        idp.Given(Request.Create().UsingAnyMethod()).RespondWith(Response.Create().WithCallback(req =>
+        {
+            if (req.Method == "GET" && req.Path.EndsWith("/admin/realms/r/users/u1", StringComparison.Ordinal))
+            {
+                adminAuthorization.Enqueue(req.Headers is { } h && h.TryGetValue("Authorization", out var a) ? string.Join(", ", a) : "<none>");
+                return RawJson(200, Ascii("{\"id\":\"u1\",\"username\":\"svc\"}"));
+            }
+            if (req.Method != "POST" || _residualCell is not { } cell) return RawJson(404, Ascii("{}"));
+            return RawJson(cell.Status, req.Path.EndsWith("/token/introspect", StringComparison.Ordinal) ? cell.IntrospectionBody : cell.TokenBody);
+        }));
+        KeycloakClient NewClient() =>
+            KeycloakClient.Create(new KeycloakConfig { ServerUrl = idp.Urls[0], Realm = "r", ClientId = "c", ClientSecret = Secret });
+
+        using var probe = new HttpClient();
+        foreach (var cell in ResidualCells)
+        {
+            _residualCell = cell;
+            // The instrument first: a plain HttpClient reads the cell's exact status and bytes off the wire.
+            foreach (var (path, want) in new[] { ("token", cell.TokenBody), ("token/introspect", cell.IntrospectionBody) })
+            {
+                using var resp = await probe.PostAsync($"{idp.Urls[0]}/realms/r/protocol/openid-connect/{path}", new StringContent(""));
+                var same = (await resp.Content.ReadAsByteArrayAsync()).SequenceEqual(want);
+                if ((int)resp.StatusCode != cell.Status || !same)
+                    wrong.Add($"fake {cell.Name} {path}: status {(int)resp.StatusCode}, bytes {(same ? "equal" : "differ")}");
+            }
+
+            foreach (var (lane, run) in ResidualLanes)
+            {
+                string outcome;
+                string shown;
+                try
+                {
+                    using var kc = NewClient();
+                    outcome = $"SUCCESS|-|{Printable(await run(kc))}";
+                    shown = "SUCCESS";
+                }
+                catch (Exception e)
+                {
+                    outcome = Failure(e);
+                    shown = ClassOf(e);
+                }
+                Keep(lane, cell.Name, outcome, shown, shown == "SUCCESS");
+            }
+
+            // admin: SUCCESS only when the admin request went out with the token; otherwise the call's error.
+            while (adminAuthorization.TryDequeue(out _)) { }
+            Exception? failure = null;
+            try
+            {
+                using var kc = NewClient();
+                await (await kc.AdminAsync()).Users.GetAsync("u1");
+            }
+            catch (Exception e) { failure = e; }
+            string adminOutcome;
+            var sent = adminAuthorization.TryDequeue(out var authorization);
+            if (sent)
+            {
+                var call = failure is null ? "ok" : $"{ClassOf(failure)}: {failure.Message}";
+                adminOutcome = $"{(authorization == "Bearer AT-ok" ? "SUCCESS" : "SENT-WITH-OTHER-AUTHORIZATION")}|-|"
+                    + Printable($"admin request sent, Authorization={authorization}; call={call}");
+            }
+            else
+            {
+                adminOutcome = failure is null ? "NO-REQUEST-NO-ERROR|-|" : Failure(failure);
+            }
+            Keep("admin", cell.Name, adminOutcome, sent ? "SUCCESS" : failure is null ? "NO-REQUEST-NO-ERROR" : ClassOf(failure), sent);
+        }
+
+        wrong.AddRange(rows.SelectMany(lane => ResidualWrong(lane.Key, lane.Value)));
+        Assert.True(wrong.Count == 0, $"{wrong.Count} cells:\n{string.Join("\n", wrong)}");
     }
 }

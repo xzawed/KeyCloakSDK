@@ -491,7 +491,6 @@ describe('success-status OAuth error — a 200 carrying `error` fails as a 400 d
     for (const text of renderings(e)) expect(text.includes('EchoedSecret'), text).toBe(false)
   })
 
-  // Controls — they pass before and after: the rule reaches no other `error`.
   const IGNORED: Array<[string, (value: string) => string]> = [
     [
       'clientCredentialsToken',
@@ -499,18 +498,28 @@ describe('success-status OAuth error — a 200 carrying `error` fails as a 400 d
     ],
     ['introspect', (v) => `{"error":${v},"active":true}`],
   ]
+  // An `error` that is no string — a number, an object, an array, a boolean — names an error all the same: the lane fails as
+  // for B1, with no code (registry `token-response-residual-divergence` A — it was a control below: the token and `active`
+  // beside it were used).
   it.each(IGNORED)(
-    '%s — success-status OAuth error control: an `error` that is not a non-empty string is ignored',
+    '%s — success-status OAuth error: an `error` that is no string fails, with no code',
     async (name, body) => {
       status = 200
-      for (const value of [
-        '400',
-        '{"code":"invalid_grant"}',
-        'null',
-        '""',
-        '["invalid_grant"]',
-        'true',
-      ]) {
+      for (const value of ['400', '{"code":"invalid_grant"}', '["invalid_grant"]', 'true']) {
+        bodies = { ...GOOD, token: body(value), introspect: body(value) }
+        const e = await authFailure(name)
+        expect(e.message, `${name} · ${value}`).toBe(`${surface(name).prefix}: ${BODY_ERROR}`)
+        expect(e.oauthError, `${name} · ${value}`).toBeUndefined()
+      }
+    },
+  )
+
+  // Controls — they pass before and after: the rule reaches no `error` that is null or "".
+  it.each(IGNORED)(
+    '%s — success-status OAuth error control: an `error` that is null or empty is ignored',
+    async (name, body) => {
+      status = 200
+      for (const value of ['null', '""']) {
         bodies = { ...GOOD, token: body(value), introspect: body(value) }
         const kc = newClient()
         try {
@@ -731,4 +740,287 @@ describe('error status OAuth error — a 3xx and a 5xx', () => {
       expect(cell.code, cell.line).toBe('temporarily_unavailable')
     },
   )
+})
+
+// Registry `token-response-residual-divergence`: the residual divergences — an `error` that is not a string at 200 (A), a
+// duplicated `error` key (B), a 201 beside a 400 on a body that is not readable JSON (C) — measured lane by lane on raw
+// bytes, which no JSON serializer would write (a duplicate key, invalid UTF-8; a plain HTTP client first checks the fake
+// serves them as written). The targets: (A) a 200 whose `error` is present
+// and neither null nor "" fails like a 400 carrying it — the lane's error class, no code unless a string the echo filter
+// lets through, nothing in the body used (A1–A4 · B2); null and "" still succeed (A5 · A6). (C) a 2xx other than 200 gets
+// the verdict the lane gives a 400 with the same body — class and code; the message may differ only by the status number
+// (C1 ~ C2 · C3 ~ C4). Printed, never asserted: which duplicated `error` an error status echoes (B1 · B3 · B4 — RFC 8259
+// §4 leaves it open) and B5 (a 200 whose duplicated `error` is a code, then "" — a parser differential the registry holds).
+describe('residual divergence cells', () => {
+  interface ResidualCell {
+    readonly id: string
+    readonly status: number
+    readonly token: Buffer
+    readonly introspect: Buffer
+  }
+  const bytes = (s: string): Buffer => Buffer.from(s, 'latin1')
+  const both = (id: string, status: number, body: Buffer): ResidualCell => ({
+    id,
+    status,
+    token: body,
+    introspect: body,
+  })
+  const TOKEN_OK = '{"access_token":"AT-ok","token_type":"Bearer","expires_in":300'
+  const ACTIVE_OK = '{"active":true,"username":"svc"'
+  const BAD_UTF8 = Buffer.concat([
+    bytes('{"error":"invalid_grant","error_description":"'),
+    Buffer.from([0xc3, 0x28]),
+    bytes('"}'),
+  ])
+  const NOT_STRING: ReadonlyArray<readonly [string, string]> = [
+    ['A1', '123'],
+    ['A2', '{"a":1}'],
+    ['A3', '["x"]'],
+    ['A4', 'true'],
+    ['A5', 'null'],
+    ['A6', '""'],
+  ]
+  const CELLS: readonly ResidualCell[] = [
+    { id: 'A0', status: 200, token: bytes(`${TOKEN_OK}}`), introspect: bytes(`${ACTIVE_OK}}`) },
+    ...NOT_STRING.map(([id, x]) => ({
+      id,
+      status: 200,
+      token: bytes(`${TOKEN_OK},"error":${x}}`),
+      introspect: bytes(`${ACTIVE_OK},"error":${x}}`),
+    })),
+    both('B1', 400, bytes('{"error":"invalid_grant","error":"temporarily_unavailable"}')),
+    {
+      id: 'B2',
+      status: 200,
+      token: bytes(`${TOKEN_OK},"error":"invalid_grant","error":"temporarily_unavailable"}`),
+      introspect: bytes(
+        '{"active":true,"error":"invalid_grant","error":"temporarily_unavailable"}',
+      ),
+    },
+    both('B3', 400, bytes('{"error":"invalid_grant","error":123}')),
+    both('B4', 400, bytes('{"error":123,"error":"invalid_grant"}')),
+    {
+      id: 'B5',
+      status: 200,
+      token: bytes(`${TOKEN_OK},"error":"invalid_grant","error":""}`),
+      introspect: bytes('{"active":true,"error":"invalid_grant","error":""}'),
+    },
+    both('C1', 201, BAD_UTF8),
+    both('C2', 400, BAD_UTF8),
+    both('C3', 201, bytes('not json')),
+    both('C4', 400, bytes('not json')),
+  ]
+
+  let cellServer: Server
+  let cellOrigin = ''
+  let current: ResidualCell = both('none', 500, bytes(''))
+  /** The `Authorization` header of every admin request, in order. */
+  const adminAuth: string[] = []
+
+  beforeAll(async () => {
+    cellServer = createServer((req, res) => {
+      req.resume()
+      req.on('end', () => {
+        const path = new URL(req.url ?? '/', cellOrigin).pathname
+        if (path === '/realms/r/.well-known/openid-configuration') {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(discoveryDocument(`${cellOrigin}/realms/r`)))
+          return
+        }
+        if (path.startsWith('/admin/')) {
+          adminAuth.push(req.headers.authorization ?? '(none)')
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(USER)
+          return
+        }
+        const body = path.endsWith('/protocol/openid-connect/token/introspect')
+          ? current.introspect
+          : path.endsWith('/protocol/openid-connect/token')
+            ? current.token
+            : undefined
+        if (body === undefined) {
+          res.writeHead(404)
+          res.end()
+          return
+        }
+        res.writeHead(current.status, {
+          'content-type': 'application/json',
+          'content-length': String(body.length),
+        })
+        res.end(body)
+      })
+    })
+    await new Promise<void>((resolve) => cellServer.listen(0, '127.0.0.1', resolve))
+    cellOrigin = `http://127.0.0.1:${(cellServer.address() as AddressInfo).port}`
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => cellServer.close(() => resolve()))
+  })
+
+  /** Printable ASCII as itself, every other code point as `\u{XXXX}`. */
+  const visible = (s: string): string => {
+    let out = ''
+    for (const ch of s) {
+      const cp = ch.codePointAt(0) ?? 0
+      out += cp >= 0x20 && cp <= 0x7e ? ch : `\\u{${cp.toString(16).toUpperCase()}}`
+    }
+    return out
+  }
+  const classOf = (e: unknown): string =>
+    e instanceof Error ? e.constructor.name : `non-Error ${typeof e}`
+  const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+  const codeField = (e: unknown): string => {
+    if (typeof e !== 'object' || e === null || !('oauthError' in e)) return 'n/a'
+    const value: unknown = (e as { oauthError?: unknown }).oauthError
+    return value === undefined || value === null ? 'null' : `"${visible(String(value))}"`
+  }
+  class CellTimeout extends Error {}
+  const within = <T>(p: Promise<T>, ms: number): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new CellTimeout(`no outcome after ${ms} ms`)), ms)
+      p.then(
+        (v) => {
+          clearTimeout(timer)
+          resolve(v)
+        },
+        (e: unknown) => {
+          clearTimeout(timer)
+          reject(e)
+        },
+      )
+    })
+
+  /** One lane × cell's outcome — `row` is [outcome, code, message], `used` whether anything in the body was used. */
+  interface Recorded {
+    readonly row: [string, string, string]
+    readonly outcome: string
+    readonly used: boolean
+  }
+
+  /** One lane × cell. Never throws: a failure of any type is the recorded outcome. */
+  async function record(name: string, cell: ResidualCell): Promise<Recorded> {
+    current = cell
+    adminAuth.length = 0
+    let result: { ok: true; value: unknown } | { ok: false; error: unknown }
+    const kc = KeycloakClient.create({
+      serverUrl: cellOrigin,
+      realm: 'r',
+      clientId: 'app',
+      clientSecret: SECRET,
+    })
+    try {
+      result = { ok: true, value: await within(laneOn(name, kc)(), 15_000) }
+    } catch (e) {
+      result = { ok: false, error: e }
+    } finally {
+      try {
+        await kc.close()
+      } catch {
+        // record only
+      }
+    }
+    let fields: [string, string, string]
+    if (name === 'admin' && adminAuth.length > 0) {
+      const auth = adminAuth[0] ?? ''
+      const call = result.ok ? 'ok' : `${classOf(result.error)}: ${messageOf(result.error)}`
+      const more = adminAuth.length > 1 ? ` (${adminAuth.length} admin requests)` : ''
+      fields = [
+        auth === 'Bearer AT-ok' ? 'SUCCESS' : 'ADMIN-SENT-OTHER-TOKEN',
+        '-',
+        visible(`admin request sent, Authorization=${auth}; call=${call}${more}`),
+      ]
+    } else if (result.ok) {
+      fields =
+        name === 'admin'
+          ? ['NO-ADMIN-REQUEST', '-', visible(`call resolved ${String(result.value)}`)]
+          : [
+              'SUCCESS',
+              '-',
+              visible(
+                name === 'introspect'
+                  ? `active=${String(result.value)}`
+                  : `access_token=${String(result.value)}`,
+              ),
+            ]
+    } else {
+      fields = [classOf(result.error), codeField(result.error), visible(messageOf(result.error))]
+    }
+    const used = name === 'admin' ? adminAuth.length > 0 : result.ok
+    return { row: fields, outcome: result.ok || used ? 'SUCCESS' : classOf(result.error), used }
+  }
+
+  /** The message with its status number named alike — (C) lets the message differ by it alone. */
+  const statusBlind = (message: string, status: number): string =>
+    message.split(`HTTP ${status}`).join('HTTP <status>')
+
+  /** Each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them. */
+  function residualWrong(
+    name: string,
+    rows: ReadonlyMap<string, [string, string, string]>,
+  ): string[] {
+    const row = (id: string): [string, string, string] => rows.get(id) ?? ['(none)', '', '']
+    const wrong: string[] = []
+    // (A) the cells a token or introspection lane takes as success — no `error`, a null one, ""
+    for (const id of ['A0', 'A5', 'A6']) {
+      if (row(id)[0] !== 'SUCCESS')
+        wrong.push(`${name} ${id}: ${row(id).join('|')} -- wants SUCCESS`)
+    }
+    // (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated string one
+    for (const id of ['A1', 'A2', 'A3', 'A4', 'B2']) {
+      const [outcome, code] = row(id)
+      if (outcome !== 'KeycloakAuthError' || (id !== 'B2' && code !== 'null'))
+        wrong.push(`${name} ${id}: ${row(id).join('|')} -- wants KeycloakAuthError, no code`)
+    }
+    for (const [created, refused] of [
+      ['C1', 'C2'],
+      ['C3', 'C4'],
+    ] as const) {
+      const got = row(created)
+      const want = row(refused)
+      if (
+        got[0] !== want[0] ||
+        got[1] !== want[1] ||
+        statusBlind(got[2], 201) !== statusBlind(want[2], 400)
+      )
+        wrong.push(`${name} ${created} ${got.join('|')} != ${refused} ${want.join('|')}`)
+    }
+    return wrong
+  }
+
+  it('meets the residual divergence targets', { timeout: 600_000 }, async () => {
+    const wrong: string[] = []
+    // The instrument first: a plain HTTP client reads off the wire the exact bytes and status of the cells a serializer
+    // could not write — else the cells below would not be measuring what they name.
+    for (const cell of CELLS.filter((c) => /^[BC]/.test(c.id))) {
+      current = cell
+      for (const [endpoint, want] of [
+        ['token', cell.token],
+        ['token/introspect', cell.introspect],
+      ] as const) {
+        const r = await fetch(`${cellOrigin}/realms/r/protocol/openid-connect/${endpoint}`, {
+          method: 'POST',
+        })
+        const same = Buffer.from(await r.arrayBuffer()).equals(want)
+        if (r.status !== cell.status || !same)
+          wrong.push(
+            `fake ${cell.id} ${endpoint}: status ${r.status}, bytes ${same ? 'equal' : 'differ'}`,
+          )
+      }
+    }
+    // Only B5 prints — its outcome class and whether anything in the body was used, never a code or a message (the
+    // cells' text is the assertion's message alone: CodeQL js/clear-text-logging flags a log line built from `oauthError`).
+    const b5: string[] = []
+    for (const name of NAMES) {
+      const rows = new Map<string, [string, string, string]>()
+      for (const cell of CELLS) {
+        const recorded = await record(name, cell)
+        rows.set(cell.id, recorded.row)
+        if (cell.id === 'B5') b5.push(`B5|node|${name}|${recorded.outcome}|used=${recorded.used}`)
+      }
+      wrong.push(...residualWrong(name, rows))
+    }
+    console.log(b5.join('\n'))
+    expect(wrong, wrong.join('\n')).toEqual([])
+  })
 })

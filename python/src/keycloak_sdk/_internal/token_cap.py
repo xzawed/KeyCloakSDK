@@ -103,19 +103,21 @@ class ResponseRefused(Exception):
 
 
 class Answered:
-    """auth 백채널 호출(과 admin 자체 그랜트)이 받은 **마지막** 응답의 상태 — 본문을 다 읽은 뒤에
-    적는다.
+    """auth 백채널 호출(과 admin 자체 그랜트)이 받은 **마지막** 응답의 상태와 본문 — 본문을 다
+    읽은 뒤에 적는다.
 
     python-keycloak 은 2xx 가 아닌 응답을 `raise_error_from_response` 로 읽는데, 본문 JSON 이 객체가
     아니면 `response.json()["message"]` 에서 `TypeError`(아주 깊은 중첩이면 `RecursionError`)로
     깨진다 — 그 실패에는 상태가 없다. 경계(`lower.unusable_answer`)가 이것으로 그 상태의 판정을
     낸다(등록부 python-auth-error-body-shape-status — admin 레인의 `admin_body.Answer` 와
-    같은 길)."""
+    같은 길). 본문은 200 이 아닌 2xx 의 판정(`lower.non_200_success`)이 오류 상태의 판정처럼
+    읽는다 — python-keycloak 이 그 상태에서 돌려준 것(관대하게 푼 JSON)이 아니다."""
 
-    __slots__ = ("status",)
+    __slots__ = ("body", "status")
 
     def __init__(self) -> None:
         self.status: int | None = None
+        self.body: bytes | None = None
 
 
 #: 지금 호출의 `Answered` — `answering` 만 건다. 없으면 적지 않는다(JWKS 직접 GET 은 스트리밍이라
@@ -134,10 +136,11 @@ def answering(answered: Answered) -> Iterator[None]:
         _ANSWERED.reset(token)
 
 
-def _note(status: int) -> None:
+def _note(status: int, body: bytes) -> None:
     answered = _ANSWERED.get()
     if answered is not None:
         answered.status = status
+        answered.body = body
 
 
 def _kind(path: str) -> str:
@@ -310,7 +313,7 @@ def capped_send(send: _SyncSend) -> _SyncSend:
         # requests 가 `content` 에서 하는 일 그대로다 — 다 읽은 본문을 응답에 둔다.
         response._content = body
         response._content_consumed = True
-        _note(response.status_code)
+        _note(response.status_code, body)
         if kind in _JSON_KINDS:
             # 선언된 charset 은 효과가 없다(RFC 8259 §11) — requests 의 `json()` 은 그것으로
             # 본문을 풀어(`charset=utf-16` 이면 UTF-8 본문이 글자 덩어리가 된다) python-keycloak
@@ -412,7 +415,7 @@ def acapped_send(send: _AsyncSend) -> Callable[..., Coroutine[Any, Any, httpx.Re
                 raise
             # httpx 가 `aread()` 에서 하는 일 그대로다(푼 본문을 두고 `Content-Encoding` 은 남긴다).
             response._content = body
-            _note(response.status_code)
+            _note(response.status_code, body)
             return response
 
         return await within(request_seconds(request), exchange(), request)

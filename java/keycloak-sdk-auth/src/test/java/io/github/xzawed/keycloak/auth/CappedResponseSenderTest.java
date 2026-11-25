@@ -192,11 +192,12 @@ class CappedResponseSenderTest {
   }
 
   /**
-   * {@link CappedResponseSender#sendStrict} — 2xx 본문의 잘못된 UTF-8 은 본문을 인용하지 않는 {@link CappedResponseSender.NotUtf8} 이다
+   * {@link CappedResponseSender#sendStrict} — 200 본문의 잘못된 UTF-8 은 본문을 인용하지 않는 {@link CappedResponseSender.NotUtf8} 이다
    * (끝까지 온 응답을 쓸 수 없다 — 등록부 token-response-class-divergent). 잘못된 꼴은 대체 문자를 낳는 다섯이다 — 이음 바이트가 아닌
    * 바이트 · UTF-8 에 없는 바이트 · 겹침 꼴 · 서로게이트 · 끝에서 잘린 열. 그 밖은 {@link CappedResponseSender#send} 와 같은 응답이다:
-   * 유효한 UTF-8(비 ASCII · 4 바이트 · BOM · 4 KiB 버퍼를 여러 번 채우는 글자 수) · 오류 상태의 잘못된 UTF-8(판정은 상태가 한다) ·
-   * 빈 본문 · 본문 없는 오류 · 3xx. 상한을 넘는 본문은 UTF-8 을 보기 전에 {@link CappedResponseSender.TooLarge} 다(다 읽지 않았다).
+   * 유효한 UTF-8(비 ASCII · 4 바이트 · BOM · 4 KiB 버퍼를 여러 번 채우는 글자 수) · 오류 상태의 잘못된 UTF-8(판정은 상태가 한다 —
+   * 200 밖의 2xx 도 오류 상태라 같은 본문의 400 과 같은 판정이다, 등록부 token-response-residual-divergence C) · 빈 본문 · 본문 없는
+   * 오류 · 3xx. 상한을 넘는 본문은 UTF-8 을 보기 전에 {@link CappedResponseSender.TooLarge} 다(다 읽지 않았다).
    */
   @Test void strict_rejectsAnInvalidUtf8SuccessBody_andIsSendOtherwise() throws IOException {
     List<String> wrong = new ArrayList<>();
@@ -206,7 +207,7 @@ class CappedResponseSenderTest {
         {(byte) 0xC0, (byte) 0xAF},              // 겹침 꼴('/')
         {(byte) 0xED, (byte) 0xA0, (byte) 0x80}, // 서로게이트 U+D800
     };
-    for (int status : new int[] {200, 201, 299}) {
+    for (int status : new int[] {200}) {
       for (byte[] bad : malformed) {
         reply.set(new Reply(status, concat(utf8("{\"access_token\":\"a"), bad, utf8("b\"}"))));
         expectNotUtf8(status + " " + Arrays.toString(bad), wrong);
@@ -218,7 +219,7 @@ class CappedResponseSenderTest {
           utf8("\"}"))));
       expectNotUtf8(status + " 4 KiB 버퍼 뒤", wrong);
     }
-    List<Reply> same = List.of(
+    List<Reply> same = new ArrayList<>(List.of(
         new Reply(200, utf8("{\"username\":\"sévc 😀\"}")),
         new Reply(200, concat(new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}, utf8("{\"a\":1}"))),
         new Reply(200, utf8("{\"x\":\"" + "é".repeat(5_000) + "\"}")),
@@ -227,7 +228,13 @@ class CappedResponseSenderTest {
         new Reply(503, concat(utf8("<html>"), new byte[] {(byte) 0xC3, (byte) 0x28}, utf8("</html>"))),
         new Reply(200, new byte[0]),
         new Reply(401, null),
-        new Reply(302, null, "/elsewhere", 0));
+        new Reply(302, null, "/elsewhere", 0)));
+    // 200 밖의 2xx — 오류 상태다(토큰 응답의 성공은 200 하나): 그 잘못된 UTF-8 은 400 의 것처럼 상태가 판정한다
+    for (int status : new int[] {201, 299}) {
+      for (byte[] bad : malformed) {
+        same.add(new Reply(status, concat(utf8("{\"error\":\"invalid_grant\",\"error_description\":\"a"), bad, utf8("b\"}"))));
+      }
+    }
     for (Reply r : same) {
       reply.set(r);
       HTTPResponse lenient = CappedResponseSender.send(post(10_000), "token");

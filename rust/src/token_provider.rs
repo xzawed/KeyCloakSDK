@@ -1,6 +1,9 @@
 //! TokenProvider — the §4-isomorphic async abstraction. admin receives tokens only through this trait.
 use crate::config::KeycloakConfig;
-use crate::error::{KeycloakError, Result, oauth_error_code, oauth_error_member, token_http_error};
+use crate::error::{
+    KeycloakError, Result, names_oauth_error, oauth_error_code, oauth_error_member,
+    token_http_error,
+};
 use crate::jwks::{TOKEN_RESPONSE_MAX_BYTES, read_capped};
 use crate::oidc::OidcEndpoints;
 use crate::tokens::TokenSet;
@@ -105,22 +108,21 @@ impl ClientCredentialsTokenProvider {
         // 캐시되므로 그 창 내내 admin 호출마다 401 이 난다.
         // 캐시하기 전에 보낼 수 있는 값인지도 본다([`sendable_bearer`] — 빈 값도 여기서 걸린다). 못 보내는 토큰은
         // 캐시하지 않고 이 레인의 `Auth` 로 실패하므로 다음 호출이 IdP 에 다시 묻는다. 캐시하는 것은 뗀 값이다.
-        // ⚠️ **성공 상태의 OAuth 오류는 오류다** — 본문이 `error`([`oauth_error_member`])를 가지면 같이 온 `access_token` 을
-        // 보지 않고 아래 오류 갈래(400 과 같은 문구 · 코드)로 간다. 예전에는 그 토큰을 캐시해 admin 요청에 실었다.
+        // ⚠️ **성공 상태의 OAuth 오류는 오류다** — 본문이 `error` 를 이름하면([`names_oauth_error`] — null 도 `""` 도 아니면
+        // 문자열이 아니어도) 같이 온 `access_token` 을 보지 않고 아래 오류 갈래(400 과 같은 문구 · 코드)로 간다. 예전에는 그
+        // 토큰을 캐시해 admin 요청에 실었다(문자열이 아닌 `error` 는 그 뒤에도 — 등록부 token-response-residual-divergence A).
         // ⚠️ **성공은 200 뿐이다**(RFC 6749 §5.1 — auth 레인의 oauth2 와 같다) — 다른 2xx 도 같은 오류 갈래다. 예전
         // `is_success()` 는 201–299 의 토큰을 캐시해 admin 요청에 실었다(등록부 token-success-status-range-divergent).
-        let usable = status == reqwest::StatusCode::OK && oauth_error_member(&body).is_none();
+        let usable = status == reqwest::StatusCode::OK && !names_oauth_error(&body);
         let access_token = body
             .get("access_token")
             .and_then(serde_json::Value::as_str)
             .and_then(sendable_bearer);
         let Some(access_token) = access_token.filter(|_| usable) else {
             // 코드 모양이고 보낸 시크릿과 겹치지 않을 때만 옮긴다 — `auth.rs` 의 `map_token_err` 와 같은 계약(`oauth_error_code`).
+            // 문자열이 아닌 `error` 는 코드가 아니다([`oauth_error_member`]).
             let secret = self.config.client_secret.as_deref().unwrap_or_default();
-            let oauth = body
-                .get("error")
-                .and_then(|v| v.as_str())
-                .and_then(|v| oauth_error_code(v, &[secret]));
+            let oauth = oauth_error_member(&body).and_then(|v| oauth_error_code(v, &[secret]));
             return Err(KeycloakError::Auth {
                 message: "client-credentials failed".into(),
                 oauth_error: oauth,

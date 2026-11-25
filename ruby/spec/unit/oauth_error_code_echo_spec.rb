@@ -428,4 +428,170 @@ RSpec.describe "OAuth error code echo" do # rubocop:disable RSpec/DescribeClass
       end
     end
   end
+
+  # Registry `token-response-residual-divergence`. (A) a 200 whose `error` is not a non-empty String, (B) a duplicated
+  # `error` key, (C) a non-200 2xx next to a 400 with the same unreadable body. The targets: (A) a 200 whose `error` is
+  # present and neither null nor "" fails like a 400 carrying it — the lane's error class, no code unless a String the
+  # echo filter lets through, nothing in the body used (A1–A4 · B2); null and "" still succeed (A5 · A6). (C) a 2xx
+  # other than 200 gets the verdict the lane gives a 400 with the same body — class and code; the message may differ
+  # only by the status number (C1 ~ C2 · C3 ~ C4). Never asserted: which duplicated `error` an error status echoes (B1 ·
+  # B3 · B4 — RFC 8259 §4 leaves it open) and B5 (a 200 whose duplicated `error` is a code, then "" — a parser
+  # differential the registry holds). The SDK's own capped read first checks each cell's bytes come off the stub as
+  # written — bytes, never a serializer: the duplicate keys and the invalid UTF-8 (0xC3 0x28) arrive as written.
+  describe "residual divergence cells" do
+    def residual_cells
+      ok = '{"access_token":"AT-ok","token_type":"Bearer","expires_in":300'
+      dup = '"error":"invalid_grant","error":"temporarily_unavailable"'
+      bad = ['{"error":"invalid_grant","error_description":"', [0xC3, 0x28].pack("C*"), '"}'].map(&:b).join
+      cells = [["A0", 200, "#{ok}}", '{"active":true,"username":"svc"}']]
+      errors = { "A1" => "123", "A2" => '{"a":1}', "A3" => '["x"]', "A4" => "true", "A5" => "null", "A6" => '""' }
+      errors.each do |name, x|
+        cells << [name, 200, %(#{ok},"error":#{x}}), %({"active":true,"username":"svc","error":#{x}})]
+      end
+      cells += [["B1", 400, "{#{dup}}", "{#{dup}}"], ["B2", 200, "#{ok},#{dup}}", %({"active":true,#{dup}})]]
+      b3 = '{"error":"invalid_grant","error":123}'
+      b4 = '{"error":123,"error":"invalid_grant"}'
+      b5 = '"error":"invalid_grant","error":""'
+      cells += [["B3", 400, b3, b3], ["B4", 400, b4, b4], ["B5", 200, "#{ok},#{b5}}", %({"active":true,#{b5}})]]
+      cells += [["C1", 201, bad, bad], ["C2", 400, bad, bad]]
+      cells += [["C3", 201, "not json", "not json"], ["C4", 400, "not json", "not json"]]
+      cells.map { |name, status, token, introspection| [name, status, token.b, introspection.b] }
+    end
+
+    # Every character outside printable ASCII as \u{XXXX}, every byte that is not valid UTF-8 as \x{HH}.
+    def cell_text(text)
+      utf8 = text.to_s.b.force_encoding(Encoding::UTF_8)
+      utf8 = utf8.scrub { |bytes| bytes.unpack("C*").map { |b| format("\\x{%02X}", b) }.join }
+      utf8.each_char.map { |c| c.ord.between?(0x20, 0x7E) ? c : format("\\u{%X}", c.ord) }.join
+    end
+
+    # Stubs the lane's endpoint with the cell's status and bytes, and an admin GET that records its Authorization.
+    def cell_stub(lane, status, body)
+      WebMock.reset!
+      url = lane == "introspect" ? OAuthErrorCodeEchoSpec::INTROSPECT_URL : OAuthErrorCodeEchoSpec::TOKEN_URL
+      stub_request(:post, url).to_return(status: status, body: body, headers: { "Content-Type" => "application/json" })
+      seen = []
+      stub_request(:get, "https://kc.example.com/admin/realms/demo/users/u1").to_return do |request|
+        seen << request.headers["Authorization"].to_s
+        { status: 200, body: '{"id":"u1","username":"u1"}', headers: { "Content-Type" => "application/json" } }
+      end
+      seen
+    end
+
+    # The connection `KeycloakClient` gives auth and the admin's provider (the `provider` let above builds it so too).
+    def cell_http
+      KeycloakSdk::Http.build(config) do |f|
+        f.request :url_encoded
+        f.response :json, content_type: /\bjson$/
+      end
+    end
+
+    def cell_provider
+      KeycloakSdk::ClientCredentialsTokenProvider.new(config: config, http: cell_http)
+    end
+
+    # A fresh client (and provider) per cell, so no token cache carries over.
+    def cell_call(lane)
+      client = KeycloakSdk::KeycloakClient.new(config)
+      auth = client.auth
+      {
+        "client_credentials" => -> { auth.client_credentials_token.access_token },
+        "refresh" => -> { auth.refresh(refresh_token: OAuthErrorCodeEchoSpec::REFRESH_TOKEN).access_token },
+        "exchange_code" => lambda {
+          auth.exchange_code(code: OAuthErrorCodeEchoSpec::CODE, code_verifier: OAuthErrorCodeEchoSpec::VERIFIER,
+                             redirect_uri: "http://localhost/cb").access_token
+        },
+        "provider" => -> { cell_provider.access_token },
+        "admin" => -> { client.admin.users.get("u1") },
+        "introspect" => -> { auth.introspect(OAuthErrorCodeEchoSpec::TOKEN).active }
+      }.fetch(lane)
+    end
+
+    def cell_error(err)
+      return [err.class.name, "n/a", err.message] unless err.respond_to?(:oauth_error)
+
+      [err.class.name, err.oauth_error.nil? ? "null" : %("#{err.oauth_error}"), err.message]
+    end
+
+    def cell_admin(seen, call)
+      return ["ADMIN_CALL_OK_WITHOUT_REQUEST", "-", ""] if seen.empty?
+
+      outcome = seen.first == "Bearer AT-ok" ? "SUCCESS" : "ADMIN_SENT_WITH_OTHER_AUTHORIZATION"
+      [outcome, "-", "admin request sent, Authorization=#{seen.first}; call=#{call}"]
+    end
+
+    def cell_outcome(lane, seen)
+      value = cell_call(lane).call
+      return cell_admin(seen, "ok") if lane == "admin"
+
+      ["SUCCESS", "-", "#{lane == 'introspect' ? 'active' : 'access_token'}=#{value}"]
+    rescue Interrupt
+      raise
+    rescue Exception => e # rubocop:disable Lint/RescueException -- record only: any failure is the cell's outcome
+      lane == "admin" && seen.any? ? cell_admin(seen, "#{e.class.name}: #{e.message}") : cell_error(e)
+    end
+
+    # The instrument first: what the SDK's own capped read gets from the stub — nil when the status and bytes are the
+    # cell's, else what differs (never the bytes).
+    def cell_probe(cell, status, body)
+      cell_stub("probe", status, body)
+      resp = KeycloakSdk::Http.read_capped(cell_http, :post, OAuthErrorCodeEchoSpec::TOKEN_URL,
+                                           max_bytes: KeycloakSdk::Http::TOKEN_RESPONSE_MAX_BYTES, what: "probe")
+      same = resp.body.to_s.b == body
+      "fake #{cell}: status #{resp.status}, bytes #{same ? 'equal' : 'differ'}" unless resp.status == status && same
+    end
+
+    # Each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them.
+    def residual_wrong(lane, rows)
+      residual_success_misses(lane, rows) + residual_error_misses(lane, rows) + residual_status_misses(lane, rows)
+    end
+
+    # (A) the cells a token or introspection lane takes as success — no `error`, a null one, ""
+    def residual_success_misses(lane, rows)
+      %w[A0 A5 A6].reject { |cell| rows[cell][0] == "SUCCESS" }
+                  .map { |cell| "#{lane} #{cell}: #{rows[cell].join('|')} -- wants SUCCESS" }
+    end
+
+    # (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated String one
+    def residual_error_misses(lane, rows)
+      %w[A1 A2 A3 A4 B2].filter_map do |cell|
+        outcome, code, = rows[cell]
+        next if outcome == "KeycloakSdk::AuthError" && (cell == "B2" || code == "null")
+
+        "#{lane} #{cell}: #{rows[cell].join('|')} -- wants KeycloakSdk::AuthError, no code"
+      end
+    end
+
+    # (C) a 2xx other than 200 beside the 400 with the same body — class, code, the message but for the status
+    def residual_status_misses(lane, rows)
+      [%w[C1 C2], %w[C3 C4]].filter_map do |created, refused|
+        got, want = rows.values_at(created, refused)
+        next if got[0, 2] == want[0, 2] &&
+                got[2].gsub("HTTP 201", "HTTP <status>") == want[2].gsub("HTTP 400", "HTTP <status>")
+
+        "#{lane} #{created} #{got.join('|')} != #{refused} #{want.join('|')}"
+      end
+    end
+
+    # Only B5 prints — its outcome class and whether anything in the body was used, never a code or a message (the
+    # cells' text is the expectation's message alone: CodeQL's clear-text-logging heuristic flags a line built from the
+    # OAuth code).
+    it "meets the residual divergence targets" do
+      wrong = residual_cells.filter_map { |cell, status, token, _| cell_probe(cell, status, token) }
+      b5 = []
+      %w[client_credentials refresh exchange_code provider admin introspect].each do |lane|
+        rows = {}
+        residual_cells.each do |cell, status, token, introspection|
+          seen = cell_stub(lane, status, lane == "introspect" ? introspection : token)
+          outcome, code, message = cell_outcome(lane, seen)
+          rows[cell] = [outcome, code, cell_text(message)]
+        end
+        used = %w[SUCCESS ADMIN_SENT_WITH_OTHER_AUTHORIZATION].include?(rows["B5"][0])
+        b5 << "B5|ruby|#{lane}|#{rows['B5'][0]}|used=#{used}"
+        wrong.concat(residual_wrong(lane, rows))
+      end
+      puts("", b5) # rubocop:disable RSpec/Output -- B5 is the record-only cell
+      expect(wrong).to be_empty, "#{wrong.size} cells:\n#{wrong.join("\n")}"
+    end
+  end
 end

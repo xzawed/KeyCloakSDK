@@ -33,13 +33,14 @@ final class OAuthErrorCode
 
     /**
      * Whether a body the lane got at a status it takes as success is an OAuth error response all the same — a JSON object
-     * whose `error` is a non-empty string, code-shaped or not (what is carried is `carried()`'s). Every token lane and
-     * introspection then fails with the type and message it gives an error status carrying that `error`, the code vetted by
-     * `carried()`, and nothing else in the body (a token, `active`) is used — this is checked before anything else in the
-     * body (registry `auth-2xx-error-code-divergent`: a token beside it was cached and sent, an `active: true` beside it
-     * reported). ⚠️ `"0"` counts — PHP's `empty()` and `(bool)` call it empty.
-     * A number, array, object, bool, null or `""` is no `error` here; nor is a body that is no JSON object — a JSON list
-     * decodes to an array too, but it has no string key.
+     * whose `error` is present and neither null nor `""`: a string, code-shaped or not, and a number, array, object or bool
+     * too (what is carried is `carried()`'s — a string only). Every token lane and introspection then fails with the type
+     * and message it gives an error status carrying that `error`, the code vetted by `carried()`, and nothing else in the
+     * body (a token, `active`) is used — this is checked before anything else in the body (registry
+     * `auth-2xx-error-code-divergent`: a token beside it was cached and sent, an `active: true` beside it reported ·
+     * `token-response-residual-divergence` A: an `error` that is no string was ignored). ⚠️ `"0"`, `0` and `false` count —
+     * PHP's `empty()` and `(bool)` call them empty. A null or `""` `error` is none; nor is a body that is no JSON object — a
+     * JSON list decodes to an array too, but it has no string key.
      */
     public static function isErrorResponse(mixed $decoded): bool
     {
@@ -48,7 +49,7 @@ final class OAuthErrorCode
         }
         $error = $decoded['error'] ?? null;
 
-        return \is_string($error) && $error !== '';
+        return $error !== null && $error !== '';
     }
 
     public static function carried(mixed $error, #[\SensitiveParameter] ?string ...$sent): ?string

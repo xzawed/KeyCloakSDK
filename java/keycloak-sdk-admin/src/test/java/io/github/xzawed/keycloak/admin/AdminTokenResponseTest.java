@@ -259,19 +259,25 @@ class AdminTokenResponseTest {
   }
 
   /**
-   * 대조 — {@code error} 가 비어 있지 않은 JSON 문자열이 아니면 판정은 지금 그대로다: 결합(AccessTokenResponse 의 문자열 error 칸 —
-   * TokenManager 는 읽지 않는다)이 받는 스칼라(숫자 · 불리언 · null · "")는 토큰을 쓰고, 객체 · 배열은 결합이 실패한다.
+   * {@code error} 가 있고 null 도 "" 도 아니면 — 숫자 · 불리언 · 객체 · 배열도 — 그 그랜트는 오류 응답이다: 같은 본문의 400 과 같은
+   * 「admin token request failed: HTTP 200」 · admin 요청 0 건 · {@code getError()} null(문자열이 아니다 — 등록부
+   * token-response-residual-divergence A). 예전에는 결합(AccessTokenResponse 의 문자열 error 칸 — TokenManager 는 읽지 않는다)이 받는
+   * 스칼라(숫자 · 불리언)는 그 토큰으로 admin 요청을 보냈고 객체 · 배열은 결합이 실패했다. 대조 — null · "" 는 지금처럼 토큰을 쓴다.
    */
-  @Test void successStatusOAuthError_onlyANonEmptyStringCounts() {
+  @Test void successStatusOAuthError_anyErrorButNullOrEmptyCounts() {
     List<String> table = new ArrayList<>();
     List<String> wrong = new ArrayList<>();
-    for (String value : List.of("12345", "true", "null", "\"\"")) {
+    for (String value : List.of("null", "\"\"")) {
       reset(new Reply(200, tokenBody("\"good\"", ",\"error\":" + value)));
       expectGood("error " + value, wrong, table);
     }
-    for (String value : List.of("{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]")) {
+    for (String value : List.of("12345", "true", "{\"e\":\"invalid_grant\"}", "[\"invalid_grant\"]")) {
       reset(new Reply(200, tokenBody("\"good\"", ",\"error\":" + value)));
-      table.add(callExpectingRejection("error " + value, wrong, Expected.unusable(200)));
+      table.add(callExpectingRejection("error " + value, wrong,
+          new Expected(KeycloakAuthException.class, "admin token request failed: HTTP 200")));
+      if (!(lastRejection instanceof KeycloakAuthException auth) || auth.getError() != null) {
+        wrong.add("error " + value + ": getError() 가 null 이 아니다 — " + lastRejection);
+      }
     }
     System.out.println("[AdminTokenResponseTest successStatusOAuthError controls]\n  " + String.join("\n  ", table));
     assertTrue(wrong.isEmpty(), () -> wrong.size() + " 건:\n" + String.join("\n", wrong));

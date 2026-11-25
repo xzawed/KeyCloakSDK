@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 )
 
 // The OAuth `error` code an SDK error carries is a code, never a value the request sent (registry
@@ -528,5 +531,265 @@ func TestARedirectErrorStatusCarriesTheOAuthErrorAndIsNeverFollowed(t *testing.T
 		if c.code != "temporarily_unavailable" {
 			t.Errorf("%s: OAuthError = %q, want temporarily_unavailable", c.line, c.code)
 		}
+	}
+}
+
+// Residual divergence cells (registry token-response-residual-divergence), each lane × cell held to the targets: (A) a
+// 200 whose `error` is present and neither null
+// nor "" fails like a 400 carrying it — the lane's error class, no code unless a string the echo filter lets through,
+// nothing in the body used (A1–A4 · B2); null and "" still succeed (A5 · A6). (C) a 2xx other than 200 gets the verdict
+// the lane gives a 400 with the same body — class and code; the message may differ only by the status (C1 ~ C2 · C3 ~ C4).
+// Printed, never asserted: which duplicated `error` an error status echoes (B1 · B3 · B4 — RFC 8259 §4 leaves it open)
+// and B5 (a 200 whose duplicated `error` is a code, then "" — a parser differential the registry holds). The bodies are
+// bytes, never a JSON encoder's output, so a duplicated key and the invalid UTF-8 of C1/C2 reach the client as written.
+
+type residualCell struct {
+	name       string
+	status     int
+	token      []byte // the token endpoint's answer (grants, provider, admin self-grant)
+	introspect []byte // the introspection endpoint's answer
+}
+
+func residualCells() []residualCell {
+	tok := func(x string) []byte {
+		return []byte(`{"access_token":"AT-ok","token_type":"Bearer","expires_in":300,"error":` + x + `}`)
+	}
+	intro := func(x string) []byte { return []byte(`{"active":true,"username":"svc","error":` + x + `}`) }
+	both := func(name string, status int, body []byte) residualCell { return residualCell{name, status, body, body} }
+	badUTF8 := append(append([]byte(`{"error":"invalid_grant","error_description":"`), 0xC3, 0x28), `"}`...)
+	cells := []residualCell{{"A0", http.StatusOK,
+		[]byte(`{"access_token":"AT-ok","token_type":"Bearer","expires_in":300}`),
+		[]byte(`{"active":true,"username":"svc"}`)}}
+	for i, x := range []string{`123`, `{"a":1}`, `["x"]`, `true`, `null`, `""`} {
+		cells = append(cells, residualCell{fmt.Sprintf("A%d", i+1), http.StatusOK, tok(x), intro(x)})
+	}
+	return append(cells,
+		both("B1", http.StatusBadRequest, []byte(`{"error":"invalid_grant","error":"temporarily_unavailable"}`)),
+		residualCell{"B2", http.StatusOK,
+			[]byte(`{"access_token":"AT-ok","token_type":"Bearer","expires_in":300,"error":"invalid_grant","error":"temporarily_unavailable"}`),
+			[]byte(`{"active":true,"error":"invalid_grant","error":"temporarily_unavailable"}`)},
+		both("B3", http.StatusBadRequest, []byte(`{"error":"invalid_grant","error":123}`)),
+		both("B4", http.StatusBadRequest, []byte(`{"error":123,"error":"invalid_grant"}`)),
+		residualCell{"B5", http.StatusOK,
+			[]byte(`{"access_token":"AT-ok","token_type":"Bearer","expires_in":300,"error":"invalid_grant","error":""}`),
+			[]byte(`{"active":true,"error":"invalid_grant","error":""}`)},
+		both("C1", http.StatusCreated, badUTF8),
+		both("C2", http.StatusBadRequest, badUTF8),
+		both("C3", http.StatusCreated, []byte(`not json`)),
+		both("C4", http.StatusBadRequest, []byte(`not json`)),
+	)
+}
+
+// residualIdP answers token and introspection POSTs with the cell's status and bytes, and an admin GET with 200 and a
+// user, keeping the Authorization header each admin request carried.
+type residualIdP struct {
+	srv       *httptest.Server
+	mu        sync.Mutex
+	cell      residualCell
+	adminAuth []string
+}
+
+func newResidualIdP(t *testing.T) *residualIdP {
+	t.Helper()
+	p := &residualIdP{}
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		cell := p.cell
+		p.mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token/introspect"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(cell.status)
+			_, _ = w.Write(cell.introspect)
+		case strings.HasSuffix(r.URL.Path, "/protocol/openid-connect/token"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(cell.status)
+			_, _ = w.Write(cell.token)
+		case strings.Contains(r.URL.Path, "/admin/realms/"):
+			p.mu.Lock()
+			p.adminAuth = append(p.adminAuth, r.Header.Get("Authorization"))
+			p.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"u1","username":"u1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+func (p *residualIdP) set(cell residualCell) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cell, p.adminAuth = cell, nil
+}
+
+func (p *residualIdP) firstAdminAuth() (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.adminAuth) == 0 {
+		return "", false
+	}
+	return p.adminAuth[0], true
+}
+
+// The six lanes of echoSurfaces, in its order and with its names, returning what a success used.
+var residualLanes = []struct {
+	name string
+	run  func(context.Context, *Client) (string, error)
+}{
+	{"ClientCredentialsToken", func(ctx context.Context, c *Client) (string, error) {
+		ts, err := c.Auth.ClientCredentialsToken(ctx)
+		if err != nil {
+			return "", err
+		}
+		return "access_token=" + ts.AccessToken, nil
+	}},
+	{"Refresh", func(ctx context.Context, c *Client) (string, error) {
+		ts, err := c.Auth.Refresh(ctx, echoRefresh)
+		if err != nil {
+			return "", err
+		}
+		return "access_token=" + ts.AccessToken, nil
+	}},
+	{"ExchangeCode", func(ctx context.Context, c *Client) (string, error) {
+		ts, err := c.Auth.ExchangeCode(ctx, echoCode, "https://app/cb", echoVerifier, "")
+		if err != nil {
+			return "", err
+		}
+		return "access_token=" + ts.AccessToken, nil
+	}},
+	{"provider", func(ctx context.Context, c *Client) (string, error) {
+		tok, err := NewClientCredentialsTokenProvider(c.Auth.ClientCredentialsToken, 30).Token(ctx)
+		if err != nil {
+			return "", err
+		}
+		return "access_token=" + tok, nil
+	}},
+	{"admin", func(ctx context.Context, c *Client) (string, error) {
+		a, err := c.Admin(ctx)
+		if err != nil {
+			return "", err
+		}
+		_, err = a.Users.Get(ctx, "u1")
+		return "", err
+	}},
+	{"Introspect", func(ctx context.Context, c *Client) (string, error) {
+		res, err := c.Auth.Introspect(ctx, echoToken)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("active=%t", res.Active), nil
+	}},
+}
+
+// renderCellText writes every character outside printable ASCII as \u{XXXX} and every byte that is not UTF-8 as \x{HH}.
+func renderCellText(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && size == 1:
+			fmt.Fprintf(&b, `\x{%02X}`, s[i])
+		case r < 0x20 || r > 0x7E:
+			fmt.Fprintf(&b, `\u{%X}`, r)
+		default:
+			b.WriteRune(r)
+		}
+		i += size
+	}
+	return b.String()
+}
+
+func runResidualCell(p *residualIdP, run func(context.Context, *Client) (string, error)) (outcome, code, msg string) {
+	defer func() {
+		if v := recover(); v != nil {
+			outcome, code, msg = "PANIC", "n/a", renderCellText(fmt.Sprint(v))
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c, err := New(Config{ServerURL: p.srv.URL, Realm: "r", ClientID: "c", ClientSecret: echoSecret})
+	if err != nil {
+		return fmt.Sprintf("%T", err), "n/a", renderCellText(err.Error())
+	}
+	defer func() { _ = c.Close() }()
+	used, err := run(ctx, c)
+	if auth, sent := p.firstAdminAuth(); sent {
+		call := "ok"
+		if err != nil {
+			call = fmt.Sprintf("%T: %s", err, err.Error())
+		}
+		outcome = "SUCCESS"
+		if auth != "Bearer AT-ok" {
+			outcome = "ADMIN-SENT-OTHER-TOKEN"
+		}
+		return outcome, "-", renderCellText("admin request sent, Authorization=" + auth + "; call=" + call)
+	}
+	if err != nil {
+		code = "n/a"
+		var ae *AuthError
+		if errors.As(err, &ae) {
+			code = `"` + renderCellText(ae.OAuthError) + `"`
+		}
+		return fmt.Sprintf("%T", err), code, renderCellText(err.Error())
+	}
+	return "SUCCESS", "-", renderCellText(used)
+}
+
+// residualStatusBlind is msg with its status — the number, and the status text after it — named alike: (C) lets the
+// message differ by the status alone.
+func residualStatusBlind(msg string, status int) string {
+	code := "HTTP " + strconv.Itoa(status)
+	return strings.ReplaceAll(strings.ReplaceAll(msg, code+" "+http.StatusText(status), "HTTP <status>"), code, "HTTP <status>")
+}
+
+// residualWrong is each cell of one lane that misses its target (A · B2 · C) — none means the lane meets them.
+func residualWrong(lane string, rows map[string][3]string) []string {
+	var wrong []string
+	// (A) the cells a token or introspection lane takes as success — no `error`, a null one, ""
+	for _, cell := range []string{"A0", "A5", "A6"} {
+		if rows[cell][0] != "SUCCESS" {
+			wrong = append(wrong, fmt.Sprintf("%s %s: %v -- wants SUCCESS", lane, cell, rows[cell]))
+		}
+	}
+	// (A) a 200 whose `error` is a number, an object, an array, a boolean — and (B) a duplicated string one
+	for _, cell := range []string{"A1", "A2", "A3", "A4", "B2"} {
+		if rows[cell][0] != "*keycloak.AuthError" || (cell != "B2" && rows[cell][1] != `""`) {
+			wrong = append(wrong, fmt.Sprintf("%s %s: %v -- wants *keycloak.AuthError, no code", lane, cell, rows[cell]))
+		}
+	}
+	for _, pair := range [][2]string{{"C1", "C2"}, {"C3", "C4"}} {
+		got, want := rows[pair[0]], rows[pair[1]]
+		if got[0] != want[0] || got[1] != want[1] ||
+			residualStatusBlind(got[2], http.StatusCreated) != residualStatusBlind(want[2], http.StatusBadRequest) {
+			wrong = append(wrong, fmt.Sprintf("%s %s %v != %s %v", lane, pair[0], got, pair[1], want))
+		}
+	}
+	return wrong
+}
+
+// TestResidualDivergenceCellsMeetTheirTargets holds every lane to the targets above. The cells' text is the failure
+// message alone; only B5 is logged — its outcome class and whether anything in the body was used, never a code or a
+// message (CodeQL's clear-text-logging heuristic flags a line built from the OAuth code).
+func TestResidualDivergenceCellsMeetTheirTargets(t *testing.T) {
+	p := newResidualIdP(t)
+	var wrong []string
+	for _, lane := range residualLanes {
+		rows := map[string][3]string{}
+		for _, cell := range residualCells() {
+			p.set(cell)
+			outcome, code, msg := runResidualCell(p, lane.run)
+			rows[cell.name] = [3]string{outcome, code, msg}
+			if cell.name == "B5" {
+				used := outcome == "SUCCESS" || outcome == "ADMIN-SENT-OTHER-TOKEN"
+				t.Logf("B5|go|%s|%s|used=%t", lane.name, outcome, used)
+			}
+		}
+		wrong = append(wrong, residualWrong(lane.name, rows)...)
+	}
+	if len(wrong) > 0 {
+		t.Errorf("%d cells:\n%s", len(wrong), strings.Join(wrong, "\n"))
 	}
 }

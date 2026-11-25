@@ -355,16 +355,51 @@ async fn success_status_oauth_error_fails_with_the_code_and_nothing_is_used() {
     assert!(wrong.is_empty(), "다른 칸:\n{}", wrong.join("\n"));
 }
 
-/// 대조군 — `error` 가 비지 않은 JSON 문자열이 아니면(숫자 · 객체 · 배열 · 불리언 · null · `""`) 지금처럼 다룬다: 같이 온 쓸 수
-/// 있는 응답이 여덟 칸 모두 성공이다.
+/// `error` 가 있고 null 도 `""` 도 아니면 — 숫자 · 객체 · 배열 · 불리언도 — 그 호출은 400 이 같은 본문을 실었을 때처럼 실패한다:
+/// 여덟 칸 모두 계급 `Auth`, 코드 없음(문자열이 아니다), admin 요청 없음(등록부 `token-response-residual-divergence` A). 예전에는
+/// 대조군이었다 — 같이 온 쓸 수 있는 응답이 여덟 칸 모두 성공했다.
 #[tokio::test]
-async fn success_status_oauth_error_that_is_not_a_non_empty_string_is_ignored() {
-    let server = MockServer::start().await;
+async fn success_status_oauth_error_that_is_no_string_fails_without_a_code() {
     let values = [
         ("p2-number", serde_json::json!(5)),
         ("p2-object", serde_json::json!({"code": "invalid_grant"})),
         ("p2-array", serde_json::json!(["invalid_grant"])),
         ("p2-bool", serde_json::json!(true)),
+    ];
+    let mut wrong = Vec::new();
+    for (realm, value) in values {
+        let server = MockServer::start().await;
+        let token = serde_json::json!({
+            "error": value, "access_token": "at", "token_type": "Bearer", "expires_in": 300,
+            "refresh_token": "rt"
+        });
+        let introspect = serde_json::json!({ "error": value, "active": true });
+        mount_success(&server, realm, token.to_string(), introspect.to_string()).await;
+        let cfg = KeycloakConfig::new(server.uri(), realm, "it-client")
+            .expect("config")
+            .with_client_secret("s");
+        for (call, out) in CALLS.iter().zip(drive(cfg).await) {
+            if kind(&out) != "Auth" || oauth_error(&out).is_some() {
+                wrong.push(format!(
+                    "{realm} × {call}: {} · oauth_error {:?} (기대 Auth · None)",
+                    kind(&out),
+                    oauth_error(&out)
+                ));
+            }
+        }
+        let n = admin_requests(&server).await;
+        if n != 0 {
+            wrong.push(format!("{realm}: admin 요청 {n} 번 (기대 0)"));
+        }
+    }
+    assert!(wrong.is_empty(), "다른 칸:\n{}", wrong.join("\n"));
+}
+
+/// 대조군 — `error` 가 null 이거나 `""` 이면 지금처럼 다룬다: 같이 온 쓸 수 있는 응답이 여덟 칸 모두 성공이다.
+#[tokio::test]
+async fn success_status_oauth_error_that_is_null_or_empty_is_ignored() {
+    let server = MockServer::start().await;
+    let values = [
         ("p2-null", serde_json::Value::Null),
         ("p2-empty", serde_json::json!("")),
     ];

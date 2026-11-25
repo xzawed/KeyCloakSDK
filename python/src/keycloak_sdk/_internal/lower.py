@@ -81,7 +81,13 @@ def summarize(exc: BaseException) -> LowerLibraryError:
 def oauth_error(exc: BaseException) -> object:
     """오류 응답 JSON 의 `error` 값 그대로(best-effort) — 본문이 JSON 객체가 아니면 `None`.
     무엇을 싣는지는 `carried_code` 가 정한다."""
-    body = getattr(exc, "response_body", None)
+    return error_member(getattr(exc, "response_body", None))
+
+
+def error_member(body: bytes | str | None) -> object:
+    """받은 본문 바이트 그대로를 JSON 으로 읽은 `error` 값(best-effort) — 객체가 아니면 `None`.
+    오류 상태의 판정(`oauth_error`)과 200 이 아닌 2xx 의 판정(`non_200_success`)이 같은 바이트를
+    같은 길로 읽는다 — UTF-8 이 아닌 본문은 어느 쪽이든 코드가 없다."""
     if not body:
         return None
     try:
@@ -199,18 +205,19 @@ def error_in_success(
     호출자는 이것을 응답의 **어떤** 검사보다 먼저 부른다. 예전에는 토큰이 있으면 받아들여
     돌려주고(admin 은 그것으로 요청을 보냈다), introspection 은 활성으로 읽었고, 토큰이 없으면 코드
     없는 「없음」 판정이었다(등록부 auth-2xx-error-code-divergent · 실측 2026-11-20 — .NET 은 이미
-    실패했다). `error` 가 비어 있지 않은 문자열이 아니면(숫자 · 객체 · `""` · null) 예전 그대로다.
+    실패했다). `error` 가 있고 null 도 `""` 도 아니면 문자열이 아니어도(숫자 · 객체 · 배열 · 불리언)
+    거부다 — 코드는 `carried_code` 가 문자열만 싣는다(등록부 token-response-residual-divergence A ·
+    예전에는 그 토큰을 쓰고 활성으로 읽었다). null 과 `""` 는 `error` 가 없는 것과 같다.
     `sent` 와 `carry_code` 는 그 레인의 오류 상태 판정이 쓰는 것 그대로다(`auth_failure`)."""
     if not isinstance(answer, dict):
         return None
     value = answer.get("error")
-    if not isinstance(value, str) or not value:
+    if value is None or value == "":
         return None
     return oauth_failure(answered.status, value if carry_code else None, sent)
 
 
 def non_200_success(
-    answer: object,
     answered: Answered,
     *,
     sent: Iterable[str | None] = (),
@@ -223,16 +230,19 @@ def non_200_success(
     §2.2 는 상태를 정하지 않고 그 예와 Keycloak 이 200 이다 · 아홉 언어, 등록부
     token-success-status-range-divergent). 그 밖의 상태는 같은 본문의 오류 상태가 받는
     판정이다(`oauth_failure` — `HTTP <상태>` 와, 본문 `error` 중 `carried_code` 가 허락한
-    코드). `in_message` 가 거짓이면 그 코드를 메시지에는 싣지 않고 `error` 에만 싣는다 —
-    admin 자체 그랜트의 오류 상태 모양이다(`grant_failure`). 그 응답의 나머지는 쓰지 않는다 —
-    호출자는 이것을 응답의 **어떤** 검사보다 먼저 부른다. 예전에는 201 의 토큰을 돌려주고
-    (admin 은 그것으로 요청을 보냈다) introspection 을 활성으로 읽었고, 204 는 python-keycloak
-    이 돌려준 `{}` 의 「없음」 판정이었다(실측 2026-11-23). 상태를 모르면(세션을 지나지 않은
-    목 — `token_cap.Answered`) 보지 않는다."""
+    코드). 본문은 오류 상태처럼 받은 바이트 그대로 읽는다(`error_member` — `token_cap.Answered`):
+    python-keycloak 이 돌려준 것은 sync 가 잘못된 UTF-8 을 U+FFFD 로 바꿔 푼 JSON 이라 400 이면
+    없을 코드를 실었다(등록부 token-response-residual-divergence C). `in_message` 가 거짓이면 그
+    코드를 메시지에는 싣지 않고 `error` 에만 싣는다 — admin 자체 그랜트의 오류 상태
+    모양이다(`grant_failure`). 그 응답의 나머지는 쓰지 않는다 — 호출자는 이것을 응답의 **어떤**
+    검사보다 먼저 부른다. 예전에는 201 의 토큰을 돌려주고 (admin 은 그것으로 요청을 보냈다)
+    introspection 을 활성으로 읽었고, 204 는 python-keycloak 이 돌려준 `{}` 의 「없음」
+    판정이었다(실측 2026-11-23). 상태를 모르면(세션을 지나지 않은 목 — `token_cap.Answered`)
+    보지 않는다."""
     status = answered.status
     if status is None or status == 200:
         return None
-    value = answer.get("error") if isinstance(answer, dict) else None
+    value = error_member(answered.body)
     if in_message:
         return oauth_failure(status, value, sent)
     failure = oauth_failure(status, None, sent)
@@ -243,14 +253,17 @@ def non_200_success(
 def unusable_answer(exc: BaseException, answered: Answered | None) -> KeycloakAuthError:
     """python-keycloak 이 끝까지 온 응답을 쓸 수 없다고 던진 실패(비-`KeycloakError`)의 판정.
 
-    그 호출이 마지막으로 받은 응답(`answered`, `token_cap.py`)이 2xx 가 아니면 그 상태다 —
+    그 호출이 마지막으로 받은 응답(`answered`, `token_cap.py`)이 200 이 아니면 그 상태다 —
     `Keycloak request failed: HTTP <상태>`, 코드는 싣지 않는다(본문이 객체가 아니다).
     python-keycloak 이 2xx 가 아닌 응답에서 깨지는 자리는 오류 본문의 `["message"]` 하나다 —
     JSON 이 객체가 아니면 `TypeError`, 깊은 중첩이면 `RecursionError`(등록부
-    python-auth-error-body-shape-status — 예전에는 상태 없는 `unusable_response` 였다).
-    2xx 를 못 쓴 것은 `unusable_response` 그대로다."""
+    python-auth-error-body-shape-status — 예전에는 상태 없는 `unusable_response` 였다). 200 이
+    아닌 2xx 도 그 오류 상태다 — python-keycloak 은 그것을 성공으로 받아 객체가 아닌 본문에
+    `TypeError` 를 던지지만 판정은 같은 본문의 400 과 같다(등록부 token-response-residual-divergence
+    C — 예전에는 「unusable response (TypeError)」). 200 을 못 쓴 것은 `unusable_response`
+    그대로다."""
     status = None if answered is None else answered.status
-    if status is not None and status >= 300:
+    if status is not None and status != 200:
         return KeycloakAuthError(f"Keycloak request failed: HTTP {status}")
     return unusable_response(exc)
 

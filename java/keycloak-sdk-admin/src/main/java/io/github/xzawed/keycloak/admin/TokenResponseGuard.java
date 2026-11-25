@@ -272,10 +272,9 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
       release(in, exchange);
       throw new Unusable(status, REJECTED, null);
     }
-    String error = oauthError(body);
-    if (error != null) {
+    if (namesAnError(body)) {
       release(in, exchange);
-      throw new OAuthErrorResponse(status, OAuthErrorCode.carried(error, sent));
+      throw new OAuthErrorResponse(status, OAuthErrorCode.carried(oauthError(body), sent));
     }
     if (!carriesUsableAccessToken(body)) {
       release(in, exchange);
@@ -285,11 +284,31 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   }
 
   /**
-   * 최상위가 JSON 객체이고 그 {@code error} 하나라도 비어 있지 않은 JSON 문자열이다 — 성공 상태의 OAuth 오류 응답이다(등록부
-   * auth-2xx-error-code-divergent). 결합(AccessTokenResponse)은 {@code error} 칸을 읽어 두지만 TokenManager 는 그것을 보지 않고
-   * {@code access_token} 을 썼다 — 실려 있으면 그 토큰으로 admin 요청이 나갔다(실측). 판정은 access_token 보다 먼저다(쓸 수 있는 토큰이
-   * 함께 실려도 쓰지 않는다). 문자열이 아니거나(숫자 · 객체 · 배열 · 불리언 · null) 비었으면 지금처럼 판정한다. 중복 키는 하나라도 그러면
-   * 오류다(access_token 처럼 전부 본다 — 닫는 쪽으로 — 값은 그 첫 것이다). 그 값을 돌려주고, 아니면 null 이다 — 코드로 싣는 것은
+   * 최상위가 JSON 객체이고 그 {@code error} 하나라도 있고 null 도 "" 도 아니다 — 문자열이 아니어도(숫자 · 객체 · 배열 · 불리언) 성공
+   * 상태의 OAuth 오류 응답이다(등록부 auth-2xx-error-code-divergent · token-response-residual-divergence A). 결합(AccessTokenResponse)은
+   * {@code error} 칸을 읽어 두지만 TokenManager 는 그것을 보지 않고 {@code access_token} 을 썼다 — 실려 있으면 그 토큰으로 admin 요청이
+   * 나갔다(실측 — 숫자 · 불리언은 결합이 문자열로 바꿔 받았다). 판정은 access_token 보다 먼저다(쓸 수 있는 토큰이 함께 실려도 쓰지
+   * 않는다). 중복 키는 하나라도 그러면 오류다(access_token 처럼 전부 본다 — 닫는 쪽으로). 실을 코드는 {@link #oauthError} 가 고른다.
+   * 형식이 틀리면 false — 그 본문은 아래 판정이 거부한다.
+   */
+  static boolean namesAnError(byte[] body) {
+    try (JsonParser p = JSON.createParser(body)) {
+      if (p.nextToken() != JsonToken.START_OBJECT) return false;
+      while (p.nextToken() == JsonToken.FIELD_NAME) {
+        boolean error = ERROR.equals(p.currentName());
+        JsonToken value = p.nextToken();
+        if (error && value != JsonToken.VALUE_NULL && !(value == JsonToken.VALUE_STRING && p.getText().isEmpty())) return true;
+        p.skipChildren();
+      }
+      return false;
+    } catch (IOException malformed) {
+      return false; // 파서 메시지는 본문을 인용할 수 있다 — 버린다(아래 판정이 같은 본문을 거부한다)
+    }
+  }
+
+  /**
+   * 최상위가 JSON 객체이고 그 {@code error} 하나라도 비어 있지 않은 JSON 문자열이면 그 값(중복 키는 그 첫 것), 아니면 null — 그 응답이
+   * 싣는 OAuth 코드의 후보다(성공 상태는 {@link #namesAnError} 가 판정한 뒤, 오류 상태는 그대로). 코드로 싣는 것은
    * {@link OAuthErrorCode#carried} 가 허락한 것뿐이다. 형식이 틀리면 null — 그 본문은 아래 판정이 거부한다.
    */
   static String oauthError(byte[] body) {
@@ -515,7 +534,7 @@ final class TokenResponseGuard implements ClientResponseFilter, ReaderIntercepto
   }
 
   /**
-   * 오류 상태처럼 실패하는 2xx 토큰 응답 — 200 의 본문이 OAuth 오류 응답이거나({@link #oauthError} — 등록부
+   * 오류 상태처럼 실패하는 2xx 토큰 응답 — 200 의 본문이 OAuth 오류 응답이거나({@link #namesAnError} — 등록부
    * auth-2xx-error-code-divergent) 상태가 200 이 아닌 2xx 다({@link #filter} — 토큰 응답의 성공은 200 뿐이다). 그 상태와, 그
    * {@code error} 가운데 {@link OAuthErrorCode#carried} 가 허락한 코드(아니면 null)를 싣는다. {@link AdminExceptions} 가 같은 본문의
    * 4xx 와 같은 꼴(「admin token request failed: HTTP &lt;상태&gt;」)로 바꾸고 코드는 {@code getError()} 에 싣는다 — 아홉 언어의 규칙.

@@ -66,12 +66,14 @@ final class CappedResponseSender {
   }
 
   /**
-   * {@link #send} 와 같되 <b>2xx 본문은 UTF-8 이어야 한다</b> — 아니면 {@link NotUtf8}(끝까지 온 응답을 쓸 수 없다 — 호출부가 그 레인의
-   * 인증 오류로 바꾼다). 토큰(세 그랜트)·introspection 이 이것을 지난다 — 그 2xx 본문은 JSON 이고 RFC 8259 §8.1 은 UTF-8 이다.
+   * {@link #send} 와 같되 <b>200 본문은 UTF-8 이어야 한다</b> — 아니면 {@link NotUtf8}(끝까지 온 응답을 쓸 수 없다 — 호출부가 그 레인의
+   * 인증 오류로 바꾼다). 토큰(세 그랜트)·introspection 이 이것을 지난다 — 그 200 본문은 JSON 이고 RFC 8259 §8.1 은 UTF-8 이다.
    * ⚠️ Nimbus 와 같은 디코딩({@link #asNimbusReadsIt})은 잘못된 바이트를 U+FFFD 로 바꿔 <b>받아들였다</b> — IdP 가 내지 않은 토큰
    * (ok · U+FFFD 둘 · vc)·바뀐 클레임이 성공으로 나갔다(실측 — {@code TokenResponseClassTest}). 오류 상태의 본문은 보지 않는다
-   * (판정은 상태가 한다 — 사유 문구는 지금처럼 읽는다). 선언된 charset 도 보지 않는다(RFC 8259 §11 — application/json 에는 효과가
-   * 없다). logout 은 본문을 쓰지 않으므로 {@link #send} 다. 유효한 UTF-8 은 지금과 같은 문자열이다.
+   * (판정은 상태가 한다 — 사유 문구는 지금처럼 읽는다). 200 이 아닌 2xx 도 오류 상태다(토큰 응답의 성공은 200 하나 — 등록부
+   * token-success-status-range-divergent): 같은 본문의 400 과 같은 판정이다(등록부 token-response-residual-divergence C — 예전에는
+   * 201 의 잘못된 UTF-8 이 「not valid UTF-8」 이고 400 은 그 본문의 코드를 실었다). 선언된 charset 도 보지 않는다(RFC 8259 §11 —
+   * application/json 에는 효과가 없다). logout 은 본문을 쓰지 않으므로 {@link #send} 다. 유효한 UTF-8 은 지금과 같은 문자열이다.
    */
   static HTTPResponse sendStrict(HTTPRequest request, String what) throws IOException {
     return request.send(sameRequest -> receive(request, what, true));
@@ -124,8 +126,8 @@ final class CappedResponseSender {
     byte[] body = readWithinCap(in);
     if (body == null) throw new TooLarge(what);
     int status = head.getStatusLine().getStatusCode();
-    if (strict && status >= 200 && status < 300 && !isUtf8(body)) throw new NotUtf8(what);
-    if (strict && status >= 200 && status < 300 && holdsUnpairedSurrogate(body)) {
+    if (strict && status == HTTPResponse.SC_OK && !isUtf8(body)) throw new NotUtf8(what);
+    if (strict && status == HTTPResponse.SC_OK && holdsUnpairedSurrogate(body)) {
       throw new NotUtf8(what, "holds an unpaired surrogate escape");
     }
     HTTPResponse response = new HTTPResponse(status);

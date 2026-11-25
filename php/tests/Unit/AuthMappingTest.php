@@ -56,7 +56,8 @@ final class AuthMappingTest extends TestCase
      * league grants share `checkResponse`, so the same type, message and code as a 400 carrying it (`token request rejected:
      * <code>`), and the token beside it is never returned (registry `auth-2xx-error-code-divergent`). B1 is the error alone,
      * B2 the error beside a usable token, `zero` the error `"0"` beside one — a non-empty string, though upstream's `empty()`
-     * calls it no error.
+     * calls it no error — and `number` · `false` the error `0` · `false` beside one: no string, so no code, but an error all
+     * the same (registry `token-response-residual-divergence` A — upstream's `empty()` let both through with the token).
      *
      * @return array<string, array{string, string}> [lane, body name]
      */
@@ -64,7 +65,7 @@ final class AuthMappingTest extends TestCase
     {
         $rows = [];
         foreach (['clientCredentialsToken', 'refresh', 'exchangeCode'] as $lane) {
-            foreach (['B1', 'B2', 'zero'] as $body) {
+            foreach (['B1', 'B2', 'zero', 'number', 'false'] as $body) {
                 $rows["$lane · $body"] = [$lane, $body];
             }
         }
@@ -85,7 +86,7 @@ final class AuthMappingTest extends TestCase
 
         self::assertSame(0, $mock->count(), 'the token request went out');
         self::assertInstanceOf(KeycloakAuthError::class, $e, "$lane $body: " . self::describe($e));   // final — the exact class
-        $code = $body === 'zero' ? null : 'invalid_grant';
+        $code = \in_array($body, ['B1', 'B2'], true) ? 'invalid_grant' : null;
         self::assertSame('token request rejected' . ($code === null ? '' : ": $code"), $e->getMessage());
         self::assertSame($code, $e->oauthError);
     }
@@ -98,7 +99,7 @@ final class AuthMappingTest extends TestCase
      */
     public static function successStatusOAuthErrorIntrospectionRows(): array
     {
-        return ['B1' => ['B1'], 'B2' => ['B2'], 'zero' => ['zero']];
+        return ['B1' => ['B1'], 'B2' => ['B2'], 'zero' => ['zero'], 'number' => ['number'], 'false' => ['false']];
     }
 
     #[DataProvider('successStatusOAuthErrorIntrospectionRows')]
@@ -111,7 +112,7 @@ final class AuthMappingTest extends TestCase
         self::assertSame(0, $mock->count(), 'the introspection request went out');
         self::assertInstanceOf(KeycloakAuthError::class, $e, "$body: " . self::describe($e));
         self::assertSame('introspection failed', $e->getMessage());
-        self::assertSame($body === 'zero' ? null : 'invalid_token', $e->oauthError);
+        self::assertSame(\in_array($body, ['B1', 'B2'], true) ? 'invalid_token' : null, $e->oauthError);
     }
 
     /**
@@ -141,8 +142,9 @@ final class AuthMappingTest extends TestCase
     }
 
     /**
-     * Only a non-empty string `error` counts — an empty string, null, a number or false beside a usable answer is ignored as
-     * before (the control for the rows above). One league grant stands for the three: they share `checkResponse`.
+     * Only an `error` that is null or an empty string is no error — beside a usable answer it is ignored as before (the
+     * control for the rows above; a number or false now fails there — registry `token-response-residual-divergence` A). One
+     * league grant stands for the three: they share `checkResponse`.
      *
      * @return array<string, array{string, string}> [lane, JSON literal of `error`]
      */
@@ -150,7 +152,7 @@ final class AuthMappingTest extends TestCase
     {
         $rows = [];
         foreach (['clientCredentialsToken', 'introspect'] as $lane) {
-            foreach (['empty string' => '""', 'null' => 'null', 'number' => '0', 'false' => 'false'] as $name => $literal) {
+            foreach (['empty string' => '""', 'null' => 'null'] as $name => $literal) {
                 $rows["$lane · $name"] = [$lane, $literal];
             }
         }
@@ -159,7 +161,7 @@ final class AuthMappingTest extends TestCase
     }
 
     #[DataProvider('successStatusOAuthErrorIgnoredRows')]
-    public function testSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString(string $lane, string $literal): void
+    public function testSuccessStatusOAuthErrorIgnoresANullOrEmptyError(string $lane, string $literal): void
     {
         $body = $lane === 'introspect'
             ? '{"error":' . $literal . ',"active":true}'
@@ -191,6 +193,8 @@ final class AuthMappingTest extends TestCase
         return match ($name) {
             'B1' => '{"error":"invalid_grant","error_description":"d"}',
             'B2' => '{"error":"invalid_grant","access_token":"' . self::B2_ACCESS . '","token_type":"Bearer","expires_in":300}',
+            'number' => '{"error":0,"access_token":"' . self::B2_ACCESS . '","token_type":"Bearer","expires_in":300}',
+            'false' => '{"error":false,"access_token":"' . self::B2_ACCESS . '","token_type":"Bearer","expires_in":300}',
             default => '{"error":"0","access_token":"' . self::B2_ACCESS . '","token_type":"Bearer","expires_in":300}',
         };
     }
@@ -200,6 +204,8 @@ final class AuthMappingTest extends TestCase
         return match ($name) {
             'B1' => '{"error":"invalid_token"}',
             'B2' => '{"error":"invalid_token","active":true}',
+            'number' => '{"error":0,"active":true}',
+            'false' => '{"error":false,"active":true}',
             default => '{"error":"0","active":true}',
         };
     }

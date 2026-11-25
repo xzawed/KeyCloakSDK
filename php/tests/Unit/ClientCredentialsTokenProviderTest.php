@@ -137,13 +137,14 @@ final class ClientCredentialsTokenProviderTest extends TestCase
      * A 200 whose body still carries an OAuth `error` fails as the error status does — `client-credentials failed` with the
      * vetted code — and nothing in it is cached: B2's token beside the `error` was cached and returned (registry
      * `auth-2xx-error-code-divergent`). B1 is the error alone, B2 the error beside a usable token, `zero` the error `"0"` (a
-     * non-empty string — PHP's `empty()` calls it empty) beside one.
+     * non-empty string — PHP's `empty()` calls it empty) beside one, `number` · `false` the error `0` · `false` beside one — no
+     * string, so no code, but an error all the same (registry `token-response-residual-divergence` A).
      *
      * @return array<string, array{string}>
      */
     public static function successStatusOAuthErrors(): array
     {
-        return ['B1' => ['B1'], 'B2' => ['B2'], 'zero' => ['zero']];
+        return ['B1' => ['B1'], 'B2' => ['B2'], 'zero' => ['zero'], 'number' => ['number'], 'false' => ['false']];
     }
 
     #[DataProvider('successStatusOAuthErrors')]
@@ -163,6 +164,8 @@ final class ClientCredentialsTokenProviderTest extends TestCase
         $http->body = match ($body) {
             'B1' => '{"error":"invalid_grant","error_description":"d"}',
             'B2' => '{"error":"invalid_grant","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}',
+            'number' => '{"error":0,"access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}',
+            'false' => '{"error":false,"access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}',
             default => '{"error":"0","access_token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXZhbHVl","token_type":"Bearer","expires_in":300}',
         };
         $f = new HttpFactory();
@@ -172,7 +175,7 @@ final class ClientCredentialsTokenProviderTest extends TestCase
             self::fail("$body: a token came back");
         } catch (KeycloakAuthError $e) {
             self::assertSame('client-credentials failed', $e->getMessage());
-            self::assertSame($body === 'zero' ? null : 'invalid_grant', $e->oauthError);
+            self::assertSame(\in_array($body, ['B1', 'B2'], true) ? 'invalid_grant' : null, $e->oauthError);
         }
         // Nothing was cached — the next call asks the token endpoint again and gets the token it answers now.
         $http->body = json_encode(['access_token' => 'AT', 'token_type' => 'Bearer', 'expires_in' => 300], JSON_THROW_ON_ERROR);
@@ -181,18 +184,18 @@ final class ClientCredentialsTokenProviderTest extends TestCase
     }
 
     /**
-     * Only a non-empty string `error` counts — an empty string, null, a number or false beside a usable token is ignored as
-     * before (the control for the rows above).
+     * Only an `error` that is null or an empty string is no error — beside a usable token it is ignored as before (the control
+     * for the rows above; a number or false now fails there — registry `token-response-residual-divergence` A).
      *
      * @return array<string, array{string}> JSON literal of `error`
      */
     public static function successStatusOAuthErrorIgnored(): array
     {
-        return ['empty string' => ['""'], 'null' => ['null'], 'number' => ['0'], 'false' => ['false']];
+        return ['empty string' => ['""'], 'null' => ['null']];
     }
 
     #[DataProvider('successStatusOAuthErrorIgnored')]
-    public function testSuccessStatusOAuthErrorIgnoresAnErrorThatIsNotANonEmptyString(string $literal): void
+    public function testSuccessStatusOAuthErrorIgnoresANullOrEmptyError(string $literal): void
     {
         $http = new class () implements ClientInterface {
             public int $calls = 0;
