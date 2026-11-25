@@ -13,8 +13,9 @@
 #   음성       제품 실패 로그 23 개의 실제 줄 — `429 complete` · `(timeout 240s)` · `Fetching timeout` · `504 kB/s` 처럼 낱말만
 #              닮은 줄 포함 — · 상류 로그의 성공 줄 · 제품 자신의 낱말(SDK 의 `Read timed out` · JDK 의 `Connection reset` ·
 #              node 의 `read ECONNRESET`) → 1.
-#              근접 대조군: 실제 양성 줄에서 **한 부분만** 바꾼 줄 — 거절 모양을 지우거나(429 → 401 · 504 → 404) 맥락을 하네스
-#              자신의 레지스트리로 바꾼다(mvn-repo · mvn-repo-kotlin · satis-web · 컴포즈 서비스 keycloak) — → 1. 넓어진 서명은 여기서 운다.
+#              근접 대조군(지어낸 줄): 실제 양성 줄에서 **한 부분만** 바꾼 줄 — 거절 모양을 지우거나(429 → 401 · 504 → 404) 맥락을
+#              하네스 자신의 레지스트리로 바꾸거나(mvn-repo · mvn-repo-kotlin · satis-web · 컴포즈 서비스 keycloak) 서명의 꼬리를 바꾼다
+#              (해석 출처 절을 뗀 플러그인 문구 · `(present, but unavailable)`) — → 1. 넓어진 서명은 여기서 운다.
 #   판정 불가  인자 없음 · 둘 · 없는 파일 · 디렉터리 · 빈 로그 · 공백만 → 2.
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -102,8 +103,14 @@ $HUS_NEG
 EOF
 assert_eq "20" "$_nn" "[음성] 음성 줄이 20 개가 아니다 — 목록이 깨졌나?"
 
-# ── 근접 대조군 — 실제 양성 줄에서 한 부분만 바꿨다. 위 다섯은 맥락을 하네스 자신의 레지스트리 · 서비스로(그 거절은 우리
-#    인프라 · 게시의 실패다), 아래 둘은 거절 모양을 지웠다(401 은 자격 · 404 는 그 커밋이 없다 — 다시 돌려도 같다).
+# ── 근접 대조군 — **지어낸 줄이다**(실제 로그 줄이 아니다): 실제 양성 줄에서 한 부분만 바꿨다. 처음 다섯은 맥락을 하네스 자신의
+#    레지스트리 · 서비스로(그 거절은 우리 인프라 · 게시의 실패다), 다음 둘은 거절 모양을 지웠다(401 은 자격 · 404 는 그 커밋이
+#    없다 — 다시 돌려도 같다). 마지막 둘은 서명의 꼬리를 고정한다(PM 변이 프로브 · 리뷰 — 그 전에는 SILENT 였다):
+#    · gradle-plugin 의 해석 출처 절(`in any of the following sources`)을 뗀 문구 — 시험 이름 · 요약이 인용하는 꼴이다.
+#    · central-absent 의 꼬리표를 리졸버의 다른 로컬 상태로 — `(present, but unavailable)` 은 파일이 로컬 저장소에 **다른 원격에서**
+#      와 있다는 뜻이다(maven-resolver-api 1.9.27 `ArtifactResolutionException` 의 문자열 `present` · `, but unavailable` · `absent`).
+#      하네스가 스테이징한 BOM(`harness/install/consume/java-app-pom.xml` 의 import)을 central 로 푼 출처 설정 실패다 — 다시 돌려도
+#      같다(`java-run.sh` 가 같은 `_remote.repositories` 출처를 단언한다). `(absent)` 는 로컬에 없는 경우만이다.
 #    서명이 둘 중 하나만 보게 넓어지면 여기서 운다.
 HUS_NEAR="$(cat <<'EOF'
 #15 32.80 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk:pom:1.0.0 (absent): Could not transfer artifact io.github.xzawed:keycloak-sdk:pom:1.0.0 from/to mvn-repo (http://mvn-repo/): status code: 429, reason phrase: Too Many Requests (429) @ line 84, column 19
@@ -113,6 +120,8 @@ HUS_NEAR="$(cat <<'EOF'
 #17 25.83     Failed to download xzawed/keycloak-sdk from dist: The "http://satis-web/dist/xzawed-keycloak-sdk-1.0.0.zip" file could not be downloaded (HTTP/1.1 503 Service Unavailable)
 #15 32.80 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Could not transfer artifact org.junit:junit-bom:pom:6.1.3 from/to central (https://repo.maven.apache.org/maven2): status code: 401, reason phrase: Unauthorized (401) @ line 84, column 19
 #17 25.83     Failed to download psr/clock from dist: The "https://api.github.com/repos/php-fig/clock/zipball/e41a24703d4560fd0acb709162f73b8adfc3aa0d" file could not be downloaded (HTTP/2 404 )
+#15 23.70 Plugin [id: 'com.vanniktech.maven.publish', version: '0.37.0'] was not found
+#15 1.930 [ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 (present, but unavailable): Could not find artifact io.github.xzawed:keycloak-sdk-bom:pom:0.1.0 in central (https://repo.maven.apache.org/maven2) @ line 84, column 19
 EOF
 )"
 _nm=0
@@ -125,7 +134,7 @@ $(cat "$_t/out" "$_t/err")"
 done <<EOF
 $HUS_NEAR
 EOF
-assert_eq "7" "$_nm" "[근접] 근접 대조군이 7 개가 아니다 — 목록이 깨졌나?"
+assert_eq "9" "$_nm" "[근접] 근접 대조군이 9 개가 아니다 — 목록이 깨졌나?"
 
 # ── gh `--log-failed` 꼴(잡 <TAB> 스텝 <TAB> BOM·시각 본문) — 첫 줄도 끝 줄도 아닌 자리에 묻힌 거절 하나를 찾고, 찍는 줄에는
 #    gh 의 칸을 남기지 않는다(첫 줄 · 끝 줄만 보는 판정은 한 줄짜리 양성으로는 안 잡힌다).
