@@ -162,6 +162,11 @@ impl AuthClient {
     /// config `redirect_uri` that [`Self::create_authorization_request_with_redirect`] would refuse (a fragment, a
     /// character outside RFC 3986 §2, or a shape Keycloak cannot parse).
     /// The shared `http` (with the TLS, timeout and SSRF policies injected) is used as-is; no client of its own is built.
+    ///
+    /// Low-level constructor: `http` is used as-is, including its redirect policy. Build it with
+    /// `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does. With reqwest's
+    /// default policy a 307/308 to another origin re-sends the request body: the `client_secret`, the
+    /// `refresh_token`, the authorization code, or the token being introspected or revoked.
     pub fn new(
         config: KeycloakConfig,
         endpoints: OidcEndpoints,

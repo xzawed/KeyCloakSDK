@@ -155,6 +155,11 @@ async fn reject(mut resp: reqwest::Response) -> KeycloakError {
 impl AdminClient {
     /// Builds the facade from the shared `http` (with the TLS, timeout and SSRF policies injected) and the
     /// `TokenProvider`, and assembles `raw()`'s `KeycloakAdmin` from the same two.
+    ///
+    /// Low-level constructor: `http` is used as-is, including its redirect policy. Build it with
+    /// `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does. With reqwest's
+    /// default policy a 307/308 to another origin re-sends the Admin API request body (the JSON you send, such as
+    /// a user or client representation). reqwest strips `Authorization` on a cross-host redirect, not the body.
     pub fn new(
         config: &KeycloakConfig,
         http: reqwest::Client,

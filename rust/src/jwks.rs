@@ -158,6 +158,10 @@ struct Cached {
 }
 
 impl JwksStore {
+    /// Low-level constructor: `http` is used as-is, including its redirect policy. Build it with
+    /// `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does. The fetch is a GET
+    /// with no body, so nothing is re-sent, but with reqwest's default policy a followed redirect lets another
+    /// origin answer with the key set that validation then trusts.
     pub fn new(jwks_uri: impl Into<String>, http: reqwest::Client, min_refetch_secs: u64) -> Self {
         Self {
             source: Arc::new(Source {
