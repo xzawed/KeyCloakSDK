@@ -180,10 +180,28 @@
 // 않는다).
 // ⚠️ 수로 대조하는 장부의 한계(모든 언어 공통) — 한 함수 안에서 시험이 옛 미도달 하나를 덮고 새 미도달 하나가 생기면 수가 같아 통과한다.
 // 장부는 함수마다 「얼마나」를 대조할 뿐 「어느 줄 · 가지」인지는 대조하지 않는다.
+// ⚠️ 커버리지 제외 표지(등록부 coverage-ignore-markers-unguarded) — 출하 소스의 표지는 그 코드를 이 장부의 데이터에서 지울 수 있는데 막는 것이
+// 없었다. 그래서 `unit` · `unit-report` 는 리더보다 먼저 그 언어의 출하 소스(`git ls-files` 의 추적 파일 — 자리는 UNIT_MARKS)를 읽어 표지마다
+// 파일:줄을 FAIL 로 낸다(무결성 — 장부를 대조하지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — 0 이면 공허라 FAIL 이다. 표기는 도구 자신의 일치
+// 규칙을 옮긴다(읽은 자리는 UNIT_MARKS 의 줄마다 — 그 규칙보다 좁지 않다). 실측(2026-11-26 · main 544eec69 · 칸마다 scripts/probe.sh — 장부가
+// 이미 미도달로 적은 줄에 표지를 두고 `unit <언어>` 의 DRIFT 문구와 같은 시험 수로 읽었다 · 가린 칸마다 같은 자리의 오표기 대조군은 조용했다):
+// 장부를 가린다 — node(@vitest/coverage-v8 5.1.0)의 `/* v8 ignore next */` · `/* c8 ignore next */` · `/* istanbul ignore next */`, python
+// (coverage.py 7.15.2)의 `# pragma: no cover`, php(php-code-coverage 12.5.7 · pcov 1.0.12)의 `// @codeCoverageIgnoreStart` …
+// `// @codeCoverageIgnoreEnd`, dotnet(coverlet json · .NET 8.0.34)의 메서드에 붙인 `[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]`
+// (메서드가 데이터에 없다), java(JaCoCo 0.8.16)의 메서드에 붙인 최상위 `@interface Generated`(CLASS 보존 — 메서드가 없다), kotlin(같은
+// JaCoCo)의 메서드에 붙인 중첩 `annotation class Generated`(BINARY 보존). 가리지 않는다 — ruby 3.4.10 의 `# :nocov:` 쌍(돈 줄을 감싸도 · 안
+// 부른 새 private 메서드를 감싸도 — 장부는 VM 의 Coverage 를 그대로 읽는다. SimpleCov 의 레인 게이트는 재지 않았다), rust(rustc 1.100.0 ·
+// cargo-llvm-cov 0.8.7)의 `#[cfg_attr(coverage_nightly, coverage(off))]`(안정판에서 꺼져 있다) — 맨 `#[coverage(off)]` 는 안정판에서
+// error[E0658] 이라 출하되지 못한다. go 의 `go tool cover` 에는 표지가 없다(읽지 않는다). 가린다고 잰 것은 위 칸뿐이다 — 같은 규칙의 다른 꼴
+// (낱말 · 공백 · 대소문자)과 재지 않은 표기(`pragma: no branch` · ruby 의 `:nocov:` 와 `# simplecov:disable` · rust 의 `coverage(off)` · dotnet 의
+// `ExcludeFromCoverage` · node 의 `node:coverage` · php 의 한 줄 · 문서 주석 · 속성 꼴 · java · kotlin 의 다른 Generated 이름과 별칭)는 행동
+// 주장 없이(without a behaviour claim) 금지한다. coverage.py 의 DEFAULT_EXCLUDE 나머지 둘(`...` 만인 줄 · `if (typing\.)?TYPE_CHECKING:` —
+// config.py:152–153)은 표지가 아니라 보지 않는다(숨길 런타임 논리가 없다).
 // 종료코드(`unit` · `unit-report`): 0 측정 = 장부 · 1 DRIFT — 장부에 없는 미도달 · 수가 다르다 · 낡았거나 경계 밖 · 데이터에 없는 함수를
 // 가리키는 항목 · 까닭이 아니거나 열린 항목이 아닌 why(그 줄이 할 일을 말한다 — 시험을 쓰거나 까닭을 적는다) · 2 FAIL — 아래 표의
 // 무결성과 같다(데이터가 없다 · 다른 트리나 바이트의 것이다 · **단위 스위트의 성공한 실행이 아니다** · 경계 파일이 데이터에 없다 ·
-// 장부 · 기록의 꼴을 모른다). `check` 는 데이터 없이 장부의 꼴 · 경계 · why 를 본다(등록부만 바꾼 PR 도 — 레인은 `paths:` 뒤다).
+// 장부 · 기록의 꼴을 모른다 · 출하 소스에 커버리지 제외 표지가 있거나 읽은 추적 파일이 0 이다 — 위). `check` 는 데이터 없이 장부의 꼴 · 경계 ·
+// why 를 본다(등록부만 바꾼 PR 도 — 레인은 `paths:` 뒤다).
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -262,6 +280,43 @@ const UNIT_BRANCHES = new Set(['kotlin', 'dotnet', 'java', 'ruby', 'python', 'no
 // 지표와 같다). 장부 항목의 키도 그 이름이다(`statements` — 줄로 적으면 꼴이 틀린 것이다).
 const UNIT_STATEMENTS = new Set(['go', 'node'])
 const unitKey = (l) => (UNIT_STATEMENTS.has(l) ? 'statements' : 'lines')
+// 커버리지 제외 표지(머리 주석) — 언어마다 출하 소스의 자리(`git ls-files` 의 경로 지정)와 표기. 표기는 그 언어의 도구가 쓰는 일치 규칙을 옮긴
+// 정규식이다(읽은 자리는 줄마다 — 그 규칙보다 좁지 않다). 도구 규칙이 모두 대소문자를 가리므로 이 정규식들도 가린다. 표지가 없는 언어는 roots
+// 대신 까닭을 적는다.
+// python 은 coverage.py 7.15.2 config.py:151(DEFAULT_EXCLUDE) · :158(DEFAULT_PARTIAL) 그대로다 — parser.py:154 가 원문 전체에 re.MULTILINE 만으로
+// 건다. 파이썬 str 의 \s 는 JS 의 \s 에 U+001C–001F · U+0085 를 더한다(실측 3.12.10) — 그만큼 넓힌다.
+const PY_WS = '[\\s\\x1c-\\x1f\\x85]'
+const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x85]?${PY_WS}*(?:no|NO)${PY_WS}*(?:${w}|${w.toUpperCase()})`, 'g')
+// java · kotlin 은 JaCoCo 0.8.16 AnnotationGeneratedFilter.matches(javap -c)다 — 주석 서술자의 마지막 `/` · `$` 뒤 이름이 "Generated" 를 담으면
+// 그 클래스의 메서드 전부 · 그 메서드를 거른다(CLASS · RUNTIME 보존만 클래스 파일에 남는다 — 소스에서는 못 가려 가리지 않는다). 소스에서는 그
+// 이름이 쓰이는 자리를 본다 — 붙인 자리(`@a.XGenerated` · kotlin 의 `@get:` · `@[A B]`)와 별칭(kotlin 의 `import … as` · `typealias`).
+const JVM_ID = '[\\p{L}\\p{N}_$]'
+const JVM_NAME = `(?:${JVM_ID}+\\s*\\.\\s*)*${JVM_ID}*Generated${JVM_ID}*`
+const JVM_MARK = new RegExp(
+  `@\\s*(?:${JVM_ID}+\\s*:\\s*)?(?:\\[[^\\]]*?${JVM_ID}*Generated[^\\]]*\\]|${JVM_NAME})` +
+    `|\\bimport\\s+(?:static\\s+)?${JVM_NAME}|\\btypealias\\s+${JVM_ID}+(?:\\s*<[^>\\n]*>)?\\s*=\\s*${JVM_NAME}`,
+  'gu',
+)
+const UNIT_MARKS = {
+  // ast-v8-to-istanbul 1.0.7(@vitest/coverage-v8 5.1.0 이 v8 범위를 옮기는 것) dist/index.mjs:192 의 두 규칙 — 주석의 `if · else · next · file` 와
+  // 줄 어디든의 `start · stop` — 을 합쳤다(주석 머리의 `^\s*` 는 뗐다).
+  node: { roots: ['node/src'], marks: [/(?:istanbul|[cv]8|node:coverage)\s+ignore\s+(?:if|else|next|file|start|stop)(?=\W|$)/g] },
+  python: { roots: ['python/src'], marks: [pyMark('cover'), pyMark('branch')] },
+  // php-code-coverage 12.5.7 — 한 줄 주석 `// @codeCoverageIgnore[Start|End]`(ParsingSourceAnalyser.php:134–149) · 문서 주석의 `@codeCoverageIgnore`
+  // (IgnoredLinesFindingVisitor.php:111) · 이름이 `PHPUnit\Framework\Attributes\CodeCoverageIgnore` 로 풀리는 속성(같은 파일 :78–79 — 별칭 import 도
+  // NameResolver 가 먼저 푼다). 두 꼴(`@codeCoverageIgnore…` · `CodeCoverageIgnore`)을 본다.
+  php: { roots: ['php/src'], marks: [/@?[cC]odeCoverageIgnore\w*/g] },
+  // coverlet.collector 10.1.1 의 coverlet.core.dll(net8.0 · net10.0 · netstandard2.0)에 사용자 문자열로 나란히 든 특성 이름 둘 —
+  // `ExcludeFromCoverageAttribute` · `ExcludeFromCodeCoverageAttribute`. 별칭(`using X = …Attribute;`)도 그 이름을 쓴다.
+  dotnet: { roots: ['dotnet/src'], marks: [/ExcludeFrom(?:Code)?Coverage\w*/g] },
+  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', marks: [JVM_MARK] },
+  kotlin: { roots: ['kotlin/src/main/kotlin'], marks: [JVM_MARK] },
+  // SimpleCov 1.2.0 — `:nocov:` 토글(lines_classifier.rb:27 `/^(\s*)#(\s*)(:nocov:)/` — 토큰은 기본값이다, spec_helper 가 안 바꾼다)과 그 대체
+  // `# simplecov:disable`(directive.rb 의 PATTERN — 코드 뒤에 붙은 한 줄 꼴도).
+  ruby: { roots: ['ruby/lib'], marks: [/^[^\S\n]*#[^\S\n]*:nocov:/gm, /#[^\S\n]*simplecov[^\S\n]*:[^\S\n]*disable\b/g] },
+  rust: { roots: ['rust/src'], marks: [/\bcoverage\s*\(\s*off\s*\)/g] },
+  go: { why: 'go tool cover has no exclusion marker' },
+}
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────
 function usage(msg) {
@@ -3873,6 +3928,35 @@ const unitCounts = (l, x) => {
   return UNIT_BRANCHES.has(l) ? `${head} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : head
 }
 const unitMissed = (u) => (u.lines ?? 0) > 0 || (u.statements ?? 0) > 0 || (u.branches ?? 0) > 0
+// 출하 소스의 커버리지 제외 표지(머리 주석) — 표지마다 FAIL 이다(리더를 부르지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — 추적된 파일이
+// 0 이면(자리가 낡았다 · git 이 못 낸다) 「표지 0」이 아니라 공허라 FAIL 이다.
+function unitMarks(l) {
+  const m = UNIT_MARKS[l]
+  if (!m.roots) {
+    console.log(`[${l}] coverage-exclusion markers: not scanned — ${m.why}`)
+    return
+  }
+  const shown = m.shown ?? m.roots.join(' · ')
+  const r = spawnSync('git', ['ls-files', '-z', '--', ...m.roots], { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 })
+  // 지운(아직 안 올린) 추적 파일은 도구도 못 읽는다.
+  const files = r.status === 0 ? r.stdout.split('\0').filter((f) => f && existsSync(join(root, f))) : []
+  if (!files.length) {
+    const why = r.status === 0 ? '' : ` (git ls-files: ${`${r.error?.message ?? r.stderr}`.trim().split('\n')[0]})`
+    fail(l, `no tracked files under ${shown} in ${rootPosix}${why} — the coverage-exclusion marker scan would read nothing`)
+    return
+  }
+  const hits = []
+  for (const f of files) {
+    const text = readFileSync(join(root, f), 'utf8')
+    for (const re of m.marks)
+      for (const x of text.matchAll(re)) hits.push({ f, at: x.index, line: text.slice(0, x.index).split('\n').length, tok: x[0].trim().replace(/\s+/g, ' ') })
+  }
+  hits.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.at - b.at))
+  const n = `${files.length} tracked file${files.length === 1 ? '' : 's'} under ${shown}`
+  console.log(`[${l}] coverage-exclusion markers: ${hits.length ? `${hits.length} in ${n} — each is a FAIL below` : `none in ${n}`}`)
+  for (const h of hits)
+    fail(l, `${h.f}:${h.line}: coverage-exclusion marker \`${h.tok}\` in shipped source — the ledger cannot be trusted while one is there: remove it, then test that code or record why in ${UNIT}`)
+}
 // `unit` · `unit-report` — 측정(단위 실행의 데이터)과 장부를 함수마다 대조한다. 종료코드는 머리 주석의 단위 표다.
 function unitReport(l) {
   const d = derivedFor(l)
@@ -3883,6 +3967,8 @@ function unitReport(l) {
   const k = unitKey(l)
   // 경계 파생은 통합 장부의 핀과 같아야 한다 — 파생이 조용히 좁아지면 미도달도 조용히 줄어든다(같은 오라클이다).
   if (d && pin) matchesPin(l, d, pin)
+  // 출하 소스의 커버리지 제외 표지 — 하나라도 있으면 아래 리더를 부르지 않는다(장부를 대조하지 않는다 — 머리 주석).
+  unitMarks(l)
   const reader = { php: phpReport, kotlin: (x) => jvmReport('kotlin', x), dotnet: dotnetReport, java: (x) => jvmReport('java', x), ruby: rubyReport, go: goReport, python: pyReport, node: nodeReport, rust: rustReport }[l]
   const data = fails(l) ? null : reader(d)
   const rows = []
