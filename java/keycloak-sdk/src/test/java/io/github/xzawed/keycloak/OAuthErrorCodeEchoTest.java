@@ -482,7 +482,7 @@ class OAuthErrorCodeEchoTest {
    * One lane × cell's outcome — {@code row} is {outcome, code, message} (the assertions' text), {@code shown} the outcome class
    * alone and {@code used} whether anything in the body was used (a token returned, active read, an admin request sent).
    */
-  private record Recorded(String[] row, String shown, boolean used) {}
+  private record Recorded(List<String> row, String shown, boolean used) {}
 
   /** One lane × cell. Never throws: a failure of any type is the recorded outcome. */
   private Recorded recordCell(String lane, List<String> adminAuthorizations) {
@@ -499,10 +499,7 @@ class OAuthErrorCodeEchoTest {
     String outcome;
     String code;
     String message;
-    List<String> authorizations;
-    synchronized (adminAuthorizations) {
-      authorizations = new ArrayList<>(adminAuthorizations);
-    }
+    List<String> authorizations = List.copyOf(adminAuthorizations);
     if ("admin".equals(lane) && !authorizations.isEmpty()) {
       String header = authorizations.get(0);
       outcome = "Bearer AT-ok".equals(header) ? "SUCCESS" : "SENT-WITH-OTHER-AUTHORIZATION";
@@ -532,7 +529,7 @@ class OAuthErrorCodeEchoTest {
       message = failure.getMessage();
     }
     boolean used = "admin".equals(lane) ? !authorizations.isEmpty() : failure == null;
-    return new Recorded(new String[] {outcome, code, printable(message)},
+    return new Recorded(List.of(outcome, code, printable(message)),
         used || failure == null ? "SUCCESS" : outcomeOf(failure), used);
   }
 
@@ -598,7 +595,8 @@ class OAuthErrorCodeEchoTest {
    */
   @Test void residualDivergenceCellsMeetTheirTargets() throws IOException {
     java.util.concurrent.atomic.AtomicReference<Object[]> answer = new java.util.concurrent.atomic.AtomicReference<>();
-    List<String> adminAuthorizations = new ArrayList<>();
+    // The fake's handler thread adds, the test thread clears and copies — a copy-on-write list needs no lock.
+    List<String> adminAuthorizations = new java.util.concurrent.CopyOnWriteArrayList<>();
     server.removeContext("/");
     server.createContext("/", ex -> {
       ex.getRequestBody().readAllBytes();
@@ -611,9 +609,7 @@ class OAuthErrorCodeEchoTest {
         code = (Integer) a[0];
         bytes = (byte[]) a[1];
       } else if ("GET".equals(ex.getRequestMethod()) && path.equals("/admin/realms/" + REALM + "/users/u1")) {
-        synchronized (adminAuthorizations) {
-          adminAuthorizations.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
-        }
+        adminAuthorizations.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
         code = 200;
         bytes = ascii("{\"id\":\"u1\",\"username\":\"svc\"}");
       } else {
@@ -642,11 +638,9 @@ class OAuthErrorCodeEchoTest {
       for (Map.Entry<String, Object[]> cell : cells.entrySet()) {
         Object[] c = cell.getValue();
         answer.set(new Object[] {c[0], "introspect".equals(lane) ? c[2] : c[1]});
-        synchronized (adminAuthorizations) {
-          adminAuthorizations.clear();
-        }
+        adminAuthorizations.clear();
         Recorded recorded = recordCell(lane, adminAuthorizations);
-        rows.put(cell.getKey(), recorded.row());
+        rows.put(cell.getKey(), recorded.row().toArray(String[]::new));
         if ("B5".equals(cell.getKey())) b5.add("B5|java|" + lane + "|" + recorded.shown() + "|used=" + recorded.used());
       }
       wrong.addAll(residualWrong(lane, rows));
