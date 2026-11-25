@@ -198,6 +198,31 @@ describe('exchangeCode — 진짜 openid-client 로 id_token 을 잰다', () => 
     expect(refused).toBeInstanceOf(KeycloakAuthError)
   })
 
+  // `#verifyIdToken` 의 id_token 없음 갈래(단위 미도달 장부 — coverage-omit-hides-security-paths). 문자열 nonce 면 위 시험처럼
+  // openid-client 가 먼저 거부한다 — id_token 을 요구하는 것은 기대 nonce 가 **문자열**일 때뿐이다(실측 openid-client 6.9.0
+  // `authorizationCodeGrant` 의 idTokenExpected → oauth4webapi 3.8.8 `processAuthorizationCodeResponse`). SDK 는
+  // `nonce !== undefined` 로 가르므로, JS 호출자가 문자열 아닌 nonce 를 넘기면 openid-client 는 id_token 을 요구하지 않는 OAuth2
+  // 갈래로 간다 — 그때 없는 id_token 을 거부하는 것은 이 SDK 갈래뿐이다.
+  it.each([
+    ['null', null],
+    ['숫자 0', 0],
+  ])(
+    'JS 호출자 — 문자열 아닌 nonce(%s)에 id_token 없는 응답이 오면 SDK 가 거부한다(openid-client 는 요구하지 않는다)',
+    async (_name, nonce) => {
+      idp.idToken = ''
+      idp.certsHits = 0
+      const refused = await refusal(
+        client().auth.exchangeCode('code', 'https://app.example/cb', 'verifier', nonce as never),
+      )
+      expect(refused).toBeInstanceOf(KeycloakAuthError)
+      expect(refused.message).toBe(
+        'Authorization code exchange failed: missing id_token for nonce validation',
+      )
+      expect(refused.cause).toBeUndefined()
+      expect(idp.certsHits).toBe(0)
+    },
+  )
+
   // ⚠️ 루트 README(영·한)의 「nonce 를 생략하면」 문장의 근거다. 여덟 언어는 하위 라이브러리가 nonce 를 보지 않아
   // SDK 검증만 건너뛰고 교환에 성공한다. node 는 openid-client(oauth4webapi)가 기대 nonce 가 없을 때도 id_token 의
   // nonce 를 「없어야 한다」와 대조해 교환 자체를 거부한다 — `auth.test.ts` 는 openid-client 를 목킹해 이것을 못 본다.

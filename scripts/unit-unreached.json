@@ -222,23 +222,7 @@
       "why": "defensive: `if callable(close)` 의 거짓 쪽 — 생성 때와 공개 세터로 끼울 때 harden_openid 가 connection._s 와 그 호출 가능한 resolve_redirects 를 강제하고, 실제 세션(requests.Session)에는 close 가 있다. close 없는 세션에 대비한 방어선이다 — 세션을 가짜로 바꿔 넣어야만 닿는다"
     }
   },
-  "node": {
-    "node/src/auth.ts:AuthClient.#verifyIdToken": {
-      "statements": 1,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "node/src/auth.ts:AuthClient.logout": {
-      "statements": 0,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    },
-    "node/src/auth.ts:AuthClient.#discover": {
-      "statements": 1,
-      "branches": 1,
-      "why": "coverage-omit-hides-security-paths"
-    }
-  },
+  "node": {},
   "rust": {
     "rust/src/admin.rs:created_id": {
       "lines": 1,
