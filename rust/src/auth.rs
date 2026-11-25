@@ -165,8 +165,10 @@ impl AuthClient {
     ///
     /// Low-level constructor: `http` is used as-is, including its redirect policy. Build it with
     /// `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does. With reqwest's
-    /// default policy a 307/308 to another origin re-sends the request body: the `client_secret`, the
-    /// `refresh_token`, the authorization code, or the token being introspected or revoked.
+    /// default policy a 307/308 to another origin re-sends the request body: the authorization code and PKCE
+    /// `code_verifier`, the `refresh_token`, the token being introspected, or (`logout`, confidential client) the
+    /// `client_secret`. Elsewhere the secret travels in an `Authorization: Basic` header, which reqwest strips
+    /// cross-host.
     pub fn new(
         config: KeycloakConfig,
         endpoints: OidcEndpoints,

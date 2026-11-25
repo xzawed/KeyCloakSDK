@@ -160,6 +160,7 @@ impl AdminClient {
     /// `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does. With reqwest's
     /// default policy a 307/308 to another origin re-sends the Admin API request body (the JSON you send, such as
     /// a user or client representation). reqwest strips `Authorization` on a cross-host redirect, not the body.
+    /// `raw()` is built from the same `http`, so it inherits the same policy.
     pub fn new(
         config: &KeycloakConfig,
         http: reqwest::Client,
