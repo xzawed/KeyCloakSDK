@@ -47,5 +47,11 @@
       "node/src/auth_client.ts"
     ],
     "owners": {}
+  },
+  "rust": {
+    "pinned": [
+      "rust/src/auth_client.rs"
+    ],
+    "owners": {}
   }
 }

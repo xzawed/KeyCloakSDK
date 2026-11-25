@@ -262,5 +262,43 @@
       "branches": 0,
       "why": "integration: the drive never calls it — the integration test does, outside the unit run"
     }
+  },
+  "rust": {
+    "rust/src/auth_client.rs:AuthClient::exchange": {
+      "lines": 1,
+      "why": "defensive: the drive never sends an empty code"
+    },
+    "rust/src/auth_client.rs:AuthClient::port": {
+      "lines": 1,
+      "why": "open-gap"
+    },
+    "rust/src/auth_client.rs:AuthClient::pick": {
+      "lines": 4,
+      "why": "unreachable: the lines sit in pick's closure — the key is the enclosing fn"
+    },
+    "rust/src/auth_client.rs:AuthClient::token": {
+      "lines": 1,
+      "why": "integration: an async fn's body is a record of its own inside the fn's range — the drive never sends an empty code"
+    },
+    "rust/src/auth_client.rs:AuthClient::refresh": {
+      "lines": 2,
+      "why": "integration: the drive drops the future unpolled — the library's unit-test binary keeps the body's zero-count record"
+    },
+    "rust/src/auth_client.rs:AuthClient::logout_url": {
+      "lines": 3,
+      "why": "integration: the drive never calls it — the integration test does, outside the unit run"
+    },
+    "rust/src/auth_client.rs:AuthClient::convert": {
+      "lines": 3,
+      "why": "integration: nothing instantiates the generic — the library's unit-test binary keeps a zero-count record of it"
+    },
+    "rust/src/auth_client.rs:<AuthClient as fmt::Display>::fmt": {
+      "lines": 3,
+      "why": "integration: the drive never formats the client — a trait method keys as <Type as Trait>::name"
+    },
+    "rust/src/auth_client.rs:static DEFAULT_SCOPE": {
+      "lines": 4,
+      "why": "integration: nothing forces the static's closure — its lines are the static's"
+    }
   }
 }

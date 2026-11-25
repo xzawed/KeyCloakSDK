@@ -2,6 +2,7 @@ name: rust-ci
 on:
   # `scripts/integration-coverage.*` — integration 잡의 리포트가 그 둘로 돈다. 리포트 로직·핀만 고친 PR 에서도
   # 실제 데이터로 재야 한다(자가테스트는 픽스처만 본다 — go-ci · python-ci · node-ci 와 같다).
+  # `scripts/unit-unreached.json` — unit-unreached 잡의 장부다(장부만 고친 PR 에서도 실제 단위 실행과 대조한다).
   push:
     branches: [main]
     paths: ['rust/**', '.github/workflows/rust-ci.yml', 'scripts/check-hp-attest.mjs', 'scripts/check-canaries-ran.mjs', 'scripts/test/test-lane-canaries.sh', 'scripts/test/test-security-defaults.sh', 'scripts/check-rendered-docs-hangul.mjs', 'scripts/integration-coverage.mjs', 'scripts/integration-coverage.json', 'scripts/unit-unreached.json','scripts/coverage-boundary.mjs', 'scripts/lib/dotnet-tfm.mjs', 'scripts/check-known-gaps.mjs']
@@ -83,6 +84,22 @@ jobs:
       # 조용히 게이트 밖으로 빠진다. [\\/] 는 로컬 Windows 경로용(sonarcloud.yml · rust.md 와 같은 값).
       - run: cargo llvm-cov --ignore-filename-regex '(^|[\\/])(auth|admin|client)\.rs$' --fail-under-lines 90
 
+  # 단위 미도달 장부 — 위 coverage 잡의 게이트가 경계 정규식으로 빼는 경계 파일(auth · admin · client)을 단위 스위트(그 잡과 같은 `cargo
+  # llvm-cov` — 레인의 `cargo test`)로 계측해, 함수마다 단위 시험이 안 닿는 줄을 `scripts/unit-unreached.json` 과 대조한다(등록부
+  # coverage-omit-hides-security-paths — 통합 장부는 함수 단위라 이미 도는 함수 안의 새 실패 갈래를 못 본다). Docker 가 필요 없어 coverage 와
+  # 나란히 돈다(툴체인 · cargo-llvm-cov 는 coverage 잡과 같은 핀이다 — 줄의 귀속이 rustc 판을 따른다). 명령(경계를 안 빼는 lcov · 기록)과
+  # 종료코드의 뜻(0 · 1 DRIFT · 2 FAIL)은 `scripts/integration-coverage.mjs` 머리가 소유한다 — 종료코드를 그대로 받는다(배선 고정:
+  # `scripts/test/test-integration-coverage-gate.sh`).
+  unit-unreached:
+    name: unit-unreached ledger (rust — boundary code the unit suite never reaches)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: taiki-e/install-action@face1f3efc4b60bb08e253dcbd8306cbc8487e68 # cargo-llvm-cov
+      - name: 단위 미도달 장부 — 경계의 놓친 줄 ↔ scripts/unit-unreached.json
+        run: node scripts/integration-coverage.mjs unit rust --out "$RUNNER_TEMP/unit-unreached"
+
   audit:
     name: cargo audit (의존성 취약점)
     runs-on: ubuntu-latest
@@ -121,7 +138,7 @@ jobs:
     # ⚠️ **`taiki-e/install-action` 은 ref 가 곧 설치대상이다** — 옆 주석의 `# <도구>` 가 태그
     # 이름이고 SHA 는 그 태그의 커밋이다. dependabot 이 못 올리므로 사람이 올린다:
     #   gh api repos/taiki-e/install-action/git/ref/tags/<도구> --jq .object.sha
-    # 이 저장소의 자리 일곱 — rust-ci(cargo-llvm-cov ×2 · cargo-audit · cargo-semver-checks) ·
+    # 이 저장소의 자리 여덟 — rust-ci(cargo-llvm-cov ×3 · cargo-audit · cargo-semver-checks) ·
     # security-audit ×2(cargo-audit) · sonarcloud(cargo-llvm-cov). 같은 도구는 같은 SHA 를 쓴다.
     # ⚠️ **핀 노후를 「보안 스캐너 노후」로 읽지 말 것** — 설치되는 cargo-audit 은 crates.io 최신을
     # 받고 advisory-db 는 매 실행 fetch 한다. 이 핀이 고정하는 것은 **설치 액션**이지 DB 가 아니다.

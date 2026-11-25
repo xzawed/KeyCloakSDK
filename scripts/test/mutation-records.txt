@@ -2091,3 +2091,68 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:    fail('node', `${shown} is not the data \`${RUN_CMD} node\` recorded (sha1 ${String(rec.data_sha1).slice(0, 12)}… recorded, ${sha(bytes).slice(0, 12)}… now) — another run wrote over it`)
 NEW:    void 0 // PROBE-REC node-data-sha
 SITE:void 0 // PROBE-REC node-data-sha
+
+# ── 같은 장부의 rust 판정(coverage-omit-hides-security-paths, 2026-11-24)
+
+### unit-ledger-rust-tests-records
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (SUITE === 'unit') continue
+NEW:        void 0 // PROBE-REC rust-tests-records
+SITE:void 0 // PROBE-REC rust-tests-records
+
+### unit-ledger-rust-tests-integration
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (SUITE === 'unit') continue
+NEW:        continue // PROBE-REC rust-tests-integration
+SITE:// PROBE-REC rust-tests-integration
+
+### unit-ledger-rust-tests-lines
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:      if (SUITE === 'unit' && within(src.tests, line)) continue
+NEW:      void 0 // PROBE-REC rust-tests-lines
+SITE:void 0 // PROBE-REC rust-tests-lines
+
+### unit-ledger-rust-lines
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    if (SUITE === 'unit') for (const fn of src.funcs) units.push({ file: f, line: fn.start, name: fn.name, lines: fn.stmts - fn.covered })
+NEW:    if (SUITE === 'unit') for (const fn of src.funcs) units.push({ file: f, line: fn.start, name: fn.name, lines: fn.covered ? 0 : fn.stmts }) // PROBE-REC rust-lines
+SITE:// PROBE-REC rust-lines
+
+### unit-ledger-rust-norecord
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:        if (fn.kind === 'fn' && SUITE === 'unit') {
+NEW:        if (false) { // PROBE-REC rust-norecord
+SITE:// PROBE-REC rust-norecord
+
+### unit-ledger-rust-module
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  for (const x of files) if (ranSome && x.outside.covered < x.outside.stmts) fail('rust', `${x.file}: ${x.outside.stmts - x.outside.covered} of ${x.outside.stmts} lines outside every item (module level — code a macro placed there) never ran — no function can be credited with them`)
+NEW:  void 0 // PROBE-REC rust-module
+SITE:void 0 // PROBE-REC rust-module
+
+### unit-ledger-rust-module-first
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  const ranSome = files.some((x) => x.covered > 0)
+NEW:  const ranSome = true // PROBE-REC rust-module-first
+SITE:// PROBE-REC rust-module-first
+
+### unit-ledger-rust-record
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:  if (!isObj(rec) || rec.run !== 'rust' || (rec.suite ?? 'integration') !== SUITE) {
+NEW:  if (!isObj(rec) || rec.run !== 'rust') { // PROBE-REC rust-record
+SITE:// PROBE-REC rust-record
+
+### unit-ledger-rust-files-sha
+FILE:scripts/integration-coverage.mjs
+TEST:scripts/test/test-unit-unreached.sh
+OLD:    if (rec.files[f] !== now) fail('rust', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
+NEW:    void 0 // PROBE-REC rust-files-sha
+SITE:void 0 // PROBE-REC rust-files-sha
