@@ -153,7 +153,7 @@ async fn reject(mut resp: reqwest::Response) -> KeycloakError {
 }
 
 impl AdminClient {
-    /// Builds the facade from the shared `http` (with the TLS, timeout and SSRF policies injected) and the
+    /// Builds the facade from the shared `http` (the TLS, timeout and SSRF policies come with the client [`crate::KeycloakClient::new`] builds) and the
     /// `TokenProvider`, and assembles `raw()`'s `KeycloakAdmin` from the same two.
     ///
     /// Low-level constructor: `http` is used as-is, including its redirect policy. Build it with

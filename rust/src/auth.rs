@@ -161,7 +161,8 @@ impl AuthClient {
     /// Assembles the openidconnect client. A URL parse failure is converted to `KeycloakError::Config`, and so is a
     /// config `redirect_uri` that [`Self::create_authorization_request_with_redirect`] would refuse (a fragment, a
     /// character outside RFC 3986 §2, or a shape Keycloak cannot parse).
-    /// The shared `http` (with the TLS, timeout and SSRF policies injected) is used as-is; no client of its own is built.
+    /// No client of its own is built; the TLS, timeout and SSRF policies come with the client that
+    /// [`crate::KeycloakClient::new`] builds and passes here.
     ///
     /// Low-level constructor: `http` is used as-is, including its redirect policy. Build it with
     /// `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does. With reqwest's
