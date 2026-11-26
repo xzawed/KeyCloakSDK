@@ -105,7 +105,7 @@ jobs:
       # 모듈 · 빌드 캐시 — 레지스트리 429 로 이 잡이 죽지 않게. 경로가 없으면 setup-go 가 루트에서 go.mod 를 찾다
       # 「Restore cache failed」 경고만 남기고 캐시 없이 돌았다.
       - name: Set up Go 1.26
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.26'
           cache-dependency-path: |
@@ -145,7 +145,7 @@ jobs:
       # JSON은 절대경로를 담고 SonarQube가 baseDir 하위로 해석하므로 경로 정규화 불필요(lcov와 차이).
       # ⚠️ 절대경로라 두 잡의 워크스페이스 경로가 같아야 한다 — 같은 ubuntu-latest 호스티드 러너면 같다.
       - name: Set up Ruby 3.4
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -316,7 +316,7 @@ jobs:
       # 스캐너 스스로 `enablePreview: false`라고 찍는다 — 즉 후자는 타입을 못 푼 데서 온 오탐이라는 가설이다.
       # 스캐너는 JRE 를 스스로 받는다(로그 「JRE provisioning」 — Java 21) — 이 잡에 setup-java 가 없는 이유다.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8
+        uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8
         with:
           args: -Dsonar.qualitygate.wait=true -Dsonar.java.libraries=${{ env.SONAR_JAVA_LIBS }}
         env:

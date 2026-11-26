@@ -173,7 +173,7 @@ jobs:
     defaults: { run: { working-directory: go } }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.26'
           # ⚠️ 보안 잡의 setup-go에는 `check-latest`가 반드시 있어야 한다 — 없으면 러너 툴캐시에
@@ -257,7 +257,7 @@ jobs:
         working-directory: ruby
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1
+      - uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1
         with:
           ruby-version: '3.4' # CI 매트릭스 상단 — 감사는 Gemfile.lock 기준이라 매트릭스 불필요
           bundler-cache: true
