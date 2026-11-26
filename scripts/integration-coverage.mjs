@@ -182,8 +182,9 @@
 // 장부는 함수마다 「얼마나」를 대조할 뿐 「어느 줄 · 가지」인지는 대조하지 않는다.
 // ⚠️ 커버리지 제외 표지(등록부 coverage-ignore-markers-unguarded) — 출하 소스의 표지는 그 코드를 이 장부의 데이터에서 지울 수 있는데 막는 것이
 // 없었다. 그래서 `unit` · `unit-report` 는 리더보다 먼저 그 언어의 출하 소스(`git ls-files` 의 추적 파일 — 자리는 UNIT_MARKS)를 읽어 표지마다
-// 파일:줄을 FAIL 로 낸다(무결성 — 장부를 대조하지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — 0 이면 공허라 FAIL 이다. 표기는 도구 자신의 일치
-// 규칙을 옮긴다(읽은 자리는 UNIT_MARKS 의 줄마다 — 그 규칙보다 좁지 않다). 실측(2026-11-26 · main 544eec69 · 칸마다 scripts/probe.sh — 장부가
+// 파일:줄을 FAIL 로 낸다(무결성 — 장부를 대조하지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — 0 이면 공허라 FAIL 이고, 추적됐는데 못 읽는 자리
+// (하위 모듈 · 디렉터리)도 FAIL 이다. 표기는 도구 자신의 일치 규칙을 옮긴다(읽은 자리는 UNIT_MARKS 의 줄마다 — 그 규칙보다 좁지 않다).
+// 실측(2026-11-26 · main 544eec69 · 칸마다 scripts/probe.sh — 장부가
 // 이미 미도달로 적은 줄에 표지를 두고 `unit <언어>` 의 DRIFT 문구와 같은 시험 수로 읽었다 · 가린 칸마다 같은 자리의 오표기 대조군은 조용했다):
 // 장부를 가린다 — node(@vitest/coverage-v8 5.1.0)의 `/* v8 ignore next */` · `/* c8 ignore next */` · `/* istanbul ignore next */`, python
 // (coverage.py 7.15.2)의 `# pragma: no cover`, php(php-code-coverage 12.5.7 · pcov 1.0.12)의 `// @codeCoverageIgnoreStart` …
@@ -200,8 +201,8 @@
 // 종료코드(`unit` · `unit-report`): 0 측정 = 장부 · 1 DRIFT — 장부에 없는 미도달 · 수가 다르다 · 낡았거나 경계 밖 · 데이터에 없는 함수를
 // 가리키는 항목 · 까닭이 아니거나 열린 항목이 아닌 why(그 줄이 할 일을 말한다 — 시험을 쓰거나 까닭을 적는다) · 2 FAIL — 아래 표의
 // 무결성과 같다(데이터가 없다 · 다른 트리나 바이트의 것이다 · **단위 스위트의 성공한 실행이 아니다** · 경계 파일이 데이터에 없다 ·
-// 장부 · 기록의 꼴을 모른다 · 출하 소스에 커버리지 제외 표지가 있거나 읽은 추적 파일이 0 이다 — 위). `check` 는 데이터 없이 장부의 꼴 · 경계 ·
-// why 를 본다(등록부만 바꾼 PR 도 — 레인은 `paths:` 뒤다).
+// 장부 · 기록의 꼴을 모른다 · 출하 소스에 커버리지 제외 표지가 있거나 읽은 추적 파일이 0 이거나 추적된 자리를 못 읽는다 — 위). `check` 는 데이터
+// 없이 장부의 꼴 · 경계 · why 를 본다(등록부만 바꾼 PR 도 — 레인은 `paths:` 뒤다).
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
@@ -244,7 +245,7 @@
 // 레인의 Gradle 래퍼(`kotlin/gradlew`)와 같은 `java` · `javap` 이 있어야 하고, run 이 JaCoCo 에이전트 · CLI(판은 java 레인
 // pom 의 것 — kotlin 빌드는 Kover 라 JaCoCo 판을 안 갖는다)를 초기화 스크립트로 받는다(빌드 파일은 안 고친다).
 // DIR 기본값은 OS 임시 디렉터리 아래다.
-import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, readdirSync, copyFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, resolve, posix, basename } from 'node:path'
@@ -288,15 +289,108 @@ const unitKey = (l) => (UNIT_STATEMENTS.has(l) ? 'statements' : 'lines')
 const PY_WS = '[\\s\\x1c-\\x1f\\x85]'
 const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x85]?${PY_WS}*(?:no|NO)${PY_WS}*(?:${w}|${w.toUpperCase()})`, 'g')
 // java · kotlin 은 JaCoCo 0.8.16 AnnotationGeneratedFilter.matches(javap -c)다 — 주석 서술자의 마지막 `/` · `$` 뒤 이름이 "Generated" 를 담으면
-// 그 클래스의 메서드 전부 · 그 메서드를 거른다(CLASS · RUNTIME 보존만 클래스 파일에 남는다 — 소스에서는 못 가려 가리지 않는다). 소스에서는 그
-// 이름이 쓰이는 자리를 본다 — 붙인 자리(`@a.XGenerated` · kotlin 의 `@get:` · `@[A B]`)와 별칭(kotlin 의 `import … as` · `typealias`).
-const JVM_ID = '[\\p{L}\\p{N}_$]'
-const JVM_NAME = `(?:${JVM_ID}+\\s*\\.\\s*)*${JVM_ID}*Generated${JVM_ID}*`
-const JVM_MARK = new RegExp(
-  `@\\s*(?:${JVM_ID}+\\s*:\\s*)?(?:\\[[^\\]]*?${JVM_ID}*Generated[^\\]]*\\]|${JVM_NAME})` +
-    `|\\bimport\\s+(?:static\\s+)?${JVM_NAME}|\\btypealias\\s+${JVM_ID}+(?:\\s*<[^>\\n]*>)?\\s*=\\s*${JVM_NAME}`,
+// 그 클래스의 메서드 전부 · 그 메서드를 거른다(CLASS · RUNTIME 보존만 클래스 파일에 남는다 — 소스에서는 못 가려 가리지 않는다). 그래서 붙인 자리의
+// **마지막 이름 조각**을 본다(`@GeneratedCode` 는 담는다 · `@a.GeneratedX.User` 는 User 다). java 에는 별칭이 없어 붙인 자리만이다(`import
+// a.GeneratedToken;` 은 표지가 아니다 — 쓰는 자리가 `@…Generated` 다). kotlin 은 백틱 이름(`` @`Generated` ``) · 쓰임 자리 표적(`@get:`) · 여러
+// 주석 꼴(`@[A B(…)]` — 이름 자리만, kotlinLists) · 별칭(`import … as` · `typealias`)까지 보고, 이름 글자 바로 뒤의 `@`(`this@GeneratedX` — 레이블)는
+// 주석이 아니라 보지 않는다.
+const J_ID = '[\\p{L}\\p{N}_$]'
+// 조각의 끝 — 이름 글자나 `.` 가 이어지면 마지막 조각이 아니다(뒤 글자를 덜 먹어 맞추는 되돌림도 막는다).
+const J_END = `(?!${J_ID}|\\s*\\.)`
+const JAVA_MARK = new RegExp(`@\\s*(?:${J_ID}+\\s*\\.\\s*)*${J_ID}*Generated${J_ID}*${J_END}`, 'gu')
+const K_SEG = `(?:${J_ID}+|\`[^\`\\r\\n]+\`)`
+const K_NAME = `(?:${K_SEG}\\s*\\.\\s*)*(?:${J_ID}*Generated${J_ID}*|\`[^\`\\r\\n]*Generated[^\`\\r\\n]*\`)${J_END}`
+const K_AT = `(?<!${J_ID})@\\s*(?:\\p{L}+\\s*:\\s*)?`
+const KOTLIN_MARK = new RegExp(
+  `${K_AT}${K_NAME}|\\bimport\\s+${K_NAME}(?=\\s+as\\b)|\\btypealias\\s+${K_SEG}(?:\\s*<[^>\\n]*>)?\\s*=\\s*${K_NAME}`,
   'gu',
 )
+// kotlin 의 여러 주석 꼴 `@[A B(…) C]` · `@get:[…]` — 목록의 이름 자리만 읽는다. 이름 뒤의 `<…>` · `(…)` 는 문자열(템플릿 · 원문 문자열 포함) ·
+// 문자 · 주석(중첩)을 가려 통째로 건너뛴다 — 인자 속 `]` · `"Generated…"` 는 이름이 아니다. 목록으로 읽히지 않으면(문자열 속 `@[a-z]` 따위 —
+// 컴파일되는 목록은 늘 읽힌다) 아무것도 내지 않는다.
+const K_OPEN = new RegExp(`${K_AT}\\[`, 'gu')
+const K_ENTRY = new RegExp(`(?:${K_SEG}\\s*\\.\\s*)*${K_SEG}`, 'uy')
+const K_LAST = new RegExp(`${K_SEG}$`, 'u')
+function ktSkip(t, i) {
+  for (;;) {
+    while (i < t.length && /\s/.test(t[i])) i++
+    if (t.startsWith('//', i)) {
+      const n = t.indexOf('\n', i)
+      i = n < 0 ? t.length : n + 1
+    } else if (t.startsWith('/*', i)) {
+      // kotlin 의 블록 주석은 겹친다.
+      let d = 0
+      do {
+        if (t.startsWith('/*', i)) {
+          d++
+          i += 2
+        } else if (t.startsWith('*/', i)) {
+          d--
+          i += 2
+        } else i++
+      } while (d > 0 && i < t.length)
+    } else return i
+  }
+}
+// t[i] 가 open 인 묶음의 끝 다음 자리(닫히지 않으면 -1).
+function ktGroup(t, i, open, close) {
+  let d = 0
+  while (i < t.length) {
+    const c = t[i]
+    if (c === '"') i = ktString(t, i)
+    else if (c === "'") {
+      let j = i + (t[i + 1] === '\\' ? 3 : 2)
+      while (j < t.length && j - i < 10 && t[j] !== "'") j++
+      i = t[j] === "'" ? j + 1 : -1
+    } else if (t.startsWith('//', i) || t.startsWith('/*', i)) i = ktSkip(t, i)
+    else {
+      if (c === open) d++
+      else if (c === close && --d === 0) return i + 1
+      i++
+    }
+    if (i < 0) return -1
+  }
+  return -1
+}
+// t[i] 가 `"` 인 문자열의 끝 다음 자리 — `${…}` 템플릿은 코드라 그 안의 문자열까지 건너뛴다. 원문 문자열은 따옴표 셋 앞의 따옴표가 내용이다.
+function ktString(t, i) {
+  const raw = t.startsWith('"""', i)
+  for (i += raw ? 3 : 1; i < t.length; ) {
+    if (t.startsWith('${', i)) i = ktGroup(t, i + 1, '{', '}')
+    else if (raw && t.startsWith('"""', i)) {
+      for (i += 3; t[i] === '"'; i++);
+      return i
+    } else if (!raw && t[i] === '"') return i + 1
+    else if (!raw && t[i] === '\n') return -1
+    else i += !raw && t[i] === '\\' ? 2 : 1
+    if (i < 0) return -1
+  }
+  return -1
+}
+function kotlinLists(t) {
+  const hits = []
+  for (const o of t.matchAll(K_OPEN)) {
+    const names = []
+    for (let i = o.index + o[0].length; ; ) {
+      i = ktSkip(t, i)
+      if (t[i] === ']') {
+        for (const at of names) hits.push({ at, tok: t.slice(o.index, i + 1) })
+        break
+      }
+      K_ENTRY.lastIndex = i
+      const e = i < t.length ? K_ENTRY.exec(t) : null
+      if (!e) break
+      if (K_LAST.exec(e[0])[0].includes('Generated')) names.push(i)
+      i = ktSkip(t, i + e[0].length)
+      if (t[i] === '<') i = ktGroup(t, i, '<', '>')
+      if (i < 0) break
+      i = ktSkip(t, i)
+      if (t[i] === '(') i = ktGroup(t, i, '(', ')')
+      if (i < 0) break
+    }
+  }
+  return hits
+}
 const UNIT_MARKS = {
   // ast-v8-to-istanbul 1.0.7(@vitest/coverage-v8 5.1.0 이 v8 범위를 옮기는 것) dist/index.mjs:192 의 두 규칙 — 주석의 `if · else · next · file` 와
   // 줄 어디든의 `start · stop` — 을 합쳤다(주석 머리의 `^\s*` 는 뗐다).
@@ -307,10 +401,12 @@ const UNIT_MARKS = {
   // NameResolver 가 먼저 푼다). 두 꼴(`@codeCoverageIgnore…` · `CodeCoverageIgnore`)을 본다.
   php: { roots: ['php/src'], marks: [/@?[cC]odeCoverageIgnore\w*/g] },
   // coverlet.collector 10.1.1 의 coverlet.core.dll(net8.0 · net10.0 · netstandard2.0)에 사용자 문자열로 나란히 든 특성 이름 둘 —
-  // `ExcludeFromCoverageAttribute` · `ExcludeFromCodeCoverageAttribute`. 별칭(`using X = …Attribute;`)도 그 이름을 쓴다.
-  dotnet: { roots: ['dotnet/src'], marks: [/ExcludeFrom(?:Code)?Coverage\w*/g] },
-  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', marks: [JVM_MARK] },
-  kotlin: { roots: ['kotlin/src/main/kotlin'], marks: [JVM_MARK] },
+  // `ExcludeFromCoverageAttribute` · `ExcludeFromCodeCoverageAttribute`. 별칭(`using X = …Attribute;`)도 그 이름을 쓴다. MSBuild 가 프로젝트마다
+  // 싣는 dotnet/Directory.Build.{props,targets} 도 읽는다(also) — 그 `<Using Include="…" Alias="…" />` 는 dotnet/src 의 소스에 그 특성을 다른 이름으로
+  // 들인다. 공허 판정은 roots(dotnet/src)로만 한다.
+  dotnet: { roots: ['dotnet/src'], also: ['dotnet/Directory.Build.props', 'dotnet/Directory.Build.targets'], marks: [/ExcludeFrom(?:Code)?Coverage\w*/g] },
+  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', marks: [JAVA_MARK] },
+  kotlin: { roots: ['kotlin/src/main/kotlin'], marks: [KOTLIN_MARK, kotlinLists] },
   // SimpleCov 1.2.0 — `:nocov:` 토글(lines_classifier.rb:27 `/^(\s*)#(\s*)(:nocov:)/` — 토큰은 기본값이다, spec_helper 가 안 바꾼다)과 그 대체
   // `# simplecov:disable`(directive.rb 의 PATTERN — 코드 뒤에 붙은 한 줄 꼴도).
   ruby: { roots: ['ruby/lib'], marks: [/^[^\S\n]*#[^\S\n]*:nocov:/gm, /#[^\S\n]*simplecov[^\S\n]*:[^\S\n]*disable\b/g] },
@@ -3928,31 +4024,49 @@ const unitCounts = (l, x) => {
   return UNIT_BRANCHES.has(l) ? `${head} · ${x.branches} branch${x.branches === 1 ? '' : 'es'}` : head
 }
 const unitMissed = (u) => (u.lines ?? 0) > 0 || (u.statements ?? 0) > 0 || (u.branches ?? 0) > 0
-// 출하 소스의 커버리지 제외 표지(머리 주석) — 표지마다 FAIL 이다(리더를 부르지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — 추적된 파일이
-// 0 이면(자리가 낡았다 · git 이 못 낸다) 「표지 0」이 아니라 공허라 FAIL 이다.
+// 출하 소스의 커버리지 제외 표지(머리 주석) — 표지마다 FAIL 이다(리더를 부르지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — roots 의 추적된
+// 파일이 0 이면(자리가 낡았다 · git 이 못 낸다) 「표지 0」이 아니라 공허라 FAIL 이다. 추적됐는데 못 읽는 것(하위 모듈 · 디렉터리 · 권한)도 FAIL 이다
+// — 그 자리의 표지를 볼 수 없다. 표기는 전역 정규식이거나 원문 → [{ at, tok }] 함수(kotlinLists)다.
 function unitMarks(l) {
   const m = UNIT_MARKS[l]
   if (!m.roots) {
     console.log(`[${l}] coverage-exclusion markers: not scanned — ${m.why}`)
     return
   }
-  const shown = m.shown ?? m.roots.join(' · ')
-  const r = spawnSync('git', ['ls-files', '-z', '--', ...m.roots], { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 })
+  const also = new Set(m.also ?? [])
+  const r = spawnSync('git', ['ls-files', '-z', '--', ...m.roots, ...also], { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 })
   // 지운(아직 안 올린) 추적 파일은 도구도 못 읽는다.
   const files = r.status === 0 ? r.stdout.split('\0').filter((f) => f && existsSync(join(root, f))) : []
-  if (!files.length) {
-    const why = r.status === 0 ? '' : ` (git ls-files: ${`${r.error?.message ?? r.stderr}`.trim().split('\n')[0]})`
-    fail(l, `no tracked files under ${shown} in ${rootPosix}${why} — the coverage-exclusion marker scan would read nothing`)
+  const rootsShown = m.shown ?? m.roots.join(' · ')
+  if (!files.some((f) => !also.has(f))) {
+    // 신호로 죽은 git 은 stderr 가 비어 있다 — 까닭이 빈 칸이 되지 않게 신호나 종료코드를 댄다.
+    const why = r.status === 0 ? '' : ` (git ls-files: ${r.error?.message ?? (`${r.stderr ?? ''}`.trim().split('\n')[0] || (r.signal ? `killed by ${r.signal}` : `exit ${r.status}`))})`
+    fail(l, `no tracked files under ${rootsShown} in ${rootPosix}${why} — the coverage-exclusion marker scan would read nothing`)
     return
   }
+  const shown = [rootsShown, ...files.filter((f) => also.has(f))].join(' · ')
   const hits = []
+  let read = 0
   for (const f of files) {
-    const text = readFileSync(join(root, f), 'utf8')
-    for (const re of m.marks)
-      for (const x of text.matchAll(re)) hits.push({ f, at: x.index, line: text.slice(0, x.index).split('\n').length, tok: x[0].trim().replace(/\s+/g, ' ') })
+    const p = join(root, f)
+    let text
+    try {
+      if (!statSync(p).isFile()) {
+        fail(l, `${f}: tracked but not a regular file (a submodule or a directory?) — the coverage-exclusion marker scan cannot read it`)
+        continue
+      }
+      text = readFileSync(p, 'utf8')
+    } catch (e) {
+      fail(l, `${f}: the coverage-exclusion marker scan cannot read it (${e.code ?? e.message})`)
+      continue
+    }
+    read++
+    for (const mk of m.marks)
+      for (const h of mk instanceof RegExp ? [...text.matchAll(mk)].map((x) => ({ at: x.index, tok: x[0] })) : mk(text))
+        hits.push({ f, at: h.at, line: text.slice(0, h.at).split('\n').length, tok: h.tok.trim().replace(/\s+/g, ' ') })
   }
   hits.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.at - b.at))
-  const n = `${files.length} tracked file${files.length === 1 ? '' : 's'} under ${shown}`
+  const n = `${read} tracked file${read === 1 ? '' : 's'} under ${shown}`
   console.log(`[${l}] coverage-exclusion markers: ${hits.length ? `${hits.length} in ${n} — each is a FAIL below` : `none in ${n}`}`)
   for (const h of hits)
     fail(l, `${h.f}:${h.line}: coverage-exclusion marker \`${h.tok}\` in shipped source — the ledger cannot be trusted while one is there: remove it, then test that code or record why in ${UNIT}`)
