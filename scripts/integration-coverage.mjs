@@ -290,19 +290,65 @@ const PY_WS = '[\\s\\x1c-\\x1f\\x85]'
 const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x85]?${PY_WS}*(?:no|NO)${PY_WS}*(?:${w}|${w.toUpperCase()})`, 'g')
 // java · kotlin 은 JaCoCo 0.8.16 AnnotationGeneratedFilter.matches(javap -c)다 — 주석 서술자의 마지막 `/` · `$` 뒤 이름이 "Generated" 를 담으면
 // 그 클래스의 메서드 전부 · 그 메서드를 거른다(CLASS · RUNTIME 보존만 클래스 파일에 남는다 — 소스에서는 못 가려 가리지 않는다). 그래서 붙인 자리의
-// **마지막 이름 조각**을 본다(`@GeneratedCode` 는 담는다 · `@a.GeneratedX.User` 는 User 다). java 에는 별칭이 없어 붙인 자리만이다(`import
-// a.GeneratedToken;` 은 표지가 아니다 — 쓰는 자리가 `@…Generated` 다). kotlin 은 백틱 이름(`` @`Generated` ``) · 쓰임 자리 표적(`@get:`) · 여러
-// 주석 꼴(`@[A B(…)]` — 이름 자리만, kotlinLists) · 별칭(`import … as` · `typealias`)까지 보고, 이름 글자 바로 뒤의 `@`(`this@GeneratedX` — 레이블)는
-// 주석이 아니라 보지 않는다.
+// **마지막 이름 조각**을 본다(`@GeneratedCode` 는 담는다 · `@a.GeneratedX.User` 는 User 다). 붙인 자리에 그 이름이 안 보이는 길도 막는다 — 되풀이
+// 주석(@Repeatable)을 두 번 붙이면 클래스 파일에는 그 **컨테이너**가 실리므로(JLS 9.7.5) 이름에 Generated 를 담은 주석 타입의 선언(java
+// `@interface …` · kotlin `annotation class …`)도 표지다. java 에는 별칭이 없어 import 는 표지가 아니고(`import a.GeneratedToken;`), 어휘기가
+// 토큰보다 먼저 푸는 \uXXXX 를 풀고 맞춘다(javaUnicode — 이스케이프로 쓴 이름 글자도 이름이다). kotlin 은 백틱 이름 · 쓰임 자리 표적(`@get:`) ·
+// 여러 주석 꼴(`@[A B(…)]` — 이름 자리만, kotlinLists) · 별칭(`import … as` · `typealias`)까지 보고, 레이블 참조(`this@X` · `super@X` · `super<T>@X` ·
+// `return@x` · `break@x` · `continue@x`)의 `@` 만 건너뛴다 — 한정자나 다른 주석에 붙은 `@`(`private@Generated` · `@JvmStatic@Generated`)도 주석으로
+// 읽는다. kotlin 의 맨 이름에는 `$` 가 없다(문자열 템플릿의 시작이다). 범위 밖 — 일부러 숨기는 꼴(토큰 사이의 블록 주석 `@/**/Generated` · 스캔하는
+// 파일 밖에서 선언한 별칭)은 읽지 않는다.
 const J_ID = '[\\p{L}\\p{N}_$]'
 // 조각의 끝 — 이름 글자나 `.` 가 이어지면 마지막 조각이 아니다(뒤 글자를 덜 먹어 맞추는 되돌림도 막는다).
 const J_END = `(?!${J_ID}|\\s*\\.)`
-const JAVA_MARK = new RegExp(`@\\s*(?:${J_ID}+\\s*\\.\\s*)*${J_ID}*Generated${J_ID}*${J_END}`, 'gu')
-const K_SEG = `(?:${J_ID}+|\`[^\`\\r\\n]+\`)`
-const K_NAME = `(?:${K_SEG}\\s*\\.\\s*)*(?:${J_ID}*Generated${J_ID}*|\`[^\`\\r\\n]*Generated[^\`\\r\\n]*\`)${J_END}`
-const K_AT = `(?<!${J_ID})@\\s*(?:\\p{L}+\\s*:\\s*)?`
+const JAVA_MARK = new RegExp(
+  `@\\s*(?:${J_ID}+\\s*\\.\\s*)*${J_ID}*Generated${J_ID}*${J_END}|@\\s*interface\\s+${J_ID}*Generated${J_ID}*(?!${J_ID})`,
+  'gu',
+)
+// java 의 \uXXXX(`u` 여럿도 — `\uu0047`)를 푼다(JLS 3.3: 앞에 이어진 원문 `\` 가 짝수 개인 `\` 만 시작하고, 푼 글자는 다시 풀리지 않는다). 푼 원문과
+// 푼 글자마다의 원문 자리(at — 끝에 원문 길이 하나를 더 둔다)를 낸다.
+const J_UESC = /\\u+([0-9A-Fa-f]{4})/y
+function javaUnicode(t) {
+  const parts = []
+  const at = []
+  let run = 0
+  for (let i = 0; i < t.length; ) {
+    if (t[i] === '\\' && run % 2 === 0) {
+      J_UESC.lastIndex = i
+      const m = J_UESC.exec(t)
+      if (m) {
+        parts.push(String.fromCharCode(parseInt(m[1], 16)))
+        at.push(i)
+        i += m[0].length
+        run = 0
+        continue
+      }
+    }
+    run = t[i] === '\\' ? run + 1 : 0
+    parts.push(t[i])
+    at.push(i)
+    i++
+  }
+  at.push(t.length)
+  return { text: parts.join(''), at }
+}
+const K_ID = '[\\p{L}\\p{N}_]'
+const K_SEG = `(?:${K_ID}+|\`[^\`\\r\\n]+\`)`
+// 마지막 조각 — 맨 이름은 이름 글자가 더 오면 안 되고(되돌림 방지), 백틱 이름은 닫는 백틱이 끝이다(바로 뒤에 `as` 가 붙어도 된다).
+const K_LAST = `(?:${K_ID}*Generated${K_ID}*(?!${K_ID})|\`[^\`\\r\\n]*Generated[^\`\\r\\n]*\`)`
+const K_NAME = `(?:${K_SEG}\\s*\\.\\s*)*${K_LAST}(?!\\s*\\.)`
+const K_AT = `(?<!\\b(?:this|super|return|break|continue)|\\bsuper\\s*<[^<>\\n]*>)@\\s*(?:\\p{L}+\\s*:\\s*)?`
+// typealias 의 타입 매개변수(겹친 `<…>` 셋까지 — 함수 타입의 `->` 는 닫지 않는다)와 오른쪽 — 맨 이름이거나 괄호 친 이름이다. 괄호 친 꼴은 이름 바로
+// 뒤에서 닫혀야 하고, 닫은 뒤가 `)` · `->` 면 함수 타입의 매개변수라(`(GeneratedEvent) -> Unit` · `((GeneratedEvent)) -> Unit` — 매개변수 여럿인
+// `(GeneratedEvent, Int) -> Unit` 은 이름 뒤에서 닫히지 않는다) 그 주석의 별칭이 아니다. 주석 타입 선언은 `annotation` 과 `class` 사이의 한정자 ·
+// 주석(K_ANN — 인자의 괄호는 두 겹까지)도 넘는다.
+const K_TPARAMS = `<(?:->|[^<>\\n]|<(?:->|[^<>\\n]|<(?:->|[^<>\\n])*>)*>)*>`
+const K_ANN = `@(?:\\[[^\\]]*\\]|[^\\s(\\[]+(?:\\s*\\((?:[^()]|\\([^()]*\\))*\\))?)`
 const KOTLIN_MARK = new RegExp(
-  `${K_AT}${K_NAME}|\\bimport\\s+${K_NAME}(?=\\s+as\\b)|\\btypealias\\s+${K_SEG}(?:\\s*<[^>\\n]*>)?\\s*=\\s*${K_NAME}`,
+  `${K_AT}${K_NAME}` +
+    `|\\bimport\\s+${K_NAME}(?=\\s*as\\b)` +
+    `|\\btypealias\\s+${K_SEG}(?:\\s*${K_TPARAMS})?\\s*=\\s*(?:${K_NAME}|(?:\\(\\s*)+${K_NAME}(?:\\s*\\))+(?!\\s*(?:\\)|->)))` +
+    `|\\bannotation(?:\\s+(?:public|private|internal|protected|expect|actual)|\\s*${K_ANN})*\\s+class\\s+${K_LAST}`,
   'gu',
 )
 // kotlin 의 여러 주석 꼴 `@[A B(…) C]` · `@get:[…]` — 목록의 이름 자리만 읽는다. 이름 뒤의 `<…>` · `(…)` 는 문자열(템플릿 · 원문 문자열 포함) ·
@@ -310,7 +356,7 @@ const KOTLIN_MARK = new RegExp(
 // 컴파일되는 목록은 늘 읽힌다) 아무것도 내지 않는다.
 const K_OPEN = new RegExp(`${K_AT}\\[`, 'gu')
 const K_ENTRY = new RegExp(`(?:${K_SEG}\\s*\\.\\s*)*${K_SEG}`, 'uy')
-const K_LAST = new RegExp(`${K_SEG}$`, 'u')
+const K_TAIL = new RegExp(`${K_SEG}$`, 'u')
 function ktSkip(t, i) {
   for (;;) {
     while (i < t.length && /\s/.test(t[i])) i++
@@ -342,7 +388,12 @@ function ktGroup(t, i, open, close) {
       let j = i + (t[i + 1] === '\\' ? 3 : 2)
       while (j < t.length && j - i < 10 && t[j] !== "'") j++
       i = t[j] === "'" ? j + 1 : -1
-    } else if (t.startsWith('//', i) || t.startsWith('/*', i)) i = ktSkip(t, i)
+    } else if (c === '`') {
+      // 백틱 이름 — 그 안의 괄호 · 따옴표는 이름의 글자다(백틱 이름은 줄을 넘지 않는다).
+      const e = t.indexOf('`', i + 1)
+      i = e < 0 || t.slice(i + 1, e).includes('\n') ? -1 : e + 1
+    } else if (t.startsWith('->', i)) i += 2 // 함수 타입의 화살표 — 그 `>` 는 `<…>` 를 닫지 않는다
+    else if (t.startsWith('//', i) || t.startsWith('/*', i)) i = ktSkip(t, i)
     else {
       if (c === open) d++
       else if (c === close && --d === 0) return i + 1
@@ -352,11 +403,15 @@ function ktGroup(t, i, open, close) {
   }
   return -1
 }
-// t[i] 가 `"` 인 문자열의 끝 다음 자리 — `${…}` 템플릿은 코드라 그 안의 문자열까지 건너뛴다. 원문 문자열은 따옴표 셋 앞의 따옴표가 내용이다.
+// t[i] 가 `"` 인 문자열의 끝 다음 자리 — 템플릿 `${…}` 는 코드라 그 안의 문자열까지 건너뛴다. 여러 달러 문자열(`$$"…"` ·
+// `$$"""…"""`)은 여는 따옴표 앞 `$` 의 수만큼의 `$` 뒤 `{` 만 템플릿이다(그보다 적은 `${` 는 글자다). 원문 문자열은 따옴표 셋 앞의 따옴표가 내용이다.
 function ktString(t, i) {
+  let n = 0
+  while (i - 1 - n >= 0 && t[i - 1 - n] === '$') n++
+  const tpl = '$'.repeat(Math.max(n, 1)) + '{'
   const raw = t.startsWith('"""', i)
   for (i += raw ? 3 : 1; i < t.length; ) {
-    if (t.startsWith('${', i)) i = ktGroup(t, i + 1, '{', '}')
+    if (t.startsWith(tpl, i)) i = ktGroup(t, i + tpl.length - 1, '{', '}')
     else if (raw && t.startsWith('"""', i)) {
       for (i += 3; t[i] === '"'; i++);
       return i
@@ -380,7 +435,7 @@ function kotlinLists(t) {
       K_ENTRY.lastIndex = i
       const e = i < t.length ? K_ENTRY.exec(t) : null
       if (!e) break
-      if (K_LAST.exec(e[0])[0].includes('Generated')) names.push(i)
+      if (K_TAIL.exec(e[0])[0].includes('Generated')) names.push(i)
       i = ktSkip(t, i + e[0].length)
       if (t[i] === '<') i = ktGroup(t, i, '<', '>')
       if (i < 0) break
@@ -402,10 +457,15 @@ const UNIT_MARKS = {
   php: { roots: ['php/src'], marks: [/@?[cC]odeCoverageIgnore\w*/g] },
   // coverlet.collector 10.1.1 의 coverlet.core.dll(net8.0 · net10.0 · netstandard2.0)에 사용자 문자열로 나란히 든 특성 이름 둘 —
   // `ExcludeFromCoverageAttribute` · `ExcludeFromCodeCoverageAttribute`. 별칭(`using X = …Attribute;`)도 그 이름을 쓴다. MSBuild 가 프로젝트마다
-  // 싣는 dotnet/Directory.Build.{props,targets} 도 읽는다(also) — 그 `<Using Include="…" Alias="…" />` 는 dotnet/src 의 소스에 그 특성을 다른 이름으로
-  // 들인다. 공허 판정은 roots(dotnet/src)로만 한다.
-  dotnet: { roots: ['dotnet/src'], also: ['dotnet/Directory.Build.props', 'dotnet/Directory.Build.targets'], marks: [/ExcludeFrom(?:Code)?Coverage\w*/g] },
-  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', marks: [JAVA_MARK] },
+  // Directory.Build.{props,targets} 도 읽는다(also — 추적되지 않으면 목록에 없다) — 그 `<Using Include="…" Alias="…" />` 는 dotnet/src 의 소스에 그
+  // 특성을 다른 이름으로 들인다. MSBuild 는 위로 올라가며 처음 만난 props 와 targets 를 따로 싣는다(dotnet/ 에 props 만 있으면 뿌리의 targets 가 실린다
+  // — 실측 SDK 8.0.428) — 그래서 dotnet/ 과 저장소 뿌리의 넷을 다 읽는다. 공허 판정은 roots(dotnet/src)로만 한다.
+  dotnet: {
+    roots: ['dotnet/src'],
+    also: ['dotnet/Directory.Build.props', 'dotnet/Directory.Build.targets', 'Directory.Build.props', 'Directory.Build.targets'],
+    marks: [/ExcludeFrom(?:Code)?Coverage\w*/g],
+  },
+  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', decode: javaUnicode, marks: [JAVA_MARK] },
   kotlin: { roots: ['kotlin/src/main/kotlin'], marks: [KOTLIN_MARK, kotlinLists] },
   // SimpleCov 1.2.0 — `:nocov:` 토글(lines_classifier.rb:27 `/^(\s*)#(\s*)(:nocov:)/` — 토큰은 기본값이다, spec_helper 가 안 바꾼다)과 그 대체
   // `# simplecov:disable`(directive.rb 의 PATTERN — 코드 뒤에 붙은 한 줄 꼴도).
@@ -4061,9 +4121,15 @@ function unitMarks(l) {
       continue
     }
     read++
+    // decode(java 의 \uXXXX)가 있으면 푼 원문에서 맞추고, 자리와 표기는 원문으로 돌려 댄다(줄 수도 원문의 것이다).
+    const dec = m.decode ? m.decode(text) : null
+    const scan = dec ? dec.text : text
     for (const mk of m.marks)
-      for (const h of mk instanceof RegExp ? [...text.matchAll(mk)].map((x) => ({ at: x.index, tok: x[0] })) : mk(text))
-        hits.push({ f, at: h.at, line: text.slice(0, h.at).split('\n').length, tok: h.tok.trim().replace(/\s+/g, ' ') })
+      for (const h of mk instanceof RegExp ? [...scan.matchAll(mk)].map((x) => ({ at: x.index, tok: x[0] })) : mk(scan)) {
+        const at = dec ? dec.at[h.at] : h.at
+        const tok = dec ? text.slice(at, dec.at[h.at + h.tok.length]) : h.tok
+        hits.push({ f, at, line: text.slice(0, at).split('\n').length, tok: tok.trim().replace(/\s+/g, ' ') })
+      }
   }
   hits.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.at - b.at))
   const n = `${read} tracked file${read === 1 ? '' : 's'} under ${shown}`

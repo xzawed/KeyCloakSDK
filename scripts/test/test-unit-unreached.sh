@@ -1842,29 +1842,58 @@ printf '%s\n' '<Project>' '  <ItemGroup><Using Include="System.Diagnostics.CodeA
 run unit-report dotnet "$T" --out "$D"
 assert_eq 0 "$RC" "[markers] dotnet props 대조군 — exit 0 — 출력: $OUT"
 assert_line "$OUT" "[dotnet] coverage-exclusion markers: none in 4 tracked files under dotnet/src · dotnet/Directory.Build.props" "[markers] dotnet props 대조군 — 표지 0"
+# MSBuild 는 위로 올라가며 처음 만난 Directory.Build.props 와 .targets 를 따로 싣는다 — 지금의 배치(dotnet/ 에 props 만)에서 저장소 뿌리의 targets
+# 가 실리고, 뿌리의 props 는 dotnet/ 의 것이 없어지면 실린다. 그 배치를 그대로 짓고 뿌리의 둘에 별칭을 넣는다(also — 하나씩 빼는 변이가 저마다 운다).
+ufresh
+printf '%s\n' '<Project>' '  <PropertyGroup><Nullable>enable</Nullable></PropertyGroup>' '</Project>' > "$T/dotnet/Directory.Build.props"
+for _f in Directory.Build.props Directory.Build.targets; do
+  printf '%s\n' '<Project>' '  <ItemGroup><Using Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" Alias="Skip" /></ItemGroup>' '</Project>' > "$T/$_f"
+done
+run unit-report dotnet "$T" --out "$D"
+assert_eq 2 "$RC" "[markers] 저장소 뿌리 Directory.Build.{props,targets} 의 별칭이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[dotnet] coverage-exclusion markers: 2 in 6 tracked files under dotnet/src · Directory.Build.props · Directory.Build.targets · dotnet/Directory.Build.props — each is a FAIL below" "[markers] dotnet — 뿌리의 also 둘"
+assert_contains "$OUT" "FAIL [dotnet] Directory.Build.props:2: coverage-exclusion marker \`ExcludeFromCodeCoverageAttribute\` in" "[markers] 뿌리 Directory.Build.props 의 Using 별칭"
+assert_contains "$OUT" "FAIL [dotnet] Directory.Build.targets:2: coverage-exclusion marker \`ExcludeFromCodeCoverageAttribute\` in" "[markers] 뿌리 Directory.Build.targets 의 Using 별칭(dotnet/ 에 props 만 있으면 실린다)"
+assert_line "$OUT" "unit-unreached [dotnet]: FAIL — 2 $MVERDICT" "[markers] 뿌리 props · targets — 다른 FAIL 은 없다"
 
-# (마) java — 마지막 이름 조각에 Generated 를 담은 주석(맨 이름 · 한정 이름 · @ 뒤 공백 · Generated 뒤 글자). java 에는 별칭이 없어 import 는 표지가
-# 아니다 — 대조군의 import 셋과 앞 조각에만 Generated 가 있는 한정 이름은 조용해야 한다.
+# (마) java — 마지막 이름 조각에 Generated 를 담은 주석(맨 이름 · 한정 이름 · @ 뒤 공백 · Generated 뒤 글자) · 어휘기가 먼저 푸는 \uXXXX ·
+# 그 이름의 주석 타입 선언(되풀이 주석의 컨테이너는 붙인 자리에 이름이 없다). java 에는 별칭이 없어 import 는 표지가 아니다 — 대조군의 import 셋 ·
+# 앞 조각에만 Generated 가 있는 한정 이름 · 보통 클래스 · `\\` 뒤의 u(이스케이프가 아니다)는 조용해야 한다.
 XJ=java/kc-auth/src/main/java/kc/auth/Config.java
+# `\` 하나 + `u` + 16진 넷은 printf 로 짓는다 — printf 의 `\\` 가 `\` 하나다(이 파일을 고치는 도구가 그 이스케이프를 미리 풀지 않게). JU3 은
+# 푼 글자(이스케이프 u005c 가 내는 `\`)가 다시 이스케이프를 열지 않는다는 JLS 3.3 의 대조군이다.
+JU1="$(printf '@\\u0047enerated')"
+JU3="$(printf 'String t = "\\u005cu0040Generated";')"
 ufresh
 mark_after "$XJ" 1 '@Generated'
 mark_after "$XJ" 3 '@ kc.marks.NoCoverageGenerated'
 mark_after "$XJ" 5 '@GeneratedCode'
+mark_after "$XJ" 7 "$JU1"
+mark_after "$XJ" 9 '@Gen\uu0065rated'
+mark_after "$XJ" 11 '@interface NoCoverageGenerated {}'
+mark_after "$XJ" 13 'public @interface GeneratedList { Marker[] value(); }'
 run unit-report java "$T" --out "$D"
-assert_eq 2 "$RC" "[markers] java 의 표지 셋이면 exit 2 — 출력: $OUT"
-assert_line "$OUT" "[java] coverage-exclusion markers: 3 in 3 tracked files under java/*/src/main/java — each is a FAIL below" "[markers] java — 읽은 추적 파일 수(모듈마다) · 표지 수"
+assert_eq 2 "$RC" "[markers] java 의 표지 일곱이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[java] coverage-exclusion markers: 7 in 3 tracked files under java/*/src/main/java — each is a FAIL below" "[markers] java — 읽은 추적 파일 수(모듈마다) · 표지 수"
 assert_contains "$OUT" "FAIL [java] $XJ:2: coverage-exclusion marker \`@Generated\` in" "[markers] @Generated"
 assert_contains "$OUT" "FAIL [java] $XJ:4: coverage-exclusion marker \`@ kc.marks.NoCoverageGenerated\` in" "[markers] 한정 이름 · 이름 안의 Generated"
 assert_contains "$OUT" "FAIL [java] $XJ:6: coverage-exclusion marker \`@GeneratedCode\` in" "[markers] Generated 뒤에 글자가 이어져도 담는다(JaCoCo 의 contains)"
-assert_line "$OUT" "unit-unreached [java]: FAIL — 3 $MVERDICT" "[markers] java — 다른 FAIL 은 없다"
+assert_contains "$OUT" "FAIL [java] $XJ:8: coverage-exclusion marker \`$JU1\` in" "[markers] \\uXXXX — 푼 이름으로 맞추고 원문 표기 · 줄을 댄다"
+assert_contains "$OUT" "FAIL [java] $XJ:10: coverage-exclusion marker \`@Gen\\uu0065rated\` in" "[markers] \\uu… — u 여럿"
+assert_contains "$OUT" "FAIL [java] $XJ:12: coverage-exclusion marker \`@interface NoCoverageGenerated\` in" "[markers] 주석 타입 선언"
+assert_contains "$OUT" "FAIL [java] $XJ:14: coverage-exclusion marker \`@interface GeneratedList\` in" "[markers] 한정자 뒤의 주석 타입 선언(되풀이 주석의 컨테이너)"
+assert_line "$OUT" "unit-unreached [java]: FAIL — 7 $MVERDICT" "[markers] java — 다른 FAIL 은 없다"
 ufresh
 mark_after "$XJ" 1 '@Generatde'
 mark_after "$XJ" 3 'import kc.auth.GeneratedToken;'
 mark_after "$XJ" 5 'import static kc.Keys.isGenerated;'
 mark_after "$XJ" 7 'import kc.GeneratedModels.User;'
 mark_after "$XJ" 9 '@kc.GeneratedModels.User'
+mark_after "$XJ" 11 'class GeneratedToken {}'
+mark_after "$XJ" 13 'String s = "\\u0040Generated";'
+mark_after "$XJ" 15 "$JU3"
 run unit-report java "$T" --out "$D"
-assert_eq 0 "$RC" "[markers] java 대조군 — 오표기 · import 셋 · 앞 조각만의 Generated 는 표지가 아니다(exit 0) — 출력: $OUT"
+assert_eq 0 "$RC" "[markers] java 대조군 — 오표기 · import 셋 · 앞 조각만의 Generated · 보통 클래스 · 홀수 번째 \\ 의 u · 푼 글자의 u 는 표지가 아니다(exit 0) — 출력: $OUT"
 assert_line "$OUT" "[java] coverage-exclusion markers: none in 3 tracked files under java/*/src/main/java" "[markers] java 대조군 — 표지 0"
 
 # (바) kotlin — 별칭 import · 쓰임 자리 표적 · 여러 주석 꼴(인자 속 `]` 를 넘어 이름 자리만) · typealias, 그리고 백틱 이름. 대조군: 별칭 없는
@@ -1917,6 +1946,81 @@ assert_contains "$OUT" "FAIL [kotlin] $XK:6: coverage-exclusion marker \`@[A('\"
 assert_contains "$OUT" "FAIL [kotlin] $XK:8: coverage-exclusion marker \`@[A /* /* ] */ ] */ Generated]\` in" "[markers] 겹친 주석 속 ]"
 assert_contains "$OUT" "FAIL [kotlin] $XK:11: coverage-exclusion marker \`@file:[A Generated]\` in" "[markers] 여러 줄 목록 — 이름의 줄"
 assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 5 $MVERDICT" "[markers] kotlin 목록 읽기 — 다른 FAIL 은 없다"
+# 한정자 · 다른 주석에 붙은 `@`(레이블 참조가 아니다)와 이름에 Generated 를 담은 주석 타입 선언(되풀이 주석의 컨테이너는 붙인 자리에 이름이 없다).
+ufresh
+mark_after "$XK" 1 'private@Generated fun f() {}'
+mark_after "$XK" 3 'override@Generated fun f() {}'
+mark_after "$XK" 5 '@JvmStatic@Generated fun f() {}'
+mark_after "$XK" 7 'private@[Generated] fun f() {}'
+mark_after "$XK" 9 '@JvmStatic@[Generated] fun f() {}'
+mark_after "$XK" 11 'annotation class LedgerGenerated'
+mark_after "$XK" 13 'internal annotation class GeneratedList(val value: Array<Marker>)'
+mark_after "$XK" 15 'annotation @Target(allowedTargets = arrayOf(AnnotationTarget.CLASS)) class GeneratedSkip'
+run unit-report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[markers] kotlin 의 붙은 @ 다섯 · 선언 셋이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: 8 in 2 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 붙은 @ · 선언 — 표지 수"
+assert_contains "$OUT" "FAIL [kotlin] $XK:2: coverage-exclusion marker \`@Generated\` in" "[markers] private@"
+assert_contains "$OUT" "FAIL [kotlin] $XK:4: coverage-exclusion marker \`@Generated\` in" "[markers] override@"
+assert_contains "$OUT" "FAIL [kotlin] $XK:6: coverage-exclusion marker \`@Generated\` in" "[markers] @JvmStatic@"
+assert_contains "$OUT" "FAIL [kotlin] $XK:8: coverage-exclusion marker \`@[Generated]\` in" "[markers] private@[…]"
+assert_contains "$OUT" "FAIL [kotlin] $XK:10: coverage-exclusion marker \`@[Generated]\` in" "[markers] @JvmStatic@[…]"
+assert_contains "$OUT" "FAIL [kotlin] $XK:12: coverage-exclusion marker \`annotation class LedgerGenerated\` in" "[markers] 주석 타입 선언"
+assert_contains "$OUT" "FAIL [kotlin] $XK:14: coverage-exclusion marker \`annotation class GeneratedList\` in" "[markers] 한정자 뒤의 주석 타입 선언(되풀이 주석의 컨테이너)"
+assert_contains "$OUT" "FAIL [kotlin] $XK:16: coverage-exclusion marker \`annotation @Target(allowedTargets = arrayOf(AnnotationTarget.CLASS)) class GeneratedSkip\` in" "[markers] annotation 과 class 사이의 주석(인자 속 괄호 두 겹)"
+assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 8 $MVERDICT" "[markers] kotlin 붙은 @ · 선언 — 다른 FAIL 은 없다"
+# typealias 의 타입 매개변수 속 함수 타입(`->` 의 `>` 는 `<…>` 를 닫지 않는다) · annotation 과 class 사이의 여러 주석 꼴.
+ufresh
+mark_after "$XK" 1 'typealias Skip<T : () -> Unit> = kc.marks.Generated'
+mark_after "$XK" 3 'annotation @[Retention(AnnotationRetention.SOURCE)] class GeneratedSkip'
+run unit-report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[markers] kotlin 의 화살표 매개변수 · 여러 주석 꼴 선언이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: 2 in 2 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 화살표 매개변수 — 표지 수"
+assert_contains "$OUT" "FAIL [kotlin] $XK:2: coverage-exclusion marker \`typealias Skip<T : () -> Unit> = kc.marks.Generated\` in" "[markers] 타입 매개변수 속 ->"
+assert_contains "$OUT" "FAIL [kotlin] $XK:4: coverage-exclusion marker \`annotation @[Retention(AnnotationRetention.SOURCE)] class GeneratedSkip\` in" "[markers] annotation 과 class 사이의 @[…]"
+assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 2 $MVERDICT" "[markers] kotlin 화살표 매개변수 — 다른 FAIL 은 없다"
+# 여러 달러 문자열(접두만큼의 `$` 뒤 `{` 만 템플릿) · `<…>` 속 함수 타입의 `->` · 인자 속 백틱 이름 · 백틱 바로 뒤의 `as` · 괄호 친 / 겹친 제네릭
+# typealias.
+ufresh
+mark_after "$XK" 1 '@[Suppress($$"${") Generated]'
+mark_after "$XK" 3 '@[Suppress($$"""${""") Generated]'
+mark_after "$XK" 5 '@[Alias<() -> Unit>("X") Generated]'
+mark_after "$XK" 7 '@[A(`x)`) Generated]'
+mark_after "$XK" 9 '@[A(`x"`) Generated]'
+mark_after "$XK" 11 'import kc.marks.`Generated`as Skip'
+mark_after "$XK" 13 'typealias Skip = (kc.marks.Generated)'
+mark_after "$XK" 15 'typealias Skip<T : List<Int>> = kc.marks.Generated'
+run unit-report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[markers] kotlin 의 문법 꼴 여덟이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: 8 in 2 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 문법 꼴 — 표지 수"
+assert_contains "$OUT" "FAIL [kotlin] $XK:2: coverage-exclusion marker \`@[Suppress(\$\$\"\${\") Generated]\` in" "[markers] 여러 달러 문자열의 \${ 는 글자다"
+assert_contains "$OUT" "FAIL [kotlin] $XK:4: coverage-exclusion marker \`@[Suppress(\$\$\"\"\"\${\"\"\") Generated]\` in" "[markers] 여러 달러 원문 문자열"
+assert_contains "$OUT" "FAIL [kotlin] $XK:6: coverage-exclusion marker \`@[Alias<() -> Unit>(\"X\") Generated]\` in" "[markers] <…> 속 ->"
+assert_contains "$OUT" "FAIL [kotlin] $XK:8: coverage-exclusion marker \`@[A(\`x)\`) Generated]\` in" "[markers] 인자 속 백틱 이름의 )"
+assert_contains "$OUT" "FAIL [kotlin] $XK:10: coverage-exclusion marker \`@[A(\`x\"\`) Generated]\` in" "[markers] 인자 속 백틱 이름의 \""
+assert_contains "$OUT" "FAIL [kotlin] $XK:12: coverage-exclusion marker \`import kc.marks.\`Generated\`\` in" "[markers] 백틱 바로 뒤의 as"
+assert_contains "$OUT" "FAIL [kotlin] $XK:14: coverage-exclusion marker \`typealias Skip = (kc.marks.Generated)\` in" "[markers] 괄호 친 typealias"
+assert_contains "$OUT" "FAIL [kotlin] $XK:16: coverage-exclusion marker \`typealias Skip<T : List<Int>> = kc.marks.Generated\` in" "[markers] 겹친 제네릭 매개변수의 typealias"
+assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 8 $MVERDICT" "[markers] kotlin 문법 꼴 — 다른 FAIL 은 없다"
+# 대조군 둘째 — 레이블 참조(이름에 Generated 를 담아야 그 판정을 잰다) · 문자열 템플릿의 `$`(맨 이름 글자가 아니다) · 보통 클래스 · 함수 타입 별칭
+# 셋(매개변수 하나 · 여럿 · 괄호 두 겹 — 괄호 친 오른쪽은 이름 바로 뒤에서 닫히고 그 뒤가 `)` · `->` 가 아니어야 한다) · 이름 annotation 다음 줄의 클래스.
+ufresh
+mark_after "$XK" 1 'val o = this@GeneratedOuter'
+mark_after "$XK" 2 'return@GeneratedLoop'
+mark_after "$XK" 3 'break@GeneratedLoop'
+mark_after "$XK" 4 'continue@GeneratedLoop'
+mark_after "$XK" 5 'super@GeneratedBase.f()'
+mark_after "$XK" 6 'super<Base>@GeneratedOuter.f()'
+mark_after "$XK" 7 'val s = " @$GeneratedId"'
+mark_after "$XK" 8 'val t = "${user}@$GeneratedHost"'
+mark_after "$XK" 9 'class GeneratedToken'
+mark_after "$XK" 10 'typealias Handler = (GeneratedEvent) -> Unit'
+mark_after "$XK" 11 'typealias Pair2 = (GeneratedEvent, Int) -> Unit'
+mark_after "$XK" 12 'typealias Nested = ((GeneratedEvent)) -> Unit'
+mark_after "$XK" 13 'val annotation = 1'
+mark_after "$XK" 14 'class GeneratedModel'
+run unit-report kotlin "$T" --out "$D"
+assert_eq 0 "$RC" "[markers] kotlin 대조군 둘째 — 레이블 여섯 · \$ 템플릿 둘 · 보통 클래스 둘 · 함수 타입 별칭 셋 · 이름 annotation 은 조용하다(exit 0) — 출력: $OUT"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: none in 2 tracked files under kotlin/src/main/kotlin" "[markers] kotlin 대조군 둘째 — 표지 0"
 ufresh
 mark_after "$XK" 1 '@get:Generatde'
 mark_after "$XK" 3 'import kc.auth.GeneratedToken'
