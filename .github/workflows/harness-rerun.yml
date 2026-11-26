@@ -1,0 +1,109 @@
+name: harness-rerun
+# 예약(schedule) harness 실행이 **상류 다운로드 거절**로 실패하면 실패한 잡만 새 러너에서 **한 번** 다시 돌린다.
+#
+# 왜: Maven Central(429 · `(absent)`) · Gradle 플러그인 포털이 러너 하나를 잡 내내(잰 넷 ≥ 15–36 분) 거절했고, 새 러너의
+# 재실행은 통과했다(등록부 `harness-central-refuses-runner`). composer 의 GitHub zipball 5xx 도 같은 부류로 센다 — 예약 실패
+# 넷(11-22 · 11-08 · 09-19 · 08-22)은 모두 다음 예약 실행이 초록이었다. 빌드 안의 `build_with_retry`(3 회 · 60 초 — #1210)는
+# 짧은 장애만 덮는다.
+#
+# ⚠️ **좁다.** 다시 돌리는 것은 `scripts/harness-upstream-signature.mjs` 가 실패 로그에서 서명(거절 모양 AND 다운로드 맥락)을
+# 찾았을 때뿐이다 — 없으면 제품 실패이고 빨간 채로 둔다(실측: 예약 실패 28 중 상류 4 · 제품 23 · 로그 만료 1). 무엇이
+# 서명인지는 그 스크립트 머리가 소유한다.
+#
+# ⚠️ **한 번뿐이다.** 잡 `if` 가 attempt 1 의 실패만 받는다 — 다시 돈 실행(attempt 2)이 끝나면 이 워크플로가 다시 불리지만
+# 그 조건에서 건너뛴다(고리 없음). PR · push · 수동 harness 실행은 건드리지 않는다(민 사람이 본다).
+#
+# nightly-alert 와 맞물림: attempt 1 의 실패가 이미 이슈(`🌙 야간 실패 — harness`)를 연다. attempt 2 도 같은 예약 실행이라
+# nightly-alert 가 다시 받으면 — 초록이면 그 이슈를 닫고, 빨강이면 덧붙인다.
+# ⚠️ **잰 적 없는 위험**: 재실행을 `GITHUB_TOKEN` 으로 요청한다. GitHub 의 재귀 방지 규칙(GITHUB_TOKEN 이 일으킨 이벤트는 새
+# 워크플로 실행을 만들지 않는다)에 걸리면 attempt 2 의 완료가 nightly-alert 의 `workflow_run` 을 깨우지 못하고, 이슈는 다음
+# 초록 밤까지 열려 있다. 예약 실행 최근 100 회에 재실행이 하나도 없어 잰 적이 없다 — 병합 뒤 `dry_run=false` 수동 실행으로
+# 잰다. 깨우지 못하면 대안은 App 토큰이다.
+#
+# ⚠️ **자기 실패는 못 잡는다.** 이 워크플로가 죽으면(로그를 못 받음 · 판정 불가 2 · `gh` 실패) 알릴 주체가 없다 —
+# nightly-alert 는 예약 · main push 실행만 보고, `workflow_run` 은 자기를 감시할 수 없다. 남는 구멍이고, 숨기지 않고 여기
+# 적어 둔다.
+#
+# ⚠️ `workflows:` 는 파일명이 아니라 harness.yml 의 **`name:` 값**으로 맞춘다 — 그 이름을 바꾸면 이 워크플로는 **조용히**
+# 더는 불리지 않는다.
+#
+# 수동(workflow_dispatch): `workflow_run` 은 기본 브랜치의 이 파일로만 돈다 — 병합 뒤 크론을 기다리지 않고 이 경로를 당겨서
+# 잰다. `dry_run`(기본 true)이면 판정하고 맞은 줄까지 찍되 다시 돌리지 않는다. 수동은 위 조건(예약 · attempt 1)을 건너뛴다 —
+# 어느 실행을 고를지는 사람이 정한다.
+on:
+  workflow_run:
+    workflows:
+      - harness
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '판정할 harness 실행 id (gh run list --workflow harness.yml)'
+        required: true
+        type: string
+      dry_run:
+        description: '판정하고 맞은 줄만 찍는다 — 다시 돌리지 않는다'
+        required: false
+        type: boolean
+        default: true
+jobs:
+  rerun:
+    # `failure` 만 받는다 — `timed_out` · `startup_failure` 는 일부러 다시 돌리지 않는다(nightly-alert 는 그것도 실패로 알린다 · 시간 초과는 다운로드 거절이 아니고 판정할 실패 스텝 로그도 없다).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'schedule' &&
+      github.event.workflow_run.run_attempt == 1 &&
+      github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write   # `gh run rerun` — 실패한 잡을 다시 돌린다(로그 읽기도 이 스코프다)
+      contents: read   # 서명 판정기를 체크아웃한다
+    env:
+      # ⚠️ `${{ }}` 를 셸 본문에 직접 끼우지 않는다 — env 로 건네야 스크립트 주입이 되지 않는다(nightly-alert 와 같다).
+      RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.run_id || github.event.workflow_run.id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # 이 잡의 토큰은 actions: write 다 — 워크스페이스의 git 설정에 남기지 않는다(check-ci-permissions 규칙 1b).
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22'
+      - name: 실패 로그 받기
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        # ⚠️ 파이프가 아니라 파일로 받는다 — 파이프면 gh 가 실패해도(만료 로그는 HTTP 410) 빈 입력이 판정기로 흘러간다.
+        run: |
+          set -eu
+          case "$RUN_ID" in ''|*[!0-9]*) echo "run id 가 숫자가 아니다 — [$RUN_ID]" >&2; exit 2 ;; esac
+          gh run view "$RUN_ID" --log-failed > "$RUNNER_TEMP/failed.log"
+          echo "run $RUN_ID — 실패 로그 $(wc -l < "$RUNNER_TEMP/failed.log") 줄"
+      - name: 상류 다운로드 거절 서명 판정(0 맞음 · 1 제품 실패 · 2 판정 불가 → 빨강)
+        id: sig
+        run: |
+          set -eu
+          rc=0
+          node scripts/harness-upstream-signature.mjs "$RUNNER_TEMP/failed.log" || rc=$?
+          case "$rc" in
+            0) echo 'match=true' >> "$GITHUB_OUTPUT" ;;
+            1) echo 'match=false' >> "$GITHUB_OUTPUT"
+               echo '제품 실패로 본다 — 다시 돌리지 않는다(harness 는 빨간 채로 남는다)' ;;
+            *) exit "$rc" ;;
+          esac
+      - name: 실패한 잡만 새 러너에서 한 번 다시 돌린다
+        if: steps.sig.outputs.match == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # workflow_run 이면 false, 수동이면 dry_run 입력 그대로 — 「false」일 때만 실제로 다시 돌린다.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -eu
+          if [ "$DRY_RUN" = false ]; then
+            gh run rerun "$RUN_ID" --failed
+            echo "run $RUN_ID — 실패한 잡을 다시 돌렸다"
+          else
+            echo "dry_run — 다시 돌리지 않는다(실제라면: gh run rerun $RUN_ID --failed)"
+          fi

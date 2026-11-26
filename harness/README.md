@@ -1,4 +1,4 @@
-<!-- doc-budget: max-bytes=13260 -->
+<!-- doc-budget: max-bytes=13256 -->
 # Virtual-User Test Harness
 
 A **virtual-user load / regression testing + comprehensive verification & scoring harness** for the polyglot Keycloak SDK (Go/C#/Node/Python/Java/PHP/Rust/Ruby/Kotlin — 9 languages). It brings up a real Keycloak 26.6 (`it-realm` — the same realm as the per-language integration tests) via Docker Compose, and exposes sample apps written with each language's SDK to the same spec (all 9 languages complete, [`contract/CONTRACT.md`](contract/CONTRACT.md) v2) over a common HTTP contract, verifying along two axes: (1) a k6-based driver measures and compares isomorphic load scenarios (legacy `run.sh`), and (2) it runs contract conformance, security-hardening probes, and each SDK's own suite (unit + coverage + lint) per language and aggregates them into a 4-dimensional score (`verify.sh` → `report/SCORECARD.md` — see the "Verification & Scoring" section below).
@@ -120,7 +120,9 @@ Generated artifacts (not committed, `report/.gitignore`) that `verify.sh`/`suite
 
 ### Execution scope — CI first, local for smoke
 
-Running the full `verify.sh` across 9 languages is heavy (tens of minutes), since it includes pulling each language's toolchain image + installing dependencies + running the tests. **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 9 languages nightly, on demand and on a PR changing what it reads (rule: [install/README.md](install/README.md)), and uploads `SCORECARD.md` + `report/signals/` as artifacts. **Locally (especially on Windows Docker Desktop) it is recommended to limit to a 1–2 language smoke** — the Alpine (musl) base (see the warning above) solves the DNS gotcha, but a full 9-language build + test is inefficiently heavy for the local iterative development loop.
+Running the full `verify.sh` across 9 languages is heavy (tens of minutes). **CI is the primary execution vehicle** — the `score-all` job in `.github/workflows/harness.yml` runs the full 9 languages nightly, on demand and on a PR changing what it reads (rule: [install/README.md](install/README.md)), and uploads `SCORECARD.md` + `report/signals/` as artifacts. **Locally (especially on Windows Docker Desktop) limit it to a 1–2 language smoke.**
+
+A **scheduled** run failing on an upstream download refusal (Maven Central 429/absent, Gradle plugin portal, GitHub zipball 5xx — `scripts/harness-upstream-signature.mjs`) has its failed jobs re-run **once** on a new runner (`.github/workflows/harness-rerun.yml`); other failures stay red.
 
 ## Contract
 
