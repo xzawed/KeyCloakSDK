@@ -183,7 +183,9 @@
 // ⚠️ 커버리지 제외 표지(등록부 coverage-ignore-markers-unguarded) — 출하 소스의 표지는 그 코드를 이 장부의 데이터에서 지울 수 있는데 막는 것이
 // 없었다. 그래서 `unit` · `unit-report` 는 리더보다 먼저 그 언어의 출하 소스(`git ls-files` 의 추적 파일 — 자리는 UNIT_MARKS)를 읽어 표지마다
 // 파일:줄을 FAIL 로 낸다(무결성 — 장부를 대조하지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — 0 이면 공허라 FAIL 이고, 추적됐는데 못 읽는 자리
-// (하위 모듈 · 디렉터리)도 FAIL 이다. 표기는 도구 자신의 일치 규칙을 옮긴다(읽은 자리는 UNIT_MARKS 의 줄마다 — 그 규칙보다 좁지 않다).
+// (하위 모듈 · 디렉터리)도, 스캔이 실패한 파일도 FAIL 이다. 표기는 도구 자신의 일치 규칙을 옮긴다(읽은 자리는 UNIT_MARKS 의 줄마다 — 그 규칙보다
+// 좁지 않다). java · kotlin 은 주석 · 문자열 · 문자 리터럴을 빈칸으로 가린 뒤에 맞춘다 — 주석은 거기 설 수 없어 그 안의 Generated 는 표지가 아니다
+// (가리기가 끝을 못 찾은 자리부터는 가리지 않는다). 나머지 언어의 표지는 주석 자체라 가리지 않는다.
 // 실측(2026-11-26 · main 544eec69 · 칸마다 scripts/probe.sh — 장부가
 // 이미 미도달로 적은 줄에 표지를 두고 `unit <언어>` 의 DRIFT 문구와 같은 시험 수로 읽었다 · 가린 칸마다 같은 자리의 오표기 대조군은 조용했다):
 // 장부를 가린다 — node(@vitest/coverage-v8 5.1.0)의 `/* v8 ignore next */` · `/* c8 ignore next */` · `/* istanbul ignore next */`, python
@@ -201,7 +203,7 @@
 // 종료코드(`unit` · `unit-report`): 0 측정 = 장부 · 1 DRIFT — 장부에 없는 미도달 · 수가 다르다 · 낡았거나 경계 밖 · 데이터에 없는 함수를
 // 가리키는 항목 · 까닭이 아니거나 열린 항목이 아닌 why(그 줄이 할 일을 말한다 — 시험을 쓰거나 까닭을 적는다) · 2 FAIL — 아래 표의
 // 무결성과 같다(데이터가 없다 · 다른 트리나 바이트의 것이다 · **단위 스위트의 성공한 실행이 아니다** · 경계 파일이 데이터에 없다 ·
-// 장부 · 기록의 꼴을 모른다 · 출하 소스에 커버리지 제외 표지가 있거나 읽은 추적 파일이 0 이거나 추적된 자리를 못 읽는다 — 위). `check` 는 데이터
+// 장부 · 기록의 꼴을 모른다 · 출하 소스에 커버리지 제외 표지가 있거나 읽은 추적 파일이 0 이거나 추적된 자리를 못 읽거나 스캔이 실패한다 — 위). `check` 는 데이터
 // 없이 장부의 꼴 · 경계 · why 를 본다(등록부만 바꾼 PR 도 — 레인은 `paths:` 뒤다).
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
@@ -292,12 +294,16 @@ const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x
 // 그 클래스의 메서드 전부 · 그 메서드를 거른다(CLASS · RUNTIME 보존만 클래스 파일에 남는다 — 소스에서는 못 가려 가리지 않는다). 그래서 붙인 자리의
 // **마지막 이름 조각**을 본다(`@GeneratedCode` 는 담는다 · `@a.GeneratedX.User` 는 User 다). 붙인 자리에 그 이름이 안 보이는 길도 막는다 — 되풀이
 // 주석(@Repeatable)을 두 번 붙이면 클래스 파일에는 그 **컨테이너**가 실리므로(JLS 9.7.5) 이름에 Generated 를 담은 주석 타입의 선언(java
-// `@interface …` · kotlin `annotation class …`)도 표지다. java 에는 별칭이 없어 import 는 표지가 아니고(`import a.GeneratedToken;`), 어휘기가
-// 토큰보다 먼저 푸는 \uXXXX 를 풀고 맞춘다(javaUnicode — 이스케이프로 쓴 이름 글자도 이름이다). kotlin 은 백틱 이름 · 쓰임 자리 표적(`@get:`) ·
-// 여러 주석 꼴(`@[A B(…)]` — 이름 자리만, kotlinLists) · 별칭(`import … as` · `typealias`)까지 보고, 레이블 참조(`this@X` · `super@X` · `super<T>@X` ·
-// `return@x` · `break@x` · `continue@x`)의 `@` 만 건너뛴다 — 한정자나 다른 주석에 붙은 `@`(`private@Generated` · `@JvmStatic@Generated`)도 주석으로
-// 읽는다. kotlin 의 맨 이름에는 `$` 가 없다(문자열 템플릿의 시작이다). 범위 밖 — 일부러 숨기는 꼴(토큰 사이의 블록 주석 `@/**/Generated` · 스캔하는
-// 파일 밖에서 선언한 별칭)은 읽지 않는다.
+// `@interface …` · kotlin `annotation class …`)도 표지다. 둘 다 주석 · 문자열 · 문자 리터럴을 빈칸으로 가린 원문(javaMask · kotlinMask — 자리 ·
+// 줄바꿈은 그대로)에서 맞춘다 — 주석은 거기 설 수 없고, java 의 토큰 사이 블록 주석(`@/**/Generated` — javac 21 이 받아 클래스 파일에 싣는다,
+// 실측)은 빈칸이 된다(kotlin 은 그 꼴을 거부한다). 가리기가 리터럴 · 주석의 끝을
+// 못 찾으면 그 자리부터는 가리지 않는다(잘못 읽어도 숨기지 않고 더 낸다). java 에는 별칭이 없어 import 는 표지가 아니고(`import
+// a.GeneratedToken;`), 어휘기가 토큰보다 먼저 푸는 \uXXXX 를 가리기 전에 푼다(javaUnicode — 이스케이프로 쓴 이름 글자도, 한 줄 주석을 끝내는
+// 이스케이프한 줄바꿈도 javac 처럼 읽힌다). kotlin 은 백틱 이름 · 쓰임 자리 표적(`@get:` — 표적 낱말 열 개만) · 여러 주석 꼴(`@[A B(…)]` —
+// 이름 자리만, kotlinLists) · 별칭(`import … as` · typealias — kotlinAliases) · 주석 타입 선언(kotlinAnnotationClasses)까지 보고, 레이블
+// 참조(`this@X` · `super@X` · `super<T>@X` · `return@x` · `break@x` · `continue@x`)의 `@` 만 건너뛴다 — 한정자나 다른 주석에 붙은 `@`
+// (`private@Generated` · `@JvmStatic@Generated`)도 주석으로 읽는다. kotlin 의 맨 이름에는 `$` 가 없다(문자열 템플릿의 시작이다). 셋 다 앞으로만
+// 읽는 스캐너라 입력에 선형이다(겹친 반복의 정규식이 아니다). 범위 밖 — 스캔하는 파일 밖에서 선언한 별칭 · 컨테이너는 읽지 않는다.
 const J_ID = '[\\p{L}\\p{N}_$]'
 // 조각의 끝 — 이름 글자나 `.` 가 이어지면 마지막 조각이 아니다(뒤 글자를 덜 먹어 맞추는 되돌림도 막는다).
 const J_END = `(?!${J_ID}|\\s*\\.)`
@@ -332,28 +338,68 @@ function javaUnicode(t) {
   at.push(t.length)
   return { text: parts.join(''), at }
 }
+// 가리기의 결과 — out 의 [0, stop) 은 가렸고 그 뒤는 원문이다(stop -1 은 끝까지 읽었다). 주석 · 리터럴 [a, b) 는 빈칸이 되고 줄바꿈(`\n` · `\r`)은
+// 남는다 — 자리 · 줄 수가 원문과 같다.
+function masked(out, t, stop) {
+  return { text: stop < 0 ? out.join('') : out.slice(0, stop).join('') + t.slice(stop), stop }
+}
+function blank(out, a, b) {
+  for (let k = a; k < b; k++) if (out[k] !== '\n' && out[k] !== '\r') out[k] = ' '
+}
+// java(푼 원문) — `//` · `/* */` · 텍스트 블록 `"""…"""` · 문자열 · 문자(`\x` 는 두 글자 — `"\""` · `'\''`). 끝을 못 찾으면(닫히지 않은 주석 ·
+// 텍스트 블록, 줄을 넘는 문자열 · 문자) 그 자리부터 가리지 않는다.
+function javaMask(t) {
+  const out = t.split('')
+  for (let i = 0; i < t.length; ) {
+    let e = -1
+    if (t.startsWith('//', i)) {
+      e = i + 2
+      while (e < t.length && t[e] !== '\n' && t[e] !== '\r') e++
+    } else if (t.startsWith('/*', i)) {
+      e = t.indexOf('*/', i + 2)
+      if (e >= 0) e += 2
+    } else if (t.startsWith('"""', i)) {
+      for (let j = i + 3; j < t.length; ) {
+        if (t[j] === '\\') j += 2
+        else if (t.startsWith('"""', j)) {
+          e = j + 3
+          break
+        } else j++
+      }
+    } else if (t[i] === '"' || t[i] === "'") {
+      for (let j = i + 1; j < t.length && t[j] !== '\n' && t[j] !== '\r'; ) {
+        if (t[j] === '\\') {
+          if (t[j + 1] === '\n' || t[j + 1] === '\r') break
+          j += 2
+        } else if (t[j] === t[i]) {
+          e = j + 1
+          break
+        } else j++
+      }
+    } else {
+      i++
+      continue
+    }
+    if (e < 0) return masked(out, t, i)
+    blank(out, i, e)
+    i = e
+  }
+  return masked(out, t, -1)
+}
 const K_ID = '[\\p{L}\\p{N}_]'
 const K_SEG = `(?:${K_ID}+|\`[^\`\\r\\n]+\`)`
 // 마지막 조각 — 맨 이름은 이름 글자가 더 오면 안 되고(되돌림 방지), 백틱 이름은 닫는 백틱이 끝이다(바로 뒤에 `as` 가 붙어도 된다).
 const K_LAST = `(?:${K_ID}*Generated${K_ID}*(?!${K_ID})|\`[^\`\\r\\n]*Generated[^\`\\r\\n]*\`)`
 const K_NAME = `(?:${K_SEG}\\s*\\.\\s*)*${K_LAST}(?!\\s*\\.)`
-const K_AT = `(?<!\\b(?:this|super|return|break|continue)|\\bsuper\\s*<[^<>\\n]*>)@\\s*(?:\\p{L}+\\s*:\\s*)?`
-// typealias 의 타입 매개변수(겹친 `<…>` 셋까지 — 함수 타입의 `->` 는 닫지 않는다)와 오른쪽 — 맨 이름이거나 괄호 친 이름이다. 괄호 친 꼴은 이름 바로
-// 뒤에서 닫혀야 하고, 닫은 뒤가 `)` · `->` 면 함수 타입의 매개변수라(`(GeneratedEvent) -> Unit` · `((GeneratedEvent)) -> Unit` — 매개변수 여럿인
-// `(GeneratedEvent, Int) -> Unit` 은 이름 뒤에서 닫히지 않는다) 그 주석의 별칭이 아니다. 주석 타입 선언은 `annotation` 과 `class` 사이의 한정자 ·
-// 주석(K_ANN — 인자의 괄호는 두 겹까지)도 넘는다.
-const K_TPARAMS = `<(?:->|[^<>\\n]|<(?:->|[^<>\\n]|<(?:->|[^<>\\n])*>)*>)*>`
-const K_ANN = `@(?:\\[[^\\]]*\\]|[^\\s(\\[]+(?:\\s*\\((?:[^()]|\\([^()]*\\))*\\))?)`
-const KOTLIN_MARK = new RegExp(
-  `${K_AT}${K_NAME}` +
-    `|\\bimport\\s+${K_NAME}(?=\\s*as\\b)` +
-    `|\\btypealias\\s+${K_SEG}(?:\\s*${K_TPARAMS})?\\s*=\\s*(?:${K_NAME}|(?:\\(\\s*)+${K_NAME}(?:\\s*\\))+(?!\\s*(?:\\)|->)))` +
-    `|\\bannotation(?:\\s+(?:public|private|internal|protected|expect|actual)|\\s*${K_ANN})*\\s+class\\s+${K_LAST}`,
-  'gu',
-)
-// kotlin 의 여러 주석 꼴 `@[A B(…) C]` · `@get:[…]` — 목록의 이름 자리만 읽는다. 이름 뒤의 `<…>` · `(…)` 는 문자열(템플릿 · 원문 문자열 포함) ·
-// 문자 · 주석(중첩)을 가려 통째로 건너뛴다 — 인자 속 `]` · `"Generated…"` 는 이름이 아니다. 목록으로 읽히지 않으면(문자열 속 `@[a-z]` 따위 —
-// 컴파일되는 목록은 늘 읽힌다) 아무것도 내지 않는다.
+// 쓰임 자리 표적 — 문법의 annotationUseSiteTarget 낱말만이다(`@realm:X` 는 주석이 아니다). kotlin 의 `@` 는 이름(또는 표적)에 붙는다 — `@ X` ·
+// `@⏎X` · `@/**/X` 는 kotlinc 2.4.10 이 "Expected annotation identifier after '@'" 로 거부한다(실측). 그래서 `@` 뒤 공백을 넘지 않는다 — 레이블
+// 정의 뒤의 이름(`lbl@ GeneratedX` — 컴파일된다)은 주석이 아니다.
+const K_TARGET = '(?:file|property|field|get|set|receiver|param|setparam|delegate|all)\\s*:\\s*'
+const K_AT = `(?<!\\b(?:this|super|return|break|continue)|\\bsuper\\s*<[^<>\\n]*>)@(?:${K_TARGET})?`
+// 붙인 자리와 별칭 import. typealias · 주석 타입 선언은 정규식이 아니라 앞으로만 읽는 스캐너다(kotlinAliases · kotlinAnnotationClasses).
+const KOTLIN_MARK = new RegExp(`${K_AT}${K_NAME}|\\bimport\\s+${K_NAME}(?=\\s*as\\b)`, 'gu')
+// kotlin 의 여러 주석 꼴 `@[A B(…) C]` · `@get:[…]` — 목록의 이름 자리만 읽는다. 이름 뒤의 `<…>` · `(…)` 는 통째로 건너뛴다(가린 원문이라 인자 속
+// `]` · `"Generated…"` 는 이미 빈칸이다). 목록으로 읽히지 않으면 아무것도 내지 않는다(컴파일되는 목록은 늘 읽힌다).
 const K_OPEN = new RegExp(`${K_AT}\\[`, 'gu')
 const K_ENTRY = new RegExp(`(?:${K_SEG}\\s*\\.\\s*)*${K_SEG}`, 'uy')
 const K_TAIL = new RegExp(`${K_SEG}$`, 'u')
@@ -364,19 +410,35 @@ function ktSkip(t, i) {
       const n = t.indexOf('\n', i)
       i = n < 0 ? t.length : n + 1
     } else if (t.startsWith('/*', i)) {
-      // kotlin 의 블록 주석은 겹친다.
-      let d = 0
-      do {
-        if (t.startsWith('/*', i)) {
-          d++
-          i += 2
-        } else if (t.startsWith('*/', i)) {
-          d--
-          i += 2
-        } else i++
-      } while (d > 0 && i < t.length)
+      const e = ktBlock(t, i)
+      i = e < 0 ? t.length : e
     } else return i
   }
+}
+// t[i] 가 `/*` 인 블록 주석의 끝 다음 자리 — kotlin 의 블록 주석은 겹친다(닫히지 않으면 -1).
+function ktBlock(t, i) {
+  for (let d = 0; i < t.length; )
+    if (t.startsWith('/*', i)) {
+      d++
+      i += 2
+    } else if (t.startsWith('*/', i)) {
+      i += 2
+      if (--d === 0) return i
+    } else i++
+  return -1
+}
+// t[i] 가 `'` 인 문자 리터럴의 끝 다음 자리(`'"'` · `'\''` · `'\uXXXX'` — 비었거나 줄을 넘거나 닫히지 않으면 -1).
+function ktChar(t, i) {
+  for (let j = i + 1; j < t.length && j - i < 12 && t[j] !== '\n' && t[j] !== '\r'; )
+    if (t[j] === '\\') j += 2
+    else if (t[j] === "'") return j > i + 1 ? j + 1 : -1
+    else j++
+  return -1
+}
+// t[i] 가 백틱인 이름의 끝 다음 자리 — 그 안의 따옴표 · 괄호는 이름의 글자다(줄을 넘거나 닫히지 않으면 -1).
+function ktTick(t, i) {
+  for (let j = i + 1; j < t.length && t[j] !== '\n' && t[j] !== '\r'; j++) if (t[j] === '`') return j + 1
+  return -1
 }
 // t[i] 가 open 인 묶음의 끝 다음 자리(닫히지 않으면 -1).
 function ktGroup(t, i, open, close) {
@@ -384,15 +446,9 @@ function ktGroup(t, i, open, close) {
   while (i < t.length) {
     const c = t[i]
     if (c === '"') i = ktString(t, i)
-    else if (c === "'") {
-      let j = i + (t[i + 1] === '\\' ? 3 : 2)
-      while (j < t.length && j - i < 10 && t[j] !== "'") j++
-      i = t[j] === "'" ? j + 1 : -1
-    } else if (c === '`') {
-      // 백틱 이름 — 그 안의 괄호 · 따옴표는 이름의 글자다(백틱 이름은 줄을 넘지 않는다).
-      const e = t.indexOf('`', i + 1)
-      i = e < 0 || t.slice(i + 1, e).includes('\n') ? -1 : e + 1
-    } else if (t.startsWith('->', i)) i += 2 // 함수 타입의 화살표 — 그 `>` 는 `<…>` 를 닫지 않는다
+    else if (c === "'") i = ktChar(t, i)
+    else if (c === '`') i = ktTick(t, i)
+    else if (t.startsWith('->', i)) i += 2 // 함수 타입의 화살표 — 그 `>` 는 `<…>` 를 닫지 않는다
     else if (t.startsWith('//', i) || t.startsWith('/*', i)) i = ktSkip(t, i)
     else {
       if (c === open) d++
@@ -405,6 +461,7 @@ function ktGroup(t, i, open, close) {
 }
 // t[i] 가 `"` 인 문자열의 끝 다음 자리 — 템플릿 `${…}` 는 코드라 그 안의 문자열까지 건너뛴다. 여러 달러 문자열(`$$"…"` ·
 // `$$"""…"""`)은 여는 따옴표 앞 `$` 의 수만큼의 `$` 뒤 `{` 만 템플릿이다(그보다 적은 `${` 는 글자다). 원문 문자열은 따옴표 셋 앞의 따옴표가 내용이다.
+// 보통 문자열은 줄을 넘지 못한다(줄바꿈 · `\` 뒤 줄바꿈이면 -1).
 function ktString(t, i) {
   let n = 0
   while (i - 1 - n >= 0 && t[i - 1 - n] === '$') n++
@@ -412,15 +469,165 @@ function ktString(t, i) {
   const raw = t.startsWith('"""', i)
   for (i += raw ? 3 : 1; i < t.length; ) {
     if (t.startsWith(tpl, i)) i = ktGroup(t, i + tpl.length - 1, '{', '}')
-    else if (raw && t.startsWith('"""', i)) {
-      for (i += 3; t[i] === '"'; i++);
-      return i
-    } else if (!raw && t[i] === '"') return i + 1
-    else if (!raw && t[i] === '\n') return -1
-    else i += !raw && t[i] === '\\' ? 2 : 1
+    else if (raw) {
+      if (t.startsWith('"""', i)) {
+        for (i += 3; t[i] === '"'; i++);
+        return i
+      }
+      i++
+    } else if (t[i] === '"') return i + 1
+    else if (t[i] === '\n' || t[i] === '\r') return -1
+    else if (t[i] === '\\') i = t[i + 1] === '\n' || t[i + 1] === '\r' ? -1 : i + 2
+    else i++
     if (i < 0) return -1
   }
   return -1
+}
+// kotlin — `//` · 겹치는 `/* */` · 문자열(원문 · 여러 달러 · 템플릿까지 통째로 — ktString) · 문자(ktChar)를 가린다. 백틱 이름은 이름이라 가리지
+// 않고 넘는다(그 안의 `"` 는 문자열이 아니다). 끝을 못 찾으면 그 자리부터 가리지 않는다.
+function kotlinMask(t) {
+  const out = t.split('')
+  for (let i = 0; i < t.length; ) {
+    let e = -1
+    if (t.startsWith('//', i)) {
+      e = i + 2
+      while (e < t.length && t[e] !== '\n' && t[e] !== '\r') e++
+    } else if (t.startsWith('/*', i)) e = ktBlock(t, i)
+    else if (t[i] === '"') e = ktString(t, i)
+    else if (t[i] === "'") e = ktChar(t, i)
+    else if (t[i] === '`') {
+      const b = ktTick(t, i)
+      if (b < 0) return masked(out, t, i)
+      i = b
+      continue
+    } else {
+      i++
+      continue
+    }
+    if (e < 0) return masked(out, t, i)
+    blank(out, i, e)
+    i = e
+  }
+  return masked(out, t, -1)
+}
+// t[i] 가 `@` 인 주석 하나(가린 원문)의 끝 다음 자리 — 쓰임 자리 표적 · 목록 `@[…]` · 이름 · 타입 인자 `<…>` · 인자 `(…)`. 이름 뒤 공백 너머의
+// 괄호도 인자다(선언의 `@Target (…)` — kotlinc 2.4.10 이 받는다, 실측). 타입 자리의 `@A (X)` 는 `->` 가 없으면 컴파일되지 않고 있으면 함수
+// 타입이라(같은 실측) 어느 쪽으로 읽든 별칭이 아니다. `@` 뒤 공백은 넘는다(컴파일되지 않는 꼴이라 넘어도 숨기지 않는다). 읽히지 않으면 -1.
+const K_USE = new RegExp(K_TARGET, 'y')
+function ktAnnotation(t, i) {
+  i = ktSkip(t, i + 1)
+  K_USE.lastIndex = i
+  const u = K_USE.exec(t)
+  if (u) i = ktSkip(t, i + u[0].length)
+  if (t[i] === '[') return ktGroup(t, i, '[', ']')
+  K_ENTRY.lastIndex = i
+  const n = K_ENTRY.exec(t)
+  if (!n) return -1
+  i += n[0].length
+  let j = ktSkip(t, i)
+  if (t[j] === '<') {
+    j = ktGroup(t, j, '<', '>')
+    if (j < 0) return -1
+    i = j
+    j = ktSkip(t, i)
+  }
+  if (t[j] === '(') {
+    j = ktGroup(t, j, '(', ')')
+    if (j < 0) return -1
+    i = j
+  }
+  return i
+}
+// kotlin 의 typealias(가린 원문) — 이름 · 타입 매개변수 `<…>`(ktGroup — 여러 줄 · `->` 도) · `=` 뒤의 타입 주석 · 여는 괄호를 넘어, 마지막 조각이
+// Generated 를 담은 이름(K_NAME)이면 표지다. 괄호 친 이름은 이름 바로 뒤에서 연 만큼 닫고, 그 뒤가 `)` · `,` · `.` · `->` 면 함수 타입의
+// 매개변수 · 받는 쪽이라 아니다(덜 닫힌 꼴도 그 뒤가 이 중 하나다). 이름 뒤 · 닫은 뒤가 `?` · `<` 인 꼴도 보지 않는다(PM 판정 — 보통 코드의 그
+// 꼴은 `Generated…` 라는 보통 타입의 별칭이다). ⚠️ 그 판정의 근거는 「주석 별칭이 될 수 없다」가 아니다 — kotlinc 2.4.10 은 `= Generated?` ·
+// `= (Generated)?` 의 별칭을 주석으로 받아 클래스 파일에 Generated 를 싣고(javap 실측), 주석 클래스도 타입 매개변수를 가질 수 있다(`annotation
+// class G<T>` 가 컴파일되고 `= G<Int>` 별칭이 G 를 싣는다). 그 꼴은 일부러 숨기는 꼴로 범위 밖이다.
+const K_TYPEALIAS = /\btypealias\b/g
+const K_ALIAS = new RegExp(K_SEG, 'uy')
+const K_TNAME = new RegExp(K_NAME, 'uy')
+function kotlinAliases(t) {
+  const hits = []
+  for (const a of t.matchAll(K_TYPEALIAS)) {
+    let i = ktSkip(t, a.index + a[0].length)
+    K_ALIAS.lastIndex = i
+    const s = K_ALIAS.exec(t)
+    if (!s) continue
+    i = ktSkip(t, i + s[0].length)
+    if (t[i] === '<') {
+      i = ktGroup(t, i, '<', '>')
+      if (i < 0) continue
+      i = ktSkip(t, i)
+    }
+    if (t[i] !== '=') continue
+    let opens = 0
+    for (i = ktSkip(t, i + 1); i >= 0; ) {
+      if (t[i] === '@') i = ktAnnotation(t, i)
+      else if (t[i] === '(') {
+        opens++
+        i++
+      } else break
+      if (i >= 0) i = ktSkip(t, i)
+    }
+    if (i < 0) continue
+    K_TNAME.lastIndex = i
+    const n = K_TNAME.exec(t)
+    if (!n) continue
+    let end = i + n[0].length
+    let k = ktSkip(t, end)
+    if (t[k] === '?' || t[k] === '<') continue
+    for (let closed = 0; closed < opens && t[k] === ')'; closed++) {
+      end = k + 1
+      k = ktSkip(t, end)
+    }
+    if (opens > 0 && k < t.length && ('),.?<'.includes(t[k]) || t.startsWith('->', k))) continue
+    hits.push({ at: a.index, start: a.index, end })
+  }
+  return hits
+}
+// kotlin 의 주석 타입 선언(가린 원문) — 선언의 머리(파일 처음 · 줄 머리 · `{` `}` `;` 뒤)에서 한정자 · 주석의 목록을 앞으로 읽어(줄을 넘어도) 그
+// 안에 `annotation` 이 있고 `class 이름` 으로 끝나면 그 이름을 본다. `annotation` 은 한정자 자리에서만 한정자다 — `val x = annotation⏎class …` 는
+// 아니고 `annotation⏎class …` 는 그렇다. 이미 읽은 목록 안의 머리는 다시 읽지 않는다(선형).
+const K_MODIFIERS = new Set([
+  ...['public', 'private', 'internal', 'protected', 'expect', 'actual', 'final', 'open', 'abstract', 'sealed', 'annotation', 'data', 'enum'],
+  ...['inner', 'value', 'override', 'lateinit', 'tailrec', 'operator', 'infix', 'inline', 'external', 'suspend', 'const', 'vararg'],
+  ...['noinline', 'crossinline'],
+])
+const K_WORD = /[\p{L}_][\p{L}\p{N}_]*/uy
+const K_CLASSNAME = new RegExp(K_LAST, 'uy')
+function kotlinAnnotationClasses(t) {
+  const hits = []
+  for (let s = 0, done = 0; s < t.length; s++) {
+    if ((s > 0 && !'\n\r{};'.includes(t[s - 1])) || s < done) continue
+    let i = s
+    while (t[i] === ' ' || t[i] === '\t' || t[i] === '\f') i++
+    let ann = -1
+    for (;;) {
+      if (t[i] === '@') {
+        const j = ktAnnotation(t, i)
+        if (j < 0) break
+        i = j
+      } else {
+        K_WORD.lastIndex = i
+        const w = K_WORD.exec(t)
+        if (!w || !K_MODIFIERS.has(w[0])) break
+        if (w[0] === 'annotation' && ann < 0) ann = i
+        i += w[0].length
+      }
+      i = ktSkip(t, i)
+    }
+    done = i
+    if (ann < 0) continue
+    K_WORD.lastIndex = i
+    const c = K_WORD.exec(t)
+    if (!c || c[0] !== 'class') continue
+    const j = ktSkip(t, i + c[0].length)
+    K_CLASSNAME.lastIndex = j
+    const n = K_CLASSNAME.exec(t)
+    if (n) hits.push({ at: ann, start: ann, end: j + n[0].length })
+  }
+  return hits
 }
 function kotlinLists(t) {
   const hits = []
@@ -429,7 +636,7 @@ function kotlinLists(t) {
     for (let i = o.index + o[0].length; ; ) {
       i = ktSkip(t, i)
       if (t[i] === ']') {
-        for (const at of names) hits.push({ at, tok: t.slice(o.index, i + 1) })
+        for (const at of names) hits.push({ at, start: o.index, end: i + 1 })
         break
       }
       K_ENTRY.lastIndex = i
@@ -444,6 +651,19 @@ function kotlinLists(t) {
       if (i < 0) break
     }
   }
+  return hits
+}
+// 한 파일의 표지 — decode(java 의 \uXXXX)가 있으면 푼 원문에서, mask 가 있으면 주석 · 리터럴을 빈칸으로 가린 원문에서 맞추고, 자리 · 표기는
+// 원문으로 돌려 댄다. 표기는 전역 정규식이거나 원문 → [{ at, start, end }] 함수다(at 은 줄을 댈 자리 · [start, end) 는 표기).
+function markHits(m, text) {
+  const dec = m.decode ? m.decode(text) : null
+  const src = dec ? dec.text : text
+  const scan = m.mask ? m.mask(src).text : src
+  const back = (k) => (dec ? dec.at[k] : k)
+  const hits = []
+  for (const mk of m.marks)
+    for (const h of mk instanceof RegExp ? [...scan.matchAll(mk)].map((x) => ({ at: x.index, start: x.index, end: x.index + x[0].length })) : mk(scan))
+      hits.push({ at: back(h.at), tok: text.slice(back(h.start), back(h.end)).trim().replace(/\s+/g, ' ') })
   return hits
 }
 const UNIT_MARKS = {
@@ -465,8 +685,8 @@ const UNIT_MARKS = {
     also: ['dotnet/Directory.Build.props', 'dotnet/Directory.Build.targets', 'Directory.Build.props', 'Directory.Build.targets'],
     marks: [/ExcludeFrom(?:Code)?Coverage\w*/g],
   },
-  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', decode: javaUnicode, marks: [JAVA_MARK] },
-  kotlin: { roots: ['kotlin/src/main/kotlin'], marks: [KOTLIN_MARK, kotlinLists] },
+  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', decode: javaUnicode, mask: javaMask, marks: [JAVA_MARK] },
+  kotlin: { roots: ['kotlin/src/main/kotlin'], mask: kotlinMask, marks: [KOTLIN_MARK, kotlinLists, kotlinAliases, kotlinAnnotationClasses] },
   // SimpleCov 1.2.0 — `:nocov:` 토글(lines_classifier.rb:27 `/^(\s*)#(\s*)(:nocov:)/` — 토큰은 기본값이다, spec_helper 가 안 바꾼다)과 그 대체
   // `# simplecov:disable`(directive.rb 의 PATTERN — 코드 뒤에 붙은 한 줄 꼴도).
   ruby: { roots: ['ruby/lib'], marks: [/^[^\S\n]*#[^\S\n]*:nocov:/gm, /#[^\S\n]*simplecov[^\S\n]*:[^\S\n]*disable\b/g] },
@@ -4086,7 +4306,7 @@ const unitCounts = (l, x) => {
 const unitMissed = (u) => (u.lines ?? 0) > 0 || (u.statements ?? 0) > 0 || (u.branches ?? 0) > 0
 // 출하 소스의 커버리지 제외 표지(머리 주석) — 표지마다 FAIL 이다(리더를 부르지 않는다). 읽은 추적 파일 수를 한 줄로 찍는다 — roots 의 추적된
 // 파일이 0 이면(자리가 낡았다 · git 이 못 낸다) 「표지 0」이 아니라 공허라 FAIL 이다. 추적됐는데 못 읽는 것(하위 모듈 · 디렉터리 · 권한)도 FAIL 이다
-// — 그 자리의 표지를 볼 수 없다. 표기는 전역 정규식이거나 원문 → [{ at, tok }] 함수(kotlinLists)다.
+// — 그 자리의 표지를 볼 수 없다. 파일마다의 표지는 markHits 가 낸다(스캔이 던지면 그 파일도 FAIL 이다).
 function unitMarks(l) {
   const m = UNIT_MARKS[l]
   if (!m.roots) {
@@ -4120,16 +4340,16 @@ function unitMarks(l) {
       fail(l, `${f}: the coverage-exclusion marker scan cannot read it (${e.code ?? e.message})`)
       continue
     }
+    // 스캔이 던지면(겹침이 깊은 템플릿의 재귀 따위) 그 파일의 표지를 배제할 수 없다 — 건너뛰지 않고 FAIL 이다(읽은 수에 넣지 않는다).
+    let found
+    try {
+      found = markHits(m, text)
+    } catch (e) {
+      fail(l, `${f}: the coverage-exclusion marker scan failed on it (${e.message}) — its markers cannot be ruled out`)
+      continue
+    }
     read++
-    // decode(java 의 \uXXXX)가 있으면 푼 원문에서 맞추고, 자리와 표기는 원문으로 돌려 댄다(줄 수도 원문의 것이다).
-    const dec = m.decode ? m.decode(text) : null
-    const scan = dec ? dec.text : text
-    for (const mk of m.marks)
-      for (const h of mk instanceof RegExp ? [...scan.matchAll(mk)].map((x) => ({ at: x.index, tok: x[0] })) : mk(scan)) {
-        const at = dec ? dec.at[h.at] : h.at
-        const tok = dec ? text.slice(at, dec.at[h.at + h.tok.length]) : h.tok
-        hits.push({ f, at, line: text.slice(0, at).split('\n').length, tok: tok.trim().replace(/\s+/g, ' ') })
-      }
+    for (const h of found) hits.push({ f, at: h.at, line: text.slice(0, h.at).split('\n').length, tok: h.tok })
   }
   hits.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : a.at - b.at))
   const n = `${read} tracked file${read === 1 ? '' : 's'} under ${shown}`
