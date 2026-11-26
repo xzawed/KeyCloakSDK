@@ -306,7 +306,11 @@ const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x
 // (`private@Generated` · `@JvmStatic@Generated`)도 주석으로 읽는다. kotlin 의 맨 이름에는 `$` 가 없다(문자열 템플릿의 시작이다). kotlin 의
 // 문자열은 글자 조각만 가린다 — 템플릿 `${…}` 의 몸통은 코드다(ktString). 입력에 선형이다 — 가리기는 한 번 앞으로 읽고, 묶음의 짝은 한 번의 스택
 // 훑기로 미리 내고(ktPairs), 스캐너 셋은 그 표로 묶음을 넘으며, 정규식에는 겹친 반복도 두 반복 사이의 낱말도 없다. 범위 밖 — 스캔하는 파일 밖에서
-// 선언한 별칭 · 컨테이너는 읽지 않는다. 가리기가 멈춘 뒤의 원문은 따옴표 · 주석을 모르고 읽는다 — 거기서는 Generated 를 담은 이름을 전부 낸다(kotlinRawTail — 더 내고 숨기지 않는다).
+// 선언한 별칭 · 컨테이너는 읽지 않는다. 일부러 숨기는 꼴도 범위 밖이다(PM 판정) — java 이름 · `interface` 안의 무시되는 식별자 글자(소프트
+// 하이픈 · ZWJ · U+FEFF · C0 제어 글자 — 원문이든 이스케이프든) · `[\p{L}\p{N}_$]` 밖의 java 식별자 글자(통화 기호 · U+203F · 결합 부호) ·
+// 이스케이프가 만든 `\` 뒤의 유니코드 이스케이프 짝수 규칙 · `/*` 나 `"""` 를 담은 .kt 첫 줄의 `#!` · 따옴표를 담은 백틱 이름이 붙은 짧은 템플릿
+// `$`. JaCoCo 가 안 읽는 자리도 보지 않는다(0.8.16 은 최상위 클래스 · 메서드 주석 서술자만 읽는다 — javap -c) — 타입 주석 · 주석의 원소 값으로
+// 겹친 주석. 받아들인 더 내기 — 글자로 `@Generated` 를 담은 백틱 이름 · 이름 안의 `$`(`Generated$X` — JaCoCo 는 `X` 를 본다). 가리기가 멈춘 뒤의 원문은 따옴표 · 주석을 모르고 읽는다 — 거기서는 Generated 를 담은 이름을 전부 낸다(kotlinRawTail — 더 내고 숨기지 않는다).
 const J_ID = '[\\p{L}\\p{N}_$]'
 // 조각의 끝 — 이름 글자나 `.` 가 이어지면 마지막 조각이 아니다(뒤 글자를 덜 먹어 맞추는 되돌림도 막는다).
 const J_END = `(?!${J_ID}|\\s*\\.)`
@@ -352,7 +356,10 @@ function blank(out, a, b) {
   for (let k = a; k < b; k++) if (out[k] !== '\n' && out[k] !== '\r') out[k] = ' '
 }
 // java(푼 원문) — `//` · `/* */` · 텍스트 블록 `"""…"""` · 문자열 · 문자(`\x` 는 두 글자 — `"\""` · `'\''`). 끝을 못 찾으면(닫히지 않은 주석 ·
-// 텍스트 블록, 줄을 넘는 문자열 · 문자) 그 자리부터 가리지 않는다.
+// 텍스트 블록, 줄을 넘는 문자열 · 문자) 그 자리부터 가리지 않는다. javac 가 거부하는 두 꼴도 끝을 못 찾은 것이다(먼 따옴표와 짝지으면 그 사이의
+// 표지가 숨는다) — 문자 리터럴은 가장 긴 `'\377'` 이 여섯 글자라 닫는 따옴표가 그 안에 없으면 멈추고(J_CHAR), 텍스트 블록은 여는 `"""` 뒤가
+// 공백 · 탭 · 폼피드와 줄 끝이 아니면 멈춘다(JLS 3.10.6).
+const J_CHAR = 6
 function javaMask(t) {
   const out = t.split('')
   for (let i = 0; i < t.length; ) {
@@ -364,7 +371,9 @@ function javaMask(t) {
       e = t.indexOf('*/', i + 2)
       if (e >= 0) e += 2
     } else if (t.startsWith('"""', i)) {
-      for (let j = i + 3; j < t.length; ) {
+      let j = i + 3
+      while (t[j] === ' ' || t[j] === '\t' || t[j] === '\f') j++
+      for (j = t[j] === '\n' || t[j] === '\r' ? j : t.length; j < t.length; ) {
         if (t[j] === '\\') j += 2
         else if (t.startsWith('"""', j)) {
           e = j + 3
@@ -372,7 +381,7 @@ function javaMask(t) {
         } else j++
       }
     } else if (t[i] === '"' || t[i] === "'") {
-      for (let j = i + 1; j < t.length && t[j] !== '\n' && t[j] !== '\r'; ) {
+      for (let j = i + 1; j < t.length && t[j] !== '\n' && t[j] !== '\r' && (t[i] === '"' || j - i < J_CHAR); ) {
         if (t[j] === '\\') {
           if (t[j + 1] === '\n' || t[j + 1] === '\r') break
           j += 2
@@ -680,7 +689,8 @@ function kotlinAnnotationClasses(t, stop) {
     if (s > 0 && !K_WS.test(t[s - 1])) prev = s - 1
     if ((s > 0 && !'\n\r{};'.includes(t[s - 1])) || s < done || ((stop < 0 || prev < stop) && ktContinues(t, prev))) continue
     let i = s
-    while (t[i] === ' ' || t[i] === '\t' || t[i] === '\f') i++
+    // 파일 머리의 BOM(U+FEFF)도 머리의 공백이다 — 편집기가 쓴 BOM 뒤 첫 줄의 선언을 kotlinc 2.4.10 이 받는다(실측).
+    while (t[i] === ' ' || t[i] === '\t' || t[i] === '\f' || t.charCodeAt(i) === 0xfeff) i++
     let ann = -1
     for (;;) {
       if (t[i] === '@') {
@@ -740,13 +750,24 @@ function kotlinLists(t) {
 }
 // 가리기가 멈춘 뒤의 원문(stop 부터) — 거기서는 따옴표 · 주석을 모르므로 그 안의 괄호가 먼 괄호와 짝지어져 스캐너가 뒤의 선언을 넘거나
 // 목록을 못 읽는다(`@A("(")⏎annotation class GeneratedX⏎… ")"` · `@[A("]") Generated]`). 그래서 그 구간에서는 Generated 를 담은 **이름 전부**를
-// 낸다(`$` 에 붙은 이름은 템플릿이라 뺀다) — 더 내는 것은 받아들이고 숨기지 않는다(멈춘 파일은 컴파일되지 않는다). 다른 스캐너가 이미 낸 표기
-// 안의 이름은 markHits 가 뺀다(fallback). 정규식은 이름마다 한 번 미리 본다(선형).
-const K_RAW = new RegExp(`(?<![\\p{L}\\p{N}_$])(?=${K_ID}*Generated)${K_ID}+`, 'gu')
+// 낸다 — `$` 에 붙은 이름도 낸다(백틱 이름은 `$` 를 담을 수 있다: ``annotation class `x$Generated` `` 가 컴파일되고 JaCoCo 는 마지막 `$` 뒤를
+// 본다 — kotlinc 2.4.10 · javap 실측. 템플릿 `"$GeneratedName"` 도 함께 내는 값을 치른다). 더 내는 것은 받아들이고 숨기지 않는다(멈춘 파일은
+// 컴파일되지 않는다). 다른 스캐너가 이미 낸 표기 안의 이름은 markHits 가 뺀다(fallback). 정규식은 이름마다 한 번 미리 본다(선형).
+// 멈춘 자리 앞에서 열려 그 뒤에서 닫힌 묶음도 같은 까닭으로 믿지 못한다 — 가린 쪽의 `@Target(` 가 뒤쪽 주석의 `)` 와 짝지어지면 스캐너가 그
+// 사이(멈춘 자리 **앞**)의 선언을 넘는다. 그래서 그런 묶음이 있으면 가장 앞의 여는 자리부터 낸다(짝은 그대로 둔다 — 그 짝으로 읽히던 표지는
+// 계속 읽힌다).
+const K_RAW = new RegExp(`(?<![\\p{L}\\p{N}_])(?=${K_ID}*Generated)${K_ID}+`, 'gu')
 function kotlinRawTail(t, stop) {
   const hits = []
   if (stop < 0) return hits
-  K_RAW.lastIndex = stop
+  const to = ktPairs(t)
+  let from = stop
+  for (let p = 0; p < stop; p++)
+    if (to[p] >= stop) {
+      from = p
+      break
+    }
+  K_RAW.lastIndex = from
   for (let m; (m = K_RAW.exec(t)); ) hits.push({ at: m.index, start: m.index, end: m.index + m[0].length, fallback: true })
   return hits
 }

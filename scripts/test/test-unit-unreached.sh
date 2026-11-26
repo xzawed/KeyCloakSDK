@@ -1937,6 +1937,8 @@ mark_after "$XJ" 11 "$JU5"
 mark_after "$XJ" 12 "$JU6"
 # `/*/` 로 시작하는 블록 주석 — 여는 `/*` 의 `*` 는 닫는 `*/` 의 처음이 아니다(거기서 닫으면 그 뒤가 코드로 읽혀 주석 속 표기를 낸다).
 mark_after "$XJ" 13 '/*/@Generated */ int g8;'
+# 길이가 다른 문자 리터럴 넷(`'\''` · `'\\'` · 가장 긴 `'\377'` · `'a'`) 뒤의 문자열 — 문자의 길이 상한(여섯 글자)이 이들을 끊지 않는다.
+mark_after "$XJ" 14 "char h1 = '\\''; char h2 = '\\\\'; char h3 = '\\377'; char h4 = 'a'; String h5 = \"@Generated\";"
 run unit-report java "$T" --out "$D"
 assert_eq 0 "$RC" "[markers] java 가리기 대조군 — 주석 셋 · 문자열 · 텍스트 블록 · 이스케이프 · 문자 둘 뒤의 문자열 · 짝수 번째 \\ · 푼 \\ · /*/ 주석은 조용하다(exit 0) — 출력: $OUT"
 assert_line "$OUT" "[java] coverage-exclusion markers: none in 3 tracked files under java/*/src/main/java" "[markers] java 가리기 대조군 — 표지 0"
@@ -1959,6 +1961,30 @@ assert_contains "$OUT" "FAIL [java] $XJF/F2.java:3: coverage-exclusion marker \`
 assert_contains "$OUT" "FAIL [java] $XJF/F3.java:2: coverage-exclusion marker \`@Generated\` in" "[markers] 닫히지 않은 블록 주석 뒤"
 assert_contains "$OUT" "FAIL [java] $XJF/F4.java:2: coverage-exclusion marker \`@Generated\` in" "[markers] 줄을 넘는 문자 뒤"
 assert_line "$OUT" "unit-unreached [java]: FAIL — 5 $MVERDICT" "[markers] java 멈춤 — 다른 FAIL 은 없다"
+# 5차 — javac 가 거부하는 리터럴 둘은 끝을 못 찾은 것이다(먼 따옴표와 짝지으면 사이의 표지가 숨는다): H1 — 여섯 글자 안에 안 닫히는 문자
+# 리터럴(`'\'` 뒤 먼 `'`) · H2 — 여는 `"""` 뒤가 줄 끝이 아닌 텍스트 블록. 그리고 `@` 뒤 공백의 `@ interface` · 대문자 16진의 이스케이프(`\` 는
+# printf 의 8진 134) · `$` 를 담은 이름(JaCoCo 는 마지막 `$` 뒤를 본다) · 빈 문자열 `""` 뒤의 표지.
+ufresh
+printf '%s\n' "class H1 { char c = '\\'; @Generated void m() {} char d = 'a'; }" > "$T/$XJF/H1.java"
+printf '%s\n' 'class H2 { String a = """;' '@Generated void m() {}' 'String b = """' '  x"""; }' > "$T/$XJF/H2.java"
+assert_eq "class H1 { char c = '\\'; @Generated void m() {} char d = 'a'; }" "$(sed -n 1p "$T/$XJF/H1.java")" "(H1 의 문자 리터럴이 \` '\\' \` 인지 먼저 본다)"
+JU7="$(printf '@pm.marks.Ge\134u006Eerated int u5;')"
+mark_after "$XJ" 1 '@ interface GeneratedSpaced { Tag[] value(); }'
+mark_after "$XJ" 2 "$JU7"
+mark_after "$XJ" 3 '@interface My$Generated {}'
+mark_after "$XJ" 4 '@My$Generated int m6;'
+mark_after "$XJ" 5 'String e = ""; @Generated int v;'
+run unit-report java "$T" --out "$D"
+assert_eq 2 "$RC" "[markers] java 의 5차 꼴 일곱이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[java] coverage-exclusion markers: 7 in 5 tracked files under java/*/src/main/java — each is a FAIL below" "[markers] java 5차 — 표지 수"
+assert_contains "$OUT" "FAIL [java] $XJF/H1.java:1: coverage-exclusion marker \`@Generated\` in" "[markers] H1 — 여섯 글자 안에 안 닫히는 문자 리터럴 뒤"
+assert_contains "$OUT" "FAIL [java] $XJF/H2.java:2: coverage-exclusion marker \`@Generated\` in" "[markers] H2 — 줄 끝 없는 \"\"\" 뒤"
+assert_contains "$OUT" "FAIL [java] $XJ:2: coverage-exclusion marker \`@ interface GeneratedSpaced\` in" "[markers] @ 뒤 공백의 주석 타입 선언"
+assert_contains "$OUT" "FAIL [java] $XJ:3: coverage-exclusion marker \`@pm.marks.Ge" "[markers] 대문자 16진의 이스케이프"
+assert_contains "$OUT" "FAIL [java] $XJ:4: coverage-exclusion marker \`@interface My\$Generated\` in" "[markers] \$ 를 담은 주석 타입 선언"
+assert_contains "$OUT" "FAIL [java] $XJ:5: coverage-exclusion marker \`@My\$Generated\` in" "[markers] \$ 를 담은 이름"
+assert_contains "$OUT" "FAIL [java] $XJ:6: coverage-exclusion marker \`@Generated\` in" "[markers] 빈 문자열 뒤"
+assert_line "$OUT" "unit-unreached [java]: FAIL — 7 $MVERDICT" "[markers] java 5차 — 다른 FAIL 은 없다"
 
 # (바) kotlin — 별칭 import · 쓰임 자리 표적 · 여러 주석 꼴(인자 속 `]` 를 넘어 이름 자리만) · typealias, 그리고 백틱 이름. 대조군: 별칭 없는
 # import · 마지막 조각이 아닌 Generated · 인자 문자열 속 Generated · 레이블(`this@…`)은 표지가 아니다.
@@ -2140,6 +2166,8 @@ mark_after "$XK" 15 '/*/@Generated */'
 mark_after "$XK" 16 'val m2 = $$"${object { @Generated fun u() = 1 }.u()}"'
 mark_after "$XK" 17 'val s7 = "${realm}@Generated"'
 mark_after "$XK" 18 'val s8 = """${realm}@Generated ${realm} @Generated"""'
+# 여덟 글자 문자 리터럴(유니코드 이스케이프 — `\` 는 printf 의 8진 134 로 짓는다) 뒤의 문자열 — 문자의 길이 상한이 짧으면 거기서 멈춰 뒤를 낸다.
+mark_after "$XK" 19 "$(printf 'val c5 = \047\134u0041\047; val s9 = "@Generated"')"
 run unit-report kotlin "$T" --out "$D"
 assert_eq 0 "$RC" "[markers] kotlin 가리기 대조군 — 문자 둘 뒤 · 원문 · 겹친 주석 · 한 줄 주석 · 템플릿 · 여러 줄 원문 · 주소 넷 · 이스케이프한 따옴표 · /*/ 주석 · 달러가 모자란 \${ · 템플릿 뒤 글자 둘은 조용하다(exit 0) — 출력: $OUT"
 assert_line "$OUT" "[kotlin] coverage-exclusion markers: none in 2 tracked files under kotlin/src/main/kotlin" "[markers] kotlin 가리기 대조군 — 표지 0"
@@ -2295,7 +2323,8 @@ assert_contains "$OUT" "FAIL [kotlin] $XK:21: coverage-exclusion marker \`annota
 assert_contains "$OUT" "FAIL [kotlin] $XK:22: coverage-exclusion marker \`typealias Skip3< T, > = kc.marks.Generated\` in" "[markers] 경계 없는 여러 줄 타입 매개변수"
 assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 12 $MVERDICT" "[markers] kotlin 선언 꼴 — 다른 FAIL 은 없다"
 # 끝을 못 찾은 가리기는 그 자리에서 멈추고 뒤를 원문 그대로 읽는다(파일 끝까지 가리지 않는다). 칸마다 제 파일이다. F1 끝의 문자열은 줄을 넘는
-# 문자열을 다음 따옴표까지 읽는 판이면 그 사이의 주석을 숨긴다. F6 은 대조군이다 — 멈춘 뒤의 원문에서도 `$` 는 이름 글자가 아니다(템플릿).
+# 문자열을 다음 따옴표까지 읽는 판이면 그 사이의 주석을 숨긴다. F6 — 멈춘 뒤의 원문에서도 `$` 는 이름 글자가 아니다(표기가 `@$GeneratedId` 가
+# 아니다) — 다만 그 구간은 `$` 에 붙은 이름도 낸다(표기 `GeneratedId` — 백틱 이름이 `$` 를 담을 수 있어 치르는 값이다).
 XKF=kotlin/src/main/kotlin/kc/auth
 ufresh
 printf '%s\n' 'val s = "abc' '@Generated fun f() {}' 'val t = "x"' > "$T/$XKF/F1.kt"
@@ -2317,10 +2346,35 @@ printf '%s\n' "val c = '" '@A("(")' 'annotation class GeneratedTail' 'fun f() = 
 printf '%s\n' '/* open' '@A("(")' 'annotation class GeneratedTail' 'fun f() = ")"' > "$T/$XKF/F11.kt"
 printf '%s\n' 'val s = "open' '@[A("]") Generated] fun g() {}' > "$T/$XKF/F12.kt"
 printf '%s\n' "val c = '\\" '@[A("]") Generated] fun g() {}' > "$T/$XKF/F13.kt"
+# D · E · C — `$` 를 담은 백틱 이름(``annotation class `x$Generated` `` 는 컴파일되고 JaCoCo 는 마지막 `$` 뒤를 본다): 멈춘 뒤의 세 꼴(삼켜진 선언
+# · 못 읽은 목록 · 토큰 사이의 주석)을 멈춤 둘(문자 · 문자열) 뒤에서. Q1 — 한정 이름의 마지막 조각(`.` 뒤)도 그 구간에서 낸다.
+_k=0
+for _o in "val c = '" 'val s = "open'; do
+  _k=$((_k + 1))
+  printf '%s\n' "$_o" '@A("(")' 'annotation class `x$Generated`' 'fun f() = ")"' > "$T/$XKF/D$_k.kt"
+  printf '%s\n' "$_o" '@[A("]") `x$Generated`] fun g() {}' > "$T/$XKF/E$_k.kt"
+  printf '%s\n' "$_o" 'annotation /* c */ class `x$Generated`' > "$T/$XKF/C$_k.kt"
+done
+printf '%s\n' "val c = '" '@[A("]") kc.marks.Generated] fun g() {}' > "$T/$XKF/Q1.kt"
+# X1 — 멈춘 자리 **앞**에서 열린 `@Target(` 가 뒤쪽 주석의 `)` 와 짝지어지면 그 사이의 선언(멈춘 자리 앞)을 넘는다 — 그런 묶음의 여는 자리부터
+# 이름을 낸다. X2 · X3 — 그 짝으로 읽히던 표지는 계속 읽힌다(멈춘 자리에서 앞의 묶음을 잊는 판이면 이 둘이 숨는다).
+printf '%s\n' 'package p' '@Target(AnnotationTarget.CLASS' 'annotation class GeneratedCross' 'val s = "unterminated' '// )' > "$T/$XKF/X1.kt"
+printf '%s\n' 'package p' 'annotation @A("x) class GeneratedKept' > "$T/$XKF/X2.kt"
+printf '%s\n' 'package p' '@[Generated A("x)] fun f() {}' > "$T/$XKF/X3.kt"
 assert_eq "val c = '\\" "$(sed -n 1p "$T/$XKF/F7.kt")" "(F7 의 첫 줄이 \` '\\ \` 로 끝나는지 먼저 본다)"
 run unit-report kotlin "$T" --out "$D"
-assert_eq 2 "$RC" "[markers] kotlin 의 닫히지 않은 리터럴 · 주석 · 백틱 뒤 표지 열둘 · 맨 CR 뒤 하나면 exit 2 — 출력: $OUT"
-assert_line "$OUT" "[kotlin] coverage-exclusion markers: 13 in 16 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 멈춤 — 표지 수(F6 은 조용하다 · 다른 표기 안의 이름은 두 번 내지 않는다)"
+assert_eq 2 "$RC" "[markers] kotlin 의 닫히지 않은 리터럴 · 주석 · 백틱 뒤 표지 스물셋 · 맨 CR 뒤 하나면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: 24 in 26 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 멈춤 — 표지 수(다른 표기 안의 이름은 두 번 내지 않는다)"
+assert_contains "$OUT" "FAIL [kotlin] $XKF/F6.kt:2: coverage-exclusion marker \`GeneratedId\` in" "[markers] F6 — 멈춘 뒤에는 \$ 에 붙은 이름도 낸다(표기는 @\$… 가 아니다)"
+for _k in 1 2; do
+  assert_contains "$OUT" "FAIL [kotlin] $XKF/D$_k.kt:3: coverage-exclusion marker \`Generated\` in" "[markers] D$_k — 삼켜진 선언의 \$ 를 담은 백틱 이름"
+  assert_contains "$OUT" "FAIL [kotlin] $XKF/E$_k.kt:2: coverage-exclusion marker \`Generated\` in" "[markers] E$_k — 못 읽은 목록의 \$ 를 담은 백틱 이름"
+  assert_contains "$OUT" "FAIL [kotlin] $XKF/C$_k.kt:2: coverage-exclusion marker \`Generated\` in" "[markers] C$_k — 토큰 사이 주석 뒤의 \$ 를 담은 백틱 이름"
+done
+assert_contains "$OUT" "FAIL [kotlin] $XKF/Q1.kt:2: coverage-exclusion marker \`Generated\` in" "[markers] Q1 — 못 읽은 목록의 한정 이름"
+assert_contains "$OUT" "FAIL [kotlin] $XKF/X1.kt:3: coverage-exclusion marker \`GeneratedCross\` in" "[markers] X1 — 멈춘 자리를 넘는 짝이 삼킨 앞쪽 선언"
+assert_contains "$OUT" "FAIL [kotlin] $XKF/X2.kt:2: coverage-exclusion marker \`annotation @A(\"x) class GeneratedKept\` in" "[markers] X2 — 멈춘 자리를 넘는 인자 뒤의 선언은 그대로 읽힌다"
+assert_contains "$OUT" "FAIL [kotlin] $XKF/X3.kt:2: coverage-exclusion marker \`@[Generated A(\"x)]\` in" "[markers] X3 — 멈춘 자리를 넘는 목록은 그대로 읽힌다"
 for _f in F10 F11; do
   assert_contains "$OUT" "FAIL [kotlin] $XKF/$_f.kt:3: coverage-exclusion marker \`GeneratedTail\` in" "[markers] $_f — 따옴표 속 ( 에 삼켜진 선언의 이름을 낸다"
 done
@@ -2332,7 +2386,42 @@ for _f in F1 F2 F3 F4 F5 F7 F8; do
 done
 assert_contains "$OUT" "FAIL [kotlin] $XKF/G9.kt:1: coverage-exclusion marker \`@Generated\` in" "[markers] 맨 CR 이 한 줄 주석을 끝낸다"
 assert_contains "$OUT" "FAIL [kotlin] $XKF/F9.kt:3: coverage-exclusion marker \`annotation class GeneratedAfterStop\` in" "[markers] F9 — 멈춘 뒤에는 앞 줄의 끝으로 이어짐을 판정하지 않는다"
-assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 13 $MVERDICT" "[markers] kotlin 멈춤 — 다른 FAIL 은 없다"
+assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 24 $MVERDICT" "[markers] kotlin 멈춤 — 다른 FAIL 은 없다"
+# 5차 — 템플릿의 코드 속 닫힌 `{…}` 뒤의 표지(중괄호 겹침을 세야 템플릿이 거기서 끝나지 않는다) · `;` `{` `}` 뒤의 머리 · 들여쓴 머리 · 한정자
+# 낱말 전부(annotation 앞) · 파일 머리의 BOM(B1 — 첫 줄이 선언이다. B2 는 대조군 — BOM 뒤가 package 줄이면 앞 판도 낸다). BOM 은 바이트로 쓴다.
+ufresh
+mark_after "$XK" 1 'val t5 = "${run { 1 }.let { object { @Generated fun u() = 2 }.u() }}"'
+mark_after "$XK" 2 'val a5 = 1; annotation class GeneratedSemi'
+mark_after "$XK" 3 'object Markers { annotation class GeneratedBrace(val value: Array<Tag>) }'
+mark_after "$XK" 4 'class Q5 {} annotation class GeneratedAfterBrace'
+mark_after "$XK" 5 'object Nested {'
+mark_after "$XK" 6 '    annotation class GeneratedIndented(val value: Array<Tag>)'
+mark_after "$XK" 7 '}'
+KMODS='public private internal protected expect actual final open abstract sealed data enum inner value override lateinit tailrec operator infix inline external suspend const vararg noinline crossinline'
+_i=7
+for _w in $KMODS; do
+  _i=$((_i + 1))
+  mark_after "$XK" "$_i" "$_w annotation class GeneratedMod$_i"
+done
+printf '\357\273\277annotation class GeneratedBom(val value: Array<Tag>)\n' > "$T/$XKF/B1.kt"
+printf '\357\273\277package kc.auth\nannotation class GeneratedBomPkg\n' > "$T/$XKF/B2.kt"
+assert_eq 357273277 "$(od -An -to1 -N3 "$T/$XKF/B1.kt" | tr -d ' \n')" "(B1 이 BOM 세 바이트로 시작하는지 먼저 본다)"
+run unit-report kotlin "$T" --out "$D"
+assert_eq 2 "$RC" "[markers] kotlin 의 5차 꼴 서른셋이면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: 33 in 4 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 5차 — 표지 수"
+assert_contains "$OUT" "FAIL [kotlin] $XK:2: coverage-exclusion marker \`@Generated\` in" "[markers] 템플릿의 코드 속 닫힌 {…} 뒤의 표지"
+assert_contains "$OUT" "FAIL [kotlin] $XK:3: coverage-exclusion marker \`annotation class GeneratedSemi\` in" "[markers] ; 뒤의 머리"
+assert_contains "$OUT" "FAIL [kotlin] $XK:4: coverage-exclusion marker \`annotation class GeneratedBrace\` in" "[markers] { 뒤의 머리"
+assert_contains "$OUT" "FAIL [kotlin] $XK:5: coverage-exclusion marker \`annotation class GeneratedAfterBrace\` in" "[markers] } 뒤의 머리"
+assert_contains "$OUT" "FAIL [kotlin] $XK:7: coverage-exclusion marker \`annotation class GeneratedIndented\` in" "[markers] 들여쓴 머리"
+_i=8
+for _w in $KMODS; do
+  _i=$((_i + 1))
+  assert_contains "$OUT" "FAIL [kotlin] $XK:$_i: coverage-exclusion marker \`annotation class GeneratedMod$((_i - 1))\` in" "[markers] 한정자 $_w 뒤의 annotation(표기는 annotation 부터다)"
+done
+assert_contains "$OUT" "FAIL [kotlin] $XKF/B1.kt:1: coverage-exclusion marker \`annotation class GeneratedBom\` in" "[markers] B1 — BOM 뒤 첫 줄의 선언"
+assert_contains "$OUT" "FAIL [kotlin] $XKF/B2.kt:2: coverage-exclusion marker \`annotation class GeneratedBomPkg\` in" "[markers] B2 — BOM · package 뒤의 선언"
+assert_line "$OUT" "unit-unreached [kotlin]: FAIL — 33 $MVERDICT" "[markers] kotlin 5차 — 다른 FAIL 은 없다"
 # 선형 — 겹친 반복의 정규식이던 판은 k = 18(typealias 의 `<->->`) · 30(annotation 의 `@a`)에서 이미 초 단위였고 k 마다 곱절이었다. k = 40 은 그 판이면
 # 끝나지 않는다 — `timeout 60` 의 124 가 그 꼴이 돌아온 것이다(걸린 채로 두지 않는다).
 RD1="typealias A<$(printf '<->->%.0s' $(seq 1 40))X"
@@ -2370,7 +2459,9 @@ for _l in kotlin java; do
   OUT="$(timeout 60 node "$TOOL" unit-report "$_l" "$T" --out "$D" 2>&1)" && RC=0 || RC=$?
   if [ "$RC" != 124 ]; then _rd=yes; else _rd=no; fi
   assert_eq yes "$_rd" "[markers] $_l 의 되풀이 입력이 60 초 안에 끝난다(124 = 시간 초과 — 제곱이 돌아왔다) — rc $RC"
-  assert_contains "$OUT" "[$_l] coverage-exclusion markers: none in " "[markers] $_l 의 되풀이 입력은 표지가 아니다 — 출력: $OUT"
+  # 읽은 수까지 댄다 — 스캔이 던진 파일은 읽은 수에서 빠지는 FAIL 이라 「none in 」만 보면 L 파일을 못 읽어도 지난다(kotlin 2 + L 일곱 · java 3 + L7).
+  if [ "$_l" = kotlin ]; then _n='9 tracked files under kotlin/src/main/kotlin'; else _n='4 tracked files under java/*/src/main/java'; fi
+  assert_line "$OUT" "[$_l] coverage-exclusion markers: none in $_n" "[markers] $_l 의 되풀이 입력은 표지가 아니고 전부 읽혔다 — 출력: $OUT"
 done
 # 선형 셋째 — 표지가 많은 파일. 줄은 자리 순으로 한 번만 세고(표지마다 파일 머리부터 다시 세면 표지 수 × 파일 크기다), 찍는 표기는 자른다(한
 # 목록의 이름마다 그 목록 전체를 찍으면 출력이 제곱이다). 출력이 커서(줄 십사만) 파일로 받는다 — 변수에 담으면 단언이 그 크기를 다시 옮긴다.
