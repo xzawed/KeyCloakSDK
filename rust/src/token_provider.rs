@@ -47,6 +47,10 @@ fn now_secs() -> u64 {
 }
 
 impl ClientCredentialsTokenProvider {
+    /// Low-level constructor: `http` is used as-is, including its redirect policy.
+    /// Build it with `keycloak_sdk::reqwest::redirect::Policy::none()`, as [`crate::KeycloakClient::new`] does.
+    /// With reqwest's default policy a 307/308 to another origin re-sends the token request body, which carries
+    /// the `client_secret` (a public client omits it).
     pub fn new(config: KeycloakConfig, http: reqwest::Client) -> Self {
         let token_url = OidcEndpoints::new(&config).token();
         Self {
