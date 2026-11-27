@@ -3,7 +3,8 @@
 # measurement only — not for merge (task n3 · registry consumer-http-client-redirect-unmeasured).
 #
 # The three public ctors that take a consumer Faraday connection — AuthClient.new(config:, http:, jwt_validator:),
-# ClientCredentialsTokenProvider.new(config:, http:) and JwksStore.new(jwks_url:, http:) — are given:
+# ClientCredentialsTokenProvider.new(config:, http:) and JwksStore.new(jwks_url:, http:) — and the public admin resource
+# class Admin::Users.new(conn, realm) (create · update; Clients · Groups · Realms · Roles take a conn the same way) are given:
 #   default  `Faraday.new` — what a consumer gets with no options;
 #   [extra]  `Faraday.new { |f| f.request :url_encoded; f.response :follow_redirects }` — the opt-in follow middleware
 #            (faraday-follow_redirects, in this SDK's own bundle through rack-oauth2), with its defaults.
@@ -35,6 +36,9 @@ module ZzN3Redirect
               308 => "Permanent Redirect", 404 => "Not Found" }.freeze
   TARGET_KEY = OpenSSL::PKey::RSA.generate(2048)
   TARGET_JWK = JWT::JWK.new(TARGET_KEY, kid: "kB")
+  ADMIN_USER = "admin-json-body-mark"
+  ADMIN_BEARER = "ADMIN-BEARER-MARK"
+  USERS = "/admin/realms/#{REALM}/users".freeze
 
   # [op, ctor, name, origin path]
   OPS = [
@@ -44,14 +48,19 @@ module ZzN3Redirect
     [:auth_introspect, "AuthClient.new(http:)", "introspect(POST form)", "#{OIDC}/token/introspect"],
     [:auth_logout, "AuthClient.new(http:)", "logout(POST form)", "#{OIDC}/logout"],
     [:provider_cc, "ClientCredentialsTokenProvider.new(http:)", "access_token(POST form)", "#{OIDC}/token"],
-    [:jwks, "JwksStore.new(http:)", "validate->JWKS fetch(GET)", "#{OIDC}/certs"]
+    [:jwks, "JwksStore.new(http:)", "validate->JWKS fetch(GET)", "#{OIDC}/certs"],
+    # The public admin resource classes take a Faraday connection too (`Admin::Users.new(conn, realm)`).
+    [:admin_create, "Admin::Users.new(conn,realm)", "create(POST json)", USERS],
+    [:admin_update, "Admin::Users.new(conn,realm)", "update(PUT json)", "#{USERS}/u1"]
   ].freeze
+  ADMIN_OPS = %i[admin_create admin_update].freeze
 
   CONTROL_NAMES = {
     auth_cc: "auth.client_credentials_token(POST form)", auth_code: "auth.exchange_code(POST form)",
     auth_refresh: "auth.refresh(POST form)", auth_introspect: "auth.introspect(POST form)",
     auth_logout: "auth.logout(POST form)", provider_cc: "admin.realms.get->provider grant(POST form)",
-    jwks: "auth.validate->JWKS fetch(GET)"
+    jwks: "auth.validate->JWKS fetch(GET)", admin_create: "admin.users.create(POST json)",
+    admin_update: "admin.users.update(PUT json)"
   }.freeze
 
   # A raw TCP HTTP/1.1 server: one request per connection, Content-Length bodies, answers from the block.
@@ -138,6 +147,7 @@ module ZzN3Redirect
   def auth_of(req)
     v = req.headers["authorization"]
     return "none" if v.nil?
+    return "Bearer(admin-token)" if v == "Bearer #{ADMIN_BEARER}"
     return "other(#{v})" unless v.start_with?("Basic ")
 
     decoded = Base64.decode64(v.delete_prefix("Basic "))
@@ -154,11 +164,13 @@ module ZzN3Redirect
     marks << "code" if b.include?("code=#{CODE}")
     marks << "code_verifier" if b.include?("code_verifier=#{VERIFIER}")
     marks << "introspected_token" if b.include?("token=#{INTROSPECTED}")
+    marks << "admin_json" if b.include?(ADMIN_USER)
     marks.empty? ? "none" : marks.join("+")
   end
 
   def body_of(req)
     return "0B" if req.body.empty?
+    return "#{req.body.bytesize}B[json]" if req.body.start_with?("{")
 
     "#{req.body.bytesize}B[#{req.body.split('&').map { |kv| kv.split('=').first }.join(',')}]"
   end
@@ -204,7 +216,15 @@ RSpec.describe "zz n3 redirect measure (measurement only)" do
     state = { cell: nil, bounce: nil }
     servers = {}
     issuer = -> { "#{servers[:a].url}/realms/#{m::REALM}" }
-    target_answer = lambda do |path|
+    target_answer = lambda do |req, label|
+      path = req.path
+      if path.include?("/admin/")
+        # A real collection answers a POST with 201 + Location, a GET with a list; a PUT with 204.
+        next [201, { "Location" => "#{servers[label].url}#{path}/target-id" }, ""] if req.verb == "POST"
+        next [204, {}, ""] if req.verb == "PUT"
+
+        next m.json(200, "[]")
+      end
       if path.end_with?("/certs")
         m.json(200, JSON.generate({ keys: [m::TARGET_JWK.export] }))
       elsif path.end_with?("/token/introspect")
@@ -227,8 +247,12 @@ RSpec.describe "zz n3 redirect measure (measurement only)" do
         end
         cell = state[:cell]
         next m.redirect(cell[:status], cell[:location]) if cell && label == :a && path == cell[:origin_path]
-        next target_answer.call(path) if cell && label == cell[:target] && path.start_with?("/moved/")
+        next target_answer.call(req, label) if cell && label == cell[:target] && path.start_with?("/moved/")
         next m.json(200, '{"realm":"origin-realm"}') if label == :a && path == "/admin/realms/#{m::REALM}"
+        # The control's admin needs its provider's grant first — the token endpoint answers it.
+        if label == :a && path == "#{m::OIDC}/token"
+          next m.json(200, %({"access_token":"#{m::ADMIN_BEARER}","token_type":"Bearer","expires_in":300}))
+        end
 
         m.json(404, "{}")
       end
@@ -247,9 +271,33 @@ RSpec.describe "zz n3 redirect measure (measurement only)" do
       }
     }
 
+    # The admin resources take paths relative to the connection's base URL — the consumer's connection has one.
+    admin_conns = {
+      "Faraday.new" => ["Faraday.new(url:)", -> { Faraday.new(url: "#{servers[:a].url}/") }],
+      "Faraday.new{url_encoded;follow_redirects}[extra]" => [
+        "Faraday.new(url:){json;follow_redirects}[extra]",
+        lambda {
+          Faraday.new(url: "#{servers[:a].url}/") do |f|
+            f.request :json
+            f.response :follow_redirects
+          end
+        }
+      ]
+    }
+
     config = lambda do
       KeycloakSdk::Config.new(server_url: servers[:a].url, realm: m::REALM, client_id: m::CLIENT_ID,
                               client_secret: m::SECRET)
+    end
+
+    admin_call = lambda do |op, users|
+      m.outcome do
+        if op == :admin_create
+          "Ok(created_id=#{users.create({ 'username' => m::ADMIN_USER }).inspect})"
+        else
+          "Ok(#{users.update('u1', { 'username' => m::ADMIN_USER }).inspect})"
+        end
+      end
     end
 
     call_op = lambda do |op, auth: nil, provider: nil, validate: nil|
@@ -284,8 +332,12 @@ RSpec.describe "zz n3 redirect measure (measurement only)" do
     control = lambda do |op|
       kc = KeycloakSdk::KeycloakClient.new(config.call)
       begin
-        call_op.call(op, auth: kc.auth, provider: -> { "realm=#{kc.admin.realms.get(m::REALM)['realm']}" },
-                         validate: ->(t) { kc.auth.validate(t) })
+        if m::ADMIN_OPS.include?(op)
+          admin_call.call(op, kc.admin.users)
+        else
+          call_op.call(op, auth: kc.auth, provider: -> { "realm=#{kc.admin.realms.get(m::REALM)['realm']}" },
+                           validate: ->(t) { kc.auth.validate(t) })
+        end
       ensure
         kc.close
       end
@@ -314,14 +366,19 @@ RSpec.describe "zz n3 redirect measure (measurement only)" do
             target = cross ? :b : :a
             state[:cell] = { origin_path: opath, status: status, target: target,
                              location: "#{servers[target].url}/moved#{opath}" }
-            result = make ? lowlevel.call(op, make.call) : control.call(op)
+            admin_op = m::ADMIN_OPS.include?(op)
+            result = if make.nil? then control.call(op)
+                     elsif admin_op then admin_call.call(op, KeycloakSdk::Admin::Users.new(admin_conns[vname][1].call, m::REALM))
+                     else lowlevel.call(op, make.call)
+                     end
+            used = admin_op && make ? admin_conns[vname][0] : vname
             first = servers[:a].requests.select { |r| r.path == opath }
             moved = servers[target].requests.select { |r| r.path.start_with?("/moved/") }
             state[:cell] = nil
             totals[vname][1] += 1
             totals[vname][0] += 1 unless moved.empty?
             lines << [
-              "CELL", make ? "#{ctor}<-#{vname}" : vname, make ? name : m::CONTROL_NAMES.fetch(op), status,
+              "CELL", make ? "#{ctor}<-#{used}" : vname, make ? name : m::CONTROL_NAMES.fetch(op), status,
               cross ? "cross-origin" : "same-origin", "followed=#{moved.empty? ? 'no' : 'yes'}",
               "method=#{m.each(moved, &:verb)}", "body_secret=#{m.each(moved) { |r| m.body_secret_of(r) }}",
               "auth=#{m.each(moved) { |r| m.auth_of(r) }}", "result=#{result}", "body=#{m.each(moved) { |r| m.body_of(r) }}",
@@ -361,6 +418,6 @@ RSpec.describe "zz n3 redirect measure (measurement only)" do
     end
     servers.each_value(&:close)
     File.write(out_path, "#{lines.join("\n")}\n")
-    expect(lines.count { |l| l.start_with?("CELL|") }).to eq(3 * 7 * 4 * 2)
+    expect(lines.count { |l| l.start_with?("CELL|") }).to eq(3 * 9 * 4 * 2)
   end
 end
