@@ -1,9 +1,10 @@
 #!/usr/bin/env sh
 # 통합 전용 커버리지 장부의 **단위 장부 소유** 자가테스트(`unit:ledger` — 등록부 coverage-omit-hides-security-paths).
 #
-# 통합 실행이 한 번도 안 도는 함수라도 단위 스위트가 그 모든 줄 · 가지에 닿으면 `unit:ledger` 가 소유한다 — 그 언어의 단위 장부
-# (`scripts/unit-unreached.json`)가 서 있고, 핀 안 파일이며, 장부에 그 함수의 항목이 **없을** 때만이다. 항목이 있으면 까닭이
-# 무엇이든(`defensive:` · `unreachable:` · `integration:` · 열린 id) 거부한다 — 규칙은 `scripts/integration-coverage.mjs` 의 머리 주석.
+# 통합 실행이 한 번도 안 도는 함수라도 단위 스위트가 단위 장부가 재는 만큼(언어마다 줄 · 문장 · 가지) 다 닿으면 `unit:ledger` 가
+# 소유한다 — 그 언어의 단위 장부(`scripts/unit-unreached.json`)가 서 있고, admin 표면 파일이 아니며, 장부에 그 함수의 항목이
+# **없을** 때만이다. 항목이 있으면 까닭이 무엇이든(`defensive:` · `unreachable:` · `integration:` · 열린 id) 거부한다 — 규칙은
+# `scripts/integration-coverage.mjs` 의 머리 주석.
 #
 # 왜 따로인가: 변이 레코드가 프로브마다 이 시험을 두 번(기준선 · 변이) 돈다 — 하네스 소유 시험을 떼어 낸 것과 같은 까닭이다(그 머리).
 # 픽스처 · 데이터의 출처는 `test-integration-coverage.sh` 의 머리가, 준비 함수는 셋이 함께 소싱하는 `ic-fixture.sh` 가 소유한다.
@@ -77,15 +78,38 @@ for typo in unit:Ledger unit; do
   assert_line "$OUT" "DRIFT [go] $GS is owned by $typo, which is not an open item of $REG" "unit-owner: typo variants — $typo 는 열린 항목이 아니다"
 done
 
-# ── 핀 밖 — 단위 장부는 핀 안 파일만 잰다. 핀 밖 admin 표면 파일(node 의 other.ts — 경계 밖이고 데이터에서 0 회)에는 항목이 생길 수 없어
-# 「항목 없음」이 아무것도 보이지 않는다 — 거부한다.
-fresh
-sed -i 's|^  "node": {$|  "node": {\n    "surface": ["node/src/other.ts"],|' "$PINS"
+# ── admin 표면 — 표면 파일의 함수는 통합 실행에서 돌거나 열린 항목이 소유해야 한다(exit 4 관문). 단위 장부가 다 닿아도 그 관문을
+# 대신하지 않는다 — 핀 안(go 의 admin_users.go — 여섯 언어의 꼴)이든 핀 밖(node 의 other.ts — node · python · java 의 꼴)이든 거부한다.
+# 표면 주입은 test-integration-coverage.sh 절 (5) 와 같은 꼴이다.
+SURF="is admin surface — the integration run must execute it, or an open item of $REG must own it"
+surface() { # <lang> <json array body>
+  sed -i "s|^  \"$1\": {\$|  \"$1\": {\n    \"surface\": [$2],|" "$PINS"
+  assert_contains "$(cat "$PINS")" "\"surface\": [$2]" "(표면 주입이 착지했는지 먼저 본다)"
+}
+GD="go/admin_users.go:UsersResource.Delete"
+fresh; surface go '"go/admin_users.go"'; own "$GD" unit:ledger
+run check "$T"
+assert_eq 1 "$RC" "unit-owner: pinned surface file → check exit 1 — 출력: $OUT"
+assert_line "$OUT" "DRIFT [go] $GD is owned by unit:ledger, but go/admin_users.go $SURF" "unit-owner: pinned surface file → 표면이라 댄다"
+# 리뷰가 지목한 우회 — 표면 연산의 통합 시험을 지우고(픽스처의 Delete 는 통합 데이터에서 0 회다) unit:ledger 를 적으면 report 가 0 이 아니라 1 이다.
+run report go "$T" --out "$D"
+assert_eq 1 "$RC" "unit-owner: report on a never-executed pinned surface function → exit 1 — 출력: $OUT"
+assert_line "$OUT" "DRIFT [go] $GD is owned by unit:ledger, but go/admin_users.go $SURF" "unit-owner: report on a never-executed pinned surface function → 표면이라 댄다"
+fresh; surface node '"node/src/other.ts"'
 sed -i '/^  "node": {$/,/^  },$/ s|^    "owners": {$|    "owners": {\n      "node/src/other.ts:other": "unit:ledger",|' "$PINS"
 assert_contains "$(cat "$PINS")" '"node/src/other.ts:other": "unit:ledger"' "(핀 밖 표면 파일의 단위 소유가 착지했는지 먼저 본다)"
 run check "$T"
 assert_eq 1 "$RC" "unit-owner: surface file outside the pin → check exit 1 — 출력: $OUT"
-assert_line "$OUT" "DRIFT [node] node/src/other.ts:other is owned by unit:ledger, but scripts/unit-unreached.json does not measure node/src/other.ts (outside the pin) — name an open item of $REG" "unit-owner: surface file outside the pin → 장부가 재지 않는 파일이라 댄다"
+assert_line "$OUT" "DRIFT [node] node/src/other.ts:other is owned by unit:ledger, but node/src/other.ts $SURF" "unit-owner: surface file outside the pin → 표면이라 댄다"
+# 콜론 없는 키 — check 의 핀 판정(「names a file outside the pin」)만 낸다. 소유자 판정으로 넘기면 키에서 깎은 이름이 표면 파일과
+# 맞아떨어질 때(`go/admin_users.gox` → `go/admin_users.go`) 엉뚱한 표면 DRIFT 가 하나 더 찍힌다.
+fresh; surface go '"go/admin_users.go"'
+sed -i 's#^      "go/admin.go:AdminClient.Close": "open-admin",$#      "go/admin.go:AdminClient.Close": "open-admin",\n      "go/admin_users.gox": "unit:ledger",#' "$PINS"
+assert_contains "$(cat "$PINS")" '"go/admin_users.gox": "unit:ledger",' "(콜론 없는 키가 착지했는지 먼저 본다)"
+run check "$T"
+assert_eq 1 "$RC" "unit-owner: colon-less key → check exit 1 — 출력: $OUT"
+assert_line "$OUT" "DRIFT [go] owner entry go/admin_users.gox names a file outside the pin and the admin surface" "unit-owner: colon-less key → 핀 판정만 낸다"
+assert_not_contains "$OUT" "go/admin_users.gox is owned by unit:ledger" "unit-owner: colon-less key → 소유자 판정으로 넘기지 않는다"
 
 # ── 낡은 소유자 — 통합 실행이 그 함수를 돌면 단위 장부 소유도 지우라고 한다(소유자의 종류와 무관한 규칙).
 fresh

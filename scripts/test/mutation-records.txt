@@ -536,12 +536,12 @@ OLD:    const ledger = unitLedgerFor(l)
 NEW:    const ledger = loadUnitLedger()?.[l] ?? {} // PROBE-REC unit-ledger-read
 SITE:// PROBE-REC unit-ledger-read
 
-### ledger-unit-pin
+### ledger-unit-surface
 FILE:scripts/integration-coverage.mjs
 TEST:scripts/test/test-integration-coverage-unit-owner.sh
-OLD:    if (!pin.pinned.includes(file)) return `${key} is owned by ${UNIT_OWNER}, but ${UNIT} does not measure ${file} (outside the pin) — name an open item of ${REGISTRY}`
-NEW:    // PROBE-REC unit-pin
-SITE:// PROBE-REC unit-pin
+OLD:    if (pin.surface.includes(file)) return `${key} is owned by ${UNIT_OWNER}, but ${file} is admin surface — the integration run must execute it, or an open item of ${REGISTRY} must own it`
+NEW:    // PROBE-REC unit-surface
+SITE:// PROBE-REC unit-surface
 
 ### ledger-unit-ok-clause
 FILE:scripts/integration-coverage.mjs
