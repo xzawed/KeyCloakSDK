@@ -13,17 +13,17 @@
       "go/client.go"
     ],
     "owners": {
-      "go/admin.go:AdminClient.Format": "coverage-omit-hides-security-paths",
-      "go/admin.go:AdminClient.GoString": "coverage-omit-hides-security-paths",
-      "go/admin.go:AdminClient.String": "coverage-omit-hides-security-paths",
-      "go/admin.go:answeredWithoutStatus": "coverage-omit-hides-security-paths",
-      "go/admin.go:unreadAnswer": "coverage-omit-hides-security-paths",
-      "go/auth.go:AuthClient.Format": "coverage-omit-hides-security-paths",
-      "go/auth.go:AuthClient.GoString": "coverage-omit-hides-security-paths",
-      "go/auth.go:AuthClient.String": "coverage-omit-hides-security-paths",
-      "go/client.go:Client.Format": "coverage-omit-hides-security-paths",
-      "go/client.go:Client.GoString": "coverage-omit-hides-security-paths",
-      "go/client.go:Client.String": "coverage-omit-hides-security-paths"
+      "go/admin.go:AdminClient.Format": "unit:ledger",
+      "go/admin.go:AdminClient.GoString": "unit:ledger",
+      "go/admin.go:AdminClient.String": "unit:ledger",
+      "go/admin.go:answeredWithoutStatus": "unit:ledger",
+      "go/admin.go:unreadAnswer": "unit:ledger",
+      "go/auth.go:AuthClient.Format": "unit:ledger",
+      "go/auth.go:AuthClient.GoString": "unit:ledger",
+      "go/auth.go:AuthClient.String": "unit:ledger",
+      "go/client.go:Client.Format": "unit:ledger",
+      "go/client.go:Client.GoString": "unit:ledger",
+      "go/client.go:Client.String": "unit:ledger"
     }
   },
   "python": {
@@ -47,7 +47,7 @@
       "python/src/keycloak_sdk/auth.py"
     ],
     "owners": {
-      "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "coverage-omit-hides-security-paths"
+      "python/src/keycloak_sdk/auth.py:AuthorizationUrl.__repr__": "unit:ledger"
     }
   },
   "node": {
@@ -58,10 +58,10 @@
       "node/src/index.ts"
     ],
     "owners": {
-      "node/src/auth.ts:MaskedAuthorizationRequest.#masked": "coverage-omit-hides-security-paths",
-      "node/src/auth.ts:MaskedAuthorizationRequest.[AR_INSPECT]": "coverage-omit-hides-security-paths",
-      "node/src/auth.ts:MaskedAuthorizationRequest.toJSON": "coverage-omit-hides-security-paths",
-      "node/src/auth.ts:MaskedAuthorizationRequest.toString": "coverage-omit-hides-security-paths"
+      "node/src/auth.ts:MaskedAuthorizationRequest.#masked": "unit:ledger",
+      "node/src/auth.ts:MaskedAuthorizationRequest.[AR_INSPECT]": "unit:ledger",
+      "node/src/auth.ts:MaskedAuthorizationRequest.toJSON": "unit:ledger",
+      "node/src/auth.ts:MaskedAuthorizationRequest.toString": "unit:ledger"
     }
   },
   "rust": {
@@ -75,7 +75,7 @@
     "owners": {
       "rust/src/admin.rs:transport": "coverage-omit-hides-security-paths",
       "rust/src/admin.rs:unsendable": "coverage-omit-hides-security-paths",
-      "rust/src/auth.rs:other_message": "coverage-omit-hides-security-paths"
+      "rust/src/auth.rs:other_message": "unit:ledger"
     }
   },
   "php": {
@@ -99,14 +99,14 @@
       "php/src/KeycloakClient.php"
     ],
     "owners": {
-      "php/src/Admin/AdminClient.php:AdminClient::__debugInfo": "coverage-omit-hides-security-paths",
+      "php/src/Admin/AdminClient.php:AdminClient::__debugInfo": "unit:ledger",
       "php/src/Admin/ClientsResource.php:ClientsResource::__debugInfo": "coverage-omit-hides-security-paths",
       "php/src/Admin/GroupsResource.php:GroupsResource::__debugInfo": "coverage-omit-hides-security-paths",
       "php/src/Admin/RealmsResource.php:RealmsResource::__debugInfo": "coverage-omit-hides-security-paths",
       "php/src/Admin/RolesResource.php:RolesResource::__debugInfo": "coverage-omit-hides-security-paths",
       "php/src/Admin/UsersResource.php:UsersResource::__debugInfo": "coverage-omit-hides-security-paths",
-      "php/src/AuthClient.php:AuthClient::introspectionTooLarge": "coverage-omit-hides-security-paths",
-      "php/src/AuthClient.php:AuthClient::logoutTooLarge": "coverage-omit-hides-security-paths",
+      "php/src/AuthClient.php:AuthClient::introspectionTooLarge": "unit:ledger",
+      "php/src/AuthClient.php:AuthClient::logoutTooLarge": "unit:ledger",
       "php/src/AuthClient.php:AuthClient::logoutUrl": "auth-surface-parity-unguarded"
     }
   },
@@ -160,12 +160,12 @@
     ],
     "owners": {
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "coverage-omit-hides-security-paths",
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsUnsupportedCharset": "coverage-omit-hides-security-paths",
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "coverage-omit-hides-security-paths",
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.Undecodable": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsUnsupportedCharset": "unit:ledger",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "unit:ledger",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.Undecodable": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "coverage-omit-hides-security-paths",
-      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.CanonicalReason": "coverage-omit-hides-security-paths",
-      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "coverage-omit-hides-security-paths"
+      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.CanonicalReason": "unit:ledger",
+      "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "unit:ledger"
     }
   },
   "java": {
@@ -183,15 +183,15 @@
       "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java"
     ],
     "owners": {
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.appendUtf8": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.digit": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.entityAt": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexByte": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexDigit": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.ioFailure": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sharesWindow": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.transportFailure": "coverage-omit-hides-security-paths",
-      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unitAt": "coverage-omit-hides-security-paths",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.appendUtf8": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.digit": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.entityAt": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexByte": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.hexDigit": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.ioFailure": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.sharesWindow": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.transportFailure": "unit:ledger",
+      "java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/AuthClient.java:AuthClient.unitAt": "unit:ledger",
       "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.env": "harness:install",
       "java/keycloak-sdk-examples/src/main/java/io/github/xzawed/keycloak/examples/QuickStart.java:QuickStart.main": "harness:install"
     },
@@ -226,15 +226,15 @@
     ],
     "owners": {
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.quotesResponse": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.transportCause": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Exchange.cut": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Settled.read()": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminSockets.kt:AdminSockets.disarm": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.closeQuietly": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.getSTATUS": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.release": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.<init>": "coverage-omit-hides-security-paths",
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.getStatus": "coverage-omit-hides-security-paths"
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.transportCause": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Exchange.cut": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Settled.read()": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminSockets.kt:AdminSockets.disarm": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.closeQuietly": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.getSTATUS": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:TokenResponseGuard.Companion.release": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.<init>": "unit:ledger",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/TokenResponseGuard.kt:UnusableTokenResponse.getStatus": "unit:ledger"
     }
   }
 }
