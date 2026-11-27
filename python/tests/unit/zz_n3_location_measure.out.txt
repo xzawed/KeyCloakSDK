@@ -1,0 +1,17 @@
+ENV|python=3.12.10|requests=2.34.2|urllib3=2.7.0|httpx=0.28.1|h11=0.16.0|python-keycloak=7.1.1|keycloak_sdk_from=worktree
+HEADER|sdk|lane|case|field|value
+WIRE|python|-|ascii-control|location=<base>/admin/realms/it-realm/users/+[61 62 63]|raw_socket_read_equals_sent=True|id_bytes_on_wire=61 62 63
+CLIENT|python|requests(http.client)|ascii-control|status=201|headers['Location'].after_last_slash="abc" cps=[U+0061,U+0062,U+0063]
+CLIENT|python|httpx|ascii-control|status=201|headers['location'].after_last_slash="abc" cps=[U+0061,U+0062,U+0063]|headers.encoding=ascii
+ID|python|sync admin.users.create|ascii-control|Ok("abc" cps=[U+0061,U+0062,U+0063])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+ID|python|aio admin.users.create|ascii-control|Ok("abc" cps=[U+0061,U+0062,U+0063])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+WIRE|python|-|latin1-0xE9|location=<base>/admin/realms/it-realm/users/+[61 62 E9 63 64]|raw_socket_read_equals_sent=True|id_bytes_on_wire=61 62 E9 63 64
+CLIENT|python|requests(http.client)|latin1-0xE9|status=201|headers['Location'].after_last_slash="ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064]
+CLIENT|python|httpx|latin1-0xE9|status=201|headers['location'].after_last_slash="ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064]|headers.encoding=iso-8859-1
+ID|python|sync admin.users.create|latin1-0xE9|Ok("ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+ID|python|aio admin.users.create|latin1-0xE9|Ok("ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+WIRE|python|-|utf8-0xC3A9|location=<base>/admin/realms/it-realm/users/+[61 62 C3 A9 63 64]|raw_socket_read_equals_sent=True|id_bytes_on_wire=61 62 C3 A9 63 64
+CLIENT|python|requests(http.client)|utf8-0xC3A9|status=201|headers['Location'].after_last_slash="ab\u00C3\u00A9cd" cps=[U+0061,U+0062,U+00C3,U+00A9,U+0063,U+0064]
+CLIENT|python|httpx|utf8-0xC3A9|status=201|headers['location'].after_last_slash="ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064]|headers.encoding=utf-8
+ID|python|sync admin.users.create|utf8-0xC3A9|Ok("ab\u00C3\u00A9cd" cps=[U+0061,U+0062,U+00C3,U+00A9,U+0063,U+0064])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+ID|python|aio admin.users.create|utf8-0xC3A9|Ok("ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users

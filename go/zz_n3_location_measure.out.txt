@@ -1,0 +1,11 @@
+ENV|go=go1.26.5|create=AdminClient.Users.Create
+HEADER|sdk|lane|case|field|value
+WIRE|go|-|ascii-control|location=<base>/admin/realms/it-realm/users/+[61 62 63]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 63
+CLIENT|go|net/http|ascii-control|status=201|Header.Get("Location").after_last_slash="abc" bytes=[61 62 63] utf8_cps=[U+0061,U+0062,U+0063]
+ID|go|AdminClient.Users.Create|ascii-control|Ok("abc" bytes=[61 62 63] utf8_cps=[U+0061,U+0062,U+0063])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+WIRE|go|-|latin1-0xE9|location=<base>/admin/realms/it-realm/users/+[61 62 E9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 E9 63 64
+CLIENT|go|net/http|latin1-0xE9|status=201|Header.Get("Location").after_last_slash="ab\xE9cd" bytes=[61 62 E9 63 64] utf8_valid=false
+ID|go|AdminClient.Users.Create|latin1-0xE9|Ok("ab%E9cd" bytes=[61 62 25 45 39 63 64] utf8_cps=[U+0061,U+0062,U+0025,U+0045,U+0039,U+0063,U+0064])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+WIRE|go|-|utf8-0xC3A9|location=<base>/admin/realms/it-realm/users/+[61 62 C3 A9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 C3 A9 63 64
+CLIENT|go|net/http|utf8-0xC3A9|status=201|Header.Get("Location").after_last_slash="ab\xC3\xA9cd" bytes=[61 62 C3 A9 63 64] utf8_cps=[U+0061,U+0062,U+00E9,U+0063,U+0064]
+ID|go|AdminClient.Users.Create|utf8-0xC3A9|Ok("ab%C3%A9cd" bytes=[61 62 25 43 33 25 41 39 63 64] utf8_cps=[U+0061,U+0062,U+0025,U+0043,U+0033,U+0025,U+0041,U+0039,U+0063,U+0064])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users

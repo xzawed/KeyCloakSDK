@@ -1,0 +1,11 @@
+ENV|node=v24.14.1|undici=7.24.4|create=(await kc.admin()).users.create
+HEADER|sdk|lane|case|field|value
+WIRE|node|-|ascii-control|location=<base>/admin/realms/it-realm/users/+[61 62 63]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 63
+CLIENT|node|fetch(undici)|ascii-control|status=201|headers.get('location').after_last_slash="abc" cps=[U+0061,U+0062,U+0063]
+ID|node|(await kc.admin()).users.create|ascii-control|Ok("abc" cps=[U+0061,U+0062,U+0063])|requests=GET /realms/it-realm/.well-known/openid-configuration,POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users/
+WIRE|node|-|latin1-0xE9|location=<base>/admin/realms/it-realm/users/+[61 62 E9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 E9 63 64
+CLIENT|node|fetch(undici)|latin1-0xE9|status=201|headers.get('location').after_last_slash="ab\u00E9cd" cps=[U+0061,U+0062,U+00E9,U+0063,U+0064]
+ID|node|(await kc.admin()).users.create|latin1-0xE9|Ok("ab%C3%A9cd" cps=[U+0061,U+0062,U+0025,U+0043,U+0033,U+0025,U+0041,U+0039,U+0063,U+0064])|requests=GET /realms/it-realm/.well-known/openid-configuration,POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users/
+WIRE|node|-|utf8-0xC3A9|location=<base>/admin/realms/it-realm/users/+[61 62 C3 A9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 C3 A9 63 64
+CLIENT|node|fetch(undici)|utf8-0xC3A9|status=201|headers.get('location').after_last_slash="ab\u00C3\u00A9cd" cps=[U+0061,U+0062,U+00C3,U+00A9,U+0063,U+0064]
+ID|node|(await kc.admin()).users.create|utf8-0xC3A9|Ok("ab%C3%83%C2%A9cd" cps=[U+0061,U+0062,U+0025,U+0043,U+0033,U+0025,U+0038,U+0033,U+0025,U+0043,U+0032,U+0025,U+0041,U+0039,U+0063,U+0064])|requests=GET /realms/it-realm/.well-known/openid-configuration,POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users/
