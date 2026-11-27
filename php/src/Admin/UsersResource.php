@@ -12,6 +12,14 @@ use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class UsersResource
 {
+    /**
+     * @param Keycloak $kc Used as-is, including the redirect setting of the HTTP client it was built with. ⚠️ A `Builder`
+     *   given no client, or `withHttpClient(new \GuzzleHttp\Client())`, follows redirects with Guzzle's default
+     *   (`allow_redirects`: up to 5), to another origin as well: a 307 or 308 on `create()` or `update()` sends the user
+     *   representation again. Guzzle drops the bearer on a cross-origin redirect, not the body. Build it with
+     *   `withHttpClient(new \GuzzleHttp\Client(['allow_redirects' => false]))`, as the admin facade of
+     *   `KeycloakClient::create()` does.
+     */
     public function __construct(private readonly Keycloak $kc, private readonly string $realm) {}
 
     /**
