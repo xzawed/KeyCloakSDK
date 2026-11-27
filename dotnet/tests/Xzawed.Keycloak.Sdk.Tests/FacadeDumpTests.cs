@@ -73,12 +73,12 @@ public sealed class FacadeDumpTests
         ["Xzawed.Keycloak.TokenSetJsonConverter"] = "System.Text.Json 이 특성에서 만든다 — SDK 객체가 쥐지 않고 자기 필드가 없다",
         // 내부 신호(TokenEndpointInvoker.cs) — 2xx 토큰 · introspection 본문이 UTF-8 이 아니면 invoker 가 던지고 Duende 가
         // ProtocolResponse.Exception 에 담으며, TokenResponseVerdict.Unread 가 그것을 원인으로 달지 않은 새 KeycloakAuthException 을
-        // 만든다 — 인스턴스는 공개 API 로 나오지 않는다(TokenResponseClassTests 가 그 오류의 ToString 을 잰다). 필드가 없고 메시지는
-        // 고정 문구다.
-        ["Xzawed.Keycloak.TokenResponseNotUtf8Exception"] = "내부 신호 — 인스턴스는 SDK 밖으로 나가지 않는다(Duende 가 쥐고 SDK 는 버린다) · 필드 없음 · 고정 문구",
+        // 만든다 — 인스턴스는 공개 API 로 나오지 않는다(TokenResponseClassTests 가 그 오류의 ToString 을 잰다). 필드는 응답 상태(int)
+        // 하나이고 메시지는 고정 문구다.
+        ["Xzawed.Keycloak.TokenResponseNotUtf8Exception"] = "내부 신호 — 인스턴스는 SDK 밖으로 나가지 않는다(Duende 가 쥐고 SDK 는 버린다) · 필드는 상태(int) 하나 · 고정 문구",
         // 호출마다 AuthClient.IntrospectAsync 가 만들어 그 호출의 요청 Options 에만 싣는 도착 기록(TokenEndpointInvoker.cs) —
-        // 호출이 끝나면 아무 SDK 객체도 쥐지 않는다. 필드는 응답 상태(int) 하나뿐이다.
-        ["Xzawed.Keycloak.ResponseArrival"] = "호출 하나의 도착 기록 — 그 요청의 Options 에만 실리고 SDK 객체가 쥐지 않는다 · 상태(int) 하나",
+        // 호출이 끝나면 아무 SDK 객체도 쥐지 않는다. 필드는 응답 상태(int?) 하나뿐이다.
+        ["Xzawed.Keycloak.ResponseArrival"] = "호출 하나의 도착 기록 — 그 요청의 Options 에만 실리고 SDK 객체가 쥐지 않는다 · 상태(int?) 하나",
         // EncodableBody.cs — admin 본문을 보내기 전에 아무 데도 아닌 곳(Stream.Null)으로 한 번 써 보는 관찰자 셋. 정적 옵션 하나에만
         // 실려 SDK 객체가 쥐지 않고, 자기 필드가 없다 — 쓰는 문자열은 인자로 받아 짝 없는 서로게이트만 보고 보관하지 않는다.
         ["Xzawed.Keycloak.EncodableBody+StringObserver"] = "EncodableBody 의 정적 옵션에만 있는 쓰기 관찰자 — SDK 객체가 쥐지 않고 자기 필드가 없다",

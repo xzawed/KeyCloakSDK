@@ -21,9 +21,16 @@ public sealed record TokenSet
     /// <summary>Maps raw token-response values to a TokenSet, computing absolute expiry.</summary>
     public static TokenSet Create(string accessToken, string? tokenType, long expiresIn,
                                   string? refreshToken, string? idToken, string? scope, long issuedAtSeconds)
+        => Create(accessToken, tokenType, expiresIn, refreshToken, idToken, scope, issuedAtSeconds, status: null);
+
+    /// <summary><see cref="Create(string, string?, long, string?, string?, string?, long)"/> for the token lanes, which read the
+    /// values off a response: <c>status</c> is that response's status — the <see cref="KeycloakAuthException.StatusCode"/> of
+    /// the failure; null when no response gave the values.</summary>
+    internal static TokenSet Create(string accessToken, string? tokenType, long expiresIn,
+                                    string? refreshToken, string? idToken, string? scope, long issuedAtSeconds, int? status)
     {
         if (string.IsNullOrEmpty(accessToken))
-            throw new KeycloakAuthException("token response missing access_token");
+            throw new KeycloakAuthException("token response missing access_token") { StatusCode = status };
         return new TokenSet
         {
             AccessToken = accessToken,

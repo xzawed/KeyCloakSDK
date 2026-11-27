@@ -106,7 +106,7 @@ public sealed class HostilePathMatrixTests
         ["TokenSetJsonConverter.*"] = JsonConverterReason,
         ["TokenResponseNotUtf8Exception.*"] =
             "내부 신호(TokenEndpointInvoker.cs — FacadeDumpTests.Exempt 와 같은 이유) — 인스턴스는 SDK 밖으로 나가지 않아 공개 API 뿌리에서 " +
-            "닿지 않고, 생성자는 고정 문구의 예외를 만들 뿐 요청을 내지 않는다(필드 없음)",
+            "닿지 않고, 생성자는 고정 문구의 예외를 만들 뿐 요청을 내지 않는다(필드는 상태 하나)",
         ["EncodableBody+StringObserver.*"] = ObserverReason,
         ["EncodableBody+CharObserver.*"] = ObserverReason,
         ["EncodableBody+NodeObserver.*"] = ObserverReason,
