@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 — go · python · node · rust · php · ruby · dotnet · java · kotlin
-# 의 무결성 판정과 하한. 하네스 소유(`harness:install`)는 `test-integration-coverage-harness.sh` 다(떼어 낸 까닭은 그 머리).
+# 의 무결성 판정과 하한. 하네스 소유(`harness:install`)는 `test-integration-coverage-harness.sh`, 단위 장부 소유(`unit:ledger`)는 `test-integration-coverage-unit-owner.sh` 다(떼어 낸 까닭은 그 머리).
 #
 # ⚠️ **커밋된 픽스처만 쓴다** — Docker 도 Go·Python·node·rust·php·ruby·dotnet·JDK·Gradle 툴체인도 필요 없다. 실제 Keycloak 에 대고 도는 것은
 # 레인 CI 의 integration 잡이다. 여기서 재는 것은 리포트의 **무결성 판정** 셋이다:

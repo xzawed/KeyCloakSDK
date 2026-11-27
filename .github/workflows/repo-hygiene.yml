@@ -162,7 +162,7 @@ jobs:
         # `harness:install` 소유를 트리에서 확인하는 판정(`scripts/integration-coverage.mjs` 의 「하네스 소유」)만 — 변이 레코드가
         # 이 파일을 겨누도록 위 시험에서 떼어 냈다(까닭은 그 머리). 준비 함수는 셋이 `scripts/test/ic-fixture.sh` 를 함께 쓴다.
         run: sh scripts/test/test-integration-coverage-harness.sh
-      - name: 통합 전용 커버리지 장부의 단위 장부 소유 자가테스트(항목 없음 = 소유 · 어느 까닭의 항목이든 거부 · 장부 없음 2 · 핀 밖 — 픽스처만)
+      - name: 통합 전용 커버리지 장부의 단위 장부 소유 자가테스트(항목 없음 = 소유 · 어느 까닭의 항목이든 거부 · 장부 없음 2 · admin 표면 — 픽스처만)
         # `unit:ledger` 소유를 단위 미도달 장부(`scripts/unit-unreached.json`)와 대조하는 판정(`scripts/integration-coverage.mjs` 의
         # ownerProblem)만 — 하네스 소유 시험과 같은 까닭으로 따로 둔다(그 머리).
         run: sh scripts/test/test-integration-coverage-unit-owner.sh
