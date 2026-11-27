@@ -39,15 +39,15 @@ public sealed class AuthClient : ITokenSource
     /// client passed here keeps whatever <see cref="HttpClient.MaxResponseContentBufferSize"/> it has (the .NET default is
     /// <see cref="int.MaxValue"/> bytes) — and its handler's own drain: after a refused response the .NET default handler
     /// reads up to 1 MiB more of it to reuse the connection, which the SDK's own handler does not.
-    /// <para>⚠️ Its redirect handling is used as-is too, and a .NET handler follows redirects by default
-    /// (<c>AllowAutoRedirect</c> is on, for up to 50 redirects — <c>MaxAutomaticRedirections</c>): a 302, 303, 307 or 308 is
-    /// followed, to another origin as well, and the SDK uses the answer it gets there. On a 307 or 308 the form body is sent
-    /// again — the authorization code and PKCE <c>code_verifier</c>, the <c>refresh_token</c>, the token being introspected,
-    /// or the logout's <c>client_secret</c> and <c>refresh_token</c>. The <c>Authorization</c> header, which carries the
-    /// client secret on the grants and introspection, is not sent again. Build the handler with
-    /// <c>AllowAutoRedirect = false</c>, as <c>KeycloakClient.Create</c> does. Discovery and the JWKS are fetched with the
-    /// client given to <paramref name="validator"/>, where a followed redirect decides which keys are trusted — see
-    /// <see cref="JwtValidator"/>.</para></param>
+    /// <para>⚠️ Its redirect handling is used as-is too, and <c>HttpClientHandler</c> and <c>SocketsHttpHandler</c> follow
+    /// redirects by default (<c>AllowAutoRedirect</c> is on, for up to 50 redirects — <c>MaxAutomaticRedirections</c>): a
+    /// 302, 303, 307 or 308 is followed, to another origin as well, and the SDK uses the answer it gets there. On a 307 or
+    /// 308 the form body is sent again — the authorization code and PKCE <c>code_verifier</c>, the <c>refresh_token</c>,
+    /// the token being introspected, or the logout's <c>client_secret</c> and <c>refresh_token</c>. The
+    /// <c>Authorization</c> header, which carries the client secret on the grants and introspection, is not sent again.
+    /// Build the handler with <c>AllowAutoRedirect = false</c>, as <c>KeycloakClient.Create</c> does. Discovery and the
+    /// JWKS are fetched with the client given to <paramref name="validator"/>, where a followed redirect decides which keys
+    /// are trusted — see <see cref="JwtValidator"/>.</para></param>
     public AuthClient(KeycloakConfig cfg, OidcEndpoints ep, JwtValidator validator, HttpClient http)
     {
         _cfg = cfg; _ep = ep; _validator = validator; _http = http;

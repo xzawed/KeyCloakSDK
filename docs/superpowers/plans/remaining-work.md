@@ -205,7 +205,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `doc-audit-2026-09-05-confirmed-six` **[M/M · 신규·닫힘 2026-09-05]** 고정 스냅샷 문서감사가 확정한 6건 — 전부 「가드받는 SSOT 의 사본이 갈렸다」 부류다 · `.claude/rules/`
 - [x] `harness-gradle-version-copies-unguarded` **[M/S · 신규·닫힘 2026-09-05]** 하네스의 gradle 버전 사본이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
 - [x] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규·닫힘 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,ruby}.md`
-- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** 매트릭스 레그만 올려도 아무 검사가 실패하지 않았다 — `H3-harness-image-and-lock-pins` 와 한 가드(`check-versions.mjs` 툴체인 리터럴 축, 지시어 행 둘)로 닫음. 산문을 조준하지 않는 이유는 그 가드의 주석이 소유한다.
+- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** 매트릭스 레그만 올려도 아무 검사가 실패하지 않았다 — `H3-harness-image-and-lock-pins` 와 한 가드(`check-versions.mjs` 툴체인 리터럴 축, 지시어 행 둘)로 닫음. 산문을 겨누지 않는 이유는 그 가드 주석에 있다.
 - [x] `matrix-fail-fast-cancels-floor-leg` **[M/S · 신규·닫힘 2026-09-05]** 매트릭스 워크플로 8개 중 **6개에 `fail-fast: false` 가 없어** 최신 레그가 깨지면 소비자 하한 레그가 취소된다 · `.github/workflows/`
 - [x] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 닫힘 2026-09-24]** 1.0.1 게시로 닫았다 — 게시 바이트 전부 major ≤ 61(`node scripts/check-published-jvm-floor.mjs`) · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝) · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
@@ -299,11 +299,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `node-non200-2xx-content-type-unchecked` **[L/S · 신규 2026-11-25 · 미측정]** node 의 200 아닌 2xx 길에 `application/json` 검사가 없다(`error` 문자열 규칙은 oauth4webapi 를 따른다) — 코드 읽기뿐 · `node/src/token-response-cap.ts`
 - [x] `rust-lowlevel-ctor-redirect-policy` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1221 · 길 A]** `reqwest::Client::new()` 를 받은 저수준 생성자 넷이 64/64 셀에서 따랐고 다른 오리진 307 · 308 은 본문을 다시 보냈다 — 넷의 rustdoc 이 「받은 정책 그대로 · `Policy::none()` 으로 지으라」, `rust/README.md` 의 거짓 문장을 고쳤다 · 동작 그대로 · 길 B 는 `rust-lowlevel-ctor-builder` · 서사: #1221 본문
 - [ ] `rust-lowlevel-ctor-builder` **[L/M · 신규 2026-11-27 · 사람 판정 「등록부」]** #1221 의 길 B — `reqwest::ClientBuilder` 를 받아 `Policy::none()` 을 강제하는 생성자를 1.x minor 로 더하고 지금 넷은 폐기해 2.0 에서 뺀다(Grok 권고) · 공개 API · semver 판정이다 · `rust/src/token_provider.rs:54`
-- [x] `consumer-http-client-redirect-unmeasured` **[L/M · 신규 2026-11-27 · 닫힘 2026-11-27 · 길 A]** 기본 클라이언트를 받은 .NET 56/56 · PHP `AuthClient` 40/40 · `UsersResource` 16/16 이 따랐고 다른 오리진 307 · 308 은 본문을 다시 보냈다 · Ruby 0/104 · PHP PSR-18 둘 0/16 · 대조군 0 — 문서 주석 · README 가 「받은 정책 그대로 · 끄고 지으라」 · 동작 그대로 · 재측정: `wip/n3-measure` · 길 B 는 `consumer-http-client-redirect-enforce`
-- [ ] `consumer-http-client-redirect-enforce` **[L/M · 신규 2026-11-27 · 사람 판정 「등록부」]** 위 항목의 길 B — .NET 두 생성자 · PHP `AuthClient` · admin 리소스가 받은 클라이언트의 리다이렉트를 SDK 가 막는다 · .NET `RequestUri` 는 A→B→A 를 못 본다(DETECT 줄) · 공개 API · semver 판정이다 · `php/src/AuthClient.php:52`
+- [x] `consumer-http-client-redirect-unmeasured` **[L/M · 신규 2026-11-27 · 닫힘 2026-11-27 · 길 A]** 기본 클라이언트를 받은 .NET 56/56 · PHP `AuthClient` 40/40 · `UsersResource` 16/16 이 따랐고 다른 오리진 307 · 308 은 본문을 다시 보냈다 · Ruby 0/104 · PHP PSR-18 둘(Guzzle) 0/16 · 대조군 0 — 문서 주석 · README 가 「받은 정책 그대로 · 끄고 지으라」 · 동작 그대로 · 재측정: `wip/n3-measure` fcee613b · 길 B 는 `consumer-http-client-redirect-enforce`
+- [ ] `consumer-http-client-redirect-enforce` **[L/M · 신규 2026-11-27 · 사람 판정 「등록부」]** 위 항목의 길 B — .NET 두 생성자 · PHP `AuthClient` · admin 리소스가 받은 클라이언트의 리다이렉트를 SDK 가 막는다 · .NET `RequestUri` 는 A→B→A 를 못 본다(DETECT 줄) · 안 잰 자리: Guzzle 밖 PSR-18 둘 · php admin 넷 · php README:86 의 「timeouts are always applied」도 받은 클라이언트엔 거짓(코드 읽기) · 공개 API · semver 판정이다 · `php/src/AuthClient.php:53`
 - [x] `admin-create-relative-location` **[L/M · 닫힘 2026-11-21 #1185 · 아홉 언어]** 요청 URL 에 대해 푼 Location 의 마지막 조각(앞 조각 = 컬렉션) · roles · realms 는 그대로 · kotlin 1.0.9 생성자는 실서버 IT 가 돈다
-- [x] `admin-created-id-non-ascii-location` **[L/S · 신규 2026-11-27 · 닫힘 2026-11-27]** `ab` E9 `cd` / `ab` C3 A9 `cd` 의 id — java · kotlin · python sync U+00E9 / U+00C3 U+00A9(Latin-1) · python aio U+00E9 둘 다 · node `%C3%A9` / `%C3%83%C2%A9` · go `%E9` / `%C3%A9` · .NET `%C3%A9` 둘 다 · ruby · rust(#1218 시험) 없음 · php create 는 void · 재측정: `wip/n3-measure` · 후속 `admin-created-id-encoding-divergent`
-- [ ] `admin-created-id-encoding-divergent` **[L/S · 신규 2026-11-27]** 위 id 가 SDK 마다 갈리고 .NET 은 두 바이트열이 한 id 다 · php 의 users · groups · roles create 는 void 라 rust `created_id` 주석의 「아홉 SDK 가 같다」와 `admin-create-relative-location` 의 「아홉 언어」가 php 에 거짓이다 · `rust/src/admin.rs:101`
+- [x] `admin-created-id-non-ascii-location` **[L/S · 신규 2026-11-27 · 닫힘 2026-11-27]** `ab` E9 `cd` / `ab` C3 A9 `cd` 의 id — java · kotlin · python sync U+00E9 / U+00C3 U+00A9(Latin-1) · python aio U+00E9 둘 다 · node `%C3%A9` / `%C3%83%C2%A9` · go `%E9` / `%C3%A9` · .NET `%C3%A9` 둘 다 · ruby · rust(#1218 시험) 없음 · php create 는 void · 재측정: `wip/n3-measure` fcee613b · 후속 `admin-created-id-encoding-divergent`
+- [ ] `admin-created-id-encoding-divergent` **[L/S · 신규 2026-11-27]** 위 id 가 SDK 마다 갈리고 .NET 은 두 바이트열이 한 id 다 · php 의 users(쟀다) · groups · roles(시그니처) create 는 void 라 rust `created_id` 주석의 「아홉 SDK 가 같다」와 `admin-create-relative-location` 의 「아홉 언어」가 php 에 거짓이다 · `rust/src/admin.rs:101`
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** rust·python·ruby·php·dotnet 이 비었거나 문자열이 아닌 `access_token` 으로 TokenSet 을 만들었다 — 불변식(그런 응답은 TokenSet 이 아니다)을 `test-security-defaults.sh` 축 1c 가 집행한다, 변이 7/7 CAUGHT · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
   - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다. 셋째 자리(java 레그 2026-10-05): admin 토큰 400·응답 없는 전송 실패의 원인 사슬에 jakarta `ProcessingException` 이 남는다(토큰 인용 없음).
@@ -426,7 +426,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `harness-legs-skip-pull-request` **[M/M · 닫힘 2026-11-16 #1114]** changes 잡이 harness.yml 자신의 PR paths 로 판정해 두 레그를 PR 에서도 돌린다 — `harness-pr-legs.mjs --wiring` 이 배선을 글자로 고정 · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `selftests-miss-the-real-callsite` **[M/M · 닫힘 2026-11-16 #1110]** 실제 호출이 어느 PR 에서도 안 도는 일정 가드 넷이 `net-stub.mjs`(gh · fetch · 시계)로 CI 그대로의 argv 를 탄다 · 같은 변이 main 8/8 SILENT
 - [ ] `stale-comments-nobody-collates` **[M/S · 2026-11-14 stale-prose-contradicts-source 흡수]** 주석 · 산문이 서술하는 값 · 전제 · 경로 · 실측 · 게이트가 원본보다 낡았고 대조가 없다 — 정규식 오라클은 수렴하지 않는다(§3-5), 기계 대조는 축 단위로(JWKS 기본값 2b · KCSDK 표 test-doctor 9절) · 사례는 만나는 대로 고친다
-- [x] `symmetry-guards-cover-a-subset` **[M/M · 닫힘 2026-11-16 #1108]** `zig/package.json` 을 심으니 실제 트리 가드 76 중 10 만 울었다 — 손 목록 다섯이 집합을 내보내고 `test-lang-universe.sh` 가 트리와 분할로 대조한다
+- [x] `symmetry-guards-cover-a-subset` **[M/M · 닫힘 2026-11-16 #1108]** 손 목록 다섯이 집합을 내보내고 `test-lang-universe.sh` 가 트리와 분할로 대조한다 · 실측(심은 `zig` 에 76 중 10): #1108 본문
 - [x] `check-versions-java-child-pom-blind-spot` **[M/S · 닫힘 2026-11-13 #1060]** 자식의 parent 참조 판과 자신의 판을 따로 대조 — 자가테스트 변이 1b · 오탐 대조 다섯
 - [x] `default-root-percent-encoding` **[M/S · 닫힘 2026-11-14 #1076]** 두 가드를 `fileURLToPath` 로 — 자가테스트가 공백 경로 무인자로 돈다
 - [x] `repo-config-apply-exit0-on-security-drift` **[M/S · 닫힘 2026-11-13 #1060]** 끝 판정 `finish(cmd, drift)` — apply 도 남은 드리프트에서 exit 1
@@ -477,7 +477,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
 - [x] `H4-runsh-network-divergence` **[L/S · 닫힘 2026-09-15]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
 - [ ] `harness-app-ports-on-all-interfaces` **[L/S · 신규 2026-10-27]** verify 하네스 앱 아홉이 호스트 포트를 모든 인터페이스에 연다(`"${HARNESS_PORT_PHP:-8095}:8090"` 꼴) — 하네스가 도는 동안 같은 LAN 에서 닿고, php 앱은 `php -S 0.0.0.0` 이다. `127.0.0.1:` 로 묶을지(PHP2Shell 검토의 Grok 독립 레그 제안) · `harness/docker-compose.yml:109`
-- [x] `harness-nightly-upstream-transients` **[L/S · 신규 2026-11-23 · 닫힘 2026-11-25 #1210]** 빌드 자리 16 곳이 `build_with_retry`(`harness/lib/build-retry.sh` — 3 번 · 60 초 간격, 재시도는 주석 · 아티팩트로 남는다) · 짧은 장애만 덮는다 — 잡 내내 거절은 아래 항목
+- [x] `harness-nightly-upstream-transients` **[L/S · 신규 2026-11-23 · 닫힘 2026-11-25 #1210]** 빌드 자리 16 곳이 `build_with_retry`(`harness/lib/build-retry.sh` — 횟수 · 간격 · 기록은 머리 주석) · 짧은 장애만 덮는다 — 잡 내내 거절은 아래 항목
 - [x] `harness-central-refuses-runner` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1220]** 예약 실패가 상류 거절이면 실패한 잡만 새 러너에서 한 번 — `.github/workflows/harness-rerun.yml` · 판정기 `scripts/harness-upstream-signature.mjs` · 재시도 꼬리표 `harness/lib/build-retry.sh` · 병합 뒤 실측(attempt 2 성공): `git show 7a2a91db:docs/superpowers/plans/remaining-work.md` 의 이 줄 · 서사: #1220 본문
 - [ ] `install-harness-fixed-host-ports` **[M/M · 신규 2026-09-16 · 부류 재스캔]** install 하네스가 호스트 포트 **아홉**을 박아, 그중 하나라도 쥔 PC 에서는 파이프라인이 기동조차 못 한다 · `harness/install/compose.install.yml:15`
   - **실측(2026-09-16)**: 퍼블리시 9개 — keycloak `8080:8080`·`9000:9000` · verdaccio `4873` · pypiserver `18892` · bagetter `18180` · mvn-repo `18080` · mvn-repo-kotlin `18081` · gemserver `18808` · satis-web `18099`. 이 PC 에서 **8080 은 실제로 다른 프로젝트가 쥐고 있다**(`sillok-api-1` → `127.0.0.1:8080->8080/tcp`) — verify 하네스가 같은 이유로 막혔고 그것이 PR #506 이 닫은 자리다.
@@ -497,7 +497,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 유예·되살릴 조건 — 10
 
-- [x] `go-release-persist-credentials` **[M/S · 닫힘 2026-09-11 · 계수 정정]** `contents: write` 이면서 체크아웃하는 잡은 셋이었다(ruby-release 의 두 히트는 헤더 산문) — `check-ci-permissions.mjs` 규칙 1b(write 토큰 + 체크아웃 조인만 · 전 워크플로 강제는 기각 유지) + 공허 하한 `--min-write-checkout` · 변이 3/3 CAUGHT
+- [x] `go-release-persist-credentials` **[M/S · 닫힘 2026-09-11 · 계수 정정]** `contents: write` 이면서 체크아웃하는 잡은 셋이었다(ruby-release 의 두 히트는 헤더 산문) — `check-ci-permissions.mjs` 규칙 1b(범위 · 기각은 그 규칙 주석) + 공허 하한 `--min-write-checkout` · 변이 3/3 CAUGHT
 - [x] `revive-conditions-unmeasured` **[M/M · 닫힘 2026-11-16 #1116]** `revive-watch.mjs` — 기각 행마다 탐침(10) 또는 수동 사유(15), 분류 밖 행은 PR 이 빨갛고 주간이 `--require-all` 로 돈다
 - [x] `sonar-tests-revive-instrument` **[M/M · 닫힘 2026-11-14 #1089]** `index-count` 잡이 그 실행과 main 직전 스캔의 색인 수를 요약에 남기고 크게 바뀌면 빨갛다 · `scripts/check-sonar-index.mjs`
 - [ ] `dependabot-ignore-joins` **[M/M]** 조건부 `ignore` 셋의 해제 조건이 다른 파일의 사실에 묶여 있는데 조인이 없다 — kotlin 하나만 기계가 본다 · `.github/dependabot.yml:79`
@@ -570,8 +570,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `php-unit-unreached-same-line-branch` **[L/S · 신규 2026-11-18]** php 의 단위 미도달 장부는 줄만 센다 — PHPUnit 12.5.33 · Xdebug 3.5.3 `--path-coverage` 의 XML 에도 가지 · 경로 수가 없다 — 행복 경로가 도는 줄의 실패 갈래(`?? throw`)는 안 보인다(자가테스트가 고정) · `scripts/integration-coverage.mjs`
 - [x] `readme-quickstarts-ungated` **[M/M · 닫힘 2026-11-15 #1099]** 다섯 언어 예제를 타입검사 · 정적분석 · 컴파일에(ruby 는 가짜 서버 실행) · `ruby/spec/unit/examples_quickstart_spec.rb`
 - [x] `examples-never-run-against-keycloak` **[L/M · 신규·닫힘 2026-11-15 #1102]** 설치 하네스가 README 예제 일곱을 실서버에 대고 돌린다 · `harness/install/consume/`
-- [x] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15 · 닫힘 2026-11-16 #1104]** 장부가 `harness:install` 소유를 받는다 — 이미지 COPY · pom 진입점 · 실행 스크립트의 표지를 트리에서 확인할 때만 · `scripts/integration-coverage.mjs`
-- [x] `python-310-deep-json-unraisable-flake` **[L/S · 신규·닫힘 2026-11-16 #1122]** 3.10 은 파스가 재귀 한도 근처일 때 걸린 수집의 파이널라이저가 예산 없이 unraisable 을 낸다 → 그 세 자리를 `collector_paused()` 로 감쌌다 · 재판정: 순환 쓰레기 + gen0 문턱으로 수집을 파스 깊이 d 에 겨눠 센다(3.10 은 994 · 995, 멈춤 · 3.13 은 0)
+- [x] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15 · 닫힘 2026-11-16 #1104]** 장부가 `harness:install` 소유를 받는다 — 트리에서 확인한 연결만(조건은 `scripts/integration-coverage.mjs` 의 「하네스 소유」 절)
+- [x] `python-310-deep-json-unraisable-flake` **[L/S · 신규·닫힘 2026-11-16 #1122]** 3.10 레인의 unraisable(기전은 #1122 본문) → 그 세 자리를 `collector_paused()` 로 감쌌다 · 재판정: 순환 쓰레기 + gen0 문턱으로 수집을 파스 깊이 d 에 겨눠 센다(3.10 은 994 · 995, 멈춤 · 3.13 은 0)
 
 ### 1.0 이후 운영 — 21
 

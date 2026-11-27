@@ -24,13 +24,14 @@ namespace Xzawed.Keycloak;
 /// only, so it never reaches this streamed one.)
 /// </para>
 /// <para>
-/// ⚠️ <b>Why not <c>MaxResponseContentBufferSize</c> on the shared client:</b> the
-/// <see cref="HttpClient"/> passed here is owned by <c>KeycloakClient</c> and shared with
-/// <c>AuthClient</c>, so that property would also bound token, refresh, introspection and logout
+/// ⚠️ <b>Why not <c>MaxResponseContentBufferSize</c> on the shared client:</b> on the
+/// <c>KeycloakClient.Create</c> path the <see cref="HttpClient"/> passed here is owned by <c>KeycloakClient</c> and
+/// shared with <c>AuthClient</c>, so that property would also bound token, refresh, introspection and logout
 /// responses. A Keycloak access token carrying many roles or groups is a legitimately large body
 /// and must not be capped by a JWKS defence. This retriever bounds <b>only</b> the documents the
-/// <c>ConfigurationManager</c> fetches — discovery and JWKS — while still using the shared,
-/// redirect-hardened client.
+/// <c>ConfigurationManager</c> fetches — discovery and JWKS — with that same client. The client is
+/// redirect-hardened only when <c>KeycloakClient.Create</c> built it; one given to the public
+/// <c>JwtValidator</c> constructor keeps its own redirect handling.
 /// </para>
 /// <para>
 /// ⚠️ The cap is applied <b>regardless of status code</b>. Targeting only 200 lets an error

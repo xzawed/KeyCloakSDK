@@ -41,12 +41,13 @@ final class AuthClient
     private PkceKeycloakProvider $provider;
 
     /**
-     * @param GuzzleClientInterface $http The client every call goes through. ⚠️ It is used as-is, redirect setting
-     *   included, and Guzzle's default follows redirects (`allow_redirects`: up to 5), to another origin as well — the SDK
-     *   then uses the answer it gets there. On a 307 or 308 the form body is sent again: the token grants and logout carry
-     *   the `client_secret` in it (league/oauth2-client authenticates the client in the body), next to the authorization
-     *   code and PKCE `code_verifier` or the `refresh_token`; introspection carries the token being introspected. Guzzle
-     *   drops `Authorization` on a cross-origin redirect, not the body. Pass a client built with
+     * @param GuzzleClientInterface $http The client the token grants, introspection and logout go through — validate()
+     *   and validateIdToken() fetch the JWKS through the client of the JwksStore behind `$validator`. ⚠️ It is used as-is,
+     *   redirect setting included, and Guzzle's default follows redirects (`allow_redirects`: up to 5), to another origin
+     *   as well — the SDK then uses the answer it gets there. On a 307 or 308 the form body is sent again: the token grants
+     *   (league/oauth2-client authenticates the client in the body) and logout carry the `client_secret` in it, next to
+     *   the authorization code and PKCE `code_verifier` or the `refresh_token`; introspection carries the token being
+     *   introspected. Guzzle drops `Authorization` on a cross-origin redirect, not the body. Pass a client built with
      *   `['allow_redirects' => false]`, as `KeycloakClient::create()` does.
      */
     public function __construct(
