@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 둘이 소싱하는 준비 함수 —
-# `test-integration-coverage.sh` · `test-integration-coverage-harness.sh`. 픽스처와 데이터의 출처(어느 도구가 어떻게 냈는가)는
+# 통합 전용 커버리지 리포트(`scripts/integration-coverage.mjs`) 자가테스트 셋이 소싱하는 준비 함수 —
+# `test-integration-coverage.sh` · `test-integration-coverage-harness.sh` · `test-integration-coverage-unit-owner.sh`. 픽스처와 데이터의 출처(어느 도구가 어떻게 냈는가)는
 # `test-integration-coverage.sh` 의 머리가 소유한다.
 #
 # 부르는 쪽이 먼저 정한다: `DIR`(scripts/test) · `FIX`(픽스처 루트) · `TOOL`(리포트 도구) · `BOUNDARY`(파생 도구).

@@ -20,7 +20,8 @@
 //    **오라클**이다 — SSOT 를 바꾸는 PR 이 「리포트의 분모가 바뀐다」를 같은 diff 에서 보이게 한다.
 //  · 통합이 한 번도 실행하지 않는 함수 목록 — 항목마다 **열린** 등록부 id 가 소유자다(같은 JSON 의 `owners`). 갭이 아닌
 //    파일 — 설치 하네스가 실서버에 대고 돌리는 예제 — 의 함수는 `harness:install` 이 소유한다. 그 연결을 트리에서 확인할
-//    때만이다(아래 「하네스 소유」).
+//    때만이다(아래 「하네스 소유」). 단위 미도달 장부(아래)가 재는 줄 · 문장 · 가지에 단위 스위트가 다 닿는 함수는 `unit:ledger` 가
+//    소유한다 — 그 언어의 장부가 서 있고 핀 안 파일이며 장부에 그 함수의 항목이 **없을** 때만이다(어느 까닭의 항목이든 거부한다).
 //
 // ⚠️ 「파생 = 핀」만으로는 부족하다 — **도구가 데이터에서 파일을 떨어뜨리는** 길이 따로 있다. 그래서 파생한 파일마다
 // 데이터에 실제로 있는지 본다(없으면 FAIL). 실측(2026-10-09, coverage.py 7.15): `[run] include` 만 쓰면 한 번도
@@ -209,7 +210,8 @@
 //
 // 종료코드 — 넷을 가른다. 「낮은 수치」는 하한이 무장된 언어에서만 실패다(3):
 //   0 OK     리포트가 섰고, 하한 이상이며, 미실행 함수가 전부 열린 항목 소유다
-//   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡거나 핀 밖을 가리키는 항목 · 트리에서 확인되지 않는 하네스 연결) —
+//   1 DRIFT  소유 문제(소유자 없음 · 열린 항목이 아님 · 낡거나 핀 밖을 가리키는 항목 · 트리에서 확인되지 않는 하네스 연결 ·
+//            단위 장부에 항목이 있거나 핀 밖 파일의 `unit:ledger`) —
 //            수치는 유효하다. CI 는 실패로 본다 — 레인은 이 종료코드를 그대로 받는다(0 만 통과 · 배선은
 //            `scripts/test/test-integration-coverage-gate.sh`). 경고였던 동안 main 이 DRIFT 인 채 초록이었다(등록부
 //            `integration-coverage-drift-is-warning-only` — 소유자 없는 go 함수 둘이 이틀 갔다)
@@ -1112,6 +1114,8 @@ function loadRegistry() {
 // ⚠️ java(Maven exec:java)만 읽는다 — 다른 언어의 기록은 확인할 수 없으므로 DRIFT 다.
 const HARNESS_OWNER = 'harness:install'
 const HARNESS_KEYS = ['entrypoint', 'image', 'project']
+// 단위 소유 — 단위 스위트가 다 닿는 함수(머리 주석 · 판정은 ownerProblem). 등록부 id 는 `:` 를 담지 않아 이 값과 겹치지 않는다.
+const UNIT_OWNER = 'unit:ledger'
 // Dockerfile 의 명령 — 주석 줄(첫 비공백이 `#`)을 먼저 버리고 줄 이음(`\` + 줄끝)을 잇는다(Docker 와 같은 순서 — 이어진 명령 속의
 // 주석 줄은 명령을 끊지 않는다). 줄 중간의 `#` 는 주석이 아니다.
 function dockerInstructions(text) {
@@ -1244,7 +1248,7 @@ function harnessLink(l, file, rec) {
   if (stray) return `${rec.entrypoint}: quickstart.ok is written outside that if too — ${stray}`
   return null
 }
-// 소유자 판정 — 열린 등록부 항목이거나, 트리에서 확인되는 하네스 연결이다. 문제가 없으면 null.
+// 소유자 판정 — 열린 등록부 항목이거나, 트리에서 확인되는 하네스 연결이거나, 단위 장부가 다 닿는다고 보이는 함수다. 문제가 없으면 null.
 function ownerProblem(l, pin, reg, key, id) {
   if (id === HARNESS_OWNER) {
     const file = key.slice(0, key.indexOf(':'))
@@ -1252,6 +1256,18 @@ function ownerProblem(l, pin, reg, key, id) {
     if (!rec) return `${key} is owned by ${HARNESS_OWNER}, but ${PINS} has no ${l}.harness record for ${file}`
     const why = harnessWhy(l, file, rec)
     return why ? `${key} is owned by ${HARNESS_OWNER}, but the link does not hold — ${why}` : null
+  }
+  if (id === UNIT_OWNER) {
+    // 그 언어의 장부가 없거나 꼴이 틀리면 unitLedgerFor 가 이미 FAIL 이다 — 소유로 치지 않는다.
+    const ledger = unitLedgerFor(l)
+    if (!ledger) return null
+    // 장부는 핀 안 파일만 잰다 — 핀 밖 admin 표면 파일에는 항목이 생길 수 없어 「항목 없음」이 아무것도 보이지 않는다.
+    const file = key.includes(':') ? key.slice(0, key.indexOf(':')) : key
+    if (!pin.pinned.includes(file)) return `${key} is owned by ${UNIT_OWNER}, but ${UNIT} does not measure ${file} (outside the pin) — name an open item of ${REGISTRY}`
+    // 항목이 있으면 까닭이 무엇이든 거부한다 — `defensive:` 를 받으면 단위 시험의 갈래를 지우고 그렇게 적은 PR 이 두 검사를 다 지나,
+    // 아무 스위트도 안 도는 갈래에 열린 소유자가 없다(Grok 레그 2026-11-28). 열린 id 가 다시 소유해야 한다.
+    const e = ledger[key]
+    return e ? `${key} is owned by ${UNIT_OWNER}, but ${UNIT} records ${UNIT_WHY.find((p) => e.why.startsWith(p)) ?? e.why} for it — name an open item of ${REGISTRY}` : null
   }
   return reg && !reg.open.has(id) ? `${key} is owned by ${id}, which is not an open item of ${REGISTRY}` : null
 }
@@ -4324,7 +4340,9 @@ function report(l) {
   if (BODY_LANGS.has(l)) head = `lines ${t.covered}/${t.stmts} (${pct(t.covered, t.stmts)}) · bodies ${b.covered}/${b.stmts} (${pct(b.covered, b.stmts)})`
   const n = data.never.length
   const fns = n ? `${n} never-executed function${n > 1 ? 's' : ''}` : 'no never-executed functions'
-  const owned = n && !nd ? `, all owned by open registry items${data.never.some((x) => x.owner === HARNESS_OWNER) ? ' or the install harness' : ''}` : ''
+  // 열린 항목 밖의 소유가 있으면 그것도 댄다(check 의 요약과 같은 갈래 — 셋이면 「a, b or c」).
+  const by = ['open registry items', ...[[HARNESS_OWNER, 'the install harness'], [UNIT_OWNER, 'the unit ledger']].filter(([o]) => data.never.some((x) => x.owner === o)).map(([, w]) => w)]
+  const owned = n && !nd ? `, all owned by ${by.slice(0, -1).join(', ')}${by.length > 1 ? ' or ' : ''}${by[by.length - 1]}` : ''
   const problems = nd ? ` · ${nd} ownership problem${nd > 1 ? 's' : ''}` : ''
   const fl = floorText(pin) ? ` · ${floorText(pin)}` : ''
   // 하한 — 분모가 0 이면 위 「아무것도 안 돈 실행」이 이미 FAIL 이다. 정수식으로 비교한다(같으면 통과).
@@ -4420,7 +4438,13 @@ function loadUnitLedger() {
   unitLedger = j
   return j
 }
+// 언어마다 한 번 잰다 — 소유자 판정(`unit:ledger`)이 항목마다 묻는다. 안 그러면 없거나 꼴이 틀린 장부의 FAIL 이 그 수만큼 찍힌다.
+const unitLedgers = new Map()
 function unitLedgerFor(l) {
+  if (!unitLedgers.has(l)) unitLedgers.set(l, unitLedgerRead(l))
+  return unitLedgers.get(l)
+}
+function unitLedgerRead(l) {
   const j = loadUnitLedger()
   if (!j) return null
   const e = j[l]
@@ -4605,6 +4629,7 @@ function check() {
   const counts = []
   let owners = 0
   let linked = 0
+  let accounted = 0
   const derived = new Map()
   for (const l of LANGS) {
     const d = derivedFor(l)
@@ -4618,6 +4643,7 @@ function check() {
     for (const [key, id] of Object.entries(pin.owners)) {
       owners++
       if (id === HARNESS_OWNER) linked++
+      else if (id === UNIT_OWNER) accounted++
       const at = key.indexOf(':')
       if (at < 0 || !(P.has(key.slice(0, at)) || S.has(key.slice(0, at)))) drift(l, `owner entry ${key} names a file outside the pin${S.size ? ' and the admin surface' : ''}`)
       const why = id === HARNESS_OWNER && at < 0 ? null : ownerProblem(l, pin, reg, key, id)
@@ -4659,7 +4685,9 @@ function check() {
     console.log(`integration-coverage check: ${nf ? 'FAIL' : 'DRIFT'} — ${nf} fail · ${nd} drift`)
     return nf ? 2 : 1
   }
-  console.log(`integration-coverage check: OK — ${counts.join(' · ')} files pinned · ${owners} owner entries, ${linked ? `${owners - linked} open · ${linked} linked to the install harness` : 'all open'}`)
+  // 따로 세는 소유 — 0 인 것은 빼고, 둘 다 0 이면 「all open」이다.
+  const special = [linked && `${linked} linked to the install harness`, accounted && `${accounted} accounted by the unit ledger`].filter(Boolean)
+  console.log(`integration-coverage check: OK — ${counts.join(' · ')} files pinned · ${owners} owner entries, ${special.length ? [`${owners - linked - accounted} open`, ...special].join(' · ') : 'all open'}`)
   return 0
 }
 
