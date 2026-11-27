@@ -251,7 +251,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** 파사드 배선 · close 계약을 시험 · 통합이 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」 · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 202건 (열림 45)
+## C. 품질 부채 — 202건 (열림 44)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
@@ -442,7 +442,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `ci-maven-default-key-frozen-before-split` **[L/S · 닫힘 2026-11-21 #1191]** release-bundle 이 cache-hit 인데 제 플러그인이 없으면 실패한다
 - [x] `sonar-gradle-cache-reaches-release` **[L/S · 닫힘 2026-11-21 #1183]** 흘렀다(같은 추출 항목을 복원) — coverage 잡의 setup-gradle 은 읽기만
 - [x] `coverage-ignore-markers-unguarded` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1219]** `unit` · `unit-report` 가 추적 출하 소스의 표지마다 FAIL(여덟 언어 — go 는 표지 장치가 없다) · java · kotlin 은 JaCoCo 0.8.16 규칙(주석 타입 이름의 마지막 조각에 `Generated`)을 주석 · 문자열 · 문자 리터럴을 가린 글에 · 스캔은 선형, 던지면 FAIL · 가드 `scripts/integration-coverage.mjs` 의 `UNIT_MARKS` · `test-unit-unreached.sh` 절 (7)(1319/0) · 사람 판정 2026-11-27 — 실제 트리 0 칸은 required `doc-facts` 안(「required 에서 막는다」) · `?` · `<…>` 별칭도 낸다(「내는 쪽 유지」) · 잔여 `coverage-marker-scan-stop-residuals` · 서사: #1219 본문
-- [ ] `coverage-marker-scan-stop-residuals` **[L/S · 신규 2026-11-27]** 표지 스캔의 가리기가 멈춘 뒤(컴파일되지 않는 입력뿐) — java 는 `kotlinRawTail` 같은 원문 꼬리 fallback 이 없어 주석으로 쪼갠 표지를 못 본다(`'abcdef'` + `@/**/Generated` → 0 건) · kotlin 은 멈춤이 자른 목록(`@[Generated A("x` …)을 안 낸다 · 방향: java 에 원문 꼬리 · kotlin 은 멈춤 앞의 가장 이른 안 닫힌 여는 자리부터 · 재현: #1219 본문 「회차 상한에서 보류한 것」 · `scripts/integration-coverage.mjs`
+- [x] `coverage-marker-scan-stop-residuals` **[L/S · 신규 2026-11-27 · 닫힘 2026-11-27]** 표지 스캔의 가리기가 멈춘 뒤(컴파일되지 않는 입력뿐) — java 는 `kotlinRawTail` 같은 원문 꼬리 fallback 이 없어 주석으로 쪼갠 표지를 못 본다(`'abcdef'` + `@/**/Generated` → 0 건) · kotlin 은 멈춤이 자른 목록(`@[Generated A("x` …)을 안 낸다 · 방향: java 에 원문 꼬리 · kotlin 은 멈춤 앞의 가장 이른 안 닫힌 여는 자리부터 · 재현: #1219 본문 「회차 상한에서 보류한 것」 · `scripts/integration-coverage.mjs`
 - [ ] `unit-marker-scan-kotlin-default-java-dir` **[L/S · 신규 2026-11-27 · 미측정]** 표지 스캔의 kotlin 자리는 `kotlin/src/main/kotlin` 뿐 — KGP 의 기본 `kotlin/src/main/java` 는 안 읽는다 · 오늘 그 폴더의 추적 파일 0 · Gradle 이 그 폴더를 컴파일하는지는 안 쟀다 · `scripts/integration-coverage.mjs`
 - [ ] `coverage-boundary-deep-template-overflow` **[L/S · 신규 2026-11-27]** 조인 가드의 재귀 lexer 가 깊이 겹친 kotlin 문자열 템플릿에서 스택이 넘친다(#1219 회차 3 구현 보고) — 표지 스캔의 lexer 는 묶였다(`K_DEEP` 100 · fail-closed) · `scripts/coverage-boundary.mjs`
 

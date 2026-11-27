@@ -310,7 +310,9 @@ const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x
 // 하이픈 · ZWJ · U+FEFF · C0 제어 글자 — 원문이든 이스케이프든) · `[\p{L}\p{N}_$]` 밖의 java 식별자 글자(통화 기호 · U+203F · 결합 부호) ·
 // 이스케이프가 만든 `\` 뒤의 유니코드 이스케이프 짝수 규칙 · `/*` 나 `"""` 를 담은 .kt 첫 줄의 `#!` · 따옴표를 담은 백틱 이름이 붙은 짧은 템플릿
 // `$`. JaCoCo 가 안 읽는 자리도 보지 않는다(0.8.16 은 최상위 클래스 · 메서드 주석 서술자만 읽는다 — javap -c) — 타입 주석 · 주석의 원소 값으로
-// 겹친 주석. 받아들인 더 내기 — 글자로 `@Generated` 를 담은 백틱 이름 · 이름 안의 `$`(`Generated$X` — JaCoCo 는 `X` 를 본다). 가리기가 멈춘 뒤의 원문은 따옴표 · 주석을 모르고 읽는다 — 거기서는 Generated 를 담은 이름을 전부 낸다(kotlinRawTail — 더 내고 숨기지 않는다).
+// 겹친 주석. 받아들인 더 내기 — 글자로 `@Generated` 를 담은 백틱 이름 · 이름 안의 `$`(`Generated$X` — JaCoCo 는 `X` 를 본다). 가리기가 멈춘 뒤의 원문은
+// 따옴표 · 주석을 모르고 읽는다 — 거기서는 두 언어 다 Generated 를 담은 이름을 전부 낸다(javaRawTail · kotlinRawTail — 더 내고 숨기지 않는다:
+// java 의 멈춘 뒤 `@/**/Generated` 도, kotlin 의 멈춤이 자른 목록 `@[Generated A("x` 도 이름으로 낸다).
 const J_ID = '[\\p{L}\\p{N}_$]'
 // 조각의 끝 — 이름 글자나 `.` 가 이어지면 마지막 조각이 아니다(뒤 글자를 덜 먹어 맞추는 되돌림도 막는다).
 const J_END = `(?!${J_ID}|\\s*\\.)`
@@ -755,7 +757,8 @@ function kotlinLists(t) {
 // 컴파일되지 않는다). 다른 스캐너가 이미 낸 표기 안의 이름은 markHits 가 뺀다(fallback). 정규식은 이름마다 한 번 미리 본다(선형).
 // 멈춘 자리 앞에서 열려 그 뒤에서 닫힌 묶음도 같은 까닭으로 믿지 못한다 — 가린 쪽의 `@Target(` 가 뒤쪽 주석의 `)` 와 짝지어지면 스캐너가 그
 // 사이(멈춘 자리 **앞**)의 선언을 넘는다. 그래서 그런 묶음이 있으면 가장 앞의 여는 자리부터 낸다(짝은 그대로 둔다 — 그 짝으로 읽히던 표지는
-// 계속 읽힌다).
+// 계속 읽힌다). 멈춘 자리 앞에서 열려 **끝내 안 닫힌** 묶음도 같다 — 멈춤이 자른 목록 `@[Generated A("x` 는 `[` 가 안 닫혀 목록으로 읽히지
+// 않고, 이름은 멈춘 자리 앞이라 꼬리에도 들지 않았다. 그래서 그 여는 자리도 시작 후보다(비교의 `<` 도 안 닫힌 여는 자리로 센다 — 더 낸다).
 const K_RAW = new RegExp(`(?<![\\p{L}\\p{N}_])(?=${K_ID}*Generated)${K_ID}+`, 'gu')
 function kotlinRawTail(t, stop) {
   const hits = []
@@ -763,12 +766,23 @@ function kotlinRawTail(t, stop) {
   const to = ktPairs(t)
   let from = stop
   for (let p = 0; p < stop; p++)
-    if (to[p] >= stop) {
+    if (to[p] >= stop || (to[p] < 0 && '([{<'.includes(t[p]))) {
       from = p
       break
     }
   K_RAW.lastIndex = from
   for (let m; (m = K_RAW.exec(t)); ) hits.push({ at: m.index, start: m.index, end: m.index + m[0].length, fallback: true })
+  return hits
+}
+// java 의 같은 꼬리 — 멈춘 뒤의 원문에서는 주석이 가려지지 않아 JAVA_MARK 가 `@` 와 이름 사이의 주석(`@/**/Generated` · `@a./**/Generated` ·
+// `@/**/interface GeneratedX`)을 못 넘는다. 멈춘 자리부터 Generated 를 담은 이름을 전부 낸다(java 이름은 `$` 를 담는다 — 이름의 글자다). 멈춘
+// 자리 앞은 그대로 둔다 — java 의 표기는 정규식 하나라 묶음을 넘어 읽는 스캐너가 없고, 가린 쪽의 이름은 JAVA_MARK 가 다 본다.
+const J_RAW = new RegExp(`(?<!${J_ID})(?=${J_ID}*Generated)${J_ID}+`, 'gu')
+function javaRawTail(t, stop) {
+  const hits = []
+  if (stop < 0) return hits
+  J_RAW.lastIndex = stop
+  for (let m; (m = J_RAW.exec(t)); ) hits.push({ at: m.index, start: m.index, end: m.index + m[0].length, fallback: true })
   return hits
 }
 // 한 파일의 표지 — decode(java 의 \uXXXX)가 있으면 푼 원문에서, mask 가 있으면 주석 · 리터럴을 빈칸으로 가린 원문에서 맞추고, 자리 · 표기는
@@ -817,7 +831,7 @@ const UNIT_MARKS = {
     also: ['dotnet/Directory.Build.props', 'dotnet/Directory.Build.targets', 'Directory.Build.props', 'Directory.Build.targets'],
     marks: [/ExcludeFrom(?:Code)?Coverage\w*/g],
   },
-  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', decode: javaUnicode, mask: javaMask, marks: [JAVA_MARK] },
+  java: { roots: [':(glob)java/*/src/main/java/**'], shown: 'java/*/src/main/java', decode: javaUnicode, mask: javaMask, marks: [JAVA_MARK, javaRawTail] },
   kotlin: { roots: ['kotlin/src/main/kotlin'], mask: kotlinMask, marks: [KOTLIN_MARK, kotlinLists, kotlinAliases, kotlinAnnotationClasses, kotlinRawTail] },
   // SimpleCov 1.2.0 — `:nocov:` 토글(lines_classifier.rb:27 `/^(\s*)#(\s*)(:nocov:)/` — 토큰은 기본값이다, spec_helper 가 안 바꾼다)과 그 대체
   // `# simplecov:disable`(directive.rb 의 PATTERN — 코드 뒤에 붙은 한 줄 꼴도).
