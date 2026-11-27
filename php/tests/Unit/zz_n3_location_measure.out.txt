@@ -1,0 +1,11 @@
+ENV|php=8.3.31|guzzlehttp/guzzle=7.15.5|guzzlehttp/psr7=2.13.1|fschmtt/keycloak-rest-api-client-php=v0.44.0|create=admin()->users()->create (void)
+HEADER|sdk|lane|case|field|value
+WIRE|php|-|ascii-control|location=<base>/admin/realms/it-realm/users/+[61 62 63]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 63
+CLIENT|php|GuzzleHttp\Client(allow_redirects=false)|ascii-control|status=201|getHeaderLine('Location').after_last_slash="abc" bytes=[61 62 63] utf8_cps=[U+0061,U+0062,U+0063]
+ID|php|admin()->users()->create|ascii-control|Ok(NULL — create returns void)|requests=POST /realms/it-realm/protocol/openid-connect/token,GET /admin/serverinfo,POST /admin/realms/it-realm/users
+WIRE|php|-|latin1-0xE9|location=<base>/admin/realms/it-realm/users/+[61 62 E9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 E9 63 64
+CLIENT|php|GuzzleHttp\Client(allow_redirects=false)|latin1-0xE9|status=201|getHeaderLine('Location').after_last_slash="ab\xE9cd" bytes=[61 62 E9 63 64] utf8_valid=false
+ID|php|admin()->users()->create|latin1-0xE9|Ok(NULL — create returns void)|requests=POST /realms/it-realm/protocol/openid-connect/token,GET /admin/serverinfo,POST /admin/realms/it-realm/users
+WIRE|php|-|utf8-0xC3A9|location=<base>/admin/realms/it-realm/users/+[61 62 C3 A9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 C3 A9 63 64
+CLIENT|php|GuzzleHttp\Client(allow_redirects=false)|utf8-0xC3A9|status=201|getHeaderLine('Location').after_last_slash="ab\xC3\xA9cd" bytes=[61 62 C3 A9 63 64] utf8_cps=[U+0061,U+0062,U+00E9,U+0063,U+0064]
+ID|php|admin()->users()->create|utf8-0xC3A9|Ok(NULL — create returns void)|requests=POST /realms/it-realm/protocol/openid-connect/token,GET /admin/serverinfo,POST /admin/realms/it-realm/users
