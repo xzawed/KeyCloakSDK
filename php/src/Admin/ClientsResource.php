@@ -12,6 +12,12 @@ use Xzawed\Keycloak\Internal\EncodableBody;
 
 final class ClientsResource
 {
+    /**
+     * @param Keycloak $kc Used as-is, including the redirect setting of the HTTP client it was built with — see
+     *   {@see UsersResource::__construct()}. Build it with
+     *   `withHttpClient(new \GuzzleHttp\Client(['allow_redirects' => false]))`, as the admin facade of
+     *   `KeycloakClient::create()` does.
+     */
     public function __construct(private readonly Keycloak $kc, private readonly string $realm) {}
 
     /**

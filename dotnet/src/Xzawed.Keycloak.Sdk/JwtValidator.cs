@@ -40,13 +40,19 @@ public sealed class JwtValidator
     /// whatever client is passed; every other limit — timeouts, redirects, <see cref="HttpClient.MaxResponseContentBufferSize"/>,
     /// how much of a refused document its handler drains to reuse the connection — is this client's own. Its
     /// <see cref="HttpClient.Timeout"/> bounds each whole document, body included, from when the request is sent.
-    /// <c>KeycloakClient.Create</c> passes the client it builds.</param>
+    /// <c>KeycloakClient.Create</c> passes the client it builds.
+    /// <para>⚠️ <c>HttpClientHandler</c> and <c>SocketsHttpHandler</c> follow redirects by default (<c>AllowAutoRedirect</c>
+    /// is on, for up to 50 redirects — <c>MaxAutomaticRedirections</c>). A 302, 303, 307 or 308 on the discovery document
+    /// or the JWKS then makes the validator load the keys the new location serves, another origin included, and accept
+    /// tokens signed with them. Build the handler with <c>AllowAutoRedirect = false</c>, as <c>KeycloakClient.Create</c>
+    /// does.</para></param>
     public JwtValidator(string issuer, JwtValidatorOptions opts, HttpClient http)
         : this(issuer, opts, http, null, null) { }
 
     /// <param name="issuer">Realm issuer URL; discovery hangs off it.</param>
     /// <param name="opts">Hardened validation options.</param>
-    /// <param name="http">Shared client (redirect-blocking, SSRF-hardened).</param>
+    /// <param name="http">The client discovery and the JWKS are fetched with, as its caller passed it (the public
+    /// constructor, or a test).</param>
     /// <param name="now">Clock seam (tests only): the key set's lifetime, the failure backoff and the refetch window.</param>
     /// <param name="jitter">Jitter seam (tests only).</param>
     internal JwtValidator(

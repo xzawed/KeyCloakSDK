@@ -79,7 +79,7 @@
 | 작업량 | S 69 · M 72 · L 12 |
 
 <!-- doc-guard: kind=count source=work-packages -->
-⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `367`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
+⚠️ **이 표를 판정에 쓰지 말 것 — 세 줄이 서로 맞지 않는다.** 체크박스 전수는 `369`인데 심각도·작업량 행의 합은 **153**이다. 어긋난 채로 커밋돼 있었고(2026-09-06 확인), 어느 쪽이 옳은지는 원장을 다시 세야 정해진다. ⚠️ **그리고 그 문장이 「위 두 명령을 돌린다」로 끝나 있었는데 위에는 명령이 없었다** — 세는 법을 지운 채 「세라」만 남은 자리였다(2026-09-16 정정). 세는 명령은 이것이다:
 
 ```sh
 grep -c '^- \[ \]' docs/superpowers/plans/remaining-work.md   # 열림
@@ -178,7 +178,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `ci-perms-flow-style-permissions-bypass` **[H/S]** 플로우 스타일 `permissions: {contents: write}`가 CI 권한 가드에 통째로 안 보인다 — 실측으로 「상승 1건」이 0건이 됐다 · `scripts/check-ci-permissions.mjs:100`
 - [x] `rust-rustdoc-jwks-refetch-says-60` **[M/S]** Rust 공개 API의 doc 주석 두 곳이 JWKS 최소 재조회 기본값을 60초라 말한다(코드는 30) — 문서 축이 소스 주석을 안 본다 · `rust/src/config.rs:18`
 - [x] `java-kotlin-jwks-response-size-unbounded` **[M/S]** Java·Kotlin의 NoRedirectResourceRetriever가 Nimbus의 51200바이트 상한을 지웠다 — JWKS 응답이 무제한으로 메모리에 들어온다 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/NoRedirectResourceRetriever.java:24`
-- [x] `php-tokenset-null-expiry-treated-as-fresh` **[M/S]** ⚠️ **원장이 「PHP만」이라 적었으나 Ruby 도 같았다**(실측: 9개 중 7 fail-safe / 2 fail-open). 만료 시각 미상을 「만료 안 됨」으로 읽어 PHP 는 client-credentials 캐시가 죽은 토큰을 영원히 재사용한다 · `php/src/Token/TokenSet.php:59` + `ruby/lib/keycloak_sdk/tokens.rb:21`
+- [x] `php-tokenset-null-expiry-treated-as-fresh` **[M/S]** 만료 시각 미상을 「만료 안 됨」으로 읽었다(PHP · Ruby — 원장은 PHP 만) · 서사: `git show 7a2a91db:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `go-jwks-fetch-ignores-status-and-empty-keyset` **[M/S]** Go JWKS fetch가 상태코드도 키 유무도 안 본다 — 오류 본문 JSON이 빈 키셋으로 파싱돼 캐시를 덮는다 · `go/jwt.go:167`
 - [x] `check-coverage-arg-parsing-silently-disarms-gate` **[M/S]** check-coverage.mjs의 인자 파싱이 임계값을 조용히 0/NaN으로 만든다 — 실측으로 `--min-line=99`가 「임계 0/0」으로 통과했다 · `scripts/check-coverage.mjs:29`
 - [x] `php-default-serializers-bypass-masking` **[M/S]** [weak·채택] PHP는 마스킹을 __toString에만 걸어 json_encode()가 accessToken·refreshToken·clientSecret을 원문으로 뱉는다 · `php/src/Token/TokenSet.php:9`
@@ -205,7 +205,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `doc-audit-2026-09-05-confirmed-six` **[M/M · 신규·닫힘 2026-09-05]** 고정 스냅샷 문서감사가 확정한 6건 — 전부 「가드받는 SSOT 의 사본이 갈렸다」 부류다 · `.claude/rules/`
 - [x] `harness-gradle-version-copies-unguarded` **[M/S · 신규·닫힘 2026-09-05]** 하네스의 gradle 버전 사본이 어느 가드도 안 읽고, **그중 하나는 이미 낡았다** · `harness/install/install-verify.sh:906`
 - [x] `rulefile-matrix-vs-workflow-unguarded` **[M/M · 신규·닫힘 2026-09-05]** 규칙 파일이 적는 CI 매트릭스를 워크플로의 `strategy.matrix` 와 대조하는 기계가 없다 · `.claude/rules/{java,ruby}.md`
-- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** 매트릭스 레그만 올려도 아무 검사가 실패하지 않았다 — `H3-harness-image-and-lock-pins` 와 한 가드(`check-versions.mjs` 툴체인 리터럴 축, 지시어 행 둘)로 닫음. 산문을 조준하지 않는 이유는 그 가드의 주석이 소유한다.
+- [x] `rust-msrv-leg-vs-manifest-unguarded` **[S/S · 닫힘 2026-09-12]** 매트릭스 레그만 올려도 아무 검사가 실패하지 않았다 — `H3-harness-image-and-lock-pins` 와 한 가드(`check-versions.mjs` 툴체인 리터럴 축, 지시어 행 둘)로 닫음. 산문을 겨누지 않는 이유는 그 가드 주석에 있다.
 - [x] `matrix-fail-fast-cancels-floor-leg` **[M/S · 신규·닫힘 2026-09-05]** 매트릭스 워크플로 8개 중 **6개에 `fail-fast: false` 가 없어** 최신 레그가 깨지면 소비자 하한 레그가 취소된다 · `.github/workflows/`
 - [x] `jvm-17-floor-never-shipped` **[H/M · 신규 2026-09-06 · 닫힘 2026-09-24]** 1.0.1 게시로 닫았다 — 게시 바이트 전부 major ≤ 61(`node scripts/check-published-jvm-floor.mjs`) · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `jvm-api-surface-pin-unguarded` **[H/S · 신규·닫힘 2026-09-23]** `-Xjdk-release`·`options.release` 를 읽는 가드가 0 개였다 · `scripts/check-jvm-api-surface-pins.mjs`(변이 7/7 CAUGHT + OFF 짝) · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
@@ -241,7 +241,7 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `jwks-response-size-unbounded-non-jvm` **[M/M · php·ruby 닫힘 2026-09-11]** php·ruby 에 JWKS 51200 상한(가드 `test-security-defaults.sh` 「JWKS 크기상한」) · 교훈은 함정 (jj) · 서사: `git show c4ef6dc2:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `node-jwks-response-size-unbounded` **[M/S · 닫힘 2026-09-11]** jose 6.2.12 에는 상한이 없다(`remote.js:10-26` — `response.json()` 뿐) → `createRemoteJWKSet` 의 `[customFetch]` 로 JWKS 만 묶는다 · 변이 4/4 `CAUGHT` · ⚠️ 시험 본문은 **유효한 JWKS + 패딩**이어야 한다(쓰레기 바이트면 상한 없이도 파싱이 실패해 거짓 초록).
 - [x] `jwks-response-size-unbounded-python` **[M/M · 닫힘 2026-09-12 · 부류 완결]** ⚠️ **9언어 JWKS 크기상한 부류의 마지막 이음매**였다(축 6 → **7**). 구현 `_internal/jwks_fetch.py`(sync·aio 공용) — 상류를 우회해 JWKS **요청 하나만** 스트리밍 GET 한다.
-- [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `BoundedDocumentRetriever`(직접 구현한 `IDocumentRetriever`)로 discovery·JWKS 만 51200B — `MaxResponseContentBufferSize` 는 공유 `HttpClient` 라 토큰 응답까지 묶어 쓰지 않는다 · 대체 전 유일 옵션 `RequireHttps` 는 시험으로 고정 · 변이 4/4 `CAUGHT`.
+- [x] `jwks-response-size-unbounded-dotnet` **[M/M · 닫힘 2026-09-11]** `BoundedDocumentRetriever` 로 discovery·JWKS 만 51200B(공유 클라이언트에 안 거는 이유는 그 클래스 주석) · 대체 전 유일 옵션 `RequireHttps` 는 시험으로 고정 · 변이 4/4 `CAUGHT`.
 - [x] `kotlin-osv-audit-fail-open` **[H/S · 닫힘 2026-09-07 #438]** Kotlin OSV 감사 두 잡이 해석 실패 좌표를 통과시켜 아무것도 감사하지 않고 초록이 됐다 · `.github/workflows/kotlin-ci.yml:72-83` · `security-audit.yml:80-89`
 - [x] `docs-commands-that-do-not-work` **[M/S · 닫힘 2026-11-14 #1080]** 가이드 · README 열하나의 셸 명령을 전수로 재어 고쳤다 · 일반형은 `rules-command-reference-existence-guard`
 - [x] `deploy-md-omits-release-request` **[M/S · 재판정으로 닫힘 2026-09-11]** 이미 참이 아니었다(#416 이 닫았고 체크박스만 남았다) · 재현: `git log -S'Merging is not the trigger' -- DEPLOY.md` · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
@@ -251,11 +251,11 @@ git branch --show-current               # ⚠️ 아래 함정 (e)
 - [x] `facade-wiring-close-contract-unasserted` **[M/S · 닫힘 2026-11-16 #1119]** 파사드 배선 · close 계약을 시험 · 통합이 단언한다 · 재판정: 레인 report 의 「all owned by open registry items」 · 서사: `git show d1bdf137:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `python-aio-security-test-asymmetry` **[M/M · 닫힘 2026-09-12 · 범위 6 → 8]** aio 의 보안 성질 여덟(백오프 두 성질 포함)을 시험으로 고정했다 — 프로덕션 코드는 이미 갖고 있었다 · 변이 6/6 CAUGHT · 남은 비보안 비대칭 넷은 동형성 항목 몫. 서사: `git show 0f86d0a9:docs/superpowers/plans/remaining-work.md`
 
-## C. 품질 부채 — 202건 (열림 44)
+## C. 품질 부채 — 204건 (열림 44)
 
 low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14건.
 
-### 9언어 소스 — 124
+### 9언어 소스 — 126
 
 - [x] `authz-redirect-uri-not-per-call` **[M/M · 닫힘 2026-09-12 · 사람 판정 (a)]** php·rust 만 인가요청과 교환의 `redirect_uri` 를 호출당 받지 못했다 — §4 판정 「표기가 아니라 능력의 차이이니 API 를 맞춘다」로 둘 다 가산적으로 맞췄다. 사후 서사는 `git show 8d7316c:docs/superpowers/plans/remaining-work.md` 522행
 
@@ -299,9 +299,11 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `node-non200-2xx-content-type-unchecked` **[L/S · 신규 2026-11-25 · 미측정]** node 의 200 아닌 2xx 길에 `application/json` 검사가 없다(`error` 문자열 규칙은 oauth4webapi 를 따른다) — 코드 읽기뿐 · `node/src/token-response-cap.ts`
 - [x] `rust-lowlevel-ctor-redirect-policy` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1221 · 길 A]** `reqwest::Client::new()` 를 받은 저수준 생성자 넷이 64/64 셀에서 따랐고 다른 오리진 307 · 308 은 본문을 다시 보냈다 — 넷의 rustdoc 이 「받은 정책 그대로 · `Policy::none()` 으로 지으라」, `rust/README.md` 의 거짓 문장을 고쳤다 · 동작 그대로 · 길 B 는 `rust-lowlevel-ctor-builder` · 서사: #1221 본문
 - [ ] `rust-lowlevel-ctor-builder` **[L/M · 신규 2026-11-27 · 사람 판정 「등록부」]** #1221 의 길 B — `reqwest::ClientBuilder` 를 받아 `Policy::none()` 을 강제하는 생성자를 1.x minor 로 더하고 지금 넷은 폐기해 2.0 에서 뺀다(Grok 권고) · 공개 API · semver 판정이다 · `rust/src/token_provider.rs:54`
-- [ ] `consumer-http-client-redirect-unmeasured` **[L/M · 신규 2026-11-27 · 미측정]** 호출자의 HTTP 클라이언트를 그대로 쓰는 자리가 rust 생성자와 같은 부류다 — .NET `AuthClient(…, HttpClient)` · Ruby Faraday `http:` · PHP Guzzle `$http` · 언어마다 기본 리다이렉트 동작은 안 쟀다(#1221) · `dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:42`
+- [x] `consumer-http-client-redirect-unmeasured` **[L/M · 신규 2026-11-27 · 닫힘 2026-11-27 #1239 · 길 A]** 기본 클라이언트를 받은 .NET 56/56 · PHP `AuthClient` 40/40 · `UsersResource` 16/16 이 따랐고 다른 오리진 307 · 308 은 본문을 다시 보냈다 · Ruby 0/104 · PHP PSR-18 둘(Guzzle) 0/16 · 대조군 0 — 문서 주석 · README 가 「받은 정책 그대로 · 끄고 지으라」 · 동작 그대로 · 재측정: `wip/n3-measure` fcee613b · 길 B 는 `consumer-http-client-redirect-enforce`
+- [ ] `consumer-http-client-redirect-enforce` **[L/M · 신규 2026-11-27 · 사람 판정 「등록부」]** 위 항목의 길 B — .NET 두 생성자 · PHP `AuthClient` · admin 리소스가 받은 클라이언트의 리다이렉트를 SDK 가 막는다 · .NET `RequestUri` 는 A→B→A 를 못 본다(DETECT 줄) · 안 잰 자리: Guzzle 밖 PSR-18 둘 · php admin 넷 · php README:86 의 「timeouts are always applied」도 받은 클라이언트엔 거짓(코드 읽기) · 공개 API · semver 판정이다 · `php/src/AuthClient.php:53`
 - [x] `admin-create-relative-location` **[L/M · 닫힘 2026-11-21 #1185 · 아홉 언어]** 요청 URL 에 대해 푼 Location 의 마지막 조각(앞 조각 = 컬렉션) · roles · realms 는 그대로 · kotlin 1.0.9 생성자는 실서버 IT 가 돈다
-- [ ] `admin-created-id-non-ascii-location` **[L/S · 신규 2026-11-27 · 미측정]** rust `created_id` 는 `Location` 이 보이는 ASCII 가 아니면(obs-text) id 를 안 낸다(#1218 시험 `create_returns_no_id_when_the_location_is_not_visible_ascii`) — 다른 여덟이 Latin-1 로 풀어 id 를 내는지는 안 쟀다 · `rust/src/admin.rs:110`
+- [x] `admin-created-id-non-ascii-location` **[L/S · 신규 2026-11-27 · 닫힘 2026-11-27 #1239]** `ab` E9 `cd` / `ab` C3 A9 `cd` 의 id — java · kotlin · python sync U+00E9 / U+00C3 U+00A9(Latin-1) · python aio U+00E9 둘 다 · node `%C3%A9` / `%C3%83%C2%A9` · go `%E9` / `%C3%A9` · .NET `%C3%A9` 둘 다 · ruby · rust(#1218 시험) 없음 · php create 는 void · 재측정: `wip/n3-measure` fcee613b · 후속 `admin-created-id-encoding-divergent`
+- [ ] `admin-created-id-encoding-divergent` **[L/S · 신규 2026-11-27]** 위 id 가 SDK 마다 갈리고 .NET 은 두 바이트열이 한 id 다 · php 의 users(쟀다) · groups · roles(시그니처) create 는 void 라 rust `created_id` 주석의 「아홉 SDK 가 같다」와 `admin-create-relative-location` 의 「아홉 언어」가 php 에 거짓이다 · `rust/src/admin.rs:101`
 - [x] `lenient-parsing-yields-false-success` **[M/M · 닫힘 2026-09-12 · 부류 다섯]** rust·python·ruby·php·dotnet 이 비었거나 문자열이 아닌 `access_token` 으로 TokenSet 을 만들었다 — 불변식(그런 응답은 TokenSet 이 아니다)을 `test-security-defaults.sh` 축 1c 가 집행한다, 변이 7/7 CAUGHT · 서사: `git show aaedad01:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [ ] `nimbus-type-on-public-surface` **[L/M]** JWSAlgorithm이 두 JVM SDK의 공개 팩토리 시그니처에 올라 있다 — §4 은닉 위반 · `java/keycloak-sdk-auth/src/main/java/io/github/xzawed/keycloak/auth/JwtValidator.java:27-28`
   - **같은 부류의 둘째 자리(2026-09-27, kotlin 코드 교환 레그).** `TokenValidationException` 의 원인 사슬에 Nimbus `BadJOSEException` 이 그대로 남는다(java 도 같다고 레그가 보고). 측정한 경우에서 토큰 조각은 찍히지 않았다 — 비밀 누출이 아니라 §4 「하위 타입은 경계에서 변환」의 문제다. #617–#624 의 원인 스크럽이 이 예외 경로도 덮는지부터 잰다. 셋째 자리(java 레그 2026-10-05): admin 토큰 400·응답 없는 전송 실패의 원인 사슬에 jakarta `ProcessingException` 이 남는다(토큰 인용 없음).
@@ -424,7 +426,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `harness-legs-skip-pull-request` **[M/M · 닫힘 2026-11-16 #1114]** changes 잡이 harness.yml 자신의 PR paths 로 판정해 두 레그를 PR 에서도 돌린다 — `harness-pr-legs.mjs --wiring` 이 배선을 글자로 고정 · 서사: `git show 06df2713:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `selftests-miss-the-real-callsite` **[M/M · 닫힘 2026-11-16 #1110]** 실제 호출이 어느 PR 에서도 안 도는 일정 가드 넷이 `net-stub.mjs`(gh · fetch · 시계)로 CI 그대로의 argv 를 탄다 · 같은 변이 main 8/8 SILENT
 - [ ] `stale-comments-nobody-collates` **[M/S · 2026-11-14 stale-prose-contradicts-source 흡수]** 주석 · 산문이 서술하는 값 · 전제 · 경로 · 실측 · 게이트가 원본보다 낡았고 대조가 없다 — 정규식 오라클은 수렴하지 않는다(§3-5), 기계 대조는 축 단위로(JWKS 기본값 2b · KCSDK 표 test-doctor 9절) · 사례는 만나는 대로 고친다
-- [x] `symmetry-guards-cover-a-subset` **[M/M · 닫힘 2026-11-16 #1108]** `zig/package.json` 을 심으니 실제 트리 가드 76 중 10 만 울었다 — 손 목록 다섯이 집합을 내보내고 `test-lang-universe.sh` 가 트리와 분할로 대조한다
+- [x] `symmetry-guards-cover-a-subset` **[M/M · 닫힘 2026-11-16 #1108]** 손 목록 다섯이 집합을 내보내고 `test-lang-universe.sh` 가 트리와 분할로 대조한다 · 실측(심은 `zig` 에 76 중 10): #1108 본문
 - [x] `check-versions-java-child-pom-blind-spot` **[M/S · 닫힘 2026-11-13 #1060]** 자식의 parent 참조 판과 자신의 판을 따로 대조 — 자가테스트 변이 1b · 오탐 대조 다섯
 - [x] `default-root-percent-encoding` **[M/S · 닫힘 2026-11-14 #1076]** 두 가드를 `fileURLToPath` 로 — 자가테스트가 공백 경로 무인자로 돈다
 - [x] `repo-config-apply-exit0-on-security-drift` **[M/S · 닫힘 2026-11-13 #1060]** 끝 판정 `finish(cmd, drift)` — apply 도 남은 드리프트에서 exit 1
@@ -441,8 +443,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `kotlin-tail-call-return-line-flips` **[M/M · 닫힘 2026-11-21 #1194]** 리더가 kotlin 꼬리 호출의 닫는 줄(마지막 `areturn` 하나 · 데이터의 명령 하나)을 재지 않는다 — 장부 27 → 15 함수 · 통합 분모 −12
 - [x] `ci-maven-default-key-frozen-before-split` **[L/S · 닫힘 2026-11-21 #1191]** release-bundle 이 cache-hit 인데 제 플러그인이 없으면 실패한다
 - [x] `sonar-gradle-cache-reaches-release` **[L/S · 닫힘 2026-11-21 #1183]** 흘렀다(같은 추출 항목을 복원) — coverage 잡의 setup-gradle 은 읽기만
-- [x] `coverage-ignore-markers-unguarded` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1219]** `unit` · `unit-report` 가 추적 출하 소스의 표지마다 FAIL(여덟 언어 — go 는 표지 장치가 없다) · java · kotlin 은 JaCoCo 0.8.16 규칙(주석 타입 이름의 마지막 조각에 `Generated`)을 주석 · 문자열 · 문자 리터럴을 가린 글에 · 스캔은 선형, 던지면 FAIL · 가드 `scripts/integration-coverage.mjs` 의 `UNIT_MARKS` · `test-unit-unreached.sh` 절 (7)(1319/0) · 사람 판정 2026-11-27 — 실제 트리 0 칸은 required `doc-facts` 안(「required 에서 막는다」) · `?` · `<…>` 별칭도 낸다(「내는 쪽 유지」) · 잔여 `coverage-marker-scan-stop-residuals` · 서사: #1219 본문
-- [x] `coverage-marker-scan-stop-residuals` **[L/S · 신규 2026-11-27 · 닫힘 2026-11-27 #1238]** 표지 스캔의 가리기가 멈춘 뒤(컴파일되지 않는 입력뿐) `Generated` 를 담은 이름을 전부 낸다 — java 는 멈춘 자리부터(`@/**/Generated`) · kotlin 은 그 앞의 첫 안 닫힌 여는 자리부터(`@[Generated A("x`) · 가드 `scripts/integration-coverage.mjs` 의 `javaRawTail` · `kotlinRawTail` · `test-unit-unreached.sh` 절 (7) · 변이 여덟 CAUGHT · 경계: java 는 멈춤이 `.` 뒤에서 자른 한정 이름의 마지막 조각만 낸다
+- [x] `coverage-ignore-markers-unguarded` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1219]** `unit` · `unit-report` 가 추적 출하 소스의 표지마다 FAIL(go 는 표지 장치가 없다) · 가드 `scripts/integration-coverage.mjs` 의 `UNIT_MARKS`(규칙은 머리 주석) · `test-unit-unreached.sh` 절 (7) · 사람 판정 2026-11-27 — 실제 트리 0 칸은 required `doc-facts` 안(「required 에서 막는다」) · `?` · `<…>` 별칭도 낸다(「내는 쪽 유지」) · 잔여 `coverage-marker-scan-stop-residuals` · 서사: #1219 본문
+- [x] `coverage-marker-scan-stop-residuals` **[L/S · 신규 2026-11-27 · 닫힘 2026-11-27 #1238]** 표지 스캔의 가리기가 멈춘 뒤(컴파일되지 않는 입력뿐) `Generated` 를 담은 이름을 전부 낸다 · 가드 `scripts/integration-coverage.mjs` 의 `javaRawTail` · `kotlinRawTail`(자리 규칙 · 경계는 머리 주석) · `test-unit-unreached.sh` 절 (7) · 변이 여덟 CAUGHT · 서사: #1238 본문
 - [ ] `unit-marker-scan-kotlin-default-java-dir` **[L/S · 신규 2026-11-27 · 미측정]** 표지 스캔의 kotlin 자리는 `kotlin/src/main/kotlin` 뿐 — KGP 의 기본 `kotlin/src/main/java` 는 안 읽는다 · 오늘 그 폴더의 추적 파일 0 · Gradle 이 그 폴더를 컴파일하는지는 안 쟀다 · `scripts/integration-coverage.mjs`
 - [ ] `coverage-boundary-deep-template-overflow` **[L/S · 신규 2026-11-27]** 조인 가드의 재귀 lexer 가 깊이 겹친 kotlin 문자열 템플릿에서 스택이 넘친다(#1219 회차 3 구현 보고) — 표지 스캔의 lexer 는 묶였다(`K_DEEP` 100 · fail-closed) · `scripts/coverage-boundary.mjs`
 
@@ -475,8 +477,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `H2-harness-judgment-module-no-test` **[L/M]** harness 판정 모듈에 「테스트가 있어야 한다」 규칙이 없다 — conformance.mjs 는 Docker 전체 런 없이는 시험 불가 · `harness/conformance/conformance.mjs:1`
 - [x] `H4-runsh-network-divergence` **[L/S · 닫힘 2026-09-15]** verify.sh 가 배운 것을 run.sh 는 못 받았다 — compose 네트워크명을 아직 리터럴로 박는다 · `harness/run.sh:6`
 - [ ] `harness-app-ports-on-all-interfaces` **[L/S · 신규 2026-10-27]** verify 하네스 앱 아홉이 호스트 포트를 모든 인터페이스에 연다(`"${HARNESS_PORT_PHP:-8095}:8090"` 꼴) — 하네스가 도는 동안 같은 LAN 에서 닿고, php 앱은 `php -S 0.0.0.0` 이다. `127.0.0.1:` 로 묶을지(PHP2Shell 검토의 Grok 독립 레그 제안) · `harness/docker-compose.yml:109`
-- [x] `harness-nightly-upstream-transients` **[L/S · 신규 2026-11-23 · 닫힘 2026-11-25 #1210]** 빌드 자리 16 곳이 `build_with_retry`(`harness/lib/build-retry.sh` — 3 번 · 60 초 간격, 재시도는 주석 · 아티팩트로 남는다) · 짧은 장애만 덮는다 — 잡 내내 거절은 아래 항목
-- [x] `harness-central-refuses-runner` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1220]** 예약 실패가 상류 거절이면 실패한 잡만 새 러너에서 한 번 — `.github/workflows/harness-rerun.yml` · 판정기 `scripts/harness-upstream-signature.mjs` · 재시도 꼬리표 `harness/lib/build-retry.sh` · 병합 뒤 2026-11-27: 디스패치 45908630159(`dry_run=false`)가 예약 44979301872(11-22 · `score-all` 실패)에 판정기 0(서명 2 개 — `[central-absent]` 1603 행) · `GITHUB_TOKEN`(actions: write)의 `gh run rerun --failed` 허용 — attempt 2 성공 → nightly-alert 45914227229 재기동(열린 이슈 0 — 조치 없음) · 서사: #1220 본문
+- [x] `harness-nightly-upstream-transients` **[L/S · 신규 2026-11-23 · 닫힘 2026-11-25 #1210]** 빌드 자리 16 곳이 `build_with_retry`(`harness/lib/build-retry.sh` — 횟수 · 간격 · 기록은 머리 주석) · 짧은 장애만 덮는다 — 잡 내내 거절은 아래 항목
+- [x] `harness-central-refuses-runner` **[L/S · 신규 2026-11-25 · 닫힘 2026-11-27 #1220]** 예약 실패가 상류 거절이면 실패한 잡만 새 러너에서 한 번 — `.github/workflows/harness-rerun.yml` · 판정기 `scripts/harness-upstream-signature.mjs` · 재시도 꼬리표 `harness/lib/build-retry.sh` · 병합 뒤 실측(attempt 2 성공): `git show 7a2a91db:docs/superpowers/plans/remaining-work.md` 의 이 줄 · 서사: #1220 본문
 - [ ] `install-harness-fixed-host-ports` **[M/M · 신규 2026-09-16 · 부류 재스캔]** install 하네스가 호스트 포트 **아홉**을 박아, 그중 하나라도 쥔 PC 에서는 파이프라인이 기동조차 못 한다 · `harness/install/compose.install.yml:15`
   - **실측(2026-09-16)**: 퍼블리시 9개 — keycloak `8080:8080`·`9000:9000` · verdaccio `4873` · pypiserver `18892` · bagetter `18180` · mvn-repo `18080` · mvn-repo-kotlin `18081` · gemserver `18808` · satis-web `18099`. 이 PC 에서 **8080 은 실제로 다른 프로젝트가 쥐고 있다**(`sillok-api-1` → `127.0.0.1:8080->8080/tcp`) — verify 하네스가 같은 이유로 막혔고 그것이 PR #506 이 닫은 자리다.
   - ⚠️ **compose 만 바꾸면 안 된다 — 리터럴이 두 곳이다.** `install-verify.sh` 의 `wait_healthy` 가 `http://localhost:18180/...` 류를 **5곳**에서 직접 적는다. verify 하네스는 `docker compose port` 로 읽고 있어 compose 한 곳만 고치면 됐지만(그래서 #506 이 쌌다), 여기는 **두 소스가 함께 움직여야** 한다.
@@ -495,7 +497,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 
 ### 유예·되살릴 조건 — 10
 
-- [x] `go-release-persist-credentials` **[M/S · 닫힘 2026-09-11 · 계수 정정]** `contents: write` 이면서 체크아웃하는 잡은 셋이었다(ruby-release 의 두 히트는 헤더 산문) — `check-ci-permissions.mjs` 규칙 1b(write 토큰 + 체크아웃 조인만 · 전 워크플로 강제는 기각 유지) + 공허 하한 `--min-write-checkout` · 변이 3/3 CAUGHT
+- [x] `go-release-persist-credentials` **[M/S · 닫힘 2026-09-11 · 계수 정정]** `contents: write` 이면서 체크아웃하는 잡은 셋이었다(ruby-release 의 두 히트는 헤더 산문) — `check-ci-permissions.mjs` 규칙 1b(범위 · 기각은 그 규칙 주석) + 공허 하한 `--min-write-checkout` · 변이 3/3 CAUGHT
 - [x] `revive-conditions-unmeasured` **[M/M · 닫힘 2026-11-16 #1116]** `revive-watch.mjs` — 기각 행마다 탐침(10) 또는 수동 사유(15), 분류 밖 행은 PR 이 빨갛고 주간이 `--require-all` 로 돈다
 - [x] `sonar-tests-revive-instrument` **[M/M · 닫힘 2026-11-14 #1089]** `index-count` 잡이 그 실행과 main 직전 스캔의 색인 수를 요약에 남기고 크게 바뀌면 빨갛다 · `scripts/check-sonar-index.mjs`
 - [ ] `dependabot-ignore-joins` **[M/M]** 조건부 `ignore` 셋의 해제 조건이 다른 파일의 사실에 묶여 있는데 조인이 없다 — kotlin 하나만 기계가 본다 · `.github/dependabot.yml:79`
@@ -568,8 +570,8 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [ ] `php-unit-unreached-same-line-branch` **[L/S · 신규 2026-11-18]** php 의 단위 미도달 장부는 줄만 센다 — PHPUnit 12.5.33 · Xdebug 3.5.3 `--path-coverage` 의 XML 에도 가지 · 경로 수가 없다 — 행복 경로가 도는 줄의 실패 갈래(`?? throw`)는 안 보인다(자가테스트가 고정) · `scripts/integration-coverage.mjs`
 - [x] `readme-quickstarts-ungated` **[M/M · 닫힘 2026-11-15 #1099]** 다섯 언어 예제를 타입검사 · 정적분석 · 컴파일에(ruby 는 가짜 서버 실행) · `ruby/spec/unit/examples_quickstart_spec.rb`
 - [x] `examples-never-run-against-keycloak` **[L/M · 신규·닫힘 2026-11-15 #1102]** 설치 하네스가 README 예제 일곱을 실서버에 대고 돌린다 · `harness/install/consume/`
-- [x] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15 · 닫힘 2026-11-16 #1104]** 장부가 `harness:install` 소유를 받는다 — 이미지 COPY · pom 진입점 · 실행 스크립트의 표지를 트리에서 확인할 때만 · `scripts/integration-coverage.mjs`
-- [x] `python-310-deep-json-unraisable-flake` **[L/S · 신규·닫힘 2026-11-16 #1122]** 3.10 은 파스가 재귀 한도 근처일 때 걸린 수집의 파이널라이저가 예산 없이 unraisable 을 낸다 → 그 세 자리를 `collector_paused()` 로 감쌌다 · 재판정: 순환 쓰레기 + gen0 문턱으로 수집을 파스 깊이 d 에 겨눠 센다(3.10 은 994 · 995, 멈춤 · 3.13 은 0)
+- [x] `integration-ledger-blind-to-harness-runs` **[L/S · 신규 2026-11-15 · 닫힘 2026-11-16 #1104]** 장부가 `harness:install` 소유를 받는다 — 트리에서 확인한 연결만(조건은 `scripts/integration-coverage.mjs` 의 「하네스 소유」 절)
+- [x] `python-310-deep-json-unraisable-flake` **[L/S · 신규·닫힘 2026-11-16 #1122]** 3.10 레인의 unraisable(기전은 #1122 본문) → 그 세 자리를 `collector_paused()` 로 감쌌다 · 재판정: 순환 쓰레기 + gen0 문턱으로 수집을 파스 깊이 d 에 겨눠 센다(3.10 은 994 · 995, 멈춤 · 3.13 은 0)
 
 ### 1.0 이후 운영 — 21
 
@@ -583,7 +585,7 @@ low 강등분 + 아무 배치도 담당하지 않았던 harness 사각지대 14�
 - [x] `nightly-failure-reaches-nobody` **[H/M · 신규 2026-09-16 · 닫힘 2026-09-21 #518]** 저장소 안에 **실패가 사람에게 가는 경로가 0건**이었다 · `.github/workflows/harness.yml:8`
 - [x] `codeql-kotlin-extractor-lags-kgp` **[M/M · 닫힘 2026-11-04 · 전제 소멸]** CodeQL 이 KGP 2.4.20 을 받는다(#572 뒤 실행 전부 success) · 되살릴 조건: KGP 범프 PR 의 `Analyze (java-kotlin)` 이 `KotlinVersionTooRecentError` 로 빨갛다 — required 가 아니니 그 PR 은 병합하지 않는다 · 수치: `git show 06cb32e9:docs/superpowers/plans/remaining-work.md` 의 이 줄
 - [x] `push-lane-failures-still-silent` **[M/S · 신규 2026-09-21 · 닫힘 2026-11-14 #1075]** 기준: PR 실행은 민 사람이 보고 main push 실행은 아무도 안 본다 — 잡이 둘을 받고 가드가 목록을 예약 ∪ main push 로 파생한다
-- [x] `registry-truth-check` **[H/M · 닫힘 2026-09-24]** `scripts/check-registry-truth.mjs` — 유예(Maven 72h·나머지 24h, 시계=태그 또는 SSOT 커밋)로 「첫 404 로 실패 결론」을 피하고, Maven 은 metadata 가 아니라 pom 200 으로 판정 · 주간 `published-floor.yml` · 변이 8/8 CAUGHT
+- [x] `registry-truth-check` **[H/M · 닫힘 2026-09-24]** `scripts/check-registry-truth.mjs`(유예 · 판정 규칙은 머리 주석) · 주간 `published-floor.yml` · 변이 8/8 CAUGHT
 - [x] `stale-release-comments` **[H/S · 닫힘 2026-09-09 #447]** 릴리스 경로의 주석 **여섯**이 낡았다 · `.github/workflows/install-smoke.yml:57`
 - [x] `post-1-0-registry-missing` **[M/S]** 1.0 이후 잔여작업 등록부가 저장소 어디에도 없다 — 안 닫힌 항목은 복원 불가능하다 · `docs/README.md:49`
 - [x] `public-registry-install-smoke` **[M/L · 닫힘 2026-11-15 #1103]** 주간 — 아홉 언어의 최신 게시판을 공개 레지스트리에서 설치해 README 예제를 실서버에 대고 · `.github/workflows/public-install.yml`
