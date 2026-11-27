@@ -11,7 +11,9 @@ declare(strict_types=1);
  * state.json: {"cell": {"origin_path", "status", "location", "target"}|null, "bounce": bool, "jwks": "<JSON text>",
  *              "a": "<A base URL>", "b": "<B base URL>"}
  * - A answers `cell.origin_path` with `cell.status` + `Location: cell.location`;
- * - the target origin answers every `/moved/...` path with a usable success body (token · introspection · logout 204 · JWKS);
+ * - the target origin answers every `/moved/...` path with a usable success body (token · introspection · logout 204 · JWKS ·
+ *   admin: POST 201 + Location, PUT 204, GET `[]`);
+ * - admin cells (`cell.admin`): A answers fschmtt's grant with a dummy JWT and `/admin/serverinfo` with a version;
  * - detect probes: `/start` on A redirects like a cell, `/moved/start` answers 200; with `bounce`, A `/token` answers 307 →
  *   B `/hop` the first time and 200 after, and B `/hop` answers 307 → A `/token`.
  */
@@ -68,6 +70,19 @@ if ($cell !== null && $origin === 'A' && $path === $cell['origin_path']) {
     return;
 }
 if ($cell !== null && $origin === $cell['target'] && str_starts_with($path, '/moved/')) {
+    if (str_contains($path, '/admin/')) {
+        // A real collection answers a POST with 201 + Location, a PUT with 204, a GET with a list.
+        if ($method === 'POST') {
+            http_response_code(201);   // first — header('Location') keeps a 201 already set
+            header('Location: ' . ($origin === 'A' ? $state['a'] : $state['b']) . $path . '/target-id');
+        } elseif ($method === 'PUT') {
+            http_response_code(204);
+        } else {
+            $json(200, '[]');
+        }
+
+        return;
+    }
     if (str_ends_with($path, '/certs')) {
         $json(200, (string) $state['jwks']);
     } elseif (str_ends_with($path, '/token/introspect')) {
@@ -79,6 +94,21 @@ if ($cell !== null && $origin === $cell['target'] && str_starts_with($path, '/mo
     } else {
         $json(200, '{"access_token":"TARGET-AT","token_type":"Bearer","expires_in":300,"refresh_token":"TARGET-RT"}');
     }
+
+    return;
+}
+// The admin cells: fschmtt's grant (the consumer-built client's and the SDK's own) and its version probe answer normally on A
+// — fschmtt reads the access token as a JWT (its exp), so the token is an unsigned-looking dummy one.
+if ($cell !== null && ($cell['admin'] ?? false) === true && $origin === 'A' && str_ends_with($path, '/protocol/openid-connect/token')) {
+    $b64 = static fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+    $jwt = $b64('{"alg":"RS256","typ":"JWT"}') . '.' . $b64((string) json_encode(['exp' => time() + 300, 'iat' => time(), 'sub' => 'svc']))
+        . '.' . str_repeat('A', 43);
+    $json(200, (string) json_encode(['access_token' => $jwt, 'token_type' => 'Bearer', 'expires_in' => 300]));
+
+    return;
+}
+if ($origin === 'A' && $path === '/admin/serverinfo') {
+    $json(200, '{"systemInfo":{"version":"26.6.0"}}');
 
     return;
 }

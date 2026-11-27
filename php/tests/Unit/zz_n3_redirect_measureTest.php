@@ -6,7 +6,9 @@ declare(strict_types=1);
 //
 // The three public ctors that take a consumer client — AuthClient(config, endpoints, validator, GuzzleClientInterface),
 // ClientCredentialsTokenProvider(config, endpoints, PSR-18 ClientInterface, …) and JwksStore(jwksUri, PSR-18 ClientInterface,
-// …) — are given `new GuzzleHttp\Client()` (what a consumer gets with no options). Origin A (`php -S`) answers the SDK's
+// …) — are given `new GuzzleHttp\Client()` (what a consumer gets with no options). The public admin resource ctor
+// Admin\UsersResource(Fschmtt\Keycloak\Keycloak, realm) is given an fschmtt client the consumer builds with fschmtt's Builder and
+// the same default Guzzle client (create · update rows; Authorization there is fschmtt's bearer). Origin A (`php -S`) answers the SDK's
 // request with 302 · 303 · 307 · 308 whose Location points at `/moved<same path>` on A itself (same origin) or on a second
 // `php -S` B (another port = cross origin). The target answers every request with a usable success body, so `result` shows
 // what the SDK does with an answer that came from the redirect target. The JWKS row signs the token with a key only the
@@ -19,10 +21,14 @@ namespace Xzawed\Keycloak\Tests\Unit;
 
 use Composer\InstalledVersions;
 use Firebase\JWT\JWT;
+use Fschmtt\Keycloak\Builder;
+use Fschmtt\Keycloak\OAuth\GrantType;
+use Fschmtt\Keycloak\Representation\User;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\RedirectMiddleware;
 use PHPUnit\Framework\TestCase;
+use Xzawed\Keycloak\Admin\UsersResource;
 use Xzawed\Keycloak\AuthClient;
 use Xzawed\Keycloak\ClientCredentialsTokenProvider;
 use Xzawed\Keycloak\Jwks\JwksStore;
@@ -52,7 +58,16 @@ final class zz_n3_redirect_measureTest extends TestCase
         'auth_logout' => ['AuthClient(GuzzleClientInterface)', 'logout(POST form)', self::OIDC . '/logout', 'auth()->logout(POST form)'],
         'provider_cc' => ['ClientCredentialsTokenProvider(PSR-18 ClientInterface)', 'getToken(POST form)', self::OIDC . '/token', 'admin()->realms()->get->fschmtt grant(POST form)'],
         'jwks' => ['JwksStore(PSR-18 ClientInterface)', 'validate->JWKS fetch(GET)', self::OIDC . '/certs', 'auth()->validate->JWKS fetch(GET)'],
+        // The public admin resource ctor takes an fschmtt client — built here by the consumer with a default Guzzle client.
+        'admin_create' => ['Admin\UsersResource(fschmtt Keycloak via Builder::withHttpClient)', 'create(POST json)', self::USERS, 'admin()->users()->create(POST json)'],
+        'admin_update' => ['Admin\UsersResource(fschmtt Keycloak via Builder::withHttpClient)', 'update(PUT json)', self::USERS . '/u1', 'admin()->users()->update(PUT json)'],
     ];
+    private const ADMIN_OPS = ['admin_create', 'admin_update'];
+    private const USERS = '/admin/realms/' . self::REALM . '/users';
+    /** The representation's username — a marker for the admin body, not a secret. */
+    private const ADMIN_MARK = 'admin-body-mark';
+    /** base64url('{"alg":"RS256","typ":"JWT"}') — the header of the dummy JWT the router grants for admin cells. */
+    private const ADMIN_JWT_HEAD = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.';
 
     private static string $dir = '';
     /** @var array<string, int> */
@@ -75,13 +90,20 @@ final class zz_n3_redirect_measureTest extends TestCase
         ]]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         self::$dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'zz-n3-' . bin2hex(random_bytes(6));
         self::assertTrue(mkdir(self::$dir));
+        // Both sockets stay open until both ports are read — two distinct free ports (a collision would turn every cross-origin
+        // cell into a same-origin one, silently).
+        $socks = [];
         foreach (['A', 'B'] as $origin) {
             $sock = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
             self::assertNotFalse($sock, "no free port: $errstr");
+            $socks[] = $sock;
             $name = (string) stream_socket_get_name($sock, false);
-            fclose($sock);
             self::$ports[$origin] = (int) substr($name, (int) strrpos($name, ':') + 1);
         }
+        foreach ($socks as $sock) {
+            fclose($sock);
+        }
+        self::assertNotSame(self::$ports['A'], self::$ports['B'], 'origins A and B must listen on different ports');
         self::state(null, false);
         foreach (['A', 'B'] as $origin) {
             $env = getenv();
@@ -113,6 +135,10 @@ final class zz_n3_redirect_measureTest extends TestCase
                 }
             }
             self::assertTrue($up, "php -S on $port did not come up");
+        }
+        // A `php -S` that could not bind exits — whatever answered the probe above would then be another process.
+        foreach (self::$procs as $i => $proc) {
+            self::assertTrue(proc_get_status($proc)['running'], "php -S #$i is not running after startup");
         }
     }
 
@@ -180,6 +206,9 @@ final class zz_n3_redirect_measureTest extends TestCase
 
             return $decoded === self::CLIENT_ID . ':' . self::SECRET ? 'Basic(client_id:client_secret)' : "Basic($decoded)";
         }
+        if (str_starts_with($v, 'Bearer ' . self::ADMIN_JWT_HEAD)) {
+            return 'Bearer(admin-jwt)';
+        }
 
         return "other($v)";
     }
@@ -197,6 +226,9 @@ final class zz_n3_redirect_measureTest extends TestCase
                 $marks[] = $mark;
             }
         }
+        if (str_contains($b, self::ADMIN_MARK)) {
+            $marks[] = 'admin_body';   // the user representation — not a secret
+        }
 
         return $marks === [] ? 'none' : implode('+', $marks);
     }
@@ -207,6 +239,9 @@ final class zz_n3_redirect_measureTest extends TestCase
         $b = (string) $r['body'];
         if ($b === '') {
             return '0B';
+        }
+        if (str_starts_with($b, '{')) {
+            return strlen($b) . 'B[json]';
         }
 
         return strlen($b) . 'B[' . implode(',', array_map(static fn (string $kv): string => explode('=', $kv)[0], explode('&', $b))) . ']';
@@ -275,8 +310,35 @@ final class zz_n3_redirect_measureTest extends TestCase
         }
     }
 
+    private static function adminCall(string $op, UsersResource $users): string
+    {
+        try {
+            if ($op === 'admin_create') {
+                $returned = $users->create(new User(username: self::ADMIN_MARK));
+
+                return 'Ok(' . var_export($returned, true) . ' — create returns void)';
+            }
+            $users->update('u1', new User(username: self::ADMIN_MARK));
+
+            return 'Ok(null)';
+        } catch (\Throwable $e) {
+            return self::err($e);
+        }
+    }
+
     private static function lowLevel(string $op): string
     {
+        if (\in_array($op, self::ADMIN_OPS, true)) {
+            // What a consumer builds to hand UsersResource an fschmtt client: fschmtt's Builder, with a default Guzzle client
+            // (the Builder's own default is the same `new GuzzleClient()` — API line).
+            $kc = (new Builder())
+                ->withBaseUrl(self::url('A'))
+                ->withGrantType(GrantType::clientCredentials(clientId: self::CLIENT_ID, clientSecret: self::SECRET, realm: self::REALM))
+                ->withHttpClient(new GuzzleClient())
+                ->build();
+
+            return self::adminCall($op, new UsersResource($kc, self::REALM));
+        }
         $config = self::config();
         $endpoints = new OidcEndpoints($config);
         $http = new GuzzleClient();   // the default a consumer gets with no options
@@ -291,6 +353,15 @@ final class zz_n3_redirect_measureTest extends TestCase
     private static function control(string $op): string
     {
         $kc = KeycloakClient::create(self::config());
+        if (\in_array($op, self::ADMIN_OPS, true)) {
+            try {
+                $users = $kc->admin()->users();
+            } catch (\Throwable $e) {
+                return self::err($e);
+            }
+
+            return self::adminCall($op, $users);
+        }
 
         return self::call(
             $op,
@@ -311,6 +382,9 @@ final class zz_n3_redirect_measureTest extends TestCase
             . '|curl=' . (curl_version()['version'] ?? '?');
         $out[] = 'API|(new GuzzleHttp\Client())->getConfig(\'allow_redirects\')=' . json_encode((new GuzzleClient())->getConfig('allow_redirects'), JSON_UNESCAPED_SLASHES);
         $out[] = 'API|GuzzleHttp\RedirectMiddleware::$defaultSettings=' . json_encode(RedirectMiddleware::$defaultSettings, JSON_UNESCAPED_SLASHES);
+        $builderDefault = (new \ReflectionProperty(Builder::class, 'httpClient'))->getValue(new Builder());
+        $out[] = 'API|fschmtt (new Builder()) default httpClient=' . $builderDefault::class . '|allow_redirects='
+            . json_encode($builderDefault instanceof GuzzleClient ? $builderDefault->getConfig('allow_redirects') : null, JSON_UNESCAPED_SLASHES);
         $out[] = 'HEADER|ctor|op|status|target|followed|method@target|body_secret@target|auth@target|result|body@target|content-type@target|referer@target|paths@target|origin_hop|hits';
         $totals = [];
         foreach (['new GuzzleHttp\Client()', 'KeycloakClient::create(control)'] as $variant) {
@@ -319,7 +393,7 @@ final class zz_n3_redirect_measureTest extends TestCase
                 foreach (self::STATUSES as $status) {
                     foreach ([false, true] as $cross) {
                         $target = $cross ? 'B' : 'A';
-                        self::state(['origin_path' => $opath, 'status' => $status, 'location' => self::url($target) . '/moved' . $opath, 'target' => $target], false);
+                        self::state(['origin_path' => $opath, 'status' => $status, 'location' => self::url($target) . '/moved' . $opath, 'target' => $target, 'admin' => \in_array($op, self::ADMIN_OPS, true)], false);
                         self::resetLog();
                         $result = $variant === 'new GuzzleHttp\Client()' ? self::lowLevel($op) : self::control($op);
                         $first = self::requests('A', static fn (string $p): bool => $p === $opath);
@@ -389,6 +463,6 @@ final class zz_n3_redirect_measureTest extends TestCase
         $path = getenv('N3_OUT');
         self::assertIsString($path, 'set N3_OUT to the output file');
         file_put_contents($path, implode("\n", $out) . "\n");
-        self::assertSame(2 * 7 * 4 * 2, count(array_filter($out, static fn (string $l): bool => str_starts_with($l, 'CELL|'))));
+        self::assertSame(2 * 9 * 4 * 2, count(array_filter($out, static fn (string $l): bool => str_starts_with($l, 'CELL|'))));
     }
 }
