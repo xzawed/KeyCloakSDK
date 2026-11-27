@@ -312,7 +312,8 @@ const pyMark = (w) => new RegExp(`#${PY_WS}*(?:pragma|PRAGMA)[:\\s\\x1c-\\x1f\\x
 // `$`. JaCoCo 가 안 읽는 자리도 보지 않는다(0.8.16 은 최상위 클래스 · 메서드 주석 서술자만 읽는다 — javap -c) — 타입 주석 · 주석의 원소 값으로
 // 겹친 주석. 받아들인 더 내기 — 글자로 `@Generated` 를 담은 백틱 이름 · 이름 안의 `$`(`Generated$X` — JaCoCo 는 `X` 를 본다). 가리기가 멈춘 뒤의 원문은
 // 따옴표 · 주석을 모르고 읽는다 — 거기서는 두 언어 다 Generated 를 담은 이름을 전부 낸다(javaRawTail · kotlinRawTail — 더 내고 숨기지 않는다:
-// java 의 멈춘 뒤 `@/**/Generated` 도, kotlin 의 멈춤이 자른 목록 `@[Generated A("x` 도 이름으로 낸다).
+// java 의 멈춘 뒤 `@/**/Generated` 도, kotlin 의 멈춤이 자른 목록 `@[Generated A("x` 도 이름으로 낸다). java 의 꼬리는 멈춘 자리부터다 — 멈춤이
+// `.` 바로 뒤에서 자른 한정 이름(`@Generated."abc`)의 앞 조각은 내지 않는다(표지가 아니다 — JaCoCo 는 마지막 조각만 본다 · 그 조각은 꼬리가 낸다).
 const J_ID = '[\\p{L}\\p{N}_$]'
 // 조각의 끝 — 이름 글자나 `.` 가 이어지면 마지막 조각이 아니다(뒤 글자를 덜 먹어 맞추는 되돌림도 막는다).
 const J_END = `(?!${J_ID}|\\s*\\.)`
@@ -775,8 +776,10 @@ function kotlinRawTail(t, stop) {
   return hits
 }
 // java 의 같은 꼬리 — 멈춘 뒤의 원문에서는 주석이 가려지지 않아 JAVA_MARK 가 `@` 와 이름 사이의 주석(`@/**/Generated` · `@a./**/Generated` ·
-// `@/**/interface GeneratedX`)을 못 넘는다. 멈춘 자리부터 Generated 를 담은 이름을 전부 낸다(java 이름은 `$` 를 담는다 — 이름의 글자다). 멈춘
-// 자리 앞은 그대로 둔다 — java 의 표기는 정규식 하나라 묶음을 넘어 읽는 스캐너가 없고, 가린 쪽의 이름은 JAVA_MARK 가 다 본다.
+// `@/**/interface GeneratedX`)을 못 넘는다. 멈춘 자리부터 Generated 를 담은 이름을 전부 낸다(java 이름은 `$` 를 담는다 — 이름의 글자다). 시작은
+// 멈춘 자리다 — 그 앞은 JAVA_MARK 가 가린 글을 JaCoCo 의 규칙(마지막 조각)으로 읽는다. 멈춤이 `.` 바로 뒤에서 자른 한정 이름(`@Generated."abc` ·
+// `@a."abc⏎.Generated`)은 멈춘 자리 앞에 앞 조각만 남긴다 — 표지가 아니고(JaCoCo 는 마지막 `/` · `$` 뒤만 본다), 마지막 조각은 멈춘 자리 뒤라
+// 이 꼬리가 낸다. kotlin 이 같은 꼴의 앞 조각까지 내는 것은 묶음을 넘는 스캐너 때문에 시작을 앞으로 옮겨서다(java 에는 그런 스캐너가 없다).
 const J_RAW = new RegExp(`(?<!${J_ID})(?=${J_ID}*Generated)${J_ID}+`, 'gu')
 function javaRawTail(t, stop) {
   const hits = []

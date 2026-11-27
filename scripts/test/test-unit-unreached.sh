@@ -2431,15 +2431,20 @@ printf '%s\n' 'class N2 {' '  String a = """;' '  @a./**/Generated void m() {}' 
 printf '%s\n' 'class N3 { String s = "abc' '@/**/interface GeneratedDecl {}' > "$T/$XJF/N3.java"
 printf '%s\n' 'class N4 {' "  char c = 'abcdef';" '  @/**/My$Generated void m() {}' '}' > "$T/$XJF/N4.java"
 printf '%s\n' 'class N5 {' "  char c = 'abcdef';" '  @Generated void m() {}' '}' > "$T/$XJF/N5.java"
+# N6 — 멈춤이 `.` 바로 뒤에서 자른 한정 이름: 마지막 조각은 멈춘 자리 뒤라 꼬리가 낸다. N7 은 대조군 — 꼬리는 멈춘 자리부터다(멈춘 자리 앞의 보통
+# 클래스 `GeneratedToken` 은 내지 않는다 — 파일 머리부터 내는 판이면 운다).
+printf '%s\n' 'class N6 {' '  @a."abc' '  .Generated void m() {}' '}' > "$T/$XJF/N6.java"
+printf '%s\n' 'class N7 { void g() {} }' 'class GeneratedToken {}' 'class C { String s = "open' '}' > "$T/$XJF/N7.java"
 run unit-report java "$T" --out "$D"
-assert_eq 2 "$RC" "[markers] java 의 멈춘 뒤 주석으로 쪼갠 표지 넷 · 맨 표지 하나면 exit 2 — 출력: $OUT"
-assert_line "$OUT" "[java] coverage-exclusion markers: 5 in 8 tracked files under java/*/src/main/java — each is a FAIL below" "[markers] java 멈춘 뒤 — 표지 수"
+assert_eq 2 "$RC" "[markers] java 의 멈춘 뒤 주석으로 쪼갠 표지 넷 · 맨 표지 하나 · 잘린 한정 이름 하나면 exit 2 — 출력: $OUT"
+assert_line "$OUT" "[java] coverage-exclusion markers: 6 in 10 tracked files under java/*/src/main/java — each is a FAIL below" "[markers] java 멈춘 뒤 — 표지 수(N7 은 조용하다)"
+assert_contains "$OUT" "FAIL [java] $XJF/N6.java:3: coverage-exclusion marker \`Generated\` in" "[markers] N6 — 멈춤이 자른 한정 이름의 마지막 조각"
 assert_contains "$OUT" "FAIL [java] $XJF/N1.java:3: coverage-exclusion marker \`Generated\` in" "[markers] N1 — 문자 리터럴의 멈춤 뒤 @/**/Generated"
 assert_contains "$OUT" "FAIL [java] $XJF/N2.java:3: coverage-exclusion marker \`Generated\` in" "[markers] N2 — 텍스트 블록 여는 자리의 멈춤 뒤 @a./**/Generated"
 assert_contains "$OUT" "FAIL [java] $XJF/N3.java:2: coverage-exclusion marker \`GeneratedDecl\` in" "[markers] N3 — 문자열의 멈춤 뒤 @/**/interface"
 assert_contains "$OUT" "FAIL [java] $XJF/N4.java:3: coverage-exclusion marker \`My\$Generated\` in" "[markers] N4 — \$ 는 java 이름의 글자다"
 assert_contains "$OUT" "FAIL [java] $XJF/N5.java:3: coverage-exclusion marker \`@Generated\` in" "[markers] N5 — 맨 표지는 그 표기 하나로 낸다"
-assert_line "$OUT" "unit-unreached [java]: FAIL — 5 $MVERDICT" "[markers] java 멈춘 뒤 — 다른 FAIL 은 없다"
+assert_line "$OUT" "unit-unreached [java]: FAIL — 6 $MVERDICT" "[markers] java 멈춘 뒤 — 다른 FAIL 은 없다"
 # kotlin: 멈춤이 자른 목록(Y1 — `[` 가 끝내 안 닫힌다 · Y2 — 인자의 `(` 만 꼬리에서 닫힌다)과 안 닫힌 인자 속 이름(Y3)은 멈춘 자리 앞의 가장 이른
 # 안 닫힌 여는 자리부터 낸다. Y4 는 대조군 — 여는 자리가 없으면 멈춘 자리 앞의 보통 클래스는 내지 않는다(파일 머리부터 내는 판이면 운다).
 ufresh
@@ -2447,9 +2452,11 @@ printf '%s\n' 'package p' '@[Generated A("x' 'fun f() {}' > "$T/$XKF/Y1.kt"
 printf '%s\n' 'package p' '@[Generated A("x)' 'fun f() {}' > "$T/$XKF/Y2.kt"
 printf '%s\n' 'package p' 'annotation @A(GeneratedArg' 'val s = "open' > "$T/$XKF/Y3.kt"
 printf '%s\n' 'package p' 'class GeneratedToken' 'val s = "open' > "$T/$XKF/Y4.kt"
+# Y5 도 대조군 — 멈춘 자리 앞에서 **닫힌** 묶음(`fun g() {}`)은 시작 후보가 아니다(닫혔든 아니든 여는 자리면 옮기는 판이면 운다).
+printf '%s\n' 'package p' 'fun g() {}' 'class GeneratedToken' 'val s = "open' > "$T/$XKF/Y5.kt"
 run unit-report kotlin "$T" --out "$D"
 assert_eq 2 "$RC" "[markers] kotlin 의 멈춤이 자른 목록 둘 · 안 닫힌 인자 하나면 exit 2 — 출력: $OUT"
-assert_line "$OUT" "[kotlin] coverage-exclusion markers: 3 in 6 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 멈춤이 자른 목록 — 표지 수(Y4 는 조용하다)"
+assert_line "$OUT" "[kotlin] coverage-exclusion markers: 3 in 7 tracked files under kotlin/src/main/kotlin — each is a FAIL below" "[markers] kotlin 멈춤이 자른 목록 — 표지 수(Y4 · Y5 는 조용하다)"
 assert_contains "$OUT" "FAIL [kotlin] $XKF/Y1.kt:2: coverage-exclusion marker \`Generated\` in" "[markers] Y1 — 닫는 글자 없이 잘린 목록"
 assert_contains "$OUT" "FAIL [kotlin] $XKF/Y2.kt:2: coverage-exclusion marker \`Generated\` in" "[markers] Y2 — 인자의 ( 만 꼬리에서 닫힌 목록"
 assert_contains "$OUT" "FAIL [kotlin] $XKF/Y3.kt:2: coverage-exclusion marker \`GeneratedArg\` in" "[markers] Y3 — 안 닫힌 인자 속 이름"
