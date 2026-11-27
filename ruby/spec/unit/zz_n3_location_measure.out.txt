@@ -1,0 +1,11 @@
+ENV|ruby=3.4.10|faraday=2.15.1|net-http=0.10.0|create=admin.users.create
+HEADER|sdk|lane|case|field|value
+WIRE|ruby|-|ascii-control|location=<base>/admin/realms/it-realm/users/+[61 62 63]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 63
+CLIENT|ruby|Faraday.new(net_http)|ascii-control|status=201|headers['location'].after_last_slash="abc" encoding=ASCII-8BIT valid=true bytes=[61 62 63]
+ID|ruby|admin.users.create|ascii-control|Ok("abc" encoding=ASCII-8BIT valid=true bytes=[61 62 63])|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+WIRE|ruby|-|latin1-0xE9|location=<base>/admin/realms/it-realm/users/+[61 62 E9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 E9 63 64
+CLIENT|ruby|Faraday.new(net_http)|latin1-0xE9|status=201|headers['location'].after_last_slash="ab\xE9cd" encoding=ASCII-8BIT valid=true bytes=[61 62 E9 63 64]
+ID|ruby|admin.users.create|latin1-0xE9|Ok(nil)|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
+WIRE|ruby|-|utf8-0xC3A9|location=<base>/admin/realms/it-realm/users/+[61 62 C3 A9 63 64]|raw_socket_read_equals_sent=true|id_bytes_on_wire=61 62 C3 A9 63 64
+CLIENT|ruby|Faraday.new(net_http)|utf8-0xC3A9|status=201|headers['location'].after_last_slash="ab\xC3\xA9cd" encoding=ASCII-8BIT valid=true bytes=[61 62 C3 A9 63 64]
+ID|ruby|admin.users.create|utf8-0xC3A9|Ok(nil)|requests=POST /realms/it-realm/protocol/openid-connect/token,POST /admin/realms/it-realm/users
