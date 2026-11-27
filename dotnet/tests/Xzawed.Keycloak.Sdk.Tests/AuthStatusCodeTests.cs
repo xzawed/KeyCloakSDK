@@ -15,7 +15,7 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 
 /// <summary>
 /// <see cref="KeycloakAuthException.StatusCode"/> is the HTTP status of the response that made the call fail — on every lane,
-/// at every status, a 2xx included — and null where no response decided the failure (registry
+/// at every status, a 3xx and a 2xx included — and null where no response decided the failure (registry
 /// <c>dotnet-oauth-error-reason-phrase</c>, the owner's decision of 2026-11-27: add the status now, drop the reason phrase
 /// <see cref="KeycloakAuthException.OAuthError"/> falls back to in the next major).
 /// </summary>
@@ -80,9 +80,11 @@ public sealed class AuthStatusCodeTests : IDisposable
 
     private static readonly Dictionary<string, Cell> Cells = new(StringComparer.Ordinal)
     {
-        // The error statuses — the four the registry line names (401 · 503 · 520 and the 400 code), a 500 that carries a code
-        // and a 2xx other than 200, which fails as a 400 with that body does.
+        // The error statuses — the four the registry line names (401 · 503 · 520 and the 400 code), a 500 that carries a code,
+        // a 3xx (the SDK's client follows no redirect, so it is the answer) and a 2xx other than 200, which fails as a 400 with
+        // that body does. The last two are the values below 400 that still mean a failure.
         ["400 invalid_grant"] = Both(400, """{"error":"invalid_grant"}""", "{p}: invalid_grant", "{p}: invalid_grant"),
+        ["302 a redirect"] = Both(302, """{"error":"temporarily_unavailable"}""", "{p}: Found", "{p}: Found"),
         ["401 invalid_client"] = Both(401, """{"error":"invalid_client"}""", "{p}: Unauthorized", "{p}: Unauthorized"),
         ["500 server_error"] = Both(500, """{"error":"server_error"}""", "{p}: Internal Server Error", "{p}: Internal Server Error"),
         ["503 no code"] = Both(503, """{"message":"down"}""", "{p}: Service Unavailable", "{p}: Service Unavailable"),

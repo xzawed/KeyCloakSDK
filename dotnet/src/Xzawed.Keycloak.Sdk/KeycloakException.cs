@@ -28,12 +28,12 @@ public sealed class KeycloakAuthException : KeycloakException
 
     /// <summary>The HTTP status of the response that made the call fail: set whenever the token, introspection or logout
     /// endpoint's answer is what failed it, at any status. ⚠️ A value below 400 still means the call failed after that
-    /// status — a 2xx other than 200 (logout: other than 204), or a 200 whose body could not be used: not UTF-8, not a JSON
-    /// object, no usable <c>access_token</c> or <c>active</c>, an <c>error</c> member, and so on. Null when no response
-    /// decided the failure: the id_token checks <see cref="AuthClient.ExchangeCodeAsync"/> runs on a token response it
-    /// accepted (id_token missing, invalid or with another nonce), a token <see cref="ClientCredentialsTokenProvider"/>
-    /// refuses before any admin request is sent, and <see cref="TokenSet.Create(string, string?, long, string?, string?, string?, long)"/>
-    /// called by your own code. Never 0.</summary>
+    /// status — a 3xx, a 2xx other than 200 (logout: other than 204), or a 200 whose body could not be used: not UTF-8, not
+    /// a JSON object, no usable <c>access_token</c> or <c>active</c>, an <c>error</c> member, and so on. Null when no
+    /// response decided the failure: the id_token checks <see cref="AuthClient.ExchangeCodeAsync"/> runs on a token
+    /// response it accepted (id_token missing, invalid or with another nonce), a token
+    /// <see cref="ClientCredentialsTokenProvider"/> refuses before any admin request is sent, and
+    /// <see cref="TokenSet.Create(string, string?, long, string?, string?, string?, long)"/> called by your own code. Never 0.</summary>
     public int? StatusCode { get; init; }
 
     public KeycloakAuthException(string message, Exception? innerException = null) : base(message, innerException) { }
