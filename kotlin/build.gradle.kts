@@ -113,7 +113,7 @@ dependencies {
     testImplementation("org.wiremock:wiremock:3.13.2")
     testImplementation("org.testcontainers:testcontainers:2.0.5")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-    testImplementation("com.github.dasniko:testcontainers-keycloak:4.4.0")
+    testImplementation("com.github.dasniko:testcontainers-keycloak:4.4.1")
 }
 
 tasks.test {
@@ -166,7 +166,7 @@ testing {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
                 implementation("org.testcontainers:testcontainers:2.0.5")
                 implementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
-                implementation("com.github.dasniko:testcontainers-keycloak:4.4.0")
+                implementation("com.github.dasniko:testcontainers-keycloak:4.4.1")
             }
             targets {
                 all {
