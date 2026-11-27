@@ -186,7 +186,7 @@ public sealed class AuthClient : ITokenSource
             // IntrospectTokenAsync 자체가 던져 SDK 타입으로 번역되지 않고 샜다(§4, 실측). 세 경우를 가를 응답이 여기 없으므로
             // 메시지는 셋 모두에 참인 말이다(예전 "not a JSON object" 는 셋째에 거짓이었다). 어느 메시지도 응답을 인용하지 않는다.
             // 거르는 기준은 던진 어셈블리다 — ex.Source 는 System.Text.Json 의 내부 표식("System.Text.Json.Rethrowable")이라 계약이 아니다(실측).
-            throw new KeycloakAuthException("Token introspection failed: response body is not a decodable JSON object", ex);
+            throw new KeycloakAuthException("Token introspection failed: response body is not a decodable JSON object", ex) { StatusCode = arrival.Status };
         }
         catch (Exception ex) when (TokenResponseVerdict.Unconverted(ex, arrival, "Token introspection failed") is { } unusable)
         {
@@ -199,7 +199,7 @@ public sealed class AuthClient : ITokenSource
             .ToDictionary(g => g.Key, g => (object?)(g.Count() == 1 ? g.First().Value : g.Select(c => c.Value).ToArray()));
         // active 는 REQUIRED boolean 이다(RFC 7662 §2.2) — Duende 의 IsActive 는 없거나 boolean 이 아니면 false 라, 깨진 응답이
         // 「비활성」으로 읽혔다(판정 D3).
-        return new IntrospectionResult(TokenResponseVerdict.Active(resp.Json), resp.UserName, resp.ClientId, claims);
+        return new IntrospectionResult(TokenResponseVerdict.Active(resp), resp.UserName, resp.ClientId, claims);
     }
 
     public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
@@ -237,7 +237,7 @@ public sealed class AuthClient : ITokenSource
             // Keycloak 의 성공은 204 뿐이다 — IsSuccessStatusCode(2xx 전부)는 가로챈 200 로그인 페이지도 성공으로 봤다
             // (등록부 logout-2xx-html-false-success, 2026-11-12 판정).
             if (resp.StatusCode != System.Net.HttpStatusCode.NoContent)
-                throw new KeycloakAuthException($"Logout failed (HTTP {(int)resp.StatusCode})");
+                throw new KeycloakAuthException($"Logout failed (HTTP {(int)resp.StatusCode})") { StatusCode = (int)resp.StatusCode };
         }
     }
 
@@ -273,10 +273,10 @@ public sealed class AuthClient : ITokenSource
             && body.TryGetProperty("access_token", out var rawAccessToken)
             && rawAccessToken.ValueKind != JsonValueKind.String)
         {
-            throw new KeycloakAuthException($"{failureMessage}: access_token is not a JSON string");
+            throw new KeycloakAuthException($"{failureMessage}: access_token is not a JSON string") { StatusCode = (int)resp.HttpStatusCode };
         }
         return TokenSet.Create(resp.AccessToken!, resp.TokenType, resp.ExpiresIn,
-                               resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds);
+                               resp.RefreshToken, resp.IdentityToken, resp.Scope, issuedAtSeconds, (int)resp.HttpStatusCode);
     }
 
     /// <summary>Every member the getters in <see cref="ToTokenSet"/> decode — one holding a string that will not decode is
@@ -328,12 +328,18 @@ public sealed class AuthClient : ITokenSource
             case ResponseErrorType.Http:
                 // Keycloak 은 잘못된 클라이언트 자격증명에 401 을 준다 — OAuth 코드는 본문에서 읽는다.
                 var reason = CanonicalReason(resp.HttpStatusCode);
-                throw new KeycloakAuthException($"{failureMessage}: {reason}") { OAuthError = (undecodable is null ? OAuthErrorOf(resp.Json, sent) : null) ?? reason };
+                throw new KeycloakAuthException($"{failureMessage}: {reason}")
+                {
+                    StatusCode = (int)resp.HttpStatusCode,
+                    OAuthError = (undecodable is null ? OAuthErrorOf(resp.Json, sent) : null) ?? reason,
+                };
         }
+        // Past the switch Duende read the body off a response that arrived (an Exception or Http ErrorType threw above), so
+        // resp.HttpStatusCode is that response's status — the StatusCode of every failure below.
         if (resp.Json is { ValueKind: not JsonValueKind.Object })
-            throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object");
+            throw new KeycloakAuthException($"{failureMessage}: response body is not a JSON object") { StatusCode = (int)resp.HttpStatusCode };
         if (undecodable is { } why)
-            throw new KeycloakAuthException($"{failureMessage}: {why}");
+            throw new KeycloakAuthException($"{failureMessage}: {why}") { StatusCode = (int)resp.HttpStatusCode };
         // A 2xx that carries an error fails as a 400 does, and nothing else in its body is used: an `error` member that is a
         // non-empty JSON string is one, the same test in all nine (registry auth-2xx-error-code-divergent). Duende's IsError
         // alone misses a whitespace-only one on a 2xx, and the RFC grammar this used to add missed one that is not spaces — a
@@ -348,7 +354,7 @@ public sealed class AuthClient : ITokenSource
         if (resp.IsError || CarriesError(resp.Json) || resp.HttpStatusCode != HttpStatusCode.OK)
         {
             var code = OAuthErrorOf(resp.Json, sent);
-            throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { OAuthError = code };
+            throw new KeycloakAuthException($"{failureMessage}: {code ?? NoCodeReason(resp.Json)}") { StatusCode = (int)resp.HttpStatusCode, OAuthError = code };
         }
     }
 

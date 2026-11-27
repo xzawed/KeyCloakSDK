@@ -47,7 +47,7 @@ internal sealed class TokenEndpointInvoker : HttpMessageInvoker
             if (response.StatusCode == System.Net.HttpStatusCode.OK
                 && !Utf8.IsValid(await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false)))
             {
-                throw new TokenResponseNotUtf8Exception();
+                throw new TokenResponseNotUtf8Exception((int)response.StatusCode);
             }
             ResponseCharset.ReadAsUtf8(response.Content.Headers);
             return response;
@@ -82,8 +82,9 @@ internal sealed class ResponseArrival
 
     private ResponseArrival() { }
 
-    /// <summary>The status of the response that arrived; 0 while none has.</summary>
-    internal int Status { get; private set; }
+    /// <summary>The status of the response that arrived; null while none has — as <see cref="KeycloakAuthException.StatusCode"/>
+    /// is when no response decided the failure.</summary>
+    internal int? Status { get; private set; }
 
     /// <summary>A new record, carried by <paramref name="request"/> to whatever sends it.</summary>
     internal static ResponseArrival On(HttpRequestMessage request)
@@ -103,10 +104,13 @@ internal sealed class ResponseArrival
 
 /// <summary>Thrown inside Duende's send for a 200 token or introspection body that is not UTF-8. Duende keeps it as the
 /// response's <see cref="ProtocolResponse.Exception"/>, and <see cref="TokenResponseVerdict.Unread"/> turns it into a
-/// <see cref="KeycloakAuthException"/>. It carries nothing from the body.</summary>
+/// <see cref="KeycloakAuthException"/>. It carries nothing from the body — only the response's status.</summary>
 internal sealed class TokenResponseNotUtf8Exception : Exception
 {
-    public TokenResponseNotUtf8Exception() : base("token response is not valid UTF-8") { }
+    public TokenResponseNotUtf8Exception(int status) : base("token response is not valid UTF-8") => Status = status;
+
+    /// <summary>The status of the response whose body is not UTF-8.</summary>
+    internal int Status { get; }
 }
 
 /// <summary>The verdicts on a token or introspection response that need more than its status.</summary>
@@ -117,12 +121,19 @@ internal static class TokenResponseVerdict
     /// <see cref="KeycloakAuthException"/>: a body that is not UTF-8, or one Duende could not parse as JSON. One that did not
     /// arrive is a <see cref="KeycloakTransportException"/>.</summary>
     /// <remarks>The parse failure's chain is attached with every message withheld — <c>System.Text.Json</c> quotes the body it
-    /// failed on (<see cref="ErrorCause"/>). The status is named in the message; the body never is.</remarks>
+    /// failed on (<see cref="ErrorCause"/>). The status is named in the message and carried as
+    /// <see cref="KeycloakAuthException.StatusCode"/>; the body never is.</remarks>
     internal static KeycloakException Unread(ProtocolResponse response, string failureMessage, string transportMessage) => response switch
     {
-        { Exception: TokenResponseNotUtf8Exception } => new KeycloakAuthException($"{failureMessage}: response is not valid UTF-8"),
+        { Exception: TokenResponseNotUtf8Exception notUtf8 } => new KeycloakAuthException($"{failureMessage}: response is not valid UTF-8")
+        {
+            StatusCode = notUtf8.Status,
+        },
         { HttpResponse: { } arrived, Exception: { } unread } => new KeycloakAuthException(
-            $"{failureMessage}: response body could not be parsed as JSON (HTTP {(int)arrived.StatusCode})", ErrorCause.WithholdAll(unread)),
+            $"{failureMessage}: response body could not be parsed as JSON (HTTP {(int)arrived.StatusCode})", ErrorCause.WithholdAll(unread))
+        {
+            StatusCode = (int)arrived.StatusCode,
+        },
         _ => new KeycloakTransportException(transportMessage, response.Exception),
     };
 
@@ -135,21 +146,27 @@ internal static class TokenResponseVerdict
     /// <see cref="JsonException"/> out of the SDK raw — the last quoting the payload (review leg, measured 2026-11-10). A
     /// request Duende could not build throws a <see cref="FormatException"/> too (an address it will not parse), so only an
     /// arrived response is converted (<see cref="ResponseArrival"/>). Every message in the chain is withheld; the status is
-    /// named.</remarks>
+    /// named, and carried as <see cref="KeycloakAuthException.StatusCode"/>.</remarks>
     internal static KeycloakAuthException? Unconverted(Exception ex, ResponseArrival arrival, string failureMessage) =>
-        arrival.Status != 0 && ex is FormatException or OverflowException or ArgumentOutOfRangeException or JsonException
+        arrival.Status is { } status && ex is FormatException or OverflowException or ArgumentOutOfRangeException or JsonException
             ? new KeycloakAuthException(
-                $"{failureMessage}: response body holds a value that could not be converted (HTTP {arrival.Status})", ErrorCause.WithholdAll(ex))
+                $"{failureMessage}: response body holds a value that could not be converted (HTTP {status})", ErrorCause.WithholdAll(ex))
+            {
+                StatusCode = status,
+            }
             : null;
 
     /// <summary>An introspection response's <c>active</c> — REQUIRED and a JSON boolean (RFC 7662 §2.2). A response without
     /// one is broken, not inactive: it fails with <see cref="KeycloakAuthException"/> (decision D3 — Duende read it as
-    /// <c>false</c>).</summary>
-    internal static bool Active(JsonElement? json) =>
-        json is { ValueKind: JsonValueKind.Object } body && body.TryGetProperty("active", out var active)
+    /// <c>false</c>) carrying the response's status.</summary>
+    internal static bool Active(TokenIntrospectionResponse response) =>
+        response.Json is { ValueKind: JsonValueKind.Object } body && body.TryGetProperty("active", out var active)
             && active.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? active.GetBoolean()
-            : throw new KeycloakAuthException("Token introspection failed: response has no boolean active");
+            : throw new KeycloakAuthException("Token introspection failed: response has no boolean active")
+            {
+                StatusCode = (int)response.HttpStatusCode,
+            };
 
     /// <summary>Why <paramref name="json"/> cannot be used when it holds a string System.Text.Json will not decode — a member
     /// name or a string value, at any depth — or null when every string decodes or the body is not a JSON object (its caller
