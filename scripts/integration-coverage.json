@@ -134,7 +134,7 @@
       "ruby/lib/keycloak_sdk/version.rb"
     ],
     "owners": {
-      "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": "coverage-omit-hides-security-paths"
+      "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": "unit:ledger"
     }
   },
   "dotnet": {

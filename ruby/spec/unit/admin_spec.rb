@@ -214,6 +214,34 @@ RSpec.describe KeycloakSdk::Admin::AdminClient do
     end
   end
 
+  # 어드민 json 미들웨어는 늘 응답 객체를 싣는다 — Hash 나 응답 없음은 그 미들웨어가 안 만드는 꼴이다. `Call#request` 는
+  # 그 꼴도 같은 규칙으로 읽는다(오류 상태면 그 상태의 AdminError · 아니면 전송 오류).
+  describe "Call#request on a Faraday::ParsingError whose response is a Hash or missing" do
+    let(:users) { KeycloakSdk::Admin::Users.new(Faraday.new, "r") }
+
+    it "maps a Hash-carried error status to its AdminError, with only a redacted cause" do
+      failure = Faraday::ParsingError.new("unexpected token at 'LEAKBODY'", { status: 404 })
+      expect { users.send(:request) { raise failure } }
+        .to raise_error(KeycloakSdk::NotFoundError, "admin request failed: HTTP 404") do |e|
+          expect(e.cause).to be_a(KeycloakSdk::RedactedCause)
+          expect(e.cause.message).not_to include("LEAKBODY")
+          expect(e.cause.inspect).not_to include("LEAKBODY")
+        end
+    end
+
+    it "keeps a Hash-carried 2xx a transport error" do
+      failure = Faraday::ParsingError.new("bad", { status: 200 })
+      expect { users.send(:request) { raise failure } }
+        .to raise_error(KeycloakSdk::TransportError, "admin transport error: Faraday::ParsingError")
+    end
+
+    it "keeps a ParsingError with no response a transport error" do
+      failure = Faraday::ParsingError.new("bad")
+      expect { users.send(:request) { raise failure } }
+        .to raise_error(KeycloakSdk::TransportError, "admin transport error: Faraday::ParsingError")
+    end
+  end
+
   # ⚠️ rename은 PUT /roles/{현재 이름} + body의 **새** 이름이다. 경로를 representation에서
   # 만들면 rename을 표현할 수 없다 — 자매 Go(#275)·PHP(#279) SDK에서 실제로 그랬고, 둘 다
   # 이 테스트가 없어서 오래 살아남았다. 여기 구현은 처음부터 옳지만 그것을 붙잡는 것이 없었다.

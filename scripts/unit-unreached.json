@@ -183,11 +183,6 @@
       "branches": 1,
       "why": "defensive: `@conn.close if @conn.respond_to?(:close)` 의 거짓 쪽 — @conn 은 build_conn 이 Http.build(Faraday.new)로 지은 Faraday::Connection 뿐이고 그것을 바꿔 넣을 공개 API 가 없다. 이 번들의 faraday 2.15.1 Connection 은 close 를 갖는다(connection.rb) — close 가 없는 연결에 대비한 방어선이다(목 없이는 못 닿는다)"
     },
-    "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": {
-      "lines": 0,
-      "branches": 3,
-      "why": "defensive: 삼항의 응답 객체가 아닌 쪽 셋 — 그 else 와 안의 `if resp.is_a?(Hash)` 두 쪽(Hash 의 `[:status]` · 응답 없음 nil). 이 경계에 닿는 Faraday::ParsingError 는 admin 커넥션 json 미들웨어의 것뿐이고 늘 응답 객체를 싣는다 — build_conn(admin_client.rb)에는 RaiseError 가 없고, faraday 2.15.1 response/json.rb:28 은 `env[:response]`(adapter.rb:64 의 Faraday::Response)를 싣고, Hash 는 error.rb `omit_request_data` 가 RaiseError(include_request: false) 아래에서만 만든다. 주입한 공급자의 ParsingError 는 Call 이 보기 전에 BearerAuth 가 TransportError 로 바꾸고, SettleBody 와 리소스는 ParsingError 를 내지 않는다 — 다른 꼴의 응답에 대비한 방어선이다"
-    },
     "ruby/lib/keycloak_sdk/client.rb:KeycloakClient#close": {
       "lines": 0,
       "branches": 1,
