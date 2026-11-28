@@ -523,6 +523,25 @@ mbad '### Fixed
 - **(Java)** 첫 줄
   이어지는 줄
 ' '여러 줄' "M2 여러 줄 항목"
+# 조각 문법(공백 · 상한)은 parseFragment 의 규칙이다 — migrate 는 그 거부를 원래 항목 줄과 함께 relay 한다. 조각은 쓰이지 않았다(디렉터리도 없다).
+mrelay() { # <[Unreleased] 본문> <사유 바늘> <항목 줄 바늘> <메시지>
+  mbad "$1" "$2" "$4"
+  assert_contains "$_out" "$3" "$4 — 원래 항목 줄을 가리킨다"
+  assert_not_contains "$_out" 'unreleased-001' "$4 — 쓰이지 않은 조각 이름을 말하지 않는다"
+  assert_eq no "$([ -e "$TMP/changelog.d" ] && echo yes || echo no)" "$4 — changelog.d/ 가 없다"
+}
+mrelay "### Fixed
+
+- **(Go)** x$SP
+" '본문의 앞뒤에 공백이 있다' "— - **(Go)** x$SP" "M2 본문 끝 공백"
+mrelay '### Fixed
+
+- **(Go)**  x
+' '본문의 앞뒤에 공백이 있다' '— - **(Go)**  x' "M2 본문 앞 공백"
+mrelay "### Security
+
+- **(전 언어)** $(repeat 960)
+" '컴파일한 줄이 1039B > 1024B 다' '— - **(전 언어)** xxxx' "M2 컴파일한 줄 상한 초과"
 # 한 번에 모아서 — 결함이 둘이면 둘 다 보인다.
 mroot '### Fixed
 

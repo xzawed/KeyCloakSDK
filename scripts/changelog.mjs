@@ -77,7 +77,7 @@ function parseOldItems(entries, order) {
     const dup = known.find((n, i) => known.indexOf(n) !== i)
     if (dup !== undefined) bad.push(`언어 이름이 겹친다 — ${dup}`)
     if (bad.length) { for (const b of bad) E(b, e); continue }
-    items.push({ section, langs: names[0] === ALL_LANGS ? [...order] : order.filter((l) => known.includes(DISPLAY[l])), body: m[2] })
+    items.push({ section, langs: names[0] === ALL_LANGS ? [...order] : order.filter((l) => known.includes(DISPLAY[l])), body: m[2], line: e })
   }
   if (errors.length) reject(errors)
   return items
@@ -91,7 +91,8 @@ function crossCheck(items, fragments, order) {
   const parsed = []
   for (const f of fragments) {
     const r = parseFragment(f.name, renderFragment(f, order), order)
-    errors.push(...r.errors)
+    // 조각 문법(공백 · 상한)의 소유자는 parseFragment 하나다 — 그 사유를 그대로 싣고 쓰이지 않은 조각 대신 원래 항목 줄을 가리킨다.
+    for (const msg of r.errors) errors.push(`changelog: ${ROOT_FILE} [Unreleased]: ${msg.slice(`${FRAGMENT_DIR}/${f.name}: `.length)} — ${f.line.split('\n')[0]}`)
     if (!r.fragment) continue
     parsed.push(r.fragment)
     if (JSON.stringify(r.fragment) !== JSON.stringify({ name: f.name, langs: f.langs, section: f.section, body: f.body })) errors.push(`changelog: 대조 (a): ${f.name} — 렌더한 조각을 다시 읽으면 다른 값이다`)
