@@ -2191,3 +2191,50 @@ TEST:scripts/test/test-unit-unreached.sh
 OLD:    if (rec.files[f] !== now) fail('rust', `${f}: the data was taken from other bytes (sha1 ${String(rec.files[f]).slice(0, 12)}… recorded, ${String(now).slice(0, 12)}… in the tree) — rerun the suite on this tree`)
 NEW:    void 0 // PROBE-REC rust-files-sha
 SITE:void 0 // PROBE-REC rust-files-sha
+
+### exclude-fragments-doc-tripwire
+TEST:test-changelog-fragments.sh
+JUDGE:lib/doc-tripwire.mjs
+WHY:정의 줄을 읽을 뿐 실행하지 않는 쌍 — 모듈은 changelog.mjs · check-docs.mjs 를 거쳐 돌고 그 두 쌍(CF 와 M1)이 덮는다.
+
+### CF1
+FILE:scripts/lib/changelog-fragments.mjs
+TEST:scripts/test/test-changelog-fragments.sh
+OLD:  if (n > BULLET_MAX_BYTES) {
+NEW:  if (n < 0) { // PROBE-REC cf1
+SITE:// PROBE-REC cf1
+
+### CF2
+FILE:scripts/lib/changelog-wave.mjs
+TEST:scripts/test/test-changelog-fragments.sh
+OLD:  for (const [k, n] of count) {
+NEW:  for (const [k, n] of []) { // PROBE-REC cf2
+SITE:// PROBE-REC cf2
+
+### CF3
+FILE:scripts/lib/changelog-wave.mjs
+TEST:scripts/test/test-changelog-fragments.sh
+OLD:  if (projected * WARN_DEN >= DOC_TRIPWIRE_BYTES * WARN_NUM)
+NEW:  if (projected * WARN_DEN < 0) // PROBE-REC cf3
+SITE:// PROBE-REC cf3
+
+### CF4
+FILE:scripts/changelog.mjs
+TEST:scripts/test/test-changelog-fragments.sh
+OLD:        const had = new Set(same ? same.langs : base.filter((b) => b.body === f.body).flatMap((b) => b.langs))
+NEW:        const had = new Set(same ? same.langs : base.filter((b) => false).flatMap((b) => b.langs)) // PROBE-REC cf4
+SITE:// PROBE-REC cf4
+
+### CF5
+FILE:scripts/changelog.mjs
+TEST:scripts/test/test-changelog-fragments.sh
+OLD:      if (dups.length) reject(dups.map(([l, s]) => `changelog: 이미 있는 판 — ${DISPLAY[l]} ${versions.get(l)}: 「${s.heading}」(${s.where})`))
+NEW:      if (false) reject(dups.map(([l, s]) => `changelog: 이미 있는 판 — ${DISPLAY[l]} ${versions.get(l)}: 「${s.heading}」(${s.where})`)) // PROBE-REC cf5
+SITE:// PROBE-REC cf5
+
+### CF6
+FILE:scripts/lib/changelog-wave.mjs
+TEST:scripts/test/test-changelog-fragments.sh
+OLD:      if (n > BULLET_MAX_BYTES) E(3, `${at(b.heading)} — 항목 ${n}B > ${BULLET_MAX_BYTES}B ${cut(item.trim())}`)
+NEW:      if (n < 0) E(3, `${at(b.heading)} — 항목 ${n}B > ${BULLET_MAX_BYTES}B ${cut(item.trim())}`) // PROBE-REC cf6
+SITE:// PROBE-REC cf6
