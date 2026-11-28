@@ -40,79 +40,126 @@ fresh; mkdir -p "$TMP/changelog.d"
 printf '\357\273\277langs: python go\r\nsection: Fixed\r\n---\r\nA 고침\r\n\r\n\r\n' > "$TMP/changelog.d/2026-11-25-a.txt"
 _out="$(chk)"; assert_contains "$_out" '__rc=0' "F2 BOM · CRLF · 끝 빈 줄을 받는다"
 
-# F3 거부 — 파일 이름 바늘 + rc 1.
-bad() { # <이름> <내용> <메시지>
+# F3 거부 — 파일 이름 바늘 + **사유 바늘**(그 규칙의 메시지) + rc 1. 픽스처마다 결함은 하나다.
+bad() { # <이름> <내용> <사유 바늘> <메시지>
   fresh; frag "$1" "$2"; _out="$(chk)"
-  assert_rejects "$_out" "changelog.d/$1" "$3"
+  assert_rejects "$_out" "changelog.d/$1" "$4 — 파일 이름"
+  assert_contains "$_out" "$3" "$4 — 사유"
 }
 bad 2026-11-25-a.txt 'langs: go
 section: Fixed
 kind: x
 ---
 b
-' "F3 모르는 키"
+' '모르는 키 `kind`' "F3 모르는 키"
 bad 2026-11-25-a.txt 'langs: go
 ---
 b
-' "F3 section 없음"
+' '`section:` 이 없다' "F3 section 없음"
 bad 2026-11-25-a.txt 'langs:
 section: Fixed
 ---
 b
-' "F3 langs 비었음"
+' '`langs` 가 비었다' "F3 langs 비었음"
 bad 2026-11-25-a.txt 'langs: swift
 section: Fixed
 ---
 b
-' "F3 모르는 언어 swift"
+' 'DEPLOY_LANGS 밖의 토큰 — swift' "F3 모르는 언어 swift"
 bad 2026-11-25-a.txt 'langs: python python
 section: Fixed
 ---
 b
-' "F3 겹친 언어"
+' '같은 토큰이 겹친다' "F3 겹친 언어"
 bad 2026-11-25-a.txt 'langs: go
 section: Fix
 ---
 b
-' "F3 모르는 section"
+' '중 하나다 — Fix' "F3 모르는 section"
 bad 2026-11-25-a.txt 'langs: go
 section: Fixed
 b
-' "F3 --- 없음"
+' '`---` 줄이 없다' "F3 --- 없음"
 bad 2026-11-25-a.txt 'langs: go
 section: Fixed
 ---
-' "F3 빈 본문"
+' '본문이 없다' "F3 빈 본문"
 bad 2026-11-25-a.txt 'langs: go
 section: Fixed
 ---
 b
 c
-' "F3 두 줄 본문"
+' '정확히 한 줄이다' "F3 두 줄 본문"
 bad notes.txt 'langs: go
 section: Fixed
 ---
 b
-' "F3 이름이 규칙 밖"
+' '이름이 `<YYYY-MM-DD>-<slug>.txt`' "F3 이름이 규칙 밖"
 bad 2026-11-25-a.txt 'langs: go
 langs: python
 section: Fixed
 ---
 b
-' "F3 겹친 키"
+' '키 `langs` 가 겹친다' "F3 겹친 키 langs"
+bad 2026-11-25-a.txt 'langs: go
+section: Fixed
+section: Added
+---
+b
+' '키 `section` 가 겹친다' "F3 겹친 키 section"
 bad 2026-11-25-a.txt 'langs: go
 
 section: Fixed
 ---
 b
-' "F3 머리의 빈 줄"
+' '머리에 빈 줄이 있다' "F3 머리의 빈 줄"
+bad 2026-11-25-a.txt 'langs: go
+section: Fixed
+foo
+---
+b
+' '`<키>: <값>` 꼴이 아니다 — foo' "F3 머리 줄에 : 없음"
+bad 2026-11-25-a.txt 'langs: go  python
+section: Fixed
+---
+b
+' '공백 하나로 구분한다' "F3 langs 공백 둘"
+# 끝 공백은 편집기가 지우므로 SP 변수로 넣는다.
+SP=' '
+bad 2026-11-25-a.txt "langs: go${SP}
+section: Fixed
+---
+b
+" '공백 하나로 구분한다' "F3 langs 끝 공백"
 bad 2026-11-25-a.txt 'langs: go
 section: Fixed
 ---
  앞 공백
-' "F3 본문 앞 공백"
+' '본문의 앞뒤에 공백' "F3 본문 앞 공백"
+bad 2026-11-25-a.txt "langs: go
+section: Fixed
+---
+b${SP}
+" '본문의 앞뒤에 공백' "F3 본문 끝 공백"
 fresh; mkdir -p "$TMP/changelog.d/sub"
 _out="$(chk)"; assert_rejects "$_out" 'changelog.d/sub' "F3 디렉터리"
+assert_contains "$_out" '조각은 파일이다' "F3 디렉터리 — 사유"
+# 심볼릭 링크 거부는 sh 에서 이식 가능하게 만들 수 없어 시험하지 않는다(Git Bash 의 ln -s 는 복사로 떨어질 수 있다).
+
+# F3b check 가 rc 1 로 거부해도 changelog.d/ 는 바이트까지 그대로다.
+fresh; frag 2026-11-25-a.txt 'langs: go
+section: Fixed
+---
+b
+'
+frag 2026-11-25-b.txt 'langs: go
+section: Fix
+---
+b
+'
+_before="$(snap)"; _out="$(chk)"
+assert_contains "$_out" '__rc=1' "F3b 거부 사례"
+assert_eq "$_before" "$(snap)" "F3b 거부는 아무것도 쓰지 않는다"
 
 # F4 경계 — `- **(Go)** ` 11 B + 본문 1,012 B + `\n` = 1,024 B.
 fresh; frag 2026-11-25-a.txt "langs: go

@@ -55,7 +55,7 @@ export function parseFragment(name, text, order) {
     err('이름이 `<YYYY-MM-DD>-<slug>.txt`(slug 는 소문자·숫자·-)가 아니다')
     return { fragment: null, errors }
   }
-  const lines = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
+  const lines = text.replace(/^\u{FEFF}/u, '').replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
   const cut = lines.indexOf('---')
   if (cut < 0) {
     err('`---` 줄이 없다 — 머리(langs · section) 와 본문을 가르는 줄이다')
@@ -75,9 +75,9 @@ export function parseFragment(name, text, order) {
     langs = head.langs.split(' ').filter(Boolean)
     if (head.langs !== langs.join(' ') && head.langs.trim() !== '') err('`langs` 는 공백 하나로 구분한다')
     if (!langs.length) err('`langs` 가 비었다')
-    const bad = langs.filter((l) => !(l in DISPLAY) || !order.includes(l))
+    const bad = langs.filter((l) => !order.includes(l))
     if (bad.length) err(`\`langs\` 에 DEPLOY_LANGS 밖의 토큰 — ${bad.join(' ')}`)
-    if (new Set(langs).size !== langs.length) err('`langs` 가 겹친다')
+    if (new Set(langs).size !== langs.length) err('`langs` 에 같은 토큰이 겹친다')
   }
   if (!('section' in head)) err('`section:` 이 없다')
   else if (!SECTIONS.includes(head.section)) err(`\`section\` 은 ${SECTIONS.join(' · ')} 중 하나다 — ${head.section}`)
