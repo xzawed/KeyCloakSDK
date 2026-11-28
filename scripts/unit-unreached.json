@@ -99,16 +99,6 @@
       "branches": 1,
       "why": "defensive: `?? ex.Message` — HttpResponse 가 null 인 KeycloakHttpClientException 의 몫이다. 라이브러리가 그 예외를 만드는 자리는 EnsureResponseAsync 하나이고 거기서 HttpResponse 는 ReadAsStringAsync 의 결과(null 아님)다(실측: Keycloak.AuthServices.Sdk 2.7.0 의 IL) — HttpError 는 CallTypedAsync · WriteTypedAsync 의 catch (KeycloakHttpClientException) 에서만, 형식 클라이언트가 던진 그 예외로 불린다"
     },
-    "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": {
-      "lines": 0,
-      "branches": 1,
-      "why": "defensive: `ex.TargetSite?.` 의 null 쪽 — TargetSite 는 던져진 적 없는 예외에서만 null 이다. 판정하는 예외는 Encoding.GetEncoding 이 던진 것(잡혀 감싸인 안쪽 포함)이라 단위 시험이 만들지 않는다 — 생성만 된 안쪽 예외면 charset 판정 없이 false 로 끝나게 둔 방어선"
-    },
-    "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": {
-      "lines": 0,
-      "branches": 2,
-      "why": "defensive: `ex.TargetSite?.DeclaringType?.` 의 null 쪽 둘 — 잡은 예외는 던져진 것이라 TargetSite 가 있고, 선언 타입이 없는 메서드(모듈 수준 함수)는 C# 이 만들지 않는다. 둘 다 false(요청 본문 거부가 아니다)로 끝나게 둔 방어선"
-    },
     "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.TryDecode": {
       "lines": 3,
       "branches": 0,

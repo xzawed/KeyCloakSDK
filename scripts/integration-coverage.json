@@ -159,11 +159,11 @@
       "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs"
     ],
     "owners": {
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsUnsupportedCharset": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.Undecodable": "unit:ledger",
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.CanonicalReason": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "unit:ledger"
     }
