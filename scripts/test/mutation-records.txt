@@ -2192,6 +2192,11 @@ OLD:    if (rec.files[f] !== now) fail('rust', `${f}: the data was taken from ot
 NEW:    void 0 // PROBE-REC rust-files-sha
 SITE:void 0 // PROBE-REC rust-files-sha
 
+### exclude-fragments-doc-tripwire
+TEST:test-changelog-fragments.sh
+JUDGE:lib/doc-tripwire.mjs
+WHY:정의 줄을 읽을 뿐 실행하지 않는 쌍 — 모듈은 changelog.mjs · check-docs.mjs 를 거쳐 돌고 그 두 쌍(CF 와 M1)이 덮는다.
+
 ### CF1
 FILE:scripts/lib/changelog-fragments.mjs
 TEST:scripts/test/test-changelog-fragments.sh

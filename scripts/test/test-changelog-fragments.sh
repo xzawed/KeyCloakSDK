@@ -181,6 +181,7 @@ section: Fixed
 $(repeat 1000)
 "
 _out="$(chk)"; assert_rejects "$_out" 'changelog.d/2026-11-25-a.txt' "F4 태그가 긴 줄도 상한을 본다"
+assert_contains "$_out" '> 1024B' "F4 태그가 긴 줄 — 사유(상한 초과)"
 
 # F5 디렉터리 없음.
 fresh; _out="$(chk)"
@@ -840,6 +841,18 @@ w5 "K3b 모르는 플래그" '모르는 인자 — --stat' preview --stat --root
 w5 "K3b check 는 --stats 를 모른다" '모르는 인자 — --stats' check --stats --root="$TMP"
 w5 "K3b release 는 --stats 를 모른다" '모르는 인자 — --stats' release --stats go=1.2.6 --root="$TMP"
 assert_eq "$_before" "$(snap)" "K3b 사용법 오류는 아무것도 쓰지 않는다"
+
+# K3c changelog.d/ 가 없다 — (i) deploy-facts.sh 가 있으면 --stats 는 언어마다 0 · 0B 와 아홉 언어 0B, rc 0.
+# (ii) 라이브러리는 deploy-facts.sh 도 없는 뿌리(CHANGELOG.md 만)에서 던지지 않고 빈 결과를 낸다 — DEPLOY_LANGS 를 읽기 전에 디렉터리부터 본다.
+rfix; rm -rf "${TMP:?}/changelog.d"; _out="$(run preview --stats --root="$TMP")"
+assert_contains "$_out" '__rc=0' "K3c(i) changelog.d/ 없음 — rc 0"
+for _l in python dotnet ruby node rust java kotlin go php; do assert_contains "$_out" "$_l 대기 0개 · 0B" "K3c(i) $_l 대기 0개 · 0B"; done
+assert_contains "$_out" '아홉 언어 물결 예상 0B / 8c 상한' "K3c(i) 아홉 언어 물결 0B"
+rfix; rm -rf "${TMP:?}/changelog.d"; rm -f "$TMP/scripts/lib/deploy-facts.sh"; _before="$(snap)"
+to_file "$MS/k3c.out" node "$PROBE" --tree "$TMP"
+assert_eq 0 "$_rc" "K3c(ii) CHANGELOG.md 만 있는 뿌리 — 던지지 않는다(rc 0)"
+assert_eq '{"errors":[],"warnings":[],"stats":{"perLang":{},"projected":0,"tripwire":'"${_T}"'}}' "$(cat "$MS/k3c.out")" "K3c(ii) 빈 결과 — errors · warnings 비고 언어 없음"
+assert_eq "$_before" "$(snap)" "K3c(ii) 아무것도 안 쓴다"
 
 # K4 [Unreleased] 에 항목이 있는 옛 꼴 루트 → rc 1 · 고정 문단 · 아무것도 안 쓴다. 대조군은 K1(포인터 꼴 → rc 0).
 mroot "$M_OLD"; _before="$(snap)"; _out="$(chk)"

@@ -9,7 +9,7 @@
 //       node scripts/changelog.mjs release [--root=<디렉터리>] [--date=YYYY-MM-DD] <lang>=<판> …
 //       node scripts/changelog.mjs covered [--root=<디렉터리>] --base=<rev>
 //
-// 종료 코드: 0 성공 · 1 거부(트리 상태 · 검사 실패 — 아무것도 쓰지 않는다) · 2 사용법.
+// 종료 코드: 0 성공 · 1 거부(트리 상태 · 검사 실패 — 쓰기 전) 또는 쓰다 던진 예외(release 는 ok 줄이 없으면 일부가 남았을 수 있다 — git 으로 되돌린다) · 2 사용법.
 // ⚠️ 인자 규칙은 changelog-rotate.mjs 를 따른다 — 하위명령마다 받는 `--<이름>=<값>` · 불리언 플래그 `--<이름>` 과 위치 인자 수가
 // 아래 표에 있고, 그 밖의 인자 · 모르는 하위명령 · 빈/겹친 `--root=` · `--<이름>=` · 겹친 플래그 · `--<이름>=<값>` 꼴의 플래그는
 // 사용법 오류다(플래그는 정확히 `--<이름>` 한 번만 받는다). 오타가 기본 동작으로 떨어지면 「검사가 비었다」가 통과로 읽힌다.
@@ -17,7 +17,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDeployLangs, readFragmentDir, parseFragment, renderFragment, FRAGMENT_DIR, SECTIONS, DISPLAY } from './lib/changelog-fragments.mjs'
-import { compileWave, verifyWave, renderPreview, isWaveDate, checkFragmentTree, percentOf } from './lib/changelog-wave.mjs'
+import { HEADING_RE, compileWave, verifyWave, renderPreview, isWaveDate, checkFragmentTree, percentOf } from './lib/changelog-wave.mjs'
 import { ROOT_FILE, UNRELEASED_POINTER, VOLUME_DIR, VOLUME_RE, isUnreleasedPointer, parseLedgerFile, itemsOf } from './lib/changelog-ledger.mjs'
 
 const usage = (msg) => {
@@ -145,16 +145,15 @@ function volumeHeadings(root) {
 // 표시명이 아닌 조각은 건너뛴다(제목의 꼴은 8d 의 몫이다). `[Unreleased]` 는 날짜가 없어 이 꼴 밖이고, `[물결]` 절의 괄호 안은
 // `<표시명> <판>` 이라 표시명이 아니다 — 따로 거르는 줄을 두지 않는다(그 줄에는 어떤 입력도 닿지 않는다: 판 꼴을 지난 물결 판이
 // `물결` · `Unreleased` 일 수 없다). files = [[경로, 제목들], …] — 루트 먼저, 보관본은 이름순. → Map(pairKey → 처음 나온 { heading, where }).
-const DATED_HEADING_RE = /^## \[([^\]]+)\] - \d{4}-\d{2}-\d{2} \(([^()]+)\)$/
 const pairKey = (lang, ver) => `${lang} ${ver}`
 function shippedPairs(files) {
   const token = new Map(Object.entries(DISPLAY).map(([tok, name]) => [name, tok]))
   const pairs = new Map()
   for (const [where, headings] of files) {
     for (const heading of headings) {
-      const m = DATED_HEADING_RE.exec(heading)
+      const m = HEADING_RE.exec(heading) // m[1] = 대괄호 판 · m[3] = 괄호 안 표시명들
       if (!m) continue
-      for (const name of m[2].split(' · ')) {
+      for (const name of m[3].split(' · ')) {
         const lang = token.get(name)
         if (lang !== undefined && !pairs.has(pairKey(lang, m[1]))) pairs.set(pairKey(lang, m[1]), { heading, where })
       }
@@ -210,7 +209,10 @@ const COMMANDS = {
         const order = deployLangs(root)
         const { errors, stats } = checkFragmentTree(root)
         if (errors.length) reject(errors)
-        for (const l of order) console.log(`${l} 대기 ${stats.perLang[l].count}개 · ${stats.perLang[l].bytes}B`)
+        for (const l of order) {
+          const { count, bytes } = stats.perLang[l] ?? { count: 0, bytes: 0 } // changelog.d/ 가 없으면 perLang 이 비어 있다
+          console.log(`${l} 대기 ${count}개 · ${bytes}B`)
+        }
         console.log(`아홉 언어 물결 예상 ${stats.projected}B / 8c 상한 ${stats.tripwire}B (${percentOf(stats.projected)}%)`)
         return
       }

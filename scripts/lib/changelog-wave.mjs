@@ -96,7 +96,7 @@ export const renderPreview = (fragments, order) =>
 //   4 공통 절이 아닌 블록 — 괄호 안 언어 = 물결에서 대괄호 판인 언어 전부, 모으면 물결 언어 전부이고 겹치지 않는다
 //   5 판이 둘 이상이면 첫 블록만 공통 절이고 괄호 안은 물결 언어 전부의 `<표시명> <판>` — 판이 하나면 공통 절이 없다
 //   6 기대 다중집합(조각마다 S 가 비지 않으면 `<판 또는 물결> | <section> | <S> | <본문>` 하나)과 글의 항목이 같다
-const HEADING_RE = /^## \[([^\]]+)\] - (\d{4}-\d{2}-\d{2}) \(([^()]+)\)$/
+export const HEADING_RE = /^## \[([^\]]+)\] - (\d{4}-\d{2}-\d{2}) \(([^()]+)\)$/
 const BULLET_RE = /^- \*\*\(([^()\n]+)\)\*\* ([^\n]+)$/
 export function verifyWave(fragments, wave, text, order) {
   const problems = waveProblems(wave, order)
@@ -221,13 +221,11 @@ export const percentOf = (n) => Math.floor((n * 100) / DOC_TRIPWIRE_BYTES) // ch
 
 // → { errors, warnings, stats: { perLang: { <lang>: { count, bytes } }, projected, tripwire } }.
 // count = 그 언어를 langs 에 든 조각 수 · bytes = 그 언어 한 언어 물결 글의 바이트 · projected = 루트 머리말 + 포인터 블록 + 아홉 언어 물결의 바이트.
-// `changelog.d/` 가 없으면 빈 결과다(오류 · 경고 없음, 수는 0). deploy-facts.sh 를 못 읽으면 던진다(부르는 쪽이 먼저 읽어 rc 1 로 바꾼다).
+// `changelog.d/` 가 없으면 DEPLOY_LANGS 를 읽기 전에 빈 결과다(오류 · 경고 없음, perLang 은 빈 객체 — 언어를 모른다). 있는데 deploy-facts.sh 를 못 읽으면 던진다(부르는 쪽이 먼저 읽어 rc 1 로 바꾼다).
 // ⚠️ 루트 `[Unreleased]` 의 고정 문단은 여기서 보지 않는다 — 그것은 CLI check 의 몫이다(8d 도 같은 isUnreleasedPointer 를 부른다).
 export function checkFragmentTree(repoRoot) {
+  if (!existsSync(join(repoRoot, FRAGMENT_DIR))) return { errors: [], warnings: [], stats: { perLang: {}, projected: 0, tripwire: DOC_TRIPWIRE_BYTES } }
   const order = readDeployLangs(repoRoot)
-  const zero = Object.fromEntries(order.map((l) => [l, { count: 0, bytes: 0 }]))
-  const stats = { perLang: zero, projected: 0, tripwire: DOC_TRIPWIRE_BYTES }
-  if (!existsSync(join(repoRoot, FRAGMENT_DIR))) return { errors: [], warnings: [], stats }
   const { fragments, errors: grammar } = readFragmentDir(repoRoot, order)
   const errors = [...grammar]
   const trial = (label, versions) => {

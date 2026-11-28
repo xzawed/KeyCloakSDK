@@ -167,13 +167,13 @@
 ```
 [상태] ID  항목                                  담당          끝나는 조건
  [x]   0   계획 검토 레그                        Grok          판정 보고 · PM 재검증
- [ ]   1   조각 문법 · 언어 표 · check(문법)     구현          자가시험 F 절 green
- [ ]   2   물결 컴파일 · 독립 대조 · preview      구현          W 절 green(골든)
- [ ]   3   migrate(픽스처 생성기 겸)             구현          M 절 green
- [ ]   4   release                               구현          R 절 green
- [ ]   5   check 시험 컴파일 · 75 % · --stats     구현          K 절 green · test-check-docs.sh green
- [ ]   6   covered                               구현          V 절 green
- [ ]   7   PR 1 — 변이 레코드 · 적대 레그 · 병합  PM · Grok     sweep --only changelog CAUGHT · CI green
+ [x]   1   조각 문법 · 언어 표 · check(문법)     구현          자가시험 F 절 green
+ [x]   2   물결 컴파일 · 독립 대조 · preview      구현          W 절 green(골든)
+ [x]   3   migrate(픽스처 생성기 겸)             구현          M 절 green
+ [x]   4   release                               구현          R 절 green
+ [x]   5   check 시험 컴파일 · 75 % · --stats     구현          K 절 green · test-check-docs.sh green
+ [x]   6   covered                               구현          V 절 green
+ [x]   7   PR 1 — 변이 레코드 · 적대 레그 · 병합  PM · Grok     sweep --only changelog CAUGHT · CI green
  [ ]   8   이관(PR 2 시작)                       구현 · PM · Grok  이관 대조 차이 0 · 저장소 check-docs green
  [ ]   9   8d 전환                               구현          test-changelog-ledger.sh green
  [ ]  10   착지 게이트(언어 단위)                구현          test-changelog-landing.sh green
@@ -209,11 +209,11 @@ readFragmentDir(repoRoot, order) → { fragments: 이름순, errors: string[] } 
 
 **문법**(오류는 `changelog.d/<이름>: ` 로 시작) — 이름이 `FRAGMENT_NAME_RE` 인 파일 · 맨 앞 BOM 은 떼고 CRLF 는 LF 로, 끝의 빈 줄은 무시 · 첫 `---` 줄 앞은 줄마다 `<키>: <값>` 이고 키는 `langs` · `section` 하나씩(모르는 키 · 겹친 키 · 빈 줄 · `---` 없음은 오류) · `langs` 는 공백 구분, 비지 않고 겹치지 않고 `DEPLOY_LANGS` 안 · `section` 은 `SECTIONS` 그대로 · 본문은 정확히 한 줄, 비지 않고 앞뒤 공백 없음 · `bytes(compileItem(langs, body, order) + '\n') ≤ BULLET_MAX_BYTES`.
 
-- [ ] **1.1 실패하는 시험(F 절)** — F1 `2026-11-25-a.txt`(`langs: python go` · `section: Fixed` · 본문 `A 고침`) → `check` rc 0 · `ok`. F2 같은 조각을 BOM + CRLF + 끝 빈 줄 둘로 → rc 0. F3 rc 1 과 파일 이름 바늘 — 모르는 키 `kind:` · `section` 없음 · `langs:` 비었음 · `swift` · `python python` · `section: Fix` · `---` 없음 · 빈 본문 · 두 줄 본문 · 이름 `notes.txt` · 디렉터리 `changelog.d/sub/`. F4 경계(`langs: go`, 접두 `- **(Go)** ` 11 B) — 본문 1,012 B → rc 0, 1,013 B → rc 1 · `1025B > 1024B`. F5 `changelog.d/` 없음 → rc 0 · `대기 중인 조각이 없다`. F6 stub 의 `DEPLOY_LANGS` 에 `swift` 를 더하면 rc 1 · `표시명`. F7 `chek` · `--rot=x` → rc 2 · 아무것도 안 씀.
-- [ ] **1.2** `sh scripts/test/test-changelog-fragments.sh` → FAIL(스크립트 없음).
-- [ ] **1.3** 라이브러리와 CLI 뼈대(`check` 만)를 쓴다. CLI 의 인자 규칙은 `changelog-rotate.mjs` 를 따른다(`--root=` 만, 모르는 인자는 실패).
-- [ ] **1.4** 다시 돌려 PASS. `sh scripts/test/test-selftest-hygiene.sh` 도 green(규칙 1 · 2 · 4).
-- [ ] **1.5** 커밋(`git update-index --chmod=+x` 로 두 파일의 비트).
+- [x] **1.1 실패하는 시험(F 절)** — F1 `2026-11-25-a.txt`(`langs: python go` · `section: Fixed` · 본문 `A 고침`) → `check` rc 0 · `ok`. F2 같은 조각을 BOM + CRLF + 끝 빈 줄 둘로 → rc 0. F3 rc 1 과 파일 이름 바늘 — 모르는 키 `kind:` · `section` 없음 · `langs:` 비었음 · `swift` · `python python` · `section: Fix` · `---` 없음 · 빈 본문 · 두 줄 본문 · 이름 `notes.txt` · 디렉터리 `changelog.d/sub/`. F4 경계(`langs: go`, 접두 `- **(Go)** ` 11 B) — 본문 1,012 B → rc 0, 1,013 B → rc 1 · `1025B > 1024B`. F5 `changelog.d/` 없음 → rc 0 · `대기 중인 조각이 없다`. F6 stub 의 `DEPLOY_LANGS` 에 `swift` 를 더하면 rc 1 · `표시명`. F7 `chek` · `--rot=x` → rc 2 · 아무것도 안 씀.
+- [x] **1.2** `sh scripts/test/test-changelog-fragments.sh` → FAIL(스크립트 없음).
+- [x] **1.3** 라이브러리와 CLI 뼈대(`check` 만)를 쓴다. CLI 의 인자 규칙은 `changelog-rotate.mjs` 를 따른다(`--root=` 만, 모르는 인자는 실패).
+- [x] **1.4** 다시 돌려 PASS. `sh scripts/test/test-selftest-hygiene.sh` 도 green(규칙 1 · 2 · 4).
+- [x] **1.5** 커밋(`git update-index --chmod=+x` 로 두 파일의 비트).
 
 #### 과제 2 — 물결 컴파일 · 독립 대조 · `preview`
 
@@ -291,8 +291,8 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번호 경고를 쓴다.
 ```
 
-- [ ] **2.1 실패하는 시험(W 절)** — W1 위 골든. W2 `preview` = `## [Unreleased]` · 빈 줄 · `### Added` / `- **(.NET)** B 추가` · 빈 줄 · `### Fixed` / `- **(Python · Go)** A 고침` / `- **(Python · .NET)** C 고침` · 빈 줄 · `### Security` / `- **(Python · Ruby)** D 보안` · 빈 줄. W3 `preview go --date=2026-12-01` = `## [?] - 2026-12-01 (Go)` · 물결 머리말 자리 · `### Fixed` / `- **(Go)** A 고침`(태그는 내보내는 언어뿐). W4 도우미로 `verifyWave` — W1 글은 rc 0(대조군), 다음 변형은 각각 rc 1: 항목 하나 지움 · 하나 겹침 · 같은 항목을 `###` 앞에 한 번 더 · `A 고침` 을 `### Added` 아래로 · `A 고침` 을 `[1.2.6]` 절로 · `[1.2.6] (Go)` 절을 통째로 뺌 · 공통 절 제목에서 `· Go 1.2.6` 을 뺌 · 모르는 문단 하나 · 1,025 B 제목 줄 · 판 하나짜리 물결에 공통 절 덧붙임.
-- [ ] **2.2** FAIL 확인 → **2.3** 구현 → **2.4** PASS → **2.5** 커밋.
+- [x] **2.1 실패하는 시험(W 절)** — W1 위 골든. W2 `preview` = `## [Unreleased]` · 빈 줄 · `### Added` / `- **(.NET)** B 추가` · 빈 줄 · `### Fixed` / `- **(Python · Go)** A 고침` / `- **(Python · .NET)** C 고침` · 빈 줄 · `### Security` / `- **(Python · Ruby)** D 보안` · 빈 줄. W3 `preview go --date=2026-12-01` = `## [?] - 2026-12-01 (Go)` · 물결 머리말 자리 · `### Fixed` / `- **(Go)** A 고침`(태그는 내보내는 언어뿐). W4 도우미로 `verifyWave` — W1 글은 rc 0(대조군), 다음 변형은 각각 rc 1: 항목 하나 지움 · 하나 겹침 · 같은 항목을 `###` 앞에 한 번 더 · `A 고침` 을 `### Added` 아래로 · `A 고침` 을 `[1.2.6]` 절로 · `[1.2.6] (Go)` 절을 통째로 뺌 · 공통 절 제목에서 `· Go 1.2.6` 을 뺌 · 모르는 문단 하나 · 1,025 B 제목 줄 · 판 하나짜리 물결에 공통 절 덧붙임.
+- [x] **2.2** FAIL 확인 → **2.3** 구현 → **2.4** PASS → **2.5** 커밋.
 
 #### 과제 3 — `migrate`(픽스처 생성기 겸)
 
@@ -305,8 +305,8 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 - 쓰기 전 대조 셋, 어긋나면 rc 1 · 안 쓴다: (a) 렌더한 조각을 `parseFragment` 로 다시 읽어 같은 값 (b) 원래 항목과 조각의 (section · 언어 집합 · 본문) 다중집합이 같다 (c) `renderPreview` 의 항목을 다시 읽은 다중집합도 같다.
 - 쓰기 — 조각들과 `[Unreleased]` 블록 = `## [Unreleased]\n\n<포인터>\n\n`. 출력 `ok   migrate: 항목 <n>개 → 조각 <n>개`.
 
-- [ ] **3.1 실패하는 시험(M 절)** — M1 옛 꼴 항목 셋(`### Fixed` 아래 `- **(Java · Kotlin)** J 고침` · `- **(Go · Python)** G 고침`, `### Security` 아래 `- **(전 언어)** S 보안`) → 조각 셋의 머리가 정확히 `langs: java kotlin` / `langs: python go` / `langs: python dotnet ruby node rust java kotlin go php` · 루트 `[Unreleased]` 가 포인터 · `preview` 의 항목 줄은 원래 줄과 태그만 다르다(`(Python · Go)`, `(전 언어)` → 아홉 표시명). M2 태그 없음 · `(Swift)` · `###` 밖 항목 · 문단 · `### Notes` 각각 rc 1 · cksum 그대로. M3 두 번째 실행 → `이미 전환됐다` · rc 0 · cksum 그대로. M4 `changelog.d/` 에 파일 하나 → rc 1. M5 `deploy-facts.sh` 없는 뿌리의 빈 `[Unreleased]` → rc 0 · 포인터.
-- [ ] **3.2** FAIL → **3.3** 구현 → **3.4** PASS → **3.5** 커밋.
+- [x] **3.1 실패하는 시험(M 절)** — M1 옛 꼴 항목 셋(`### Fixed` 아래 `- **(Java · Kotlin)** J 고침` · `- **(Go · Python)** G 고침`, `### Security` 아래 `- **(전 언어)** S 보안`) → 조각 셋의 머리가 정확히 `langs: java kotlin` / `langs: python go` / `langs: python dotnet ruby node rust java kotlin go php` · 루트 `[Unreleased]` 가 포인터 · `preview` 의 항목 줄은 원래 줄과 태그만 다르다(`(Python · Go)`, `(전 언어)` → 아홉 표시명). M2 태그 없음 · `(Swift)` · `###` 밖 항목 · 문단 · `### Notes` 각각 rc 1 · cksum 그대로. M3 두 번째 실행 → `이미 전환됐다` · rc 0 · cksum 그대로. M4 `changelog.d/` 에 파일 하나 → rc 1. M5 `deploy-facts.sh` 없는 뿌리의 빈 `[Unreleased]` → rc 0 · 포인터.
+- [x] **3.2** FAIL → **3.3** 구현 → **3.4** PASS → **3.5** 커밋.
 
 #### 과제 4 — `release`
 
@@ -325,8 +325,8 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 
 픽스처 루트는 옛 꼴(빈 `[Unreleased]` + `## [1.0.7] - 2026-11-03 (Python)` 절 하나)로 쓴 뒤 `migrate` 로 포인터 꼴로 바꾼다(과제 3).
 
-- [ ] **4.1 실패하는 시험(R 절)** — R1 W 픽스처 → `release --date=2026-12-01 python=1.0.8 dotnet=1.0.8 go=1.2.6` rc 0 · 루트 = 릴리스 전 루트의 `[Unreleased]` 블록 바로 뒤에 W1 골든을 끼운 것(바이트) · a · b · c 삭제 · d = `renderFragment` 꼴의 `langs: ruby`. R2(검토 초점 4) 이어서 `release --date=2026-12-02 ruby=1.4.2` → `- **(Ruby)** D 보안` 한 번, d 삭제. R3(검토 초점 2) R1 다시 · `python=1.0.7` → rc 1 · `이미 있는 판` · cksum 그대로, `node=1.0.7` 은 rc 0. R4(검토 초점 3) 조각에 없는 `php=1.5.3` → rc 0 · `## [1.5.3] - … (PHP)` 절에 손글 자리만 · `대기 노트가 없다`. R5(검토 초점 5) `--date=2026-11-01` → rc 1 · cksum 그대로. R6 `[Unreleased]` 에 항목이 있는 옛 꼴 루트 → rc 1 · `먼저 migrate`. R7 문법이 깨진 조각이 있으면 rc 1. R8 R1 결과의 `TODO(release-notes)` 줄을 손글로 바꾸면 `node scripts/check-docs.mjs "$TMP"` 출력에 `검사 8d` 가 없다. R9 판 문자열이 긴 `go=1.2.6-<x 1,100 개>`(판 꼴은 맞다) → rc 1 · `1024B` 바늘 · cksum 그대로(제목 줄이 상한을 넘는다 — `verifyWave` 3).
-- [ ] **4.2** FAIL → **4.3** 구현 → **4.4** PASS → **4.5** 커밋.
+- [x] **4.1 실패하는 시험(R 절)** — R1 W 픽스처 → `release --date=2026-12-01 python=1.0.8 dotnet=1.0.8 go=1.2.6` rc 0 · 루트 = 릴리스 전 루트의 `[Unreleased]` 블록 바로 뒤에 W1 골든을 끼운 것(바이트) · a · b · c 삭제 · d = `renderFragment` 꼴의 `langs: ruby`. R2(검토 초점 4) 이어서 `release --date=2026-12-02 ruby=1.4.2` → `- **(Ruby)** D 보안` 한 번, d 삭제. R3(검토 초점 2) R1 다시 · `python=1.0.7` → rc 1 · `이미 있는 판` · cksum 그대로, `node=1.0.7` 은 rc 0. R4(검토 초점 3) 조각에 없는 `php=1.5.3` → rc 0 · `## [1.5.3] - … (PHP)` 절에 손글 자리만 · `대기 노트가 없다`. R5(검토 초점 5) `--date=2026-11-01` → rc 1 · cksum 그대로. R6 `[Unreleased]` 에 항목이 있는 옛 꼴 루트 → rc 1 · `먼저 migrate`. R7 문법이 깨진 조각이 있으면 rc 1. R8 R1 결과의 `TODO(release-notes)` 줄을 손글로 바꾸면 `node scripts/check-docs.mjs "$TMP"` 출력에 `검사 8d` 가 없다. R9 판 문자열이 긴 `go=1.2.6-<x 1,100 개>`(판 꼴은 맞다) → rc 1 · `1024B` 바늘 · cksum 그대로(제목 줄이 상한을 넘는다 — `verifyWave` 3).
+- [x] **4.2** FAIL → **4.3** 구현 → **4.4** PASS → **4.5** 커밋.
 
 #### 과제 5 — `check` 시험 컴파일 · 75 % 경고 · `--stats`
 
@@ -338,8 +338,8 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 - `projected = bytes(루트 머리말 + 포인터 블록 + 아홉 언어 시험 물결)` · `projected * 4 >= DOC_TRIPWIRE_BYTES * 3` 이면 warnings 에 `대기 노트를 아홉 언어 물결로 내면 루트가 <N>B — 전역 상한 <T>B 의 <P>%`.
 - CLI `check` — 위에 더해, 루트 `CHANGELOG.md` 가 있으면 `[Unreleased]` 가 `isUnreleasedPointer` 인지 본다(§5.5 — 8d 도 같은 함수를 부른다, 과제 9). errors 면 rc 1, warnings 는 `⚠️  ` 로 찍고 rc 0. `preview --stats` — 언어마다 `<lang> 대기 <n>개 · <b>B`(b = 그 언어 한 언어 물결의 바이트)와 `아홉 언어 물결 예상 <N>B / 8c 상한 <T>B (<P>%)`.
 
-- [ ] **5.1 실패하는 시험(K 절)** — K1 세 절에 걸친 조각이 섞인 픽스처 → rc 0. K2 `langs: go` · 본문 1,000 B 조각 210 개 → rc 0 · `대기 노트를 아홉 언어 물결로 내면`(약 82 %). 같은 꼴 100 개(약 40 %) → 그 바늘 없음(대조군). K3 `preview --stats` 에 `아홉 언어 물결 예상`. K4 `[Unreleased]` 에 항목이 있는 옛 꼴 루트 → rc 1 · `고정 문단`.
-- [ ] **5.2** FAIL → **5.3** 구현 → **5.4** PASS + `sh scripts/test/test-check-docs.sh` · 저장소 check-docs(§3 의 명령) green — 상수를 옮겨도 8c 가 그대로다 → **5.5** 커밋.
+- [x] **5.1 실패하는 시험(K 절)** — K1 세 절에 걸친 조각이 섞인 픽스처 → rc 0. K2 `langs: go` · 본문 1,000 B 조각 210 개 → rc 0 · `대기 노트를 아홉 언어 물결로 내면`(약 82 %). 같은 꼴 100 개(약 40 %) → 그 바늘 없음(대조군). K3 `preview --stats` 에 `아홉 언어 물결 예상`. K4 `[Unreleased]` 에 항목이 있는 옛 꼴 루트 → rc 1 · `고정 문단`.
+- [x] **5.2** FAIL → **5.3** 구현 → **5.4** PASS + `sh scripts/test/test-check-docs.sh` · 저장소 check-docs(§3 의 명령) green — 상수를 옮겨도 8c 가 그대로다 → **5.5** 커밋.
 
 #### 과제 6 — `covered`
 
@@ -348,16 +348,16 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 - 작업 트리의 조각(문법 오류면 rc 1)과 기준의 조각(`git ls-tree -r --name-only <base> -- changelog.d` + `git show`, 못 읽으면 rc 1).
 - 조각마다 기준 `langs` = 같은 경로의 기준 조각 → 없으면 같은 본문의 기준 조각들(합집합 — 이름만 바꾼 조각은 새 노트가 아니다) → 없으면 ∅. 얻은 언어 = `langs` − 기준 `langs`, 그 합집합을 찍는다.
 
-- [ ] **6.1 실패하는 시험(V 절)** — 픽스처 git 저장소: 기준 = a(`python`) · b(`go`), 작업 = c(`ruby`) 추가 · a 를 `python node` 로 · b 를 같은 내용으로 이름만 바꿈 → `ruby node` · rc 0. V2 변화 없음 → 빈 줄 · rc 0. V3 `--base=nope` → rc 1. V4 작업 트리에 문법이 깨진 조각 → rc 1.
-- [ ] **6.2** FAIL → **6.3** 구현 → **6.4** PASS → **6.5** 커밋.
+- [x] **6.1 실패하는 시험(V 절)** — 픽스처 git 저장소: 기준 = a(`python`) · b(`go`), 작업 = c(`ruby`) 추가 · a 를 `python node` 로 · b 를 같은 내용으로 이름만 바꿈 → `ruby node` · rc 0. V2 변화 없음 → 빈 줄 · rc 0. V3 `--base=nope` → rc 1. V4 작업 트리에 문법이 깨진 조각 → rc 1.
+- [x] **6.2** FAIL → **6.3** 구현 → **6.4** PASS → **6.5** 커밋.
 
 #### 과제 7 — PR 1: 변이 레코드 · 적대 레그 · 병합
 
-- [ ] **7.1** `scripts/test/mutation-records.txt` 에 줄 변이 여섯(OLD 는 구현된 줄을 그대로 옮긴다): CF1 조각 크기 비교(F4 가 잡는다) · CF2 `verifyWave` 의 다중집합 비교를 늘 같게(W4) · CF3 75 % 비교(K2) · CF4 `covered` 의 같은 본문 기준(V1) · CF5 release 의 이미 있는 판 거부(R3) · CF6 `verifyWave` 의 항목 상한(R9). 제외 하나: `test-changelog-fragments.sh` × `check-docs.mjs` — R8 대조군이고 check-docs 의 거부는 `test-changelog-ledger.sh` 가 단언한다.
-- [ ] **7.2** `node scripts/mutation-sweep.mjs --list` 의 새 쌍이 계획한 둘(`test-changelog-fragments.sh` × `changelog.mjs` · × `check-docs.mjs` 제외)뿐인지 본다 — 쌍 파생은 주석 속 경로도 읽고, 실행 줄에는 파일 이름만 있으면 된다(`pairsOf`). 커밋 뒤 `node scripts/mutation-sweep.mjs --only changelog` → M1 쌍과 CF1–CF6 전부 CAUGHT. `sh scripts/test/test-mutation-sweep.sh` green.
-- [ ] **7.3** Grok 적대 레그 — PR 1 diff 와 §5 를 인라인, 닫힌 질문(조각이 빠지거나 다른 언어 절로 가는 입력이 있는가 · `verifyWave` 가 잘못된 컴파일을 통과시키는 입력이 있는가 · release 가 쓰다 멈춰 반쯤 쓴 상태가 남는가), 심은 거짓 주장 둘. PM 이 주장마다 재현해 판정한다.
-- [ ] **7.4** 로컬 doc-facts — `sh scripts/test/test-check-docs.sh` · `test-changelog-ledger.sh` · `test-changelog-fragments.sh` · `test-selftest-hygiene.sh` · `test-mutation-sweep.sh` · §3 의 check-docs 명령, 전부 rc 0.
-- [ ] **7.5** §7 의 「계획」 · 「PR 1」 체크 → 브랜치 `feat/changelog-fragments-tooling` push → PR → CI green → 병합.
+- [x] **7.1** `scripts/test/mutation-records.txt` 에 줄 변이 여섯(OLD 는 구현된 줄을 그대로 옮긴다): CF1 조각 크기 비교(F4 가 잡는다) · CF2 `verifyWave` 의 다중집합 비교를 늘 같게(W4) · CF3 75 % 비교(K2) · CF4 `covered` 의 같은 본문 기준(V1) · CF5 release 의 이미 있는 판 거부(R3) · CF6 `verifyWave` 의 항목 상한(R9). 제외 하나: `test-changelog-fragments.sh` × `lib/doc-tripwire.mjs` — 정의 줄만 읽고, 모듈은 위 두 쌍이 덮는다.
+- [x] **7.2** `node scripts/mutation-sweep.mjs --list` 의 새 쌍이 계획한 둘(`test-changelog-fragments.sh` × `changelog.mjs` · × `check-docs.mjs`, doc-tripwire 쌍 제외)뿐인지 본다 — 쌍 파생은 주석 속 경로도 읽고, 실행 줄에는 파일 이름만 있으면 된다(`pairsOf`). 커밋 뒤 `node scripts/mutation-sweep.mjs --only changelog` → M1 쌍과 CF1–CF6 전부 CAUGHT. `sh scripts/test/test-mutation-sweep.sh` green.
+- [x] **7.3** Grok 적대 레그 — PR 1 diff 와 §5 를 인라인, 닫힌 질문(조각이 빠지거나 다른 언어 절로 가는 입력이 있는가 · `verifyWave` 가 잘못된 컴파일을 통과시키는 입력이 있는가 · release 가 쓰다 멈춰 반쯤 쓴 상태가 남는가), 심은 거짓 주장 둘. PM 이 주장마다 재현해 판정한다.
+- [x] **7.4** 로컬 doc-facts — `sh scripts/test/test-check-docs.sh` · `test-changelog-ledger.sh` · `test-changelog-fragments.sh` · `test-selftest-hygiene.sh` · `test-mutation-sweep.sh` · §3 의 check-docs 명령, 전부 rc 0.
+- [x] **7.5** §7 의 「계획」 · 「PR 1」 체크 → 브랜치 `feat/changelog-fragments-tooling` push → PR → CI green → 병합.
 
 #### 과제 8 — 이관(PR 2 시작)
 
