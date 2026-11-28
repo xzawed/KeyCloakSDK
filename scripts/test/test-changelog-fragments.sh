@@ -857,4 +857,101 @@ _before="$(snap)"; _out="$(chk)"
 assert_rejects "$_out" '고정 문단' "K4c 포인터 뒤의 손글 항목"
 assert_eq "$_before" "$(snap)" "K4c 아무것도 안 쓴다"
 
+# ---- V. covered — 범위가 조각으로 얻은 언어 ----
+# 픽스처는 git 저장소다(커밋자는 가짜 · autocrlf 는 끈다). 기준은 브랜치 이름이 아니라 sha 로 부른다.
+VGIT() { git -C "$TMP" -c user.email=t@example.invalid -c user.name=t "$@" >/dev/null 2>&1; }
+vfix() { fresh; git init -q -b main "$TMP" >/dev/null 2>&1; VGIT config core.autocrlf false; }
+vbase() { VGIT add -A; VGIT commit -qm base; VBASE="$(git -C "$TMP" rev-parse HEAD)"; }
+vf() { # <이름> <langs> <본문> — 조각 하나
+  frag "$1" "langs: $2
+section: Fixed
+---
+$3
+"
+}
+cov() { run covered --root="$TMP" --base="$VBASE" "$@"; }
+LF='
+'
+
+# V1 기준 = a(python) · b(go), 작업 = c(ruby) 추가 · a 를 `python node` 로 · b 를 같은 내용으로 이름만 바꿈 → `ruby node`.
+# 이름순으로는 a(node) 가 c(ruby) 보다 앞이라, 출력 순서가 DEPLOY_LANGS 가 아니면 `node ruby` 가 된다.
+vfix; vf 2026-11-20-a.txt python 'A 본문'; vf 2026-11-20-b.txt go 'B 본문'; vbase
+vf 2026-11-20-a.txt 'python node' 'A 본문'; rm "$TMP/changelog.d/2026-11-20-b.txt"; vf 2026-11-26-b-renamed.txt go 'B 본문'; vf 2026-11-26-c.txt ruby 'C 본문'
+_before="$(snap)"; _out="$(cov)"
+assert_eq "$_out" "ruby node${LF}__rc=0" "V1 얻은 언어 = ruby node (DEPLOY_LANGS 순 · 이름만 바꾼 조각은 새 노트가 아니다)"
+assert_eq "$_before" "$(snap)" "V1 아무것도 안 쓴다"
+
+# V1b 이름만 바꾸고 언어를 더하면 더한 언어만 얻는다 — 같은 본문의 기준 조각(둘 이상이면 합집합)이 기준 langs 다.
+vfix; vf 2026-11-20-x.txt python 'X 본문'; vf 2026-11-20-y.txt go 'X 본문'; vbase
+rm "$TMP/changelog.d/2026-11-20-x.txt" "$TMP/changelog.d/2026-11-20-y.txt"; vf 2026-11-26-z.txt 'python go php' 'X 본문'
+assert_eq "$(cov)" "php${LF}__rc=0" "V1b 같은 본문의 기준 조각들의 합집합을 뺀다"
+# V1c 같은 경로가 있으면 본문이 바뀌어도 그 경로의 기준 langs 를 쓴다(같은 본문의 다른 조각은 보지 않는다).
+vfix; vf 2026-11-20-a.txt python 'A 본문'; vf 2026-11-20-b.txt go 'B 본문'; vbase
+vf 2026-11-20-a.txt 'python go' 'B 본문'
+assert_eq "$(cov)" "go${LF}__rc=0" "V1c 같은 경로 우선 — 본문이 같은 b 의 go 가 아니라 a 의 python 을 뺀다"
+# V1d 기준에 조각 디렉터리가 없으면 작업 트리의 langs 전부가 얻은 것이다.
+vfix; printf 'x\n' > "$TMP/f"; vbase; vf 2026-11-26-a.txt 'go ruby' 'A 본문'
+assert_eq "$(cov)" "ruby go${LF}__rc=0" "V1d 기준에 changelog.d/ 가 없다 — langs 전부"
+
+# V2 변화 없음 → 빈 줄 · rc 0. 조각이 줄어도(지워져도) 얻은 것은 없다.
+vfix; vf 2026-11-20-a.txt python 'A 본문'; vf 2026-11-20-b.txt go 'B 본문'; vbase
+assert_eq "$(cov)" "${LF}__rc=0" "V2 변화 없음 — 빈 줄"
+rm "$TMP/changelog.d/2026-11-20-b.txt"
+assert_eq "$(cov)" "${LF}__rc=0" "V2 조각을 지워도 얻은 것은 없다 — 빈 줄"
+vf 2026-11-20-a.txt go 'A 본문'
+assert_eq "$(cov)" "go${LF}__rc=0" "V2 langs 를 바꾸면 새 토큰만 얻는다(python 은 기준에 있었다)"
+
+# V3 기준을 못 읽는다 — 이름 없는 · 옵션처럼 생긴 · git 저장소가 아닌 뿌리 · rc 1 · 기준 이름이 바늘이다.
+vfix; vf 2026-11-20-a.txt python 'A 본문'; vbase; _before="$(snap)"
+_out="$(run covered --root="$TMP" --base=nope)"
+assert_rejects "$_out" '기준 리비전을 읽지 못했다 — nope' "V3 없는 리비전"
+_out="$(run covered --root="$TMP" --base=--all)"
+assert_rejects "$_out" '기준 리비전을 읽지 못했다 — --all' "V3 옵션처럼 생긴 값은 리비전으로만 읽힌다"
+fresh; vf 2026-11-20-a.txt python 'A 본문'
+_out="$(run covered --root="$TMP" --base=HEAD)"
+assert_rejects "$_out" '기준 리비전을 읽지 못했다 — HEAD' "V3 git 저장소가 아닌 뿌리"
+vfix; vf 2026-11-20-a.txt python 'A 본문'; vbase; _before="$(snap)"
+# V3b 사용법 — --base= 가 없거나 비었거나 겹치면 rc 2.
+_out="$(run covered --root="$TMP")"
+assert_contains "$_out" '__rc=2' "V3b --base= 없음 — rc 2"
+assert_contains "$_out" '--base=' "V3b --base= 없음 — 사용법에 --base= 가 있다"
+_out="$(run covered --root="$TMP" --base=)"
+assert_contains "$_out" '__rc=2' "V3b 빈 --base= — rc 2"
+_out="$(run covered --root="$TMP" --base="$VBASE" --base="$VBASE")"
+assert_contains "$_out" '__rc=2' "V3b 겹친 --base= — rc 2"
+_out="$(run covered --root="$TMP" --base="$VBASE" extra)"
+assert_contains "$_out" '__rc=2' "V3b 위치 인자 — rc 2"
+assert_eq "$_before" "$(snap)" "V3 · V3b 아무것도 안 쓴다"
+
+# V4 작업 트리에 문법이 깨진 조각 → rc 1 · 파일 이름.
+vfix; vf 2026-11-20-a.txt python 'A 본문'; vbase
+frag 2026-11-26-bad.txt 'langs: go
+section: Fixed
+kind: x
+---
+본문
+'
+_before="$(snap)"; _out="$(cov)"
+assert_rejects "$_out" 'changelog.d/2026-11-26-bad.txt' "V4 작업 트리의 문법 오류"
+assert_contains "$_out" '모르는 키' "V4 — 사유"
+assert_eq "$_before" "$(snap)" "V4 아무것도 안 쓴다"
+
+# V5 기준의 조각이 깨졌다 · 기준에 하위 경로가 있다 → rc 1 · 기준 sha 와 조각 이름. 작업 트리는 멀쩡하다(고쳐 둔 경우를 닫는다).
+vfix; vf 2026-11-20-a.txt python 'A 본문'
+frag 2026-11-20-old.txt 'langs: nope
+section: Fixed
+---
+본문
+'; vbase
+rm "$TMP/changelog.d/2026-11-20-old.txt"; _before="$(snap)"; _out="$(cov)"
+assert_rejects "$_out" 'changelog.d/2026-11-20-old.txt' "V5 기준 조각의 문법 오류 — 조각 이름"
+assert_contains "$_out" "$(printf '%s' "$VBASE" | cut -c1-12)" "V5 — 기준 sha"
+assert_contains "$_out" 'DEPLOY_LANGS 밖의 토큰' "V5 — 사유"
+assert_eq "$_before" "$(snap)" "V5 아무것도 안 쓴다"
+vfix; vf 2026-11-20-a.txt python 'A 본문'; mkdir -p "$TMP/changelog.d/sub"; vf sub/2026-11-20-n.txt go 'N 본문'; vbase
+rm -rf "${TMP:?}/changelog.d/sub"
+_out="$(cov)"
+assert_rejects "$_out" 'changelog.d/sub/2026-11-20-n.txt' "V5 기준의 하위 경로(이름 꼴이 거부한다)"
+assert_contains "$_out" "$(printf '%s' "$VBASE" | cut -c1-12)" "V5 하위 경로 — 기준 sha"
+
 assert_report

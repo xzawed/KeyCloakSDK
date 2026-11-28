@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 // CHANGELOG 조각 도구 — `changelog.d/` 의 조각을 검사하고(check) 모아 보이고(preview) 릴리스 날짜 절로 옮긴다(release).
-// 옛 꼴 `[Unreleased]` 를 조각으로 바꾸는 것은 migrate. 이어서 covered.
+// 옛 꼴 `[Unreleased]` 를 조각으로 바꾸는 것은 migrate. 그 범위가 더한 언어는 covered.
 //
 // 사용: node scripts/changelog.mjs check [--root=<디렉터리>]
 //       node scripts/changelog.mjs preview [<lang>] [--date=YYYY-MM-DD] [--root=<디렉터리>]
 //       node scripts/changelog.mjs preview --stats [--root=<디렉터리>]
 //       node scripts/changelog.mjs migrate [--root=<디렉터리>] [--date=YYYY-MM-DD]
 //       node scripts/changelog.mjs release [--root=<디렉터리>] [--date=YYYY-MM-DD] <lang>=<판> …
+//       node scripts/changelog.mjs covered [--root=<디렉터리>] --base=<rev>
 //
 // 종료 코드: 0 성공 · 1 거부(트리 상태 · 검사 실패 — 아무것도 쓰지 않는다) · 2 사용법.
 // ⚠️ 인자 규칙은 changelog-rotate.mjs 를 따른다 — 하위명령마다 받는 `--<이름>=<값>` · 불리언 플래그 `--<이름>` 과 위치 인자 수가
 // 아래 표에 있고, 그 밖의 인자 · 모르는 하위명령 · 빈/겹친 `--root=` · `--<이름>=` · 겹친 플래그 · `--<이름>=<값>` 꼴의 플래그는
 // 사용법 오류다(플래그는 정확히 `--<이름>` 한 번만 받는다). 오타가 기본 동작으로 떨어지면 「검사가 비었다」가 통과로 읽힌다.
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDeployLangs, readFragmentDir, parseFragment, renderFragment, FRAGMENT_DIR, SECTIONS, DISPLAY } from './lib/changelog-fragments.mjs'
@@ -326,6 +328,49 @@ const COMMANDS = {
       for (const l of order) {
         if (versions.has(l) && !fragments.some((f) => f.langs.includes(l))) console.log(`⚠️  ${l}: 대기 노트가 없다 — 절에는 손글 자리만 있다`)
       }
+    },
+  },
+  // 범위가 조각으로 **얻은** 언어 — 한 줄(DEPLOY_LANGS 순 · 공백 구분 · 없으면 빈 줄). 착지 게이트가 「이 범위가 그 언어의 노트를 더했는가」를 묻는 자리다.
+  // 조각마다 기준 langs = 같은 경로의 기준 조각 → 없으면 본문이 같은 기준 조각들의 합집합(이름만 바꾼 조각은 새 노트가 아니다) → 없으면 ∅.
+  // ⚠️ 기준은 먼저 sha 로 풀고(옵션처럼 생긴 값은 `--end-of-options` 가 막는다) 그 sha 로만 읽는다. 기준의 조각도 같은 문법으로 읽고 깨졌으면 거부(rc 1)다.
+  covered: {
+    usage: 'covered [--root=<디렉터리>] --base=<rev>',
+    args: [0, 0],
+    values: ['base'],
+    flags: [],
+    run({ root, values }) {
+      if (values.base === undefined) usage('--base= 가 필요하다')
+      const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 28 })
+      let sha
+      try {
+        sha = git('rev-parse', '--verify', '--quiet', '--end-of-options', `${values.base}^{commit}`).trim()
+      } catch {
+        reject([`changelog: 기준 리비전을 읽지 못했다 — ${values.base}`])
+      }
+      const order = deployLangs(root)
+      const work = pendingFragments(root, order)
+      const at = sha.slice(0, 12)
+      const base = []
+      const errors = []
+      try {
+        for (const path of git('ls-tree', '-r', '-z', '--name-only', sha, '--', FRAGMENT_DIR).split('\0').filter(Boolean)) {
+          const name = path.slice(`${FRAGMENT_DIR}/`.length)
+          // 하위 경로(`sub/x.txt`)는 이름 꼴(FRAGMENT_NAME_RE)이 거부한다 — 따로 거르는 줄을 두지 않는다(같은 조건 둘은 변이를 공허하게 한다).
+          const r = parseFragment(name, git('show', `${sha}:${path}`), order)
+          errors.push(...r.errors.map((m) => `${m} (기준 ${at})`))
+          if (r.fragment) base.push(r.fragment)
+        }
+      } catch {
+        reject([`changelog: 기준 ${at} 의 ${FRAGMENT_DIR}/ 를 읽지 못했다`])
+      }
+      if (errors.length) reject(errors)
+      const gained = new Set()
+      for (const f of work) {
+        const same = base.find((b) => b.name === f.name)
+        const had = new Set(same ? same.langs : base.filter((b) => b.body === f.body).flatMap((b) => b.langs))
+        for (const l of f.langs) if (!had.has(l)) gained.add(l)
+      }
+      console.log(order.filter((l) => gained.has(l)).join(' '))
     },
   },
 }
