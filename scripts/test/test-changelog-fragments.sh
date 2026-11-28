@@ -889,6 +889,14 @@ assert_eq "$(cov)" "php${LF}__rc=0" "V1b 같은 본문의 기준 조각들의 �
 vfix; vf 2026-11-20-a.txt python 'A 본문'; vf 2026-11-20-b.txt go 'B 본문'; vbase
 vf 2026-11-20-a.txt 'python go' 'B 본문'
 assert_eq "$(cov)" "go${LF}__rc=0" "V1c 같은 경로 우선 — 본문이 같은 b 의 go 가 아니라 a 의 python 을 뺀다"
+# V1e 이름을 바꾸고 본문도 바꾸면 같은 경로도 같은 본문도 없다 — 기준 langs 는 ∅ 라 langs 전부가 얻은 것이다(다른 기준 조각을 물려받지 않는다).
+vfix; vf 2026-11-20-a.txt go 'G'; vbase
+rm "$TMP/changelog.d/2026-11-20-a.txt"; vf 2026-11-26-a2.txt go 'G changed'
+assert_eq "$(cov)" "go${LF}__rc=0" "V1e 이름 바꿈 + 본문 바뀜 — go"
+# V1f 이미 노트가 있는 언어의 새 노트 — 기준의 다른 조각(python)을 물려받지 않아 python 을 얻는다.
+vfix; vf 2026-11-20-a.txt python 'A'; vbase
+vf 2026-11-26-n.txt python 'N'
+assert_eq "$(cov)" "python${LF}__rc=0" "V1f 이미 노트가 있는 언어의 새 노트 — python"
 # V1d 기준에 조각 디렉터리가 없으면 작업 트리의 langs 전부가 얻은 것이다.
 vfix; printf 'x\n' > "$TMP/f"; vbase; vf 2026-11-26-a.txt 'go ruby' 'A 본문'
 assert_eq "$(cov)" "ruby go${LF}__rc=0" "V1d 기준에 changelog.d/ 가 없다 — langs 전부"
