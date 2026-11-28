@@ -15,7 +15,7 @@ namespace Xzawed.Keycloak.Sdk.Tests;
 /// </summary>
 /// <remarks>
 /// <para><c>IsEncodingLookup</c>: the judged exception is the one <c>Encoding.GetEncoding</c> threw (an inner one wrapped
-/// by the transport included), so a unit test never builds one that was not thrown; a constructed-only inner exception ends
+/// by the transport included), so the transport never hands it one that was not thrown; a constructed-only inner exception ends
 /// in false without a charset verdict.</para>
 /// <para><c>IsRefusedBody</c>: a caught exception was thrown, so it has a <c>TargetSite</c>, and C# never emits a method
 /// without a declaring type (a module-level function); both null sides end in false (not a refused request body).</para>
