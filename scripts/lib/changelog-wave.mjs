@@ -9,8 +9,11 @@
 //   - 블록 = 제목 · 생성 문단 · `### <section>`(SECTIONS 순, 빈 절은 쓰지 않는다, 항목은 조각 이름순) — 빈 줄 하나로 끝난다
 //   - 생성 문단 — 공통 절과 절이 하나뿐인 물결은 물결 머리말 자리, 공통 절 아래 언어 절은 공통 절 가리킴 + 손글 자리
 // ⚠️ 글은 문자열 안의 `\n` 으로만 만든다 — 이 저장소의 .mjs 는 체크아웃에서 CRLF 가 될 수 있어, 여러 줄 리터럴은 바이트가 갈린다.
-import { DISPLAY, SECTIONS, compileItem, tagOf } from './changelog-fragments.mjs'
-import { BULLET_MAX_BYTES, HAND_MARK, bytes, itemsOf, parseLedgerFile } from './changelog-ledger.mjs'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { DISPLAY, FRAGMENT_DIR, SECTIONS, compileItem, readDeployLangs, readFragmentDir, tagOf } from './changelog-fragments.mjs'
+import { BULLET_MAX_BYTES, HAND_MARK, ROOT_FILE, UNRELEASED_POINTER, bytes, itemsOf, parseLedgerFile } from './changelog-ledger.mjs'
+import { DOC_TRIPWIRE_BYTES } from './doc-tripwire.mjs'
 
 const COMMON = '물결'
 const WAVE_INTRO = `${HAND_MARK} 물결 머리말 — 이 물결이 내보내는 언어 · 판과 그 근거를 쓴다.`
@@ -206,4 +209,43 @@ export function verifyWave(fragments, wave, text, order) {
     else if (n < 0) E(6, `남는 항목${n < -1 ? ` ${-n}개` : ''} — ${k}`)
   }
   return errors
+}
+
+// ---- 트리 검사(check · preview --stats) ----
+// 시험 물결 열 — 판 `0.0.1`… 은 모두 다르고 날짜는 정해둔 하나다. 조각이 자기 langs 를 내보내는 물결마다 정확히 한 번, 그 밖에는 0 번 나오는지는
+// verifyWave 의 6 이 잰다(아홉 언어 물결 하나 + 한 언어씩 아홉 — 한 언어 물결이 「그 언어만 나가는 릴리스」를 덮는다).
+const TEST_DATE = '2000-01-01'
+const WARN_NUM = 3 // 경고선 = 전역 상한의 3/4 — 아홉 언어 물결로 내면 루트가 이 선을 넘는 대기 노트
+const WARN_DEN = 4
+export const percentOf = (n) => Math.floor((n * 100) / DOC_TRIPWIRE_BYTES) // check-docs 8c 의 경고가 쓰는 식
+
+// → { errors, warnings, stats: { perLang: { <lang>: { count, bytes } }, projected, tripwire } }.
+// count = 그 언어를 langs 에 든 조각 수 · bytes = 그 언어 한 언어 물결 글의 바이트 · projected = 루트 머리말 + 포인터 블록 + 아홉 언어 물결의 바이트.
+// `changelog.d/` 가 없으면 빈 결과다(오류 · 경고 없음, 수는 0). deploy-facts.sh 를 못 읽으면 던진다(부르는 쪽이 먼저 읽어 rc 1 로 바꾼다).
+// ⚠️ 루트 `[Unreleased]` 의 고정 문단은 여기서 보지 않는다 — 그것은 CLI check 의 몫이다(8d 도 같은 isUnreleasedPointer 를 부른다).
+export function checkFragmentTree(repoRoot) {
+  const order = readDeployLangs(repoRoot)
+  const zero = Object.fromEntries(order.map((l) => [l, { count: 0, bytes: 0 }]))
+  const stats = { perLang: zero, projected: 0, tripwire: DOC_TRIPWIRE_BYTES }
+  if (!existsSync(join(repoRoot, FRAGMENT_DIR))) return { errors: [], warnings: [], stats }
+  const { fragments, errors: grammar } = readFragmentDir(repoRoot, order)
+  const errors = [...grammar]
+  const trial = (label, versions) => {
+    const wave = { date: TEST_DATE, versions }
+    const { text } = compileWave(fragments, wave, order)
+    for (const e of verifyWave(fragments, wave, text, order)) errors.push(`changelog: 시험 물결(${label}) — ${e}`)
+    return text
+  }
+  const nine = trial('아홉 언어', Object.fromEntries(order.map((l, i) => [l, `0.0.${i + 1}`])))
+  const perLang = {}
+  for (const l of order) {
+    perLang[l] = { count: fragments.filter((f) => f.langs.includes(l)).length, bytes: bytes(trial(`${l} 하나`, { [l]: '0.0.1' })) }
+  }
+  const file = join(repoRoot, ROOT_FILE)
+  const head = existsSync(file) ? parseLedgerFile(readFileSync(file, 'utf8').replace(/\r\n/g, '\n')).head : ''
+  const projected = bytes(`${head}## [Unreleased]\n\n${UNRELEASED_POINTER}\n\n${nine}`)
+  const warnings = []
+  if (projected * WARN_DEN >= DOC_TRIPWIRE_BYTES * WARN_NUM)
+    warnings.push(`대기 노트를 아홉 언어 물결로 내면 루트가 ${projected}B — 전역 상한 ${DOC_TRIPWIRE_BYTES}B 의 ${percentOf(projected)}%`)
+  return { errors, warnings, stats: { perLang, projected, tripwire: DOC_TRIPWIRE_BYTES } }
 }

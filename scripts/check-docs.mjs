@@ -2075,14 +2075,8 @@ function checkDocBudget() {
 // README 까지 빠진다 — 그건 예외가 아니라 구멍이다.
 const BUDGET_EXEMPT_LEDGER = new Set(['CHANGELOG.md'])
 const BUDGET_EXEMPT_PKG_README = /^(java|python|node|go|dotnet|php|rust|ruby|kotlin)\/README\.md$/
-// ⚠️ 부류와 무관한 **전역 트립와이어**. 예외 부류도 무한히 자라서는 안 된다. 값은 타이트한
-// 상한이 아니라 **실제 사고 크기**다 — `remaining-work.md` 가 도달했던 256 KB. ⚠️ 「정상적인
-// CHANGELOG 는 여기 닿지 않는다」(2026-09-22: 27,309 B = 10.4%)는 **틀렸다** — 항목이 길어지자 한 달
-// 만에 214,445 B(82%)가 됐다(2026-10-28). 그래서 원장은 이제 검사 8d 의 루트 상한이 묶는다.
-// ⚠️ **이것이 예산보다 세다** — 래칫이 승인한 `max-bytes` 라도 이 수를 넘으면 실패한다.
-// 두 기제가 조용히 어긋나지 않도록 아래에서 `max-bytes > 이 수` 자체를 실패로 잡는다
-// (현재 최대 예산 192,335 B 라 여유는 69,809 B 뿐이다 — 래칫이 먼저 여기 닿는다).
-const DOC_TRIPWIRE_BYTES = 256 * 1024
+// ⚠️ 전역 트립와이어 상수(`DOC_TRIPWIRE_BYTES`)의 정의와 근거는 lib/doc-tripwire.mjs 가 갖는다 — 사본을 두지 않는다.
+import { DOC_TRIPWIRE_BYTES } from './lib/doc-tripwire.mjs'
 function checkBudgetCoverage() {
   // ⚠️ **이 저장소에서만 돈다.** 이 가드의 자가테스트는 임시 디렉터리에 작은 픽스처 트리를
   // 만들어 check-docs 를 그 위에서 돌린다 — 거기엔 예산 규약이 없으므로 8c 가 발동하면 안 된다.

@@ -4,17 +4,18 @@
 //
 // 사용: node scripts/changelog.mjs check [--root=<디렉터리>]
 //       node scripts/changelog.mjs preview [<lang>] [--date=YYYY-MM-DD] [--root=<디렉터리>]
+//       node scripts/changelog.mjs preview --stats [--root=<디렉터리>]
 //       node scripts/changelog.mjs migrate [--root=<디렉터리>] [--date=YYYY-MM-DD]
 //       node scripts/changelog.mjs release [--root=<디렉터리>] [--date=YYYY-MM-DD] <lang>=<판> …
 //
 // 종료 코드: 0 성공 · 1 거부(트리 상태 · 검사 실패 — 아무것도 쓰지 않는다) · 2 사용법.
-// ⚠️ 인자 규칙은 changelog-rotate.mjs 를 따른다 — 하위명령마다 받는 `--<이름>=<값>` 과 위치 인자 수가 아래 표에 있고, 그 밖의
-// 인자 · 모르는 하위명령 · 빈/겹친 `--root=` · `--<이름>=` 은 사용법 오류다. 오타가 기본 동작으로 떨어지면 「검사가 비었다」가
-// 통과로 읽힌다.
+// ⚠️ 인자 규칙은 changelog-rotate.mjs 를 따른다 — 하위명령마다 받는 `--<이름>=<값>` · 불리언 플래그 `--<이름>` 과 위치 인자 수가
+// 아래 표에 있고, 그 밖의 인자 · 모르는 하위명령 · 빈/겹친 `--root=` · `--<이름>=` · 겹친 플래그 · `--<이름>=<값>` 꼴의 플래그는
+// 사용법 오류다(플래그는 정확히 `--<이름>` 한 번만 받는다). 오타가 기본 동작으로 떨어지면 「검사가 비었다」가 통과로 읽힌다.
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDeployLangs, readFragmentDir, parseFragment, renderFragment, FRAGMENT_DIR, SECTIONS, DISPLAY } from './lib/changelog-fragments.mjs'
-import { compileWave, verifyWave, renderPreview, isWaveDate } from './lib/changelog-wave.mjs'
+import { compileWave, verifyWave, renderPreview, isWaveDate, checkFragmentTree, percentOf } from './lib/changelog-wave.mjs'
 import { ROOT_FILE, UNRELEASED_POINTER, VOLUME_DIR, VOLUME_RE, isUnreleasedPointer, parseLedgerFile, itemsOf } from './lib/changelog-ledger.mjs'
 
 const usage = (msg) => {
@@ -160,27 +161,57 @@ function shippedPairs(files) {
   return pairs
 }
 
+// 루트 `[Unreleased]` 가 고정 문단인가(§5.2) — CHANGELOG.md 가 없으면 볼 것이 없다(오류 아님). 오류 줄들을 돌려준다.
+const rootPointerErrors = (root) => {
+  const file = join(root, ROOT_FILE)
+  if (!existsSync(file)) return []
+  const { unreleased } = parseLedgerFile(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'))
+  if (unreleased.length !== 1)
+    return [`changelog: ${ROOT_FILE} 에 \`## [Unreleased]\` 가 ${unreleased.length === 0 ? '없다' : '둘 이상이다'} — 고정 문단 하나가 든 \`[Unreleased]\` 가 정확히 하나여야 한다`]
+  if (!isUnreleasedPointer(unreleased[0].text))
+    return [`changelog: ${ROOT_FILE} 의 \`## [Unreleased]\` 가 고정 문단이 아니다 — 미출시 항목은 \`${FRAGMENT_DIR}/\` 의 조각이다(옛 항목은 \`node scripts/changelog.mjs migrate\` 로 옮긴다)`]
+  return []
+}
+
 // 하위명령 표 — 과제마다 한 줄씩 늘린다. args = 위치 인자 수 [최소, 최대](최대 Infinity 는 위가 열림) · values = 받는 `--<이름>=<값>` 의 이름 ·
-// run({ root, args, values }) 이 종료 코드를 정한다(values 는 이름 → 값, 준 것만 있다).
+// flags = 받는 불리언 플래그 `--<이름>` 의 이름 · run({ root, args, values, flags }) 이 종료 코드를 정한다(values 는 이름 → 값,
+// flags 는 이름 → true, 둘 다 준 것만 있다).
 const COMMANDS = {
   check: {
     usage: 'check [--root=<디렉터리>]',
     args: [0, 0],
     values: [],
+    flags: [],
     run({ root }) {
-      const fragments = pendingFragments(root, deployLangs(root))
+      const order = deployLangs(root)
+      const { errors, warnings } = checkFragmentTree(root)
+      errors.push(...rootPointerErrors(root))
+      if (errors.length) reject(errors)
+      const fragments = pendingFragments(root, order)
       console.log(fragments.length
         ? `ok   ${FRAGMENT_DIR}/ ${fragments.length}개 조각`
         : `ok   ${FRAGMENT_DIR}/ — 대기 중인 조각이 없다`)
+      for (const w of warnings) console.log(`⚠️  ${w}`)
     },
   },
   // 언어 없이 — 대기 조각 전부를 지금의 `[Unreleased]` 꼴로(태그는 langs 전부). 언어 하나 — 그 언어만 내보내는 물결의
   // 절(판 자리는 `?`, 태그는 그 언어뿐)이고, release 와 같은 컴파일 · 독립 대조를 거친다.
   preview: {
-    usage: 'preview [<lang>] [--date=YYYY-MM-DD] [--root=<디렉터리>]',
+    usage: 'preview [<lang>] [--date=YYYY-MM-DD] [--root=<디렉터리>] | preview --stats [--root=<디렉터리>]',
     args: [0, 1],
     values: ['date'],
-    run({ root, args: [lang], values }) {
+    flags: ['stats'],
+    run({ root, args: [lang], values, flags }) {
+      // `--stats` — 통계 줄만 찍는다(미리보기 글 없음): 언어마다 대기 조각 수 · 한 언어 물결의 바이트, 끝에 아홉 언어 물결 예상.
+      if (flags.stats) {
+        if (lang !== undefined || values.date !== undefined) usage('--stats 는 <lang> · --date= 와 함께 쓰지 않는다')
+        const order = deployLangs(root)
+        const { errors, stats } = checkFragmentTree(root)
+        if (errors.length) reject(errors)
+        for (const l of order) console.log(`${l} 대기 ${stats.perLang[l].count}개 · ${stats.perLang[l].bytes}B`)
+        console.log(`아홉 언어 물결 예상 ${stats.projected}B / 8c 상한 ${stats.tripwire}B (${percentOf(stats.projected)}%)`)
+        return
+      }
       if (lang === undefined && values.date !== undefined) usage('--date= 는 <lang> 과 함께 준다 — 모든 언어의 미리보기는 날짜가 없는 [Unreleased] 꼴이다')
       const date = lang === undefined ? null : dateOf(values)
       const order = deployLangs(root)
@@ -204,6 +235,7 @@ const COMMANDS = {
     usage: 'migrate [--root=<디렉터리>] [--date=YYYY-MM-DD]',
     args: [0, 0],
     values: ['date'],
+    flags: [],
     run({ root, values }) {
       const date = dateOf(values)
       const { file, ledger, block } = readRoot(root)
@@ -231,6 +263,7 @@ const COMMANDS = {
     usage: 'release [--root=<디렉터리>] [--date=YYYY-MM-DD] <lang>=<판> …',
     args: [1, Infinity],
     values: ['date'],
+    flags: [],
     run({ root, args, values }) {
       // 1 인자 — 날짜 · `<lang>=<판>` 꼴 · 판 꼴 · 겹침(rc 2) → DEPLOY_LANGS(못 읽으면 rc 1) → 그 밖의 언어(rc 2)
       const date = dateOf(values)
@@ -303,16 +336,19 @@ if (!cmd || cmd.startsWith('--') || !Object.hasOwn(COMMANDS, cmd)) usage(`모르
 const spec = COMMANDS[cmd]
 const roots = []
 const given = {} // 이름 → 받은 값들
+const flagged = [] // 받은 불리언 플래그 이름들(겹침을 보려고 센다)
 const args = []
 const unknown = []
 for (const a of rest) {
   const m = /^--([a-z]+)=/.exec(a)
   if (a.startsWith('--root=')) roots.push(a)
   else if (m && spec.values.includes(m[1])) (given[m[1]] ??= []).push(a.slice(m[0].length))
+  else if (a.startsWith('--') && spec.flags.includes(a.slice(2))) flagged.push(a.slice(2)) // 정확히 `--<이름>` 뿐 — `--stats=x` 는 아래 unknown
   else if (a.startsWith('--')) unknown.push(a)
   else args.push(a)
 }
 if (unknown.length) usage(`모르는 인자 — ${unknown.join(' ')}`)
+for (const f of flagged) if (flagged.indexOf(f) !== flagged.lastIndexOf(f)) usage(`--${f} 는 한 번만 준다`)
 if (roots.length > 1 || roots.includes('--root=')) usage(`--root= 는 값과 함께 한 번만 준다 — ${roots.join(' ')}`)
 for (const [name, vs] of Object.entries(given)) {
   if (vs.length > 1 || vs.includes('')) usage(`--${name}= 는 값과 함께 한 번만 준다 — ${vs.map((v) => `--${name}=${v}`).join(' ')}`)
@@ -324,4 +360,5 @@ spec.run({
   root: roots.length ? roots[0].slice('--root='.length) : '.',
   args,
   values: Object.fromEntries(Object.entries(given).map(([name, [v]]) => [name, v])),
+  flags: Object.fromEntries(flagged.map((f) => [f, true])),
 })

@@ -772,4 +772,89 @@ _cl="$(cat "$CL")"
 case "$_cl" in *"## [1.2.6] - $_d1 (Go)"*|*"## [1.2.6] - $_d2 (Go)"*) _today=ok ;; *) _today="$_cl" ;; esac
 assert_eq ok "$_today" "R14 날짜 기본은 오늘"
 
+# ---- K. check 시험 컴파일 · 75 % 경고 · preview --stats ----
+# 상한은 lib/doc-tripwire.mjs 의 상수 하나다 — 여기서 다시 적지 않고 그 파일의 정의 줄에서 읽는다(check-docs 8c 와 같은 수).
+_T="$(( $(sed -n 's/^export const DOC_TRIPWIRE_BYTES = //p' "$DIR/../lib/doc-tripwire.mjs" | tr -d '\r') ))"
+WARN='대기 노트를 아홉 언어 물결로 내면'
+kfix() { fresh; mkdir -p "$W"; rold; mig > /dev/null; } # 포인터 꼴 뿌리 — 조각 없음(many 가 채운다)
+many() { # <개수> <langs> — 본문 1,000 B 의 조각 <개수> 개(이름은 n001…)
+  _body="$(repeat 1000)"; _i=1
+  while [ "$_i" -le "$1" ]; do
+    frag "2026-11-25-n$(printf '%03d' "$_i").txt" "langs: $2
+section: Fixed
+---
+$_body
+"
+    _i=$((_i + 1))
+  done
+}
+
+# K1 세 절(Fixed · Added · Security)에 걸친 조각 넷 + 포인터 꼴 루트 → rc 0 · 조각 수 · 경고 없음 · 아무것도 안 쓴다.
+rfix; _before="$(snap)"; _out="$(chk)"
+assert_contains "$_out" 'ok   changelog.d/ 4개 조각' "K1 조각 넷"
+assert_contains "$_out" '__rc=0' "K1 rc 0"
+assert_not_contains "$_out" '⚠️' "K1 작은 트리에는 경고가 없다"
+assert_eq "$_before" "$(snap)" "K1 check 는 아무것도 쓰지 않는다"
+# K1b 루트가 없어도 check 는 거부하지 않는다(루트가 있을 때만 포인터를 본다) · CRLF 루트는 LF 로 맞춰 읽는다.
+rfix; rm -f "$CL"; _out="$(chk)"; assert_contains "$_out" '__rc=0' "K1b CHANGELOG.md 없음 — rc 0"
+rfix; awk '{ printf "%s\r\n", $0 }' "$CL" > "$MS/k1.crlf"; cp "$MS/k1.crlf" "$CL"; _out="$(chk)"
+assert_contains "$_out" '__rc=0' "K1b CRLF 루트의 포인터를 받는다"
+
+# K2 langs: go · 본문 1,000 B 조각 210 개 → rc 0 + 경고(≈82 %) · 같은 꼴 100 개(≈40 %)는 경고 없음(대조군).
+kfix; many 210 go; _before="$(snap)"; _out="$(chk)"
+assert_contains "$_out" '__rc=0' "K2 경고는 실패가 아니다 — rc 0"
+assert_contains "$_out" 'ok   changelog.d/ 210개 조각' "K2 ok 줄이 먼저 나온다"
+assert_contains "$_out" "⚠️  $WARN 루트가 " "K2 경고 — 접두 · 바늘"
+assert_contains "$_out" "B — 전역 상한 ${_T}B 의 " "K2 경고 — 전역 상한은 doc-tripwire 의 수"
+_N="$(printf '%s\n' "$_out" | sed -n 's/.*루트가 \([0-9][0-9]*\)B .*/\1/p')"
+assert_contains "$_out" "의 $(( _N * 100 / _T ))%" "K2 경고 — P 는 N 에서 내림한 정수"
+case "$(( _N * 100 / _T ))" in 8[0-4]) _p=ok ;; *) _p="$_N B" ;; esac
+assert_eq ok "$_p" "K2 210 개는 약 82 % 다(80–84)"
+assert_eq "$_before" "$(snap)" "K2 경고 — 아무것도 쓰지 않는다"
+kfix; many 100 go; _out="$(chk)"
+assert_contains "$_out" 'ok   changelog.d/ 100개 조각' "K2 대조군 — 100 개 ok"
+assert_contains "$_out" '__rc=0' "K2 대조군 — rc 0"
+assert_not_contains "$_out" "$WARN" "K2 대조군(≈40 %) — 경고가 없다"
+
+# K3 preview --stats — 통계 줄만(미리보기 글 없음) · 언어마다 `<lang> 대기 <n>개 · <b>B` · 끝에 아홉 언어 물결 예상.
+rfix; _out="$(run preview --stats --root="$TMP")"
+assert_contains "$_out" '__rc=0' "K3 rc 0"
+assert_contains "$_out" '아홉 언어 물결 예상' "K3 아홉 언어 물결 예상"
+assert_contains "$_out" "B / 8c 상한 ${_T}B (" "K3 8c 상한은 doc-tripwire 의 수"
+assert_not_contains "$_out" '### ' "K3 미리보기 글은 찍지 않는다"
+assert_contains "$_out" 'python 대기 3개 · ' "K3 python — 조각 a · c · d"
+assert_contains "$_out" 'ruby 대기 1개 · ' "K3 ruby — 조각 d"
+assert_contains "$_out" 'php 대기 0개 · ' "K3 대기가 없는 언어도 한 줄"
+# b = 그 언어 한 언어 물결의 바이트 — `preview python --date=…`(판 자리 `?`)의 글 크기 + 판 `0.0.1` 과 `?` 의 4 B.
+to_file "$MS/k3.py" node "$CLI" preview python --date=2000-01-01 --root="$TMP"
+_b="$(( $(wc -c < "$MS/k3.py") + 4 ))"
+assert_contains "$_out" "python 대기 3개 · ${_b}B" "K3 python 의 B = 한 언어 물결 글의 바이트"
+
+# K3b --stats 의 인자 규칙 — 불리언 플래그(정확히 `--stats`, 한 번) · <lang> · --date= 와 같이 못 쓴다 · 다른 하위명령은 모른다. 모두 rc 2 · 아무것도 안 쓴다.
+rfix; _before="$(snap)"
+w5 "K3b --stats 와 <lang>" '--stats 는 <lang> · --date= 와 함께 쓰지 않는다' preview --stats go --root="$TMP"
+w5 "K3b --stats 와 --date=" '--stats 는 <lang> · --date= 와 함께 쓰지 않는다' preview --stats --date=2026-12-01 --root="$TMP"
+w5 "K3b --stats 두 번" '--stats 는 한 번만 준다' preview --stats --stats --root="$TMP"
+w5 "K3b --stats=x" '모르는 인자 — --stats=x' preview --stats=x --root="$TMP"
+w5 "K3b 모르는 플래그" '모르는 인자 — --stat' preview --stat --root="$TMP"
+w5 "K3b check 는 --stats 를 모른다" '모르는 인자 — --stats' check --stats --root="$TMP"
+w5 "K3b release 는 --stats 를 모른다" '모르는 인자 — --stats' release --stats go=1.2.6 --root="$TMP"
+assert_eq "$_before" "$(snap)" "K3b 사용법 오류는 아무것도 쓰지 않는다"
+
+# K4 [Unreleased] 에 항목이 있는 옛 꼴 루트 → rc 1 · 고정 문단 · 아무것도 안 쓴다. 대조군은 K1(포인터 꼴 → rc 0).
+mroot "$M_OLD"; _before="$(snap)"; _out="$(chk)"
+assert_rejects "$_out" '고정 문단' "K4 옛 꼴 루트"
+assert_contains "$_out" 'CHANGELOG.md' "K4 — 파일 이름"
+assert_eq "$_before" "$(snap)" "K4 아무것도 안 쓴다"
+# K4b 같은 거부 — 조각이 있어도 · 루트에 `[Unreleased]` 가 없어도(둘 다 고정 문단이 아니다).
+rfix; printf '# Changelog\n\n## [1.0.7] - 2026-11-03 (Python)\n\n### Fixed\n- **(Python)** 옛 고침\n' > "$CL"; _before="$(snap)"; _out="$(chk)"
+assert_rejects "$_out" '고정 문단' "K4b [Unreleased] 가 없는 루트"
+assert_eq "$_before" "$(snap)" "K4b 아무것도 안 쓴다"
+# K4c 포인터 뒤에 손으로 한 줄을 더하면(고정 문단이 아니다) 거부한다.
+rfix; awk 'index($0, "## [1.0.7] ") == 1 { print "- **(Go)** 손으로 쓴 항목\n" } { print }' "$CL" > "$MS/k4c"; cp "$MS/k4c" "$CL"
+assert_contains "$(cat "$CL")" '- **(Go)** 손으로 쓴 항목' "K4c 픽스처 — 포인터 뒤에 항목이 붙었다"
+_before="$(snap)"; _out="$(chk)"
+assert_rejects "$_out" '고정 문단' "K4c 포인터 뒤의 손글 항목"
+assert_eq "$_before" "$(snap)" "K4c 아무것도 안 쓴다"
+
 assert_report
