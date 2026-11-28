@@ -420,4 +420,155 @@ to_file "$W/e2.out" node "$CLI" preview php --date=2026-12-01 --root="$TMP"
 assert_eq 0 "$_rc" "W7 preview php rc 0"
 same_bytes "$W/e2.gold" "$W/e2.out" "W7 preview php — 제목과 물결 머리말 자리뿐"
 
+# ---- M. migrate (픽스처 생성기 겸) ----
+# ⚠️ 이 절은 `[Unreleased]` 의 고정 문단을 다시 쓰지 않는다 — 문구를 소유하는 것은 changelog-ledger.mjs 의 UNRELEASED_POINTER 다.
+# migrate 가 쓴 문단이 그 상수와 같다는 증거는 M3(둘째 실행이 「이미 전환됐다」 — isUnreleasedPointer 가 migrate 자신의 출력을 받는다)다.
+CL="$TMP/CHANGELOG.md"
+MS="$(mktemp -d)" # fresh 가 TMP 를 지우므로 실행 사이에 남길 비교 파일은 여기 둔다
+trap 'rm -rf "$TMP" "${MS:?}"' EXIT
+# 루트 — 머리 · `[Unreleased]`(<본문>) · 릴리스 절 하나. 본문은 `[Unreleased]` 제목 아래 빈 줄 뒤에 그대로 놓인다.
+mroot() { # <[Unreleased] 본문>
+  fresh; printf '# Changelog\n\n## [Unreleased]\n\n%s\n## [1.0.0] - 2026-11-01\n\n### Fixed\n\n- **(Go)** old\n' "$1" > "$CL"
+}
+M_OLD='### Fixed
+
+- **(Java · Kotlin)** J 고침
+- **(Go · Python)** G 고침
+
+### Security
+
+- **(전 언어)** S 보안
+'
+unrel() { awk '/^## /{p=($0=="## [Unreleased]")} p' "$1"; } # 파일의 `[Unreleased]` 블록
+mig() { run migrate --date=2026-11-28 --root="$TMP" "$@"; }
+
+# M1 옛 꼴 항목 셋 → 조각 셋(이름순 = 블록 순서) · 루트는 포인터 · preview 의 항목은 원래 줄과 태그만 다르다.
+mroot "$M_OLD"; sed -n '/^## \[1.0.0\]/,$p' "$CL" > "$TMP/_tail.gold"
+_out="$(mig)"
+assert_contains "$_out" 'ok   migrate: 항목 3개 → 조각 3개' "M1 출력"; assert_contains "$_out" '__rc=0' "M1 rc 0"
+assert_eq '2026-11-28-unreleased-001.txt 2026-11-28-unreleased-002.txt 2026-11-28-unreleased-003.txt' "$(ls "$TMP/changelog.d" | tr '\n' ' ' | sed 's/ $//')" "M1 조각 이름 — 날짜-unreleased-NNN"
+assert_eq 'langs: java kotlin' "$(sed -n 1p "$TMP/changelog.d/2026-11-28-unreleased-001.txt")" "M1 001 의 langs"
+assert_eq 'section: Fixed' "$(sed -n 2p "$TMP/changelog.d/2026-11-28-unreleased-001.txt")" "M1 001 의 section"
+assert_eq 'J 고침' "$(sed -n 4p "$TMP/changelog.d/2026-11-28-unreleased-001.txt")" "M1 001 의 본문"
+assert_eq 'langs: python go' "$(sed -n 1p "$TMP/changelog.d/2026-11-28-unreleased-002.txt")" "M1 002 의 langs — DEPLOY_LANGS 순서"
+assert_eq 'langs: python dotnet ruby node rust java kotlin go php' "$(sed -n 1p "$TMP/changelog.d/2026-11-28-unreleased-003.txt")" "M1 003 의 langs — 전 언어는 아홉"
+assert_eq 'section: Security' "$(sed -n 2p "$TMP/changelog.d/2026-11-28-unreleased-003.txt")" "M1 003 의 section"
+assert_eq '# Changelog' "$(sed -n 1p "$CL")" "M1 머리말은 그대로"
+sed -n '/^## \[1.0.0\]/,$p' "$CL" > "$TMP/_tail.out"
+same_bytes "$TMP/_tail.gold" "$TMP/_tail.out" "M1 [Unreleased] 밖의 블록은 바이트까지 그대로"
+assert_eq 0 "$(grep -c 'J 고침' "$CL" || true)" "M1 루트에 옛 항목이 남지 않는다"
+unrel "$CL" > "$MS/ptr1"
+_out="$(run preview --root="$TMP")"
+assert_contains "$_out" '- **(Java · Kotlin)** J 고침' "M1 preview — 첫째 줄(태그 순서만 정규)"
+assert_contains "$_out" '- **(Python · Go)** G 고침' "M1 preview — 둘째 줄(Go · Python → Python · Go)"
+assert_contains "$_out" '- **(Python · .NET · Ruby · Node · Rust · Java · Kotlin · Go · PHP)** S 보안' "M1 preview — 전 언어는 아홉 표시명"
+
+# M3 둘째 실행 — 이미 포인터면 안 쓴다(조각이 셋 있어도 포인터 검사가 먼저다). migrate 가 쓴 문단을 isUnreleasedPointer 가 받는다는 증거다.
+_before="$(snap)"
+_out="$(mig)"
+assert_contains "$_out" '이미 전환됐다' "M3 둘째 실행"; assert_contains "$_out" '__rc=0' "M3 rc 0"
+assert_eq "$_before" "$(snap)" "M3 아무것도 안 쓴다"
+
+# M5 deploy-facts.sh 없는 뿌리의 빈 [Unreleased] → 포인터(DEPLOY_LANGS 는 항목이 있을 때만 읽는다) — 픽스처 생성기의 꼴이다.
+mroot ''; rm -f "$TMP/scripts/lib/deploy-facts.sh"
+_out="$(mig)"
+assert_contains "$_out" 'ok   migrate: 항목 0개 → 조각 0개' "M5 출력"; assert_contains "$_out" '__rc=0' "M5 rc 0"
+assert_eq 0 "$(ls "$TMP/changelog.d" 2>/dev/null | wc -l | tr -d ' ')" "M5 조각 없음"
+unrel "$CL" > "$MS/ptr5"
+same_bytes "$MS/ptr1" "$MS/ptr5" "M5 [Unreleased] 블록 = M1 의 것(둘 다 migrate 가 썼다)"
+_out="$(mig)"; assert_contains "$_out" '이미 전환됐다' "M5 둘째 실행도 이미 전환됐다(migrate 의 출력을 포인터로 읽는다)"
+
+# M2 거부 — 사유 바늘 + rc 1 · 루트와 changelog.d/ 의 cksum 이 그대로. 픽스처마다 결함은 하나다.
+mbad() { # <[Unreleased] 본문> <사유 바늘> <메시지>
+  mroot "$1"; _before="$(snap)"; _out="$(mig)"
+  assert_rejects "$_out" "$2" "$3"
+  assert_eq "$_before" "$(snap)" "$3 — 아무것도 안 쓴다"
+}
+mbad '### Fixed
+
+- 태그 없는 항목
+' '태그가 없다' "M2 태그 없음"
+mbad '### Fixed
+
+- **(Swift)** S 고침
+' '모르는 언어 이름 — Swift' "M2 모르는 이름 (Swift)"
+mbad '### Fixed
+
+- **(Java · )** S 고침
+' '빈 언어 이름' "M2 빈 이름"
+mbad '### Fixed
+
+- **(전 언어 · Java)** S 고침
+' '`전 언어` 는 혼자 쓴다' "M2 전 언어 + 다른 이름"
+mbad '### Fixed
+
+- **(Java · Java)** S 고침
+' '언어 이름이 겹친다 — Java' "M2 겹친 이름"
+mbad '- **(Java)** 절 밖 항목
+
+### Fixed
+
+- **(Go)** 고침
+' '`### <절>` 밖의 항목' "M2 ### 밖 항목"
+mbad '### Fixed
+
+문단입니다.
+' '항목이 아니다' "M2 문단"
+mbad '### Notes
+
+- **(Java)** 고침
+' '모르는 `###` 제목 — Notes' "M2 ### Notes"
+mbad '### Fixed
+
+- **(Java)** 첫 줄
+  이어지는 줄
+' '여러 줄' "M2 여러 줄 항목"
+# 한 번에 모아서 — 결함이 둘이면 둘 다 보인다.
+mroot '### Fixed
+
+- **(Swift)** a
+- 태그 없음
+'; _out="$(mig)"
+assert_contains "$_out" '모르는 언어 이름 — Swift' "M2 모음 — 첫째 결함"; assert_contains "$_out" '태그가 없다' "M2 모음 — 둘째 결함"
+# 루트 모양 — `[Unreleased]` 가 없거나 둘이거나 CHANGELOG.md 가 없다.
+fresh; printf '# Changelog\n\n## [1.0.0] - 2026-11-01\n\n### Fixed\n\n- **(Go)** old\n' > "$CL"; _before="$(snap)"; _out="$(mig)"
+assert_rejects "$_out" '`## [Unreleased]` 가 없다' "M2 [Unreleased] 없음"; assert_eq "$_before" "$(snap)" "M2 [Unreleased] 없음 — 아무것도 안 쓴다"
+fresh; printf '# Changelog\n\n## [Unreleased]\n\n## [Unreleased]\n' > "$CL"; _before="$(snap)"; _out="$(mig)"
+assert_rejects "$_out" '`## [Unreleased]` 가 둘이다' "M2 [Unreleased] 둘"; assert_eq "$_before" "$(snap)" "M2 [Unreleased] 둘 — 아무것도 안 쓴다"
+fresh; _before="$(snap)"; _out="$(mig)"
+assert_rejects "$_out" 'CHANGELOG.md' "M2 CHANGELOG.md 없음"; assert_eq "$_before" "$(snap)" "M2 CHANGELOG.md 없음 — 아무것도 안 쓴다"
+# DEPLOY_LANGS 를 못 읽으면 항목이 있어도 거부 — 쓰기 전이다.
+mroot "$M_OLD"; rm -f "$TMP/scripts/lib/deploy-facts.sh"; _before="$(snap)"; _out="$(mig)"
+assert_rejects "$_out" 'deploy-facts.sh' "M2 항목이 있는데 deploy-facts.sh 가 없다"; assert_eq "$_before" "$(snap)" "M2 deploy-facts.sh 없음 — 아무것도 안 쓴다"
+
+# M4 changelog.d/ 에 파일이 있으면 거부(섞지 않는다) — 항목이 있어도 비어 있어도.
+mroot "$M_OLD"; frag 2026-11-20-x.txt 'langs: go
+section: Fixed
+---
+x
+'; _before="$(snap)"; _out="$(mig)"
+assert_rejects "$_out" '`changelog.d/` 에 파일이 있다' "M4 항목 + 조각"; assert_eq "$_before" "$(snap)" "M4 아무것도 안 쓴다"
+mroot ''; frag 2026-11-20-x.txt 'langs: go
+section: Fixed
+---
+x
+'; _before="$(snap)"; _out="$(mig)"
+assert_rejects "$_out" '`changelog.d/` 에 파일이 있다' "M4 빈 [Unreleased] + 조각"; assert_eq "$_before" "$(snap)" "M4 빈 [Unreleased] — 아무것도 안 쓴다"
+
+# M6 CRLF 뿌리 — 읽을 때 LF 로 맞추고 쓰는 것은 LF 다: 결과가 LF 뿌리의 결과와 바이트까지 같다(그 밖은 다르지 않다).
+mroot "$M_OLD"; mig > /dev/null; cp "$CL" "$MS/lf.out"
+mroot "$M_OLD"; awk '{ printf "%s\r\n", $0 }' "$CL" > "$TMP/_crlf.in"; cp "$TMP/_crlf.in" "$CL"
+_out="$(mig)"; assert_contains "$_out" '__rc=0' "M6 CRLF 뿌리 rc 0"
+same_bytes "$MS/lf.out" "$CL" "M6 CRLF 입력의 결과는 LF 입력의 결과와 바이트까지 같다"
+
+# M7 사용법 — rc 2 · 아무것도 안 쓴다. 날짜 꼴 · 위치 인자 · 빈 --root=.
+mroot "$M_OLD"; _before="$(snap)"
+_out="$(run migrate --date=2026-02-30 --root="$TMP")"; assert_contains "$_out" '__rc=2' "M7 없는 날짜 rc 2"; assert_contains "$_out" '--date= 는' "M7 없는 날짜 사유"
+_out="$(run migrate extra --root="$TMP")"; assert_contains "$_out" '__rc=2' "M7 위치 인자 rc 2"; assert_contains "$_out" 'migrate 의 위치 인자는 0개다' "M7 위치 인자 사유"
+_out="$(run migrate --root=)"; assert_contains "$_out" '__rc=2' "M7 빈 --root= rc 2"
+assert_eq "$_before" "$(snap)" "M7 사용법 오류는 아무것도 쓰지 않는다"
+# --date 를 안 주면 오늘 — 이름은 `<YYYY-MM-DD>-unreleased-NNN.txt` 꼴이다.
+_out="$(run migrate --root="$TMP")"; assert_contains "$_out" '__rc=0' "M7 --date 생략 rc 0"
+assert_eq 3 "$(ls "$TMP/changelog.d" 2>/dev/null | grep -c '^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-unreleased-00[123]\.txt$' || true)" "M7 --date 생략 — 오늘 날짜의 이름 셋"
+
 assert_report

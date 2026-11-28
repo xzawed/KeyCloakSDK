@@ -8,8 +8,11 @@
 // ⚠️ 인자 규칙은 changelog-rotate.mjs 를 따른다 — 하위명령마다 받는 `--<이름>=<값>` 과 위치 인자 수가 아래 표에 있고, 그 밖의
 // 인자 · 모르는 하위명령 · 빈/겹친 `--root=` · `--<이름>=` 은 사용법 오류다. 오타가 기본 동작으로 떨어지면 「검사가 비었다」가
 // 통과로 읽힌다.
-import { readDeployLangs, readFragmentDir, FRAGMENT_DIR } from './lib/changelog-fragments.mjs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { readDeployLangs, readFragmentDir, parseFragment, renderFragment, FRAGMENT_DIR, SECTIONS, DISPLAY } from './lib/changelog-fragments.mjs'
 import { compileWave, verifyWave, renderPreview, isWaveDate } from './lib/changelog-wave.mjs'
+import { ROOT_FILE, UNRELEASED_POINTER, isUnreleasedPointer, parseLedgerFile, itemsOf } from './lib/changelog-ledger.mjs'
 
 const usage = (msg) => {
   console.error(`changelog: ${msg}\n사용: ${USAGE} — 아무것도 쓰지 않았다`)
@@ -41,6 +44,73 @@ const dateOf = (values) => {
   const date = values.date ?? today()
   if (!isWaveDate(date)) usage(`--date= 는 있는 날짜의 YYYY-MM-DD 다 — ${date}`)
   return date
+}
+
+// ---- migrate: 옛 꼴 항목 읽기 · 쓰기 전 대조 ----
+const ALL_LANGS = '전 언어'
+const OLD_ITEM = /^- \*\*\(([^()\n]*)\)\*\* (.*)$/
+// `[Unreleased]` 의 항목 글(블록 제목은 뺐다)을 읽는다 → [{ section, langs(DEPLOY_LANGS 순서), body }]. 못 읽는 것은 모아서 거부(rc 1).
+function parseOldItems(entries, order) {
+  const items = []
+  const errors = []
+  const E = (why, line) => errors.push(`changelog: ${ROOT_FILE} [Unreleased]: ${why} — ${line.split('\n')[0]}`)
+  const byName = Object.fromEntries(Object.entries(DISPLAY).map(([tok, name]) => [name, tok]))
+  let section = null
+  for (const e of entries) {
+    if (e.startsWith('#')) {
+      const m = /^### (.+)$/.exec(e)
+      if (m && SECTIONS.includes(m[1])) section = m[1]
+      else { section = null; E(`모르는 \`###\` 제목 — ${m ? m[1] : e}`, e) }
+      continue
+    }
+    if (e.includes('\n')) { E('항목이 여러 줄(또는 여러 줄 문단)이다 — 한 줄만 받는다', e); continue }
+    if (!e.startsWith('- ')) { E('항목이 아니다(문단)', e); continue }
+    const m = OLD_ITEM.exec(e)
+    if (!m) { E('`- **(<태그>)** <본문>` 꼴이 아니다(태그가 없다)', e); continue }
+    if (section === null) { E('`### <절>` 밖의 항목', e); continue }
+    const names = m[1].split('·').map((n) => n.trim())
+    const bad = []
+    if (names.includes('')) bad.push('빈 언어 이름')
+    if (names.includes(ALL_LANGS) && names.length > 1) bad.push(`\`${ALL_LANGS}\` 는 혼자 쓴다`)
+    for (const n of names) if (n !== '' && n !== ALL_LANGS && !(n in byName)) bad.push(`모르는 언어 이름 — ${n}`)
+    const known = names.filter((n) => n in byName)
+    const dup = known.find((n, i) => known.indexOf(n) !== i)
+    if (dup !== undefined) bad.push(`언어 이름이 겹친다 — ${dup}`)
+    if (bad.length) { for (const b of bad) E(b, e); continue }
+    items.push({ section, langs: names[0] === ALL_LANGS ? [...order] : order.filter((l) => known.includes(DISPLAY[l])), body: m[2] })
+  }
+  if (errors.length) reject(errors)
+  return items
+}
+// 쓰기 전 대조 셋 — 어긋나면 거부(rc 1)한다: (a) 렌더한 조각을 parseFragment 로 다시 읽어 같은 값 (b) 원래 항목과 조각의
+// (section · 언어 집합 · 본문) 다중집합 (c) renderPreview 의 항목을 원장 파서로 다시 읽은 다중집합.
+const keyOf = (section, langs, body) => `${section} | ${[...langs].sort().join(' ')} | ${body}`
+const multiset = (keys) => keys.sort().join('\n')
+function crossCheck(items, fragments, order) {
+  const errors = []
+  const parsed = []
+  for (const f of fragments) {
+    const r = parseFragment(f.name, renderFragment(f, order), order)
+    errors.push(...r.errors)
+    if (!r.fragment) continue
+    parsed.push(r.fragment)
+    if (JSON.stringify(r.fragment) !== JSON.stringify({ name: f.name, langs: f.langs, section: f.section, body: f.body })) errors.push(`changelog: 대조 (a): ${f.name} — 렌더한 조각을 다시 읽으면 다른 값이다`)
+  }
+  if (errors.length) reject(errors)
+  const want = multiset(items.map((it) => keyOf(it.section, it.langs, it.body)))
+  if (multiset(parsed.map((f) => keyOf(f.section, f.langs, f.body))) !== want) errors.push('changelog: 대조 (b): 원래 항목과 조각의 (section · 언어 집합 · 본문) 다중집합이 다르다')
+  const byDisplay = Object.fromEntries(Object.entries(DISPLAY).map(([tok, name]) => [name, tok]))
+  const seen = []
+  let section = null
+  for (const e of itemsOf(renderPreview(parsed, order)).slice(1)) {
+    const h = /^### (.+)\n$/.exec(e)
+    const m = /^- \*\*\(([^()\n]*)\)\*\* (.*)\n?$/.exec(e)
+    if (h) section = h[1]
+    else if (m) seen.push(keyOf(section, m[1].split('·').map((n) => byDisplay[n.trim()]), m[2]))
+    else seen.push(`? ${e}`)
+  }
+  if (multiset(seen) !== want) errors.push('changelog: 대조 (c): renderPreview 의 항목을 다시 읽은 다중집합이 원래 항목과 다르다')
+  if (errors.length) reject(errors)
 }
 
 // 하위명령 표 — 과제마다 한 줄씩 늘린다. args = 위치 인자 수 [최소, 최대] · values = 받는 `--<이름>=<값>` 의 이름 ·
@@ -78,6 +148,39 @@ const COMMANDS = {
       const errors = verifyWave(fragments, wave, text, order)
       if (errors.length) reject(errors)
       process.stdout.write(text)
+    },
+  },
+  // 옛 꼴 `[Unreleased]` 항목을 조각으로 바꾼다 — 루트에는 고정 문단만 남는다. 빈 `[Unreleased]` 를 포인터로 바꾸는 것이 픽스처 생성기다.
+  // 받는 꼴: `### <SECTIONS>` 아래의 한 줄 `- **(<표시명> · …>)** <본문>`(`전 언어` 는 아홉). 그 밖은 모아서 거부(rc 1)한다.
+  // ⚠️ DEPLOY_LANGS 는 항목이 있을 때만 읽는다(빈 `[Unreleased]` 는 deploy-facts.sh 없이 돈다). 포인터 문구는 ledger 의 상수 하나다.
+  migrate: {
+    usage: 'migrate [--root=<디렉터리>] [--date=YYYY-MM-DD]',
+    args: [0, 0],
+    values: ['date'],
+    run({ root, values }) {
+      const date = dateOf(values)
+      const file = join(root, ROOT_FILE)
+      if (!existsSync(file)) reject([`changelog: ${ROOT_FILE} 가 없다 — ${file}`])
+      const text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+      const ledger = parseLedgerFile(text)
+      if (ledger.unreleased.length !== 1) reject([`changelog: ${ROOT_FILE} 에 \`## [Unreleased]\` 가 ${ledger.unreleased.length === 0 ? '없다' : '둘이다'}`])
+      const [block] = ledger.unreleased
+      if (isUnreleasedPointer(block.text)) {
+        console.log('이미 전환됐다 — [Unreleased] 는 고정 문단뿐이다')
+        return
+      }
+      const dir = join(root, FRAGMENT_DIR)
+      if (existsSync(dir) && readdirSync(dir).length) reject([`changelog: \`${FRAGMENT_DIR}/\` 에 파일이 있다 — 옛 항목과 섞지 않는다`])
+      const entries = itemsOf(block.text).slice(1).map((e) => e.replace(/\n$/, '')) // 첫 줄은 블록 제목이다
+      const order = entries.length ? deployLangs(root) : []
+      const items = parseOldItems(entries, order)
+      const fragments = items.map((it, i) => ({ ...it, name: `${date}-unreleased-${String(i + 1).padStart(3, '0')}.txt` }))
+      if (fragments.length) crossCheck(items, fragments, order)
+      const out = ledger.order.map((b) => (b === block ? `${block.heading}\n\n${UNRELEASED_POINTER}\n\n` : b.text)).join('')
+      if (fragments.length) mkdirSync(dir, { recursive: true })
+      for (const f of fragments) writeFileSync(join(dir, f.name), renderFragment(f, order))
+      writeFileSync(file, ledger.head + out)
+      console.log(`ok   migrate: 항목 ${items.length}개 → 조각 ${fragments.length}개`)
     },
   },
 }
