@@ -134,7 +134,7 @@
       "ruby/lib/keycloak_sdk/version.rb"
     ],
     "owners": {
-      "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": "coverage-omit-hides-security-paths"
+      "ruby/lib/keycloak_sdk/admin/call.rb:Call#unparsable_error_status": "unit:ledger"
     }
   },
   "dotnet": {
@@ -159,11 +159,11 @@
       "dotnet/src/Xzawed.Keycloak.Sdk/KeycloakClient.cs"
     ],
     "owners": {
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsEncodingLookup": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.IsUnsupportedCharset": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.ObserveTokenProviderFailure": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/Admin/AdminClient.cs:AdminClient.Undecodable": "unit:ledger",
-      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "coverage-omit-hides-security-paths",
+      "dotnet/src/Xzawed.Keycloak.Sdk/Admin/BearerHandler.cs:BearerHandler.IsRefusedBody": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.CanonicalReason": "unit:ledger",
       "dotnet/src/Xzawed.Keycloak.Sdk/AuthClient.cs:AuthClient.NoCodeReason": "unit:ledger"
     }
@@ -225,7 +225,7 @@
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/client.kt"
     ],
     "owners": {
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.quotesResponse": "coverage-omit-hides-security-paths",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.quotesResponse": "unit:ledger",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.transportCause": "unit:ledger",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Exchange.cut": "unit:ledger",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Settled.read()": "unit:ledger",

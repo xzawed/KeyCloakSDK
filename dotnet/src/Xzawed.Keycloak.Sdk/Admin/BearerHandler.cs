@@ -55,7 +55,8 @@ internal sealed class BearerHandler : DelegatingHandler
     }
 
     /// <summary>An exception System.Text.Json threw — inside the transport that is only ever the request body being written.</summary>
-    private static bool IsRefusedBody(Exception ex) =>
+    // internal, not private: ExceptionFilterInputTests calls it with inputs the transport never produces (no TargetSite · no declaring type).
+    internal static bool IsRefusedBody(Exception ex) =>
         ex is JsonException or NotSupportedException or ArgumentException
         && ex.TargetSite?.DeclaringType?.Assembly == typeof(JsonSerializer).Assembly;
 }

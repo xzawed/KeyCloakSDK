@@ -4,6 +4,7 @@ import io.github.xzawed.keycloak.KeycloakAdminException
 import io.github.xzawed.keycloak.KeycloakAuthException
 import io.github.xzawed.keycloak.KeycloakConfig
 import io.github.xzawed.keycloak.KeycloakTransportException
+import io.github.xzawed.keycloak.RedactedCause
 import io.mockk.every
 import io.mockk.mockk
 import jakarta.ws.rs.ProcessingException
@@ -21,6 +22,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 // AdminBoundaryTest — adminCall(AdminClient.kt)의 경계변환(부록 §auth-admin exactConfig)을 검증한다:
@@ -152,6 +154,31 @@ internal class AdminBoundaryTest {
                 assertTrue("Caused by: java.io.IOException (message withheld)" in printed, printed)
             }
         }
+
+    // 응답을 인용하는 예외 형 넷은 각각 사슬에 있으면 가린 사본으로 바뀌고, 하나도 없는 사슬은 원본 그대로(진단 메시지 유지) 돌아온다.
+    @Test
+    fun `transportCause redacts a chain that quotes the response through each listed type`() {
+        val causes =
+            listOf<Throwable>(
+                ResponseProcessingException(Response.status(200).build(), "LEAK-1"),
+                WebApplicationException("LEAK-2", 500),
+                org.apache.http.HttpException("Invalid header: LEAK-3"),
+                org.apache.http.MalformedChunkCodingException("Bad chunk header: LEAK-4"),
+            )
+        for (cause in causes) {
+            val e = ProcessingException("admin transport", cause)
+            val redacted = transportCause(e)
+            assertIs<RedactedCause>(redacted)
+            val printed = redacted.stackTraceToString()
+            assertFalse("LEAK-" in printed, printed)
+        }
+    }
+
+    @Test
+    fun `transportCause returns a chain that quotes no response unchanged`() {
+        val e = ProcessingException("admin transport", java.net.ConnectException("Connection refused"))
+        assertSame(e, transportCause(e))
+    }
 
     // admin 자기 그랜트의 실패는 타입으로 가른다(등록부 token-response-class-divergent · Java AdminExceptionsTest 동형) — 요청 필터에서 온
     // ProcessingException 아래의 HTTP 오류(토큰 엔드포인트의 오류 상태)와 UnusableTokenResponse(쓸 수 없는 2xx)는 끝까지 온 응답이라

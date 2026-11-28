@@ -160,7 +160,8 @@ public sealed class AdminClient : IAsyncDisposable, IDisposable
     };
 
     /// <summary>Thrown inside CoreLib's <c>System.Text</c> — <c>Encoding.GetEncoding</c> and the name table behind it.</summary>
-    private static bool IsEncodingLookup(Exception ex) =>
+    // internal, not private: ExceptionFilterInputTests calls it with inputs the transport never produces (no TargetSite · no declaring type).
+    internal static bool IsEncodingLookup(Exception ex) =>
         ex.TargetSite?.DeclaringType is { Namespace: "System.Text" } type && type.Assembly == typeof(Encoding).Assembly;
 
     internal async Task<string> CreateReturningIdAsync(Func<IKeycloakClient, Task<HttpResponseMessage>> fn, CancellationToken ct)
