@@ -19,6 +19,15 @@ export const INDEX_PREFIX = '> 이전 릴리스(월별 보관본): '
 const UNRELEASED = '## [Unreleased]'
 const RELEASE_RE = /^## \[[^\]]+\] - ((\d{4}-\d{2})-\d{2})(?:[\s(].*)?$/
 
+// 루트 `[Unreleased]` 의 **고정 문단** — 미출시 노트는 `changelog.d/` 의 조각 파일이다(문법: changelog-fragments.mjs).
+// ⚠️ 링크를 두지 않는다 — 검사 5 가 링크 대상을 재는데, 대기 조각이 없으면 `changelog.d/` 가 없다.
+export const UNRELEASED_POINTER =
+  '미출시 변경은 변경마다 `changelog.d/` 의 조각 파일 하나로 둡니다(쓰는 법은 CONTRIBUTING.md) — 모아 보기: `node scripts/changelog.mjs preview`. 릴리스 때 `node scripts/changelog.mjs release` 가 이 절 아래 날짜 절로 옮깁니다.'
+// 도구가 만드는 손글 자리의 표지(changelog-wave.mjs) — 릴리스 커밋에서 사람이 그 문단을 바꿔 쓴다.
+export const HAND_MARK = 'TODO(release-notes)'
+// 블록 글(제목 줄부터)이 제목 · 빈 줄 · 고정 문단 하나뿐인가 — 끝의 공백 · 빈 줄은 보지 않는다.
+export const isUnreleasedPointer = (blockText) => blockText.replace(/\s+$/, '') === `${UNRELEASED}\n\n${UNRELEASED_POINTER}`
+
 export const bytes = (s) => Buffer.byteLength(s, 'utf8')
 
 // 줄 끝을 보존하며 `## ` 경계에서 자른다. head + 모든 block.text 를 이으면 **원문과 바이트까지 같다**
