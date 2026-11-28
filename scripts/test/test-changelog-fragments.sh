@@ -536,7 +536,7 @@ assert_rejects "$_out" '`## [Unreleased]` 가 없다' "M2 [Unreleased] 없음"; 
 fresh; printf '# Changelog\n\n## [Unreleased]\n\n## [Unreleased]\n' > "$CL"; _before="$(snap)"; _out="$(mig)"
 assert_rejects "$_out" '`## [Unreleased]` 가 둘이다' "M2 [Unreleased] 둘"; assert_eq "$_before" "$(snap)" "M2 [Unreleased] 둘 — 아무것도 안 쓴다"
 fresh; _before="$(snap)"; _out="$(mig)"
-assert_rejects "$_out" 'CHANGELOG.md' "M2 CHANGELOG.md 없음"; assert_eq "$_before" "$(snap)" "M2 CHANGELOG.md 없음 — 아무것도 안 쓴다"
+assert_rejects "$_out" 'CHANGELOG.md 가 없다' "M2 CHANGELOG.md 없음"; assert_eq "$_before" "$(snap)" "M2 CHANGELOG.md 없음 — 아무것도 안 쓴다"
 # DEPLOY_LANGS 를 못 읽으면 항목이 있어도 거부 — 쓰기 전이다.
 mroot "$M_OLD"; rm -f "$TMP/scripts/lib/deploy-facts.sh"; _before="$(snap)"; _out="$(mig)"
 assert_rejects "$_out" 'deploy-facts.sh' "M2 항목이 있는데 deploy-facts.sh 가 없다"; assert_eq "$_before" "$(snap)" "M2 deploy-facts.sh 없음 — 아무것도 안 쓴다"
