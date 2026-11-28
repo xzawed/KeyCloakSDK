@@ -225,7 +225,7 @@
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/client.kt"
     ],
     "owners": {
-      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.quotesResponse": "coverage-omit-hides-security-paths",
+      "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.quotesResponse": "unit:ledger",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.transportCause": "unit:ledger",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Exchange.cut": "unit:ledger",
       "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminEngine.Settled.read()": "unit:ledger",

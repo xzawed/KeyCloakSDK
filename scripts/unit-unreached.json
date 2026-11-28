@@ -15,11 +15,6 @@
       "branches": 1,
       "why": "defensive: t.response?.status ?: 0 의 null 쪽 — 응답 없는 WebApplicationException 은 없다(#1125)"
     },
-    "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/AdminClient.kt:AdminClientKt.quotesResponse": {
-      "lines": 0,
-      "branches": 2,
-      "why": "defensive: 응답을 인용하는 예외 형 가운데 단위 시험이 안 만드는 한 형 — 이름으로 거르는 방어선이다(grantFailure · AdminEngine.Settled 가 먼저 가린다 — 함수 주석, #1125)"
-    },
     "kotlin/src/main/kotlin/io/github/xzawed/keycloak/admin/Clients.kt:ClientsResource.findByClientId": {
       "lines": 1,
       "branches": 0,
