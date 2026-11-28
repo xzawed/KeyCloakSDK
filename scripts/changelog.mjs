@@ -125,7 +125,7 @@ function crossCheck(items, fragments, order) {
   if (errors.length) reject(errors)
 }
 
-// ---- release: 판 꼴 · 보관본의 제목 ----
+// ---- release: 판 꼴 · 이미 나간 (언어, 판) ----
 // 판은 `<주>.<부>.<수>` 에 `-<꼬리>` 하나까지 — 제목의 대괄호 · 괄호를 깨는 글자와 공통 절의 대괄호 글 `물결` 을 받지 않는다.
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/
 // 보관본(changelog/<YYYY-MM>.md)마다 [그 경로, 그 `## ` 제목들] — 디렉터리가 없으면 보관본도 없다.
@@ -137,6 +137,27 @@ function volumeHeadings(root) {
     .map((e) => e.name)
     .sort()
     .map((n) => [`${VOLUME_DIR}/${n}`, parseLedgerFile(readFileSync(join(dir, n), 'utf8').replace(/\r\n/g, '\n')).order.map((b) => b.heading)])
+}
+// 이미 나간 (언어, 판) — 꼴이 `## [<판>] - <YYYY-MM-DD> (<표시명 · …>)` 인 제목의 괄호 안 표시명마다 하나. 괄호가 없는 제목과
+// 표시명이 아닌 조각은 건너뛴다(제목의 꼴은 8d 의 몫이다). `[Unreleased]` 는 날짜가 없어 이 꼴 밖이고, `[물결]` 절의 괄호 안은
+// `<표시명> <판>` 이라 표시명이 아니다 — 따로 거르는 줄을 두지 않는다(그 줄에는 어떤 입력도 닿지 않는다: 판 꼴을 지난 물결 판이
+// `물결` · `Unreleased` 일 수 없다). files = [[경로, 제목들], …] — 루트 먼저, 보관본은 이름순. → Map(pairKey → 처음 나온 { heading, where }).
+const DATED_HEADING_RE = /^## \[([^\]]+)\] - \d{4}-\d{2}-\d{2} \(([^()]+)\)$/
+const pairKey = (lang, ver) => `${lang} ${ver}`
+function shippedPairs(files) {
+  const token = new Map(Object.entries(DISPLAY).map(([tok, name]) => [name, tok]))
+  const pairs = new Map()
+  for (const [where, headings] of files) {
+    for (const heading of headings) {
+      const m = DATED_HEADING_RE.exec(heading)
+      if (!m) continue
+      for (const name of m[2].split(' · ')) {
+        const lang = token.get(name)
+        if (lang !== undefined && !pairs.has(pairKey(lang, m[1]))) pairs.set(pairKey(lang, m[1]), { heading, where })
+      }
+    }
+  }
+  return pairs
 }
 
 // 하위명령 표 — 과제마다 한 줄씩 늘린다. args = 위치 인자 수 [최소, 최대](최대 Infinity 는 위가 열림) · values = 받는 `--<이름>=<값>` 의 이름 ·
@@ -235,16 +256,14 @@ const COMMANDS = {
       const newest = ledger.releases.map((b) => b.date).sort().pop()
       if (newest !== undefined && date < newest)
         reject([`changelog: 물결의 날짜(${date})가 ${ROOT_FILE} 의 최신 날짜(${newest})보다 이르다 — 물결은 \`[Unreleased]\` 바로 아래에 들어가 원장의 최신순을 깬다`])
-      // 5 물결의 새 제목이 루트 · 보관본 어디에도 없다 — 같은 물결을 다시 돌렸거나 그 판이 이미 나갔다
+      // 5 물결의 (언어, 판)이 루트 · 보관본의 날짜 절 제목에 없다 — 같은 물결을 다시 돌렸거나 그 언어의 그 판이 이미 나갔다(날짜는
+      // 보지 않는다 — 다른 날에 다시 내도 거부한다). 같은 번호의 다른 언어는 받는다(§5.3 「같은 번호 경고」).
+      const shipped = shippedPairs([[ROOT_FILE, ledger.order.map((b) => b.heading)], ...volumeHeadings(root)])
+      const dups = order.filter((l) => versions.has(l)).map((l) => [l, shipped.get(pairKey(l, versions.get(l)))]).filter(([, s]) => s)
+      if (dups.length) reject(dups.map(([l, s]) => `changelog: 이미 있는 판 — ${DISPLAY[l]} ${versions.get(l)}: 「${s.heading}」(${s.where})`))
+      // 6 컴파일 → 독립 대조 → 새 루트를 원장 파서로 다시 읽어 `[Unreleased]` 하나 · 모르는 제목 0
       const wave = { date, versions: Object.fromEntries(versions) }
       const { text, updates } = compileWave(fragments, wave, order)
-      const added = parseLedgerFile(text).order
-      const taken = new Map() // 제목 → 그 제목이 있는 파일
-      for (const [where, headings] of [[ROOT_FILE, ledger.order.map((b) => b.heading)], ...volumeHeadings(root)])
-        for (const h of headings) if (!taken.has(h)) taken.set(h, where)
-      const dups = added.filter((b) => taken.has(b.heading))
-      if (dups.length) reject(dups.map((b) => `changelog: 이미 있는 제목 — 「${b.heading}」(${taken.get(b.heading)}) — 같은 물결을 다시 돌렸거나 그 판이 이미 나갔다`))
-      // 6 독립 대조 → 새 루트를 원장 파서로 다시 읽어 `[Unreleased]` 하나 · 모르는 제목 0
       const mismatch = verifyWave(fragments, wave, text, order)
       if (mismatch.length) reject(mismatch)
       const out = ledger.head + ledger.order.map((b) => (b === block ? `${block.heading}\n\n${UNRELEASED_POINTER}\n\n${text}` : b.text)).join('')
@@ -252,8 +271,8 @@ const COMMANDS = {
       const shape = again.unknown.map((b) => `changelog: ${ROOT_FILE} 의 「${b.heading}」 — 원장의 \`## \` 제목은 \`[Unreleased]\` 와 \`[<판>] - <YYYY-MM-DD> …\` 뿐이다`)
       if (again.unreleased.length !== 1) shape.push(`changelog: 새 ${ROOT_FILE} 에 \`## [Unreleased]\` 가 ${again.unreleased.length}개다`)
       if (shape.length) reject(shape)
-      // 7 쓰기 — 루트가 먼저다: 도중에 멈춰도 다시 돌린 release 는 확인 5 가 거부한다(조각을 먼저 지우면 둘째 실행이 노트를 잃은
-      // 물결을 쓴다). 물결이 닿은 조각은 남은 langs 로 renderFragment 하고, 비면 지운다.
+      // 7 쓰기 — 루트가 먼저다: 도중에 멈춰도 다시 돌린 release 는 확인 5 가 거부한다(물결의 (언어, 판)이 이미 루트의 언어 절 제목에
+      // 있다 — 조각을 먼저 지우면 둘째 실행이 노트를 잃은 물결을 쓴다). 물결이 닿은 조각은 남은 langs 로 renderFragment 하고, 비면 지운다.
       writeFileSync(file, out)
       const byName = new Map(fragments.map((f) => [f.name, f]))
       let rewritten = 0
@@ -270,7 +289,7 @@ const COMMANDS = {
       }
       // 8 출력 — ok 줄, 이어서 대기 노트가 없는 물결 언어마다 알림(DEPLOY_LANGS 순서 · 토큰)
       const bullets = text.split('\n').filter((l) => l.startsWith('- ')).length
-      console.log(`ok   release ${date}: 절 ${added.length}개 · 항목 ${bullets}개 · 조각 갱신 ${rewritten} · 삭제 ${deleted}`)
+      console.log(`ok   release ${date}: 절 ${parseLedgerFile(text).order.length}개 · 항목 ${bullets}개 · 조각 갱신 ${rewritten} · 삭제 ${deleted}`)
       for (const l of order) {
         if (versions.has(l) && !fragments.some((f) => f.langs.includes(l))) console.log(`⚠️  ${l}: 대기 노트가 없다 — 절에는 손글 자리만 있다`)
       }

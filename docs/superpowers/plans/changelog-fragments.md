@@ -318,14 +318,14 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 2. 루트 `[Unreleased]` 가 `isUnreleasedPointer` — 아니면 rc 1 · `먼저 migrate`
 3. 조각 문법 오류가 없다
 4. 날짜 ≥ 루트의 최신 날짜 절
-5. 새 제목이 루트 · 보관본 어디에도 없다
+5. (언어, 판)이 루트 · 보관본 제목에 없다
 6. `compileWave` → `verifyWave` 오류 0 → 새 루트를 `parseLedgerFile` 로 다시 읽어 모르는 제목 0
 7. 쓰기 — 루트 = 머리말 + `## [Unreleased]\n\n<포인터>\n\n` + 물결 + 기존 날짜 절들, 조각은 `updates` 대로(남은 `langs` 는 `renderFragment`, 비면 지운다)
 8. 출력 `ok   release <날짜>: 절 <n>개 · 항목 <m>개 · 조각 갱신 <k> · 삭제 <d>` + 노트가 없는 언어마다 `⚠️  <lang>: 대기 노트가 없다 — 절에는 손글 자리만 있다`
 
 픽스처 루트는 옛 꼴(빈 `[Unreleased]` + `## [1.0.7] - 2026-11-03 (Python)` 절 하나)로 쓴 뒤 `migrate` 로 포인터 꼴로 바꾼다(과제 3).
 
-- [ ] **4.1 실패하는 시험(R 절)** — R1 W 픽스처 → `release --date=2026-12-01 python=1.0.8 dotnet=1.0.8 go=1.2.6` rc 0 · 루트 = 릴리스 전 루트의 `[Unreleased]` 블록 바로 뒤에 W1 골든을 끼운 것(바이트) · a · b · c 삭제 · d = `renderFragment` 꼴의 `langs: ruby`. R2(검토 초점 4) 이어서 `release --date=2026-12-02 ruby=1.4.2` → `- **(Ruby)** D 보안` 한 번, d 삭제. R3(검토 초점 2) 새 픽스처에서 R1 직후 같은 인자로 다시 → rc 1 · `이미 있는 제목` · cksum 그대로. R4(검토 초점 3) 조각에 없는 `php=1.5.3` → rc 0 · `## [1.5.3] - … (PHP)` 절에 손글 자리만 · `대기 노트가 없다`. R5(검토 초점 5) `--date=2026-11-01` → rc 1 · cksum 그대로. R6 `[Unreleased]` 에 항목이 있는 옛 꼴 루트 → rc 1 · `먼저 migrate`. R7 문법이 깨진 조각이 있으면 rc 1. R8 R1 결과의 `TODO(release-notes)` 줄을 손글로 바꾸면 `node scripts/check-docs.mjs "$TMP"` 출력에 `검사 8d` 가 없다. R9 판 문자열이 긴 `go=1.2.6-<x 1,100 개>`(판 꼴은 맞다) → rc 1 · `1024B` 바늘 · cksum 그대로(제목 줄이 상한을 넘는다 — `verifyWave` 3).
+- [ ] **4.1 실패하는 시험(R 절)** — R1 W 픽스처 → `release --date=2026-12-01 python=1.0.8 dotnet=1.0.8 go=1.2.6` rc 0 · 루트 = 릴리스 전 루트의 `[Unreleased]` 블록 바로 뒤에 W1 골든을 끼운 것(바이트) · a · b · c 삭제 · d = `renderFragment` 꼴의 `langs: ruby`. R2(검토 초점 4) 이어서 `release --date=2026-12-02 ruby=1.4.2` → `- **(Ruby)** D 보안` 한 번, d 삭제. R3(검토 초점 2) R1 다시 · `python=1.0.7` → rc 1 · `이미 있는 판` · cksum 그대로, `node=1.0.7` 은 rc 0. R4(검토 초점 3) 조각에 없는 `php=1.5.3` → rc 0 · `## [1.5.3] - … (PHP)` 절에 손글 자리만 · `대기 노트가 없다`. R5(검토 초점 5) `--date=2026-11-01` → rc 1 · cksum 그대로. R6 `[Unreleased]` 에 항목이 있는 옛 꼴 루트 → rc 1 · `먼저 migrate`. R7 문법이 깨진 조각이 있으면 rc 1. R8 R1 결과의 `TODO(release-notes)` 줄을 손글로 바꾸면 `node scripts/check-docs.mjs "$TMP"` 출력에 `검사 8d` 가 없다. R9 판 문자열이 긴 `go=1.2.6-<x 1,100 개>`(판 꼴은 맞다) → rc 1 · `1024B` 바늘 · cksum 그대로(제목 줄이 상한을 넘는다 — `verifyWave` 3).
 - [ ] **4.2** FAIL → **4.3** 구현 → **4.4** PASS → **4.5** 커밋.
 
 #### 과제 5 — `check` 시험 컴파일 · 75 % 경고 · `--stats`
@@ -353,7 +353,7 @@ TODO(release-notes) 이 절의 판 종류 · 공개 API 변경 수 · 같은 번
 
 #### 과제 7 — PR 1: 변이 레코드 · 적대 레그 · 병합
 
-- [ ] **7.1** `scripts/test/mutation-records.txt` 에 줄 변이 여섯(OLD 는 구현된 줄을 그대로 옮긴다): CF1 조각 크기 비교(F4 가 잡는다) · CF2 `verifyWave` 의 다중집합 비교를 늘 같게(W4) · CF3 75 % 비교(K2) · CF4 `covered` 의 같은 본문 기준(V1) · CF5 release 의 제목 겹침 거부(R3) · CF6 `verifyWave` 의 항목 상한(R9). 제외 하나: `test-changelog-fragments.sh` × `check-docs.mjs` — R8 대조군이고 check-docs 의 거부는 `test-changelog-ledger.sh` 가 단언한다.
+- [ ] **7.1** `scripts/test/mutation-records.txt` 에 줄 변이 여섯(OLD 는 구현된 줄을 그대로 옮긴다): CF1 조각 크기 비교(F4 가 잡는다) · CF2 `verifyWave` 의 다중집합 비교를 늘 같게(W4) · CF3 75 % 비교(K2) · CF4 `covered` 의 같은 본문 기준(V1) · CF5 release 의 이미 있는 판 거부(R3) · CF6 `verifyWave` 의 항목 상한(R9). 제외 하나: `test-changelog-fragments.sh` × `check-docs.mjs` — R8 대조군이고 check-docs 의 거부는 `test-changelog-ledger.sh` 가 단언한다.
 - [ ] **7.2** `node scripts/mutation-sweep.mjs --list` 의 새 쌍이 계획한 둘(`test-changelog-fragments.sh` × `changelog.mjs` · × `check-docs.mjs` 제외)뿐인지 본다 — 쌍 파생은 주석 속 경로도 읽고, 실행 줄에는 파일 이름만 있으면 된다(`pairsOf`). 커밋 뒤 `node scripts/mutation-sweep.mjs --only changelog` → M1 쌍과 CF1–CF6 전부 CAUGHT. `sh scripts/test/test-mutation-sweep.sh` green.
 - [ ] **7.3** Grok 적대 레그 — PR 1 diff 와 §5 를 인라인, 닫힌 질문(조각이 빠지거나 다른 언어 절로 가는 입력이 있는가 · `verifyWave` 가 잘못된 컴파일을 통과시키는 입력이 있는가 · release 가 쓰다 멈춰 반쯤 쓴 상태가 남는가), 심은 거짓 주장 둘. PM 이 주장마다 재현해 판정한다.
 - [ ] **7.4** 로컬 doc-facts — `sh scripts/test/test-check-docs.sh` · `test-changelog-ledger.sh` · `test-changelog-fragments.sh` · `test-selftest-hygiene.sh` · `test-mutation-sweep.sh` · §3 의 check-docs 명령, 전부 rc 0.

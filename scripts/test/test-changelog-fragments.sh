@@ -634,23 +634,33 @@ assert_eq no "$([ -e "$TMP/changelog.d/2026-11-26-d.txt" ] && echo yes || echo n
 same_bytes "$MS/r2.gold" "$CL" "R2 루트 = R1 의 루트에서 [Unreleased] 블록 바로 뒤에 [1.4.2] 절을 끼운 것"
 
 # R3(검토 초점 2) R1 직후 같은 물결을 다시 · 이미 나간 판(같은 날 go=1.2.6)으로 — 쓰기 전에 거부하고 원장 · 조각을 한 바이트도
-# 바꾸지 않는다.
+# 바꾸지 않는다. 확인 5 는 물결의 (언어, 판)을 루트 · 보관본의 날짜 절 제목에서 찾고, 그 판이 있는 제목과 파일을 짚는다.
 rfix; _out="$(r1)"; assert_contains "$_out" '__rc=0' "R3 첫 물결 rc 0"
 _before="$(snap)"; _out="$(r1)"
-assert_rejects "$_out" '이미 있는 제목' "R3 같은 물결을 다시"
-assert_contains "$_out" '「## [물결] - 2026-12-01 (Python 1.0.8 · .NET 1.0.8 · Go 1.2.6)」' "R3 같은 물결 — 겹친 제목을 짚는다"
+assert_rejects "$_out" '이미 있는 판' "R3 같은 물결을 다시"
+assert_contains "$_out" '「## [1.0.8] - 2026-12-01 (Python · .NET)」' "R3 같은 물결 — 그 판이 있는 제목을 짚는다"
 assert_eq "$_before" "$(snap)" "R3 같은 물결 — 아무것도 안 쓴다"
 _out="$(rel --date=2026-12-01 go=1.2.6)"
-assert_rejects "$_out" '이미 있는 제목 — 「## [1.2.6] - 2026-12-01 (Go)」' "R3 이미 나간 판"
+assert_rejects "$_out" '이미 있는 판 — Go 1.2.6: 「## [1.2.6] - 2026-12-01 (Go)」(CHANGELOG.md)' "R3 이미 나간 판"
 assert_eq "$_before" "$(snap)" "R3 이미 나간 판 — 아무것도 안 쓴다"
 
-# R3b 보관본의 제목도 본다 — 날짜 절이 없는 루트(날짜에 아래 한계가 없다)와 그 보관본 changelog/2026-10.md.
+# R3b 보관본의 제목도 본다 — 날짜 절이 없는 루트와 그 보관본 changelog/2026-10.md. 찾는 언어(PHP)는 괄호 안의 둘째 표시명이다
+# (첫 표시명만 읽으면 놓친다). 물결의 날짜가 그 절과 달라도 거부한다 — (언어, 판)은 날짜를 보지 않는다.
 fresh; printf '# Changelog\n\n## [Unreleased]\n\n' > "$CL"; mig > /dev/null
-mkdir -p "$TMP/changelog"; printf '# Changelog — 2026-10\n\n보관본.\n\n## [1.0.0] - 2026-10-01 (Go)\n\n- x\n' > "$TMP/changelog/2026-10.md"
-_before="$(snap)"; _out="$(rel --date=2026-10-01 go=1.0.0)"
-assert_rejects "$_out" '이미 있는 제목 — 「## [1.0.0] - 2026-10-01 (Go)」' "R3b 보관본의 제목과 겹친다"
-assert_contains "$_out" 'changelog/2026-10.md' "R3b 겹친 보관본을 짚는다"
+mkdir -p "$TMP/changelog"; printf '# Changelog — 2026-10\n\n보관본.\n\n## [1.0.0] - 2026-10-01 (Go · PHP)\n\n- x\n' > "$TMP/changelog/2026-10.md"
+_before="$(snap)"; _out="$(rel --date=2026-12-01 php=1.0.0)"
+assert_rejects "$_out" '이미 있는 판 — PHP 1.0.0: 「## [1.0.0] - 2026-10-01 (Go · PHP)」(changelog/2026-10.md)' "R3b 보관본 제목의 둘째 표시명"
 assert_eq "$_before" "$(snap)" "R3b 아무것도 안 쓴다"
+
+# R3c 이미 나간 판을 다른 날에 — 루트의 `## [1.0.7] - 2026-11-03 (Python)` 이 python=1.0.7 을 막는다(새 제목은 달라도).
+rfix; _before="$(snap)"; _out="$(rel --date=2026-12-01 python=1.0.7)"
+assert_rejects "$_out" '이미 있는 판 — Python 1.0.7: 「## [1.0.7] - 2026-11-03 (Python)」(CHANGELOG.md)' "R3c 다른 날의 이미 나간 판"
+assert_eq "$_before" "$(snap)" "R3c 아무것도 안 쓴다"
+
+# R3d 대조군 — 같은 번호의 다른 언어(node=1.0.7)는 받는다(§5.3 「같은 번호 경고」). 판만 보는 검사면 여기서 운다.
+rfix; _out="$(rel --date=2026-12-01 node=1.0.7)"
+assert_contains "$_out" '__rc=0' "R3d 다른 언어의 같은 번호는 받는다"
+assert_eq 1 "$(grep -c -xF -- '## [1.0.7] - 2026-12-01 (Node)' "$CL" || true)" "R3d [1.0.7] (Node) 절이 생긴다"
 
 # R4(검토 초점 3) 대기 노트가 없는 언어(의존성만 올린 판)는 실패가 아니다 — 제목과 손글 자리(판 하나짜리 물결이라 물결 머리말
 # 자리)만 있는 절을 만들고, stdout 의 ok 줄 뒤에 알린다. 조각은 그대로다.
