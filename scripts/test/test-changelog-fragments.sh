@@ -220,9 +220,9 @@ same_bytes() { # <기대 파일> <실제 파일> <메시지> — 판정은 cmp, 
   if cmp -s "$1" "$2"; then _sb=same; else _sb=differ; diff "$1" "$2" >&2 || true; fi
   assert_eq same "$_sb" "$3"
 }
-# W 픽스처 — 조각 넷(과제 4 의 R 절도 쓴다).
-wfix() {
-  fresh; mkdir -p "$W"
+# W 픽스처 — 조각 넷(과제 4 의 R 절도 쓴다). wfrags 는 조각만 쓴다(R 절은 migrate 로 뿌리를 만든 뒤에 둔다).
+wfix() { fresh; mkdir -p "$W"; wfrags; }
+wfrags() {
   frag 2026-11-25-a.txt 'langs: python go
 section: Fixed
 ---
@@ -589,5 +589,177 @@ assert_eq "$_before" "$(snap)" "M7 사용법 오류는 아무것도 쓰지 않�
 # --date 를 안 주면 오늘 — 이름은 `<YYYY-MM-DD>-unreleased-NNN.txt` 꼴이다.
 _out="$(run migrate --root="$TMP")"; assert_contains "$_out" '__rc=0' "M7 --date 생략 rc 0"
 assert_eq 3 "$(ls "$TMP/changelog.d" 2>/dev/null | grep -c '^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-unreleased-00[123]\.txt$' || true)" "M7 --date 생략 — 오늘 날짜의 이름 셋"
+
+# ---- R. release ----
+# 뿌리 — 옛 꼴(빈 `[Unreleased]` + `[1.0.7]` 절 하나)로 쓰고 migrate 로 포인터 꼴로 바꾼다(과제 3). 이 절도 포인터 문단을 다시
+# 쓰지 않는다 — 뿌리의 `[Unreleased]` 는 migrate 가 쓴 것이다. 조각은 그 뒤에 둔다(비지 않은 changelog.d/ 는 migrate 가 거부한다).
+# 거부 사례는 바늘 · rc · 뿌리 전체(CHANGELOG.md · changelog.d/ 를 담는다)의 cksum 을 본다.
+rold() { printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.7] - 2026-11-03 (Python)\n\n### Fixed\n- **(Python)** 옛 고침\n' > "$CL"; }
+rfix() { fresh; mkdir -p "$W"; rold; mig > /dev/null; wfrags; } # 포인터 꼴 뿌리 + W 조각 넷
+rel() { run release --root="$TMP" "$@"; }
+r1() { rel --date=2026-12-01 python=1.0.8 dotnet=1.0.8 go=1.2.6; } # R1 의 물결(W1 과 같다)
+dsnap() { (cd "$TMP" && find changelog.d -type f 2>/dev/null | LC_ALL=C sort | xargs cksum 2>/dev/null | cksum); } # changelog.d/ 만
+# <뿌리 파일> 을 <제목 접두> 로 시작하는 첫 줄 앞에서 갈라 그 사이에 <끼울 파일> 을 넣는다 — 「[Unreleased] 블록 바로 뒤에 끼운 것」.
+splice() { # <뿌리 파일> <제목 접두> <끼울 파일>
+  awk -v h="$2" 'index($0, h) == 1 { exit } { print }' "$1"; cat "$3"; awk -v h="$2" 'index($0, h) == 1 { p = 1 } p' "$1"
+}
+
+# R1 W 픽스처 → 물결 하나: rc 0 · 루트 = 릴리스 전 루트의 `[Unreleased]` 블록 바로 뒤에 W1 골든을 끼운 것(바이트) · a · b · c 는
+# 지워지고 d 는 renderFragment 꼴의 `langs: ruby` 로 다시 쓰인다.
+rfix; cp "$CL" "$MS/r1.pre"; printf '%s\n' "$W1_GOLD" > "$MS/w1.gold"; splice "$CL" '## [1.0.7] ' "$MS/w1.gold" > "$MS/r1.gold"
+_out="$(r1)"
+assert_contains "$_out" '__rc=0' "R1 rc 0"
+assert_contains "$_out" 'ok   release 2026-12-01: 절 3개 · 항목 4개 · 조각 갱신 1 · 삭제 3' "R1 출력 — 절 · 항목 · 갱신 · 삭제 수"
+assert_not_contains "$_out" '대기 노트가 없다' "R1 세 언어 모두 대기 노트가 있다 — 알림이 없다"
+same_bytes "$MS/r1.gold" "$CL" "R1 루트 = [Unreleased] 블록 바로 뒤에 W1 골든을 끼운 것"
+assert_eq '2026-11-26-d.txt' "$(ls "$TMP/changelog.d")" "R1 a · b · c 는 지워지고 d 만 남는다"
+printf 'langs: ruby\nsection: Security\n---\nD 보안\n' > "$MS/r1.d"
+same_bytes "$MS/r1.d" "$TMP/changelog.d/2026-11-26-d.txt" "R1 d 는 renderFragment 꼴의 langs: ruby"
+cp "$CL" "$MS/r1.out"
+
+# R2(검토 초점 4) 두 물결에 걸친 조각 d — 둘째 물결(ruby)에서 남은 언어 태그로 정확히 한 번 나오고, 그 뒤 지워진다.
+R2_GOLD='## [1.4.2] - 2026-12-02 (Ruby)
+
+TODO(release-notes) 물결 머리말 — 이 물결이 내보내는 언어 · 판과 그 근거를 쓴다.
+
+### Security
+- **(Ruby)** D 보안
+'
+printf '%s\n' "$R2_GOLD" > "$MS/r2.block"; splice "$CL" '## [물결] ' "$MS/r2.block" > "$MS/r2.gold"
+_out="$(rel --date=2026-12-02 ruby=1.4.2)"
+assert_contains "$_out" '__rc=0' "R2 rc 0"
+assert_contains "$_out" 'ok   release 2026-12-02: 절 1개 · 항목 1개 · 조각 갱신 0 · 삭제 1' "R2 출력"
+assert_eq 1 "$(grep -c -xF -- '- **(Ruby)** D 보안' "$CL" || true)" "R2 - **(Ruby)** D 보안 은 정확히 한 번"
+assert_eq no "$([ -e "$TMP/changelog.d/2026-11-26-d.txt" ] && echo yes || echo no)" "R2 d 는 지워진다"
+same_bytes "$MS/r2.gold" "$CL" "R2 루트 = R1 의 루트에서 [Unreleased] 블록 바로 뒤에 [1.4.2] 절을 끼운 것"
+
+# R3(검토 초점 2) R1 직후 같은 물결을 다시 · 이미 나간 판(같은 날 go=1.2.6)으로 — 쓰기 전에 거부하고 원장 · 조각을 한 바이트도
+# 바꾸지 않는다.
+rfix; _out="$(r1)"; assert_contains "$_out" '__rc=0' "R3 첫 물결 rc 0"
+_before="$(snap)"; _out="$(r1)"
+assert_rejects "$_out" '이미 있는 제목' "R3 같은 물결을 다시"
+assert_contains "$_out" '「## [물결] - 2026-12-01 (Python 1.0.8 · .NET 1.0.8 · Go 1.2.6)」' "R3 같은 물결 — 겹친 제목을 짚는다"
+assert_eq "$_before" "$(snap)" "R3 같은 물결 — 아무것도 안 쓴다"
+_out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" '이미 있는 제목 — 「## [1.2.6] - 2026-12-01 (Go)」' "R3 이미 나간 판"
+assert_eq "$_before" "$(snap)" "R3 이미 나간 판 — 아무것도 안 쓴다"
+
+# R3b 보관본의 제목도 본다 — 날짜 절이 없는 루트(날짜에 아래 한계가 없다)와 그 보관본 changelog/2026-10.md.
+fresh; printf '# Changelog\n\n## [Unreleased]\n\n' > "$CL"; mig > /dev/null
+mkdir -p "$TMP/changelog"; printf '# Changelog — 2026-10\n\n보관본.\n\n## [1.0.0] - 2026-10-01 (Go)\n\n- x\n' > "$TMP/changelog/2026-10.md"
+_before="$(snap)"; _out="$(rel --date=2026-10-01 go=1.0.0)"
+assert_rejects "$_out" '이미 있는 제목 — 「## [1.0.0] - 2026-10-01 (Go)」' "R3b 보관본의 제목과 겹친다"
+assert_contains "$_out" 'changelog/2026-10.md' "R3b 겹친 보관본을 짚는다"
+assert_eq "$_before" "$(snap)" "R3b 아무것도 안 쓴다"
+
+# R4(검토 초점 3) 대기 노트가 없는 언어(의존성만 올린 판)는 실패가 아니다 — 제목과 손글 자리(판 하나짜리 물결이라 물결 머리말
+# 자리)만 있는 절을 만들고, stdout 의 ok 줄 뒤에 알린다. 조각은 그대로다.
+rfix; printf '## [1.5.3] - 2026-12-01 (PHP)\n\nTODO(release-notes) 물결 머리말 — 이 물결이 내보내는 언어 · 판과 그 근거를 쓴다.\n\n' > "$MS/r4.block"
+splice "$CL" '## [1.0.7] ' "$MS/r4.block" > "$MS/r4.gold"; _fs="$(dsnap)"
+to_file "$MS/r4.out" node "$CLI" release --root="$TMP" --date=2026-12-01 php=1.5.3
+assert_eq 0 "$_rc" "R4 rc 0"
+printf 'ok   release 2026-12-01: 절 1개 · 항목 0개 · 조각 갱신 0 · 삭제 0\n⚠️  php: 대기 노트가 없다 — 절에는 손글 자리만 있다\n' > "$MS/r4.stdout"
+same_bytes "$MS/r4.stdout" "$MS/r4.out" "R4 stdout — ok 줄 뒤에 대기 노트가 없다 알림"
+same_bytes "$MS/r4.gold" "$CL" "R4 루트 — [1.5.3] (PHP) 절에 손글 자리만"
+assert_eq "$_fs" "$(dsnap)" "R4 조각은 그대로"
+
+# R4b 노트가 있는 언어와 없는 언어가 섞인 물결 — 알림은 없는 언어마다 DEPLOY_LANGS 순서(java · php)로, 조각은 물결이 닿은 것만
+# 남은 langs 로 다시 쓴다(b 는 물결 밖이다).
+rfix; to_file "$MS/r4b.out" node "$CLI" release --root="$TMP" --date=2026-12-01 php=1.5.3 python=1.0.8 java=1.2.5
+assert_eq 0 "$_rc" "R4b rc 0"
+printf 'ok   release 2026-12-01: 절 4개 · 항목 3개 · 조각 갱신 3 · 삭제 0\n⚠️  java: 대기 노트가 없다 — 절에는 손글 자리만 있다\n⚠️  php: 대기 노트가 없다 — 절에는 손글 자리만 있다\n' > "$MS/r4b.stdout"
+same_bytes "$MS/r4b.stdout" "$MS/r4b.out" "R4b stdout — 알림은 DEPLOY_LANGS 순서(java · php)"
+assert_eq 'langs: go' "$(sed -n 1p "$TMP/changelog.d/2026-11-25-a.txt")" "R4b a 는 go 가 남는다"
+assert_eq 'langs: dotnet' "$(sed -n 1p "$TMP/changelog.d/2026-11-26-c.txt")" "R4b c 는 dotnet 이 남는다"
+assert_eq 'langs: ruby' "$(sed -n 1p "$TMP/changelog.d/2026-11-26-d.txt")" "R4b d 는 ruby 가 남는다"
+
+# R5(검토 초점 5) 원장의 최신 날짜(2026-11-03)보다 이른 --date= 는 최신순을 깬다 — 거부 · 아무것도 안 쓴다. 같은 날은 받는다.
+rfix; _before="$(snap)"; _out="$(rel --date=2026-11-01 python=1.0.8)"
+assert_rejects "$_out" '최신 날짜(2026-11-03)보다 이르다' "R5 이른 날짜 2026-11-01"
+assert_eq "$_before" "$(snap)" "R5 이른 날짜 — 아무것도 안 쓴다"
+_out="$(rel --date=2026-11-03 python=1.0.8)"; assert_contains "$_out" '__rc=0' "R5 최신 날짜와 같은 날(2026-11-03)은 받는다"
+
+# R6 옛 꼴 루트 — `[Unreleased]` 가 고정 문단이 아니면(항목이 있어도 · 비어 있어도) 먼저 migrate. 조각이 있어도 아무것도 안 쓴다.
+fresh; printf '# Changelog\n\n## [Unreleased]\n\n### Fixed\n- **(Go)** 옛 항목\n\n## [1.0.7] - 2026-11-03 (Python)\n\n### Fixed\n- **(Python)** 옛 고침\n' > "$CL"; wfrags
+_before="$(snap)"; _out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" '먼저 migrate' "R6 항목이 있는 옛 꼴 [Unreleased]"
+assert_eq "$_before" "$(snap)" "R6 항목이 있는 옛 꼴 — 아무것도 안 쓴다"
+fresh; rold; wfrags; _before="$(snap)"; _out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" '먼저 migrate' "R6 빈 옛 꼴 [Unreleased]"
+assert_eq "$_before" "$(snap)" "R6 빈 옛 꼴 — 아무것도 안 쓴다"
+
+# R7 문법이 깨진 조각이 있으면 거부(파일 이름 · 사유) · 아무것도 안 쓴다.
+rfix; frag 2026-11-27-x.txt 'langs: go
+section: Fix
+---
+x
+'
+_before="$(snap)"; _out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" 'changelog.d/2026-11-27-x.txt' "R7 깨진 조각"
+assert_contains "$_out" '중 하나다 — Fix' "R7 깨진 조각 — 사유"
+assert_eq "$_before" "$(snap)" "R7 아무것도 안 쓴다"
+
+# R8 R1 의 결과에서 TODO(release-notes) 줄을 손글로 바꾸면 검사 8d 가 받는다. 대조군 — 같은 뿌리에 8d 결함(모르는 `## ` 제목)
+# 하나를 심으면 `검사 8d` · rc 1 이다(8d 에 닿지 않아 빈 출력을 「받는다」로 읽지 않게).
+DOCS="$DIR/../check-docs.mjs"
+docs() { node "$DOCS" "$TMP" 2>&1 && echo '__rc=0' || echo "__rc=$?"; }
+rfix; _out="$(r1)"; assert_contains "$_out" '__rc=0' "R8 물결 rc 0"
+assert_eq 3 "$(grep -c '^TODO(release-notes) ' "$CL" || true)" "R8 손글 자리 셋(물결 머리말 · 언어 절 둘)"
+awk 'index($0, "TODO(release-notes) ") == 1 { print "판 종류 patch — 공개 API 변경 0 · 같은 번호 경고 없음."; next } { print }' "$CL" > "$MS/r8.txt"
+cp "$MS/r8.txt" "$CL"
+assert_eq 0 "$(grep -c 'TODO(release-notes)' "$CL" || true)" "R8 손글로 다 바꿨다"
+_out="$(docs)"
+assert_not_contains "$_out" '검사 8d' "R8 손글로 바꾼 물결을 8d 가 받는다"
+assert_contains "$_out" '__rc=0' "R8 check-docs rc 0"
+printf '## 메모\n\n본문.\n' >> "$CL"; _out="$(docs)"
+assert_rejects "$_out" '검사 8d' "R8 대조군 — 모르는 ## 제목 하나면 8d 가 운다"
+
+# R9 판 꼴은 맞지만 긴 판 — 제목 줄이 1,024 B 를 넘는다(verifyWave 3) · 거부 · 아무것도 안 쓴다.
+rfix; _before="$(snap)"; _out="$(rel --date=2026-12-01 "go=1.2.6-$(repeat 1100)")"
+assert_rejects "$_out" '1024B' "R9 긴 판 문자열"
+assert_contains "$_out" '물결 대조 3: ' "R9 verifyWave 3 이 잡는다"
+assert_eq "$_before" "$(snap)" "R9 아무것도 안 쓴다"
+
+# R10 사용법 — rc 2 와 그 사유 · 아무것도 안 쓴다(위치 인자 · `<lang>=<판>` 꼴 · 판 꼴 · 겹침 · 모르는 언어 · 날짜 · 인자).
+rfix; _before="$(snap)"
+w5 "R10 위치 인자 없음" 'release 의 위치 인자는 1개 이상이다' release --date=2026-12-01 --root="$TMP"
+w5 "R10 = 이 없다" '`<lang>=<판>` 꼴이 아니다 — python' release python --root="$TMP"
+w5 "R10 언어가 비었다" '`<lang>=<판>` 꼴이 아니다 — =1.0.8' release =1.0.8 --root="$TMP"
+w5 "R10 판이 비었다" '`<lang>=<판>` 꼴이 아니다 — python=' release python= --root="$TMP"
+w5 "R10 판 꼴 1.0" '판 꼴이 아니다 — python=1.0' release python=1.0 --root="$TMP"
+w5 "R10 판 꼴 v1.0.8" '판 꼴이 아니다 — python=v1.0.8' release python=v1.0.8 --root="$TMP"
+w5 "R10 판 꼴 1.0.8-" '판 꼴이 아니다 — python=1.0.8-' release python=1.0.8- --root="$TMP"
+w5 "R10 판 꼴 물결" '판 꼴이 아니다 — python=물결' release python=물결 --root="$TMP"
+w5 "R10 겹친 언어" '언어가 겹친다 — python' release python=1.0.8 python=1.0.9 --root="$TMP"
+w5 "R10 모르는 언어" '모르는 언어 — swift' release swift=1.0.0 --root="$TMP"
+w5 "R10 없는 날짜" '있는 날짜의 YYYY-MM-DD 다 — 2026-02-30' release --date=2026-02-30 python=1.0.8 --root="$TMP"
+w5 "R10 모르는 인자" '모르는 인자 — --dat=2026-12-01' release --dat=2026-12-01 python=1.0.8 --root="$TMP"
+assert_eq "$_before" "$(snap)" "R10 사용법 오류는 아무것도 쓰지 않는다"
+
+# R11 루트에 모르는 `## ` 제목 — 새 루트를 다시 읽어 거부한다 · 아무것도 안 쓴다.
+rfix; printf '## 메모\n\n본문.\n' >> "$CL"; _before="$(snap)"; _out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" '「## 메모」' "R11 모르는 ## 제목"
+assert_eq "$_before" "$(snap)" "R11 아무것도 안 쓴다"
+
+# R12 뿌리 — CHANGELOG.md 가 없거나 deploy-facts.sh 가 없으면 거부(rc 1) · 조각이 있어도 아무것도 안 쓴다.
+rfix; rm -f "$CL"; _before="$(snap)"; _out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" 'CHANGELOG.md 가 없다' "R12 CHANGELOG.md 없음"
+assert_eq "$_before" "$(snap)" "R12 CHANGELOG.md 없음 — 아무것도 안 쓴다"
+rfix; rm -f "$TMP/scripts/lib/deploy-facts.sh"; _before="$(snap)"; _out="$(rel --date=2026-12-01 go=1.2.6)"
+assert_rejects "$_out" 'deploy-facts.sh' "R12 deploy-facts.sh 없음"
+assert_eq "$_before" "$(snap)" "R12 deploy-facts.sh 없음 — 아무것도 안 쓴다"
+
+# R13 CRLF 뿌리 — 읽을 때 LF 로 맞추고 쓰는 것은 LF 다: 결과가 R1(LF 뿌리)의 결과와 바이트까지 같다.
+rfix; awk '{ printf "%s\r\n", $0 }' "$CL" > "$MS/crlf"; cp "$MS/crlf" "$CL"
+assert_eq "$(( $(wc -c < "$MS/r1.pre") + $(wc -l < "$MS/r1.pre") ))" "$(wc -c < "$CL" | tr -d ' ')" "R13 픽스처 — 줄마다 CR 이 붙었다"
+_out="$(r1)"; assert_contains "$_out" '__rc=0' "R13 CRLF 뿌리 rc 0"
+same_bytes "$MS/r1.out" "$CL" "R13 CRLF 입력의 결과는 LF 입력(R1)의 결과와 바이트까지 같다"
+
+# R14 날짜 기본은 오늘(이 기계의 지역 날짜) — 실행이 자정을 넘어도 거짓 빨강이 나지 않게 앞뒤 날짜 중 하나면 된다.
+rfix; _d1="$(date +%Y-%m-%d)"; _out="$(rel go=1.2.6)"; _d2="$(date +%Y-%m-%d)"
+assert_contains "$_out" '__rc=0' "R14 --date= 없이 rc 0"
+_cl="$(cat "$CL")"
+case "$_cl" in *"## [1.2.6] - $_d1 (Go)"*|*"## [1.2.6] - $_d2 (Go)"*) _today=ok ;; *) _today="$_cl" ;; esac
+assert_eq ok "$_today" "R14 날짜 기본은 오늘"
 
 assert_report
